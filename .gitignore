@@ -4,3 +4,5 @@ dist
 .claude
 .DS_Store
 bench/shots/
+bench/before/
+bench/after/
