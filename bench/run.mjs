@@ -18,6 +18,8 @@ const shotOnly = process.argv.includes('--shot-only');
 const headed = process.argv.includes('--headed');
 const WINDOW_CAP_MS = 20000; // timing window ends at `frames` frames or this wall time, whichever is first
 const VIEW = { width: 1280, height: 720 };
+const query = opt('query', ''); // extra URL params, e.g. --query gfx=none
+const tag = opt('tag', '');     // suffix for output file names, e.g. --tag noshadow
 const shots = join(root, 'bench', 'shots');
 mkdirSync(shots, { recursive: true });
 
@@ -42,13 +44,13 @@ async function measure(level) {
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   const t0 = Date.now();
-  await page.goto(`${base}?debug=1&stress=${level}`);
+  await page.goto(`${base}?debug=1&stress=${level}${query ? '&' + query : ''}`);
   await page.waitForFunction(() => window.__debug, null, { timeout: 180000 });
   const loadMs = Date.now() - t0;
   await page.locator('.helpok').click({ timeout: 5000 }).catch(() => {}); // dismiss the controls overlay
   // warm-up: a stable run of frames (shader compile, first uploads) before measuring anything
   await page.evaluate(() => new Promise(res => { let n = 0; const f = () => (++n >= 60 ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }));
-  const label = `stress-${level}x${headed ? '-headed' : ''}`;
+  const label = `stress-${level}x${headed ? '-headed' : ''}${tag ? '-' + tag : ''}`;
   if (shotOnly) { await page.screenshot({ path: join(shots, `${label}.png`) }); await page.close(); return { label, level }; }
 
   const raw = await page.evaluate(({ frames, cap }) => new Promise(done => {
@@ -72,7 +74,12 @@ async function measure(level) {
     const time = (n, fn) => { const t = performance.now(); for (let k = 0; k < n; k++) fn(); return (performance.now() - t) / n; };
     const render = () => r.render(d.scene, d.view.camera);
     render();
+    // renderer.info resets before the main pass, so shadow-pass draws are not in `calls`; count the whole frame separately.
+    i.autoReset = false; i.reset(); render();
+    const total = { calls: i.render.calls, triangles: i.render.triangles };
+    i.autoReset = true; render();
     const out = {
+      total,
       entities: { enemies: sim.enemies.length, nodes: sim.nodes.length, objects, meshes },
       worldSide: 60 * Math.sqrt(d.stress),
       calls: i.render.calls, triangles: i.render.triangles,
@@ -104,14 +111,14 @@ finally { await browser.close(); await server.close(); }
 
 if (!shotOnly) {
   const meta = { browser: how, headless: !headed, viewport: VIEW, frameWindow: `${frames} frames (cap ${WINDOW_CAP_MS / 1000}s)`, date: new Date().toISOString() };
-  writeFileSync(join(shots, headed ? 'results-headed.json' : 'results.json'), JSON.stringify({ meta, results }, null, 2));
+  writeFileSync(join(shots, headed ? 'results-headed.json' : `results${tag ? '-' + tag : ''}.json`), JSON.stringify({ meta, results }, null, 2));
   console.log(JSON.stringify({ meta, results }));
   const f = (v, d = 2) => (v == null ? '-' : Number(v).toFixed(d));
   console.error(`\n${meta.browser}, ${meta.headless ? 'headless' : 'headed'}, GPU: ${results[0]?.gpu}`);
   console.error('frame times in ms; sim = one 30Hz tick; drawCpu = view.draw(); gpu = render()+gl.finish(); unc = frustum culling off\n');
   console.table(results.map(r => ({
     x: r.level, enemies: r.entities.enemies, nodes: r.entities.nodes, objs: r.entities.objects, world: `${f(r.worldSide, 0)}²`,
-    calls: r.calls, tris: r.triangles, geo: r.geometries, tex: r.textures, prog: r.programs,
+    calls: r.calls, tris: r.triangles, 'tot.calls': r.total.calls, 'tot.tris': r.total.triangles, geo: r.geometries, tex: r.textures, prog: r.programs,
     mean: f(r.stats.mean), p50: f(r.stats.p50), p95: f(r.stats.p95), worst: f(r.stats.worst),
     sim: f(r.simStepMs), drawCpu: f(r.drawCpuMs), gpu: f(r.renderGpuMs), 'unc.calls': r.unculled.calls, 'unc.gpu': f(r.unculled.renderGpuMs), heapMB: f(r.heapMB, 0),
   })));
