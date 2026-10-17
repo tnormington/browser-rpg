@@ -1,6 +1,7 @@
 // Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
-import { GameState, LANDMARKS, TREES, WORLD_HALF } from './sim';
+import { GameState, GameEvent, Enemy, LANDMARKS, TREES, WORLD_HALF } from './sim';
+import { ENEMY_TYPES } from './sim/data';
 
 const mesh = (g: THREE.BufferGeometry, color: number) =>
   new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color }));
@@ -15,6 +16,12 @@ export class Renderer {
   private prev = { x: 0, z: 0 };
   private curr = { x: 0, z: 0 };
   private raycaster = new THREE.Raycaster();
+  private actors = new Map<number, Actor>();
+  private selection: THREE.Mesh;
+  private shakeMag = 0;
+  private levelRing: THREE.Mesh;
+  private levelRingAge = 99;
+  private castPunch = 0;
 
   // orbit camera (render-side only; sim never sees it except via input direction)
   yaw = 0;
@@ -41,6 +48,14 @@ export class Renderer {
     const nose = mesh(new THREE.BoxGeometry(0.2, 0.2, 0.4), 0xffd24a);
     nose.position.set(0, 0.4, 0.5);
     this.player.add(nose);
+
+    this.selection = mesh(new THREE.TorusGeometry(1, 0.07, 8, 32).rotateX(Math.PI / 2), 0xff3b3b);
+    this.selection.visible = false;
+    this.scene.add(this.selection);
+    this.levelRing = mesh(new THREE.TorusGeometry(1, 0.1, 8, 40).rotateX(Math.PI / 2), 0xffe14a);
+    this.levelRing.visible = false;
+    this.scene.add(this.levelRing);
+    for (const e of s.enemies) this.addActor(e);
 
     this.marker = mesh(new THREE.TorusGeometry(0.5, 0.08, 8, 24).rotateX(Math.PI / 2), 0xffe14a);
     this.marker.visible = false;
@@ -104,10 +119,66 @@ export class Renderer {
     this.distance = Math.max(3, Math.min(20, this.distance + delta * 0.01));
   }
 
+  private addActor(e: Enemy) {
+    const def = ENEMY_TYPES[e.type];
+    const color = e.type === 'boar' ? 0x8a5a3a : e.type === 'wolf' ? 0x777c88 : 0x8a2f2f;
+    const group = new THREE.Group();
+    const mat = new THREE.MeshLambertMaterial({ color });
+    const body = new THREE.Mesh(
+      e.type === 'brute' ? new THREE.BoxGeometry(1.6, 2.2, 1.2) : new THREE.CapsuleGeometry(def.radius * 0.8, def.radius * 1.2, 4, 10).rotateX(Math.PI / 2),
+      mat);
+    body.position.y = e.type === 'brute' ? 1.5 : def.radius + 0.2;
+    body.userData.enemyId = e.id;
+    group.add(body);
+    // snout/fist so facing is readable
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), new THREE.MeshLambertMaterial({ color: 0xffd24a }));
+    nose.position.set(0, body.position.y + 0.1, def.radius + 0.4);
+    nose.userData.enemyId = e.id;
+    group.add(nose);
+    group.scale.setScalar(1);
+    this.scene.add(group);
+    this.actors.set(e.id, { group, body, mat, base: color, px: e.x, pz: e.z, cx: e.x, cz: e.z, flash: 0 });
+  }
+
   /** Called once per sim tick so we can interpolate between the last two states. */
   snapshot(s: GameState) {
     this.prev = this.curr;
     this.curr = { x: s.player.x, z: s.player.z };
+    for (const e of s.enemies) {
+      const a = this.actors.get(e.id)!;
+      const jump = Math.hypot(e.x - a.cx, e.z - a.cz) > 4; // respawn teleport: don't slide
+      a.px = jump ? e.x : a.cx; a.pz = jump ? e.z : a.cz;
+      a.cx = e.x; a.cz = e.z;
+    }
+  }
+
+  /** Reacts to sim events (shake, flashes, level-up ring). Reads only. */
+  onEvents(events: GameEvent[], s: GameState) {
+    for (const ev of events) {
+      if (ev.t === 'hit') {
+        if (ev.target === 'player') this.shakeMag = Math.max(this.shakeMag, 0.12);
+        else this.shakeMag = Math.max(this.shakeMag, ev.crit ? 0.2 : ev.slot === 1 ? 0.14 : 0.04);
+      } else if (ev.t === 'cast') this.castPunch = 0.12;
+      else if (ev.t === 'levelup') { this.levelRingAge = 0; this.shakeMag = Math.max(this.shakeMag, 0.1); }
+      else if (ev.t === 'death') this.shakeMag = 0.3;
+    }
+    void s;
+  }
+
+  /** Enemy id under a screen position, or null. */
+  pickEnemy(clientX: number, clientY: number): number | null {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    const bodies = [...this.actors.values()].filter(a => a.group.visible).flatMap(a => a.group.children);
+    const hit = this.raycaster.intersectObjects(bodies, false)[0];
+    return hit ? (hit.object.userData.enemyId as number) : null;
+  }
+
+  /** World point to screen pixels; null when behind the camera. */
+  project(x: number, y: number, z: number): { x: number; y: number } | null {
+    const v = new THREE.Vector3(x, y, z).project(this.camera);
+    if (v.z > 1) return null;
+    return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight };
   }
 
   /** Ground point under a screen position, or null. */
@@ -121,8 +192,30 @@ export class Renderer {
   draw(s: GameState, alpha: number) {
     const x = this.prev.x + (this.curr.x - this.prev.x) * alpha;
     const z = this.prev.z + (this.curr.z - this.prev.z) * alpha;
-    this.player.position.set(x, 1, z);
+    this.castPunch = Math.max(0, this.castPunch - 1 / 60);
+    this.player.position.set(x, s.player.dead ? 0.5 : 1, z);
     this.player.rotation.y = s.player.facing;
+    this.player.rotation.x = s.player.dead ? -Math.PI / 2 : 0;
+    this.player.scale.setScalar(1 + this.castPunch * 1.2);
+
+    for (const e of s.enemies) this.drawActor(e, alpha);
+
+    const target = s.targetId === null ? undefined : s.enemies.find(e => e.id === s.targetId);
+    this.selection.visible = !!target;
+    if (target) {
+      const a = this.actors.get(target.id)!;
+      const r = ENEMY_TYPES[target.type].radius + 0.5 + 0.05 * Math.sin(performance.now() / 120);
+      this.selection.position.set(a.px + (a.cx - a.px) * alpha, 0.12, a.pz + (a.cz - a.pz) * alpha);
+      this.selection.scale.setScalar(r);
+      this.selection.rotation.y = performance.now() / 600;
+    }
+
+    this.levelRingAge += 1 / 60;
+    this.levelRing.visible = this.levelRingAge < 1;
+    if (this.levelRing.visible) {
+      this.levelRing.position.set(x, 0.15 + this.levelRingAge * 3, z);
+      this.levelRing.scale.setScalar(1 + this.levelRingAge * 3);
+    }
 
     this.marker.visible = !!s.moveTarget;
     if (s.moveTarget) {
@@ -136,7 +229,33 @@ export class Renderer {
       x + Math.sin(this.yaw) * cp * this.distance,
       Math.max(0.5, 1.5 + Math.sin(this.pitch) * this.distance),
       z + Math.cos(this.yaw) * cp * this.distance);
+    this.shakeMag *= 0.88;
+    if (this.shakeMag > 0.005) {
+      this.camera.position.x += (Math.random() - 0.5) * this.shakeMag;
+      this.camera.position.y += (Math.random() - 0.5) * this.shakeMag;
+    }
     this.camera.lookAt(x, 1.5, z);
     this.renderer.render(this.scene, this.camera);
   }
+
+  private drawActor(e: Enemy, alpha: number) {
+    const a = this.actors.get(e.id)!;
+    const g = a.group;
+    g.visible = e.state !== 'dead' || e.deadFor < 2;
+    g.position.set(a.px + (a.cx - a.px) * alpha, 0, a.pz + (a.cz - a.pz) * alpha);
+    g.rotation.y = e.facing;
+    g.rotation.z = e.state === 'dead' ? Math.PI / 2 : 0;
+    g.position.y = e.state === 'dead' ? ENEMY_TYPES[e.type].radius : 0;
+    g.scale.setScalar(1 + e.swing * 2); // attack lunge
+    a.mat.emissive.setHex(e.hitFlash > 0 ? 0xff4444 : 0x000000);
+  }
+}
+
+interface Actor {
+  group: THREE.Group;
+  body: THREE.Mesh;
+  mat: THREE.MeshLambertMaterial;
+  base: number;
+  px: number; pz: number; cx: number; cz: number;
+  flash: number;
 }

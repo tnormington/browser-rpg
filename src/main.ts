@@ -1,23 +1,36 @@
 import { createState, step, TICK_DT, Input } from './sim';
 import { Renderer } from './render';
+import { Hud } from './hud';
 
 const state = createState();
 const view = new Renderer(document.body, state);
+const hud = new Hud((x, y, z) => view.project(x, y, z));
 const canvas = view.renderer.domElement;
 
 // --- input -> sim Input ---
 const keys = new Set<string>();
-addEventListener('keydown', e => keys.add(e.code));
+let pendingTab = false, pendingClear = false, pendingAbility: number | null = null;
+addEventListener('keydown', e => {
+  keys.add(e.code);
+  if (e.repeat) return;
+  if (e.code === 'Tab') { e.preventDefault(); pendingTab = true; }
+  else if (e.code === 'Escape') pendingClear = true;
+  else if (/^Digit[1-4]$/.test(e.code)) pendingAbility = Number(e.code.slice(5)) - 1;
+});
 addEventListener('keyup', e => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
 
 // Left-click without dragging = click-to-move; left-drag = orbit.
 let pendingClick: { x: number; z: number } | null = null;
+let pendingEnemy: number | null = null;
 let dragging = false, dragMoved = 0;
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('mousedown', () => { dragging = true; dragMoved = 0; });
 addEventListener('mouseup', e => {
-  if (dragging && e.button === 0 && dragMoved < 5) pendingClick = view.pick(e.clientX, e.clientY);
+  if (dragging && e.button === 0 && dragMoved < 5) {
+    pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
+    if (pendingEnemy === null) pendingClick = view.pick(e.clientX, e.clientY);
+  }
   dragging = false;
 });
 addEventListener('mousemove', e => {
@@ -37,22 +50,30 @@ function readInput(): Input {
     dirX: -sy * f + cy * r,
     dirZ: -cy * f - sy * r,
     clickTarget: pendingClick,
+    clickEnemy: pendingEnemy,
+    tab: pendingTab,
+    clearTarget: pendingClear,
+    ability: pendingAbility,
   };
-  pendingClick = null;
+  pendingClick = null; pendingEnemy = null; pendingTab = false; pendingClear = false; pendingAbility = null;
   return input;
 }
 
 // --- fixed timestep loop ---
 let last = performance.now(), acc = 0;
 function frame(now: number) {
-  acc += Math.min((now - last) / 1000, 0.25);
+  const dt = Math.min((now - last) / 1000, 0.25);
+  acc += dt;
   last = now;
   while (acc >= TICK_DT) {
     step(state, readInput());
     view.snapshot(state);
+    view.onEvents(state.events, state);
+    hud.onEvents(state.events, state);
     acc -= TICK_DT;
   }
   view.draw(state, acc / TICK_DT);
+  hud.update(state, dt);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
