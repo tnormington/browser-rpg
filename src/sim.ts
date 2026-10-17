@@ -9,6 +9,7 @@ import { SkillId, Skills, newSkills } from './sim/skills';
 import { ResourceNode, createNodes, updateNodes } from './sim/gathering';
 import { beginCraft } from './sim/crafting';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
+import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
 import { PLAYER_RADIUS, clampToWorld, resolveCollisions } from './sim/world';
 import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN } from './sim/data';
 import {
@@ -20,6 +21,7 @@ export * from './sim/world';
 export type { GroundDrop } from './sim/loot';
 export type { ResourceNode } from './sim/gathering';
 export type { Action, Interact } from './sim/actions';
+export type { QuestState } from './sim/quest';
 
 export const TICK_RATE = 30;
 export const TICK_DT = 1 / TICK_RATE;
@@ -71,6 +73,8 @@ export type GameEvent =
   | { t: 'xp'; skill: SkillId; amount: number; x: number; z: number }
   | { t: 'levelup'; skill: SkillId; level: number }
   | { t: 'actionfail'; reason: 'level' | 'depleted' | 'full' | 'materials' | 'range'; skill: SkillId; need: number; what: string }
+  | { t: 'npc' }                                        // player reached the quest giver: open dialogue
+  | { t: 'quest'; what: 'accept' | 'progress' | 'stage' | 'complete' }
   | { t: 'forge' }                                      // player reached the forge: open the recipe list
   | { t: 'crafted'; item: string; qty: number }
   | { t: 'depleted'; id: number }
@@ -91,6 +95,7 @@ export interface GameState {
   drops: GroundDrop[];
   nextDropId: number;
   nodes: ResourceNode[];
+  quest: QuestState;
   interact: Interact | null; // walking toward a node/forge to use it
   events: GameEvent[]; // cleared at the start of every step; presentation reads them after each step
 }
@@ -108,9 +113,10 @@ export interface Input {
   inv: InvAction[];                             // inventory/equipment actions this tick
   interact: Interact | null;                    // node or forge clicked this tick: walk there and use it
   craft: { recipe: string; count: number } | null; // forge recipe chosen this tick
+  questAdvance: boolean;                        // the advancing dialogue option was chosen this tick
 }
 
-export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, pickup: null, inv: [], interact: null, craft: null };
+export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, pickup: null, inv: [], interact: null, craft: null, questAdvance: false };
 
 export function createState(seed = 1): GameState {
   const skills = newSkills();
@@ -134,6 +140,7 @@ export function createState(seed = 1): GameState {
     drops: [],
     nextDropId: 1,
     nodes: createNodes(),
+    quest: newQuest(),
     interact: null,
     events: [],
   };
@@ -164,6 +171,7 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
       if (d) s.moveTarget = clampToWorld(d);
     }
     if (input.interact) requestInteract(s, input.interact);
+    if (input.questAdvance) advanceQuest(s);
     if (input.craft) beginCraft(s, input.craft.recipe, input.craft.count);
     if (input.tab) tabTarget(s);
     movePlayer(s, input, dt);
@@ -175,6 +183,7 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
   updateEnemies(s, dt);
   updateDrops(s, dt);
   updateNodes(s, dt);
+  updateQuest(s);
 }
 
 function movePlayer(s: GameState, input: Input, dt: number) {

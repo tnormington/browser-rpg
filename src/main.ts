@@ -3,15 +3,36 @@ import { Renderer } from './render';
 import { Hud } from './hud';
 import type { InvAction } from './sim/inventory';
 import type { Interact } from './sim';
+import { loadGame, saveGame, wipeSave } from './storage';
+import { playEvents, toggleMute, unlockAudio } from './sfx';
 
-const state = createState();
+const loaded = loadGame();
+const state = loaded.state ?? createState();
 const view = new Renderer(document.body, state);
 const pendingInv: InvAction[] = [];
 let pendingCraft: { recipe: string; count: number } | null = null;
-const hud = new Hud((x, y, z) => view.project(x, y, z), {
-  inv: a => pendingInv.push(a),
+let pendingAdvance = false;
+
+// --- save / load ---
+const AUTOSAVE_EVERY = 20; // seconds
+let wiped = false, saveDirty = false, sinceSave = 0;
+function save(): boolean { return !wiped && saveGame(state); }
+const hud = new Hud((x, y, z) => view.project(x, y, z), () => view.yaw, {
+  inv: a => { pendingInv.push(a); saveDirty = true; },
   craft: (recipe, count) => { pendingCraft = { recipe, count }; },
+  questAdvance: () => { pendingAdvance = true; },
+  save: () => hud.note(save() ? 'Game saved.' : 'Could not save (browser storage unavailable).', 'log-info'),
+  newGame: () => {
+    if (!confirm('Wipe your save and start a new game?')) return;
+    wiped = true; // stops the unload handler from re-saving over the wipe
+    wipeSave();
+    location.reload();
+  },
 });
+if (loaded.status === 'loaded') hud.note('Welcome back: your progress was loaded.', 'log-quest');
+else if (loaded.status === 'incompatible') hud.note('Your old save was from a different version and was ignored: starting a new game.', 'log-bad');
+addEventListener('beforeunload', save);
+addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 const canvas = view.renderer.domElement;
 
 // --- input -> sim Input ---
@@ -19,9 +40,13 @@ const keys = new Set<string>();
 let pendingTab = false, pendingClear = false, pendingAbility: number | null = null;
 addEventListener('keydown', e => {
   keys.add(e.code);
+  unlockAudio();
   if (e.repeat) return;
   if (e.code === 'Tab') { e.preventDefault(); pendingTab = true; }
-  else if (e.code === 'Escape') pendingClear = true;
+  else if (e.code === 'Escape') { if (!hud.closeOverlay()) pendingClear = true; }
+  else if (e.code === 'KeyH') hud.toggleHelp();
+  else if (e.code === 'KeyE') pendingInteract = { k: 'npc' };
+  else if (e.code === 'KeyM') hud.say(toggleMute() ? 'Sound off' : 'Sound on');
   else if (e.code === 'KeyI') hud.toggle('inv');
   else if (e.code === 'KeyC') hud.toggle('char');
   else if (e.code === 'KeyK') hud.toggle('skills');
@@ -37,14 +62,15 @@ let pendingPickup: number | null = null;
 let pendingInteract: Interact | null = null;
 let dragging = false, dragMoved = 0;
 canvas.addEventListener('contextmenu', e => e.preventDefault());
-canvas.addEventListener('mousedown', () => { dragging = true; dragMoved = 0; });
+canvas.addEventListener('mousedown', () => { dragging = true; dragMoved = 0; unlockAudio(); });
 addEventListener('mouseup', e => {
   if (dragging && e.button === 0 && dragMoved < 5) {
     pendingPickup = view.pickDrop(e.clientX, e.clientY);
     if (pendingPickup === null) pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
     if (pendingPickup === null && pendingEnemy === null) {
       const node = view.pickNode(e.clientX, e.clientY);
-      if (node !== null) pendingInteract = { k: 'node', id: node };
+      if (view.pickNpc(e.clientX, e.clientY)) pendingInteract = { k: 'npc' };
+      else if (node !== null) pendingInteract = { k: 'node', id: node };
       else if (view.pickForge(e.clientX, e.clientY)) pendingInteract = { k: 'forge' };
       else pendingClick = view.pick(e.clientX, e.clientY);
     }
@@ -76,8 +102,9 @@ function readInput(): Input {
     inv: pendingInv.splice(0),
     interact: pendingInteract,
     craft: pendingCraft,
+    questAdvance: pendingAdvance,
   };
-  pendingInteract = null; pendingCraft = null;
+  pendingInteract = null; pendingCraft = null; pendingAdvance = false;
   pendingClick = null; pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingClear = false; pendingAbility = null;
   return input;
 }
@@ -93,8 +120,13 @@ function frame(now: number) {
     view.snapshot(state);
     view.onEvents(state.events, state);
     hud.onEvents(state.events, state);
+    playEvents(state.events);
+    if (state.events.some(ev => ev.t === 'levelup' || ev.t === 'quest' || ev.t === 'crafted' || ev.t === 'kill')) saveDirty = true;
     acc -= TICK_DT;
   }
+  // autosave: soon after anything meaningful, otherwise on a timer
+  sinceSave += dt;
+  if ((saveDirty && sinceSave > 1) || sinceSave > AUTOSAVE_EVERY) { save(); saveDirty = false; sinceSave = 0; }
   view.draw(state, acc / TICK_DT);
   hud.update(state, dt);
   requestAnimationFrame(frame);

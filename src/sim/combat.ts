@@ -2,6 +2,7 @@
 import type { GameState, Enemy, EnemyState } from '../sim';
 import { grantXp } from './skills';
 import { rollDrops } from './loot';
+import { questOnKill } from './quest';
 import { nextRandom } from './rng';
 import { resolveCollisions } from './world';
 import {
@@ -72,6 +73,7 @@ function killEnemy(s: GameState, e: Enemy) {
   if (s.targetId === e.id) s.targetId = null;
   s.events.push({ t: 'kill', id: e.id, x: e.x, z: e.z });
   rollDrops(s, e.type, e.x, e.z);
+  questOnKill(s, e.type);
   if (grantXp(s, 'combat', def.xp, e.x, e.z) > 0) refreshPlayerStats(s, true); // levelling restores health: a punchy reward
 }
 

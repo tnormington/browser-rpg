@@ -6,7 +6,6 @@
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#000}
 canvas{display:block}
-#help{position:fixed;left:8px;bottom:8px;color:#fff;font:12px sans-serif;opacity:.7;pointer-events:none}
 .hud{position:fixed;inset:0;pointer-events:none;font:13px/1.2 sans-serif;color:#fff;user-select:none;text-shadow:0 1px 2px #000}
 .frame{position:absolute;top:12px;width:230px;background:rgba(10,12,18,.7);border:1px solid #000;border-radius:4px;padding:6px}
 .frame.player{left:12px}.frame.target{left:260px;display:none;border-color:#7a2020}
@@ -33,7 +32,6 @@ canvas{display:block}
 .plate .pbar{width:60px;height:5px;background:#222;border:1px solid #000;margin:2px auto 0}.plate .fill{height:100%;background:#c23a3a}
 .plate.sel .pname{color:#ff6b5a;font-weight:bold}
 .floater.loot{color:#8affc0;font-size:18px}.floater.dropname{color:#ffe9a0;font-size:13px}
-.feed{position:absolute;left:12px;bottom:60px;font-size:13px;color:#8affc0}.feedline{margin-top:2px}
 .panel{position:absolute;top:90px;background:rgba(10,12,18,.88);border:1px solid #000;border-radius:4px;padding:8px;pointer-events:auto;text-shadow:none}
 .invpanel{right:12px;width:268px}.charpanel{right:292px;width:210px}
 .ptitle{font-weight:bold;margin-bottom:6px;color:#ffe14a}
@@ -49,7 +47,7 @@ canvas{display:block}
 .tname{font-weight:bold;font-size:14px}.tslot{opacity:.6;font-size:11px}.tstat{color:#6aff8a;margin-top:2px}.tdesc{opacity:.7;margin-top:4px;font-style:italic}.tcmp{margin-top:4px}.thint{margin-top:4px;opacity:.5;font-size:10px}
 .ctxmenu{position:fixed;display:none;z-index:11;background:rgba(5,6,10,.95);border:1px solid #888;border-radius:4px;pointer-events:auto}
 .mrow{padding:4px 14px;font-size:12px;cursor:pointer}.mrow:hover{background:#334}
-.skillspanel{left:12px;top:150px;width:220px}
+.skillspanel{left:12px;top:330px;width:220px}
 .skillrow{margin-bottom:7px}.skillhead{display:flex;justify-content:space-between;font-size:13px}.skilllvl{color:#ffe14a;font-weight:bold}
 .skillbar{height:12px}.skillbar .fill{background:#4a8ad0}.skillbar .label{line-height:12px;font-size:9px}
 .forgepanel{left:50%;top:90px;transform:translateX(-50%);width:330px}
@@ -61,10 +59,32 @@ canvas{display:block}
 .rbtn{padding:3px 10px;background:#3b5d2a;border:1px solid #000;border-radius:3px;font-size:12px;cursor:pointer}.rbtn:hover{background:#4a7a35}.rbtn.off{background:#444;opacity:.6}
 .castbar{position:absolute;left:50%;bottom:110px;width:240px;margin-left:-120px;display:none;height:18px}.castbar .fill{background:#d08a30;width:0}.castbar .label{line-height:18px}
 .nodeplate .psub{font-size:10px;color:#8affc0}
+.msglog{position:absolute;left:12px;bottom:34px;width:300px;max-height:150px;overflow-y:auto;pointer-events:auto;font-size:12px;padding:4px 6px;background:rgba(10,12,18,.45);border-radius:4px;scrollbar-width:thin}
+.msglog:empty{display:none}
+.logline{margin-top:2px;color:#ddd}.log-xp{color:#b48aff}.log-loot{color:#8affc0}.log-drop{color:#ffe9a0}.log-kill{color:#bbb}.log-lvl{color:#ffe14a;font-weight:bold}.log-quest{color:#6ad8ff;font-weight:bold}.log-bad{color:#ff6b5a}
+.tracker{position:absolute;top:84px;left:12px;width:238px;background:rgba(10,12,18,.75);border:1px solid #000;border-left:3px solid #6ad8ff;border-radius:4px;padding:8px 10px}
+.tracker.ready{border-left-color:#ffe14a;animation:readypulse 1.4s ease-in-out infinite}
+@keyframes readypulse{50%{box-shadow:0 0 12px #ffe14a}}
+.qtitle{font-weight:bold;color:#ffe14a;margin-bottom:5px}.qline{font-size:13px;margin-top:3px}.qline.done{color:#8affc0;opacity:.8}
+.qnav{display:none;align-items:center;gap:8px;margin-top:8px;padding-top:6px;border-top:1px solid #333;font-size:12px;color:#6ad8ff}
+.qarrow{display:inline-block;font-size:20px;color:#ffe14a;transition:transform .1s}
+.panel.dialogue{left:50%;top:auto;bottom:130px;transform:translateX(-50%);width:520px;border-color:#6a5a2a}
+.dhint{float:right;font-size:11px;font-weight:normal;color:#888}
+.dline{margin-bottom:8px;font-size:14px;line-height:1.4}
+.dopt{margin-top:5px;padding:5px 8px;border-radius:3px;background:rgba(60,64,80,.8);cursor:pointer;font-size:13px;color:#ffe9a0}.dopt:hover{background:#4a5070}
+.helpoverlay{left:50%;top:50%;transform:translate(-50%,-50%);width:560px;padding:16px 20px;border:1px solid #6a5a2a;z-index:20}
+.helptitle{font-size:22px;font-weight:bold;color:#ffe14a;margin-bottom:6px}.helpgoal{font-size:14px;margin-bottom:10px;line-height:1.4}
+.helpgrid{display:grid;grid-template-columns:150px 1fr;gap:4px 12px;font-size:13px}.hkey{color:#ffe14a;font-weight:bold}
+.helpnote{margin-top:10px;font-size:12px;opacity:.7}.helpok{text-align:center}
+.menubar{position:absolute;right:12px;bottom:10px;display:flex;gap:6px;pointer-events:auto}
+.mbtn{padding:4px 10px;background:rgba(10,12,18,.8);border:1px solid #555;border-radius:3px;font-size:12px;cursor:pointer}.mbtn:hover{background:#334}
+.hurt{position:absolute;inset:0;opacity:0;box-shadow:inset 0 0 120px 30px rgba(220,20,20,.75)}
+.hurt.show{animation:hurt .45s ease-out}.hurt.heavy.show{animation:hurt 1.2s ease-out}
+@keyframes hurt{0%{opacity:1}100%{opacity:0}}
+.questbanner{top:20%;color:#8affc0;font-size:64px;text-shadow:0 0 22px #1aff9a,0 3px 4px #000}.questbanner.show{animation:lvl 3.2s ease-out}
 </style>
 </head>
 <body>
-<div id="help">WASD move · click ground to move · drag to orbit · wheel to zoom · I inventory · C character · K skills · click rocks, trees and the forge</div>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

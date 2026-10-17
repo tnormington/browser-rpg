@@ -10,8 +10,17 @@ import { recipeById } from './sim/crafting';
 import { InventoryUi } from './inventory-ui';
 import { SkillsUi } from './skills-ui';
 import { ForgeUi } from './forge-ui';
+import { QuestUi } from './quest-ui';
+import { MenuUi } from './menu-ui';
+import { QUEST_NAME } from './sim/quest';
 
-export interface HudActions { inv: (a: InvAction) => void; craft: (recipe: string, count: number) => void }
+export interface HudActions {
+  inv: (a: InvAction) => void;
+  craft: (recipe: string, count: number) => void;
+  questAdvance: () => void;
+  save: () => void;
+  newGame: () => void;
+}
 
 /** The player-facing message for a refused gather/craft. Level failures say exactly what is needed. */
 function actionFailText(ev: Extract<GameEvent, { t: 'actionfail' }>): string {
@@ -65,14 +74,18 @@ export class Hud {
   private plates = new Map<number, { root: HTMLElement; fill: HTMLElement }>();
   private floaters: Floater[] = [];
   private msgAge = 99;
-  private feed: HTMLElement;
+  private log: HTMLElement;
+  private questUi: QuestUi;
+  private menuUi: MenuUi;
+  private questBanner: HTMLElement;
+  private hurt: HTMLElement;
   private invUi: InventoryUi;
   private skillsUi: SkillsUi;
   private forgeUi: ForgeUi;
   private castBar: ReturnType<typeof bar>;
   private nodePlates = new Map<number, { root: HTMLElement; sub: HTMLElement }>();
 
-  constructor(private project: Project, actions: HudActions) {
+  constructor(private project: Project, private yaw: () => number, actions: HudActions) {
     const pf = el(this.root, 'frame player');
     this.playerLvl = el(pf, 'name');
     this.hp = bar(pf, 'hp');
@@ -99,15 +112,48 @@ export class Hud {
     this.msg = el(this.root, 'msg');
     this.banner = el(this.root, 'banner');
     this.deathOverlay = el(this.root, 'death');
-    this.feed = el(this.root, 'feed');
+    this.questBanner = el(this.root, 'banner questbanner');
+    this.hurt = el(this.root, 'hurt');
+    this.log = el(this.root, 'msglog');
     this.invUi = new InventoryUi(this.root, actions.inv);
     this.skillsUi = new SkillsUi(this.root);
     this.forgeUi = new ForgeUi(this.root, actions.craft);
     this.castBar = bar(this.root, 'castbar');
+    this.questUi = new QuestUi(this.root, actions.questAdvance);
+    this.menuUi = new MenuUi(this.root, actions);
   }
 
   toggle(which: 'inv' | 'char' | 'skills') {
     if (which === 'skills') this.skillsUi.toggle(); else this.invUi.toggle(which);
+  }
+
+  toggleHelp() { this.menuUi.toggle(); }
+
+  /** Esc: closes the topmost overlay (help, dialogue). Returns true if it closed something. */
+  closeOverlay(): boolean {
+    if (this.menuUi.isOpen) { this.menuUi.setOpen(false); return true; }
+    if (this.questUi.isOpen) { this.questUi.setOpen(false); return true; }
+    return false;
+  }
+
+  /** A line in the scrolling message log (and optionally the centre-screen message). */
+  note(text: string, cls = 'log-info') {
+    const line = el(this.log, `logline ${cls}`, text);
+    while (this.log.childElementCount > 80) this.log.firstElementChild!.remove();
+    this.log.scrollTop = this.log.scrollHeight;
+    return line;
+  }
+
+  say(text: string) {
+    this.msg.textContent = text;
+    this.msgAge = 0;
+  }
+
+  private popBanner(b: HTMLElement, text: string) {
+    b.textContent = text;
+    b.classList.remove('show');
+    void b.offsetWidth; // restart the CSS animation
+    b.classList.add('show');
   }
 
   onEvents(events: GameEvent[], s: GameState) {
@@ -116,20 +162,22 @@ export class Hud {
         const toPlayer = ev.target === 'player';
         const cls = toPlayer ? 'dmg-in' : ev.dot ? 'dmg-dot' : ev.crit ? 'dmg-crit' : 'dmg-out';
         this.float(`${ev.amount}${ev.crit ? '!' : ''}`, cls, ev.x, toPlayer ? 2.6 : 2.4, ev.z);
+        if (toPlayer) this.hurtFlash(false);
       } else if (ev.t === 'heal') {
         if (ev.amount > 0) this.float(`+${ev.amount}`, 'heal', ev.x, 2.6, ev.z);
       } else if (ev.t === 'xp') {
         this.float(`+${ev.amount} ${ev.skill === 'combat' ? '' : SKILLS[ev.skill].name + ' '}XP`, 'xpgain', ev.x, 3.2, ev.z);
+        this.note(`+${ev.amount} ${SKILLS[ev.skill].name} XP`, 'log-xp');
       } else if (ev.t === 'fail') {
         if (ev.reason === 'gcd') continue; // too noisy while mashing; the sweep already shows it
         this.say(FAIL_TEXT[ev.reason]);
       } else if (ev.t === 'loot') {
         const name = ITEMS[ev.item].name;
         this.float(`+${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`, 'loot', s.player.x, 3.0, s.player.z);
-        const line = el(this.feed, 'feedline', `Looted ${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`);
-        setTimeout(() => line.remove(), 5000);
+        this.note(`Looted ${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`, 'log-loot');
       } else if (ev.t === 'drop') {
         this.float(ITEMS[ev.item].name, 'dropname', ev.x, 1.6, ev.z);
+        this.note(`Dropped: ${ITEMS[ev.item].name}`, 'log-drop');
       } else if (ev.t === 'actionfail') {
         this.say(actionFailText(ev));
       } else if (ev.t === 'forge') {
@@ -137,22 +185,39 @@ export class Hud {
       } else if (ev.t === 'crafted') {
         const name = ITEMS[ev.item].name;
         this.float(`Smithed ${name}`, 'loot', s.player.x, 3.0, s.player.z);
-        const line = el(this.feed, 'feedline', `Smithed ${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`);
-        setTimeout(() => line.remove(), 5000);
+        this.note(`Smithed ${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`, 'log-loot');
       } else if (ev.t === 'invfull') {
         this.say('Inventory full');
       } else if (ev.t === 'levelup') {
-        this.banner.textContent = `LEVEL UP!  ${SKILLS[ev.skill].name} ${ev.level}`;
-        this.banner.classList.remove('show');
-        void this.banner.offsetWidth; // restart the CSS animation
-        this.banner.classList.add('show');
+        this.popBanner(this.banner, `LEVEL UP!  ${SKILLS[ev.skill].name} ${ev.level}`);
+        this.note(`Level up! ${SKILLS[ev.skill].name} is now level ${ev.level}`, 'log-lvl');
+      } else if (ev.t === 'kill') {
+        const e = s.enemies.find(x => x.id === ev.id);
+        if (e) this.note(`${ENEMY_TYPES[e.type].name} slain`, 'log-kill');
+      } else if (ev.t === 'npc') {
+        this.questUi.setOpen(true, s);
+      } else if (ev.t === 'quest') {
+        if (ev.what === 'accept') this.note(`Quest accepted: ${QUEST_NAME}`, 'log-quest');
+        else if (ev.what === 'stage') this.note('Quest updated: see the tracker', 'log-quest');
+        else if (ev.what === 'complete') {
+          this.popBanner(this.questBanner, 'QUEST COMPLETE');
+          this.note(`Quest complete: ${QUEST_NAME}`, 'log-quest');
+        }
+      } else if (ev.t === 'death') {
+        this.note('You have died.', 'log-bad');
+        this.hurtFlash(true);
+      } else if (ev.t === 'respawn') {
+        this.note('You wake at the clearing.', 'log-info');
       }
     }
   }
 
-  private say(text: string) {
-    this.msg.textContent = text;
-    this.msgAge = 0;
+  /** Red screen-edge flash when the player is hit; a longer one on death. */
+  private hurtFlash(heavy: boolean) {
+    this.hurt.classList.toggle('heavy', heavy);
+    this.hurt.classList.remove('show');
+    void this.hurt.offsetWidth;
+    this.hurt.classList.add('show');
   }
 
   private float(text: string, cls: string, x: number, y: number, z: number) {
@@ -229,6 +294,7 @@ export class Hud {
 
     this.invUi.update(s);
     this.skillsUi.update(s);
+    this.questUi.update(s, this.yaw());
     this.forgeUi.update(s);
     this.updateCastBar(s);
     this.updateNodePlates(s);

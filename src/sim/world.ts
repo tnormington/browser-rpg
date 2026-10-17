@@ -10,11 +10,14 @@ export const LANDMARKS = {
   clearing: { x: 0, z: 0, r: 9 },
   forge: { x: 20, z: -8 },
   caveMouth: { x: -18, z: -24 },
+  npc: { x: 5, z: 2, r: 0.7 },
 };
 
 export const OBSTACLES: Obstacle[] = [
   // forge building
   { x: 20, z: -8, r: 2.6 },
+  // quest giver
+  { x: 5, z: 2, r: 0.7 },
   // cave mouth: rock walls either side of a walkable gap facing +z
   { x: -21, z: -26, r: 2.2 },
   { x: -15, z: -26, r: 2.2 },

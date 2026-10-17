@@ -9,6 +9,11 @@ import { SKILL_IDS, SKILLS, grantXp } from './sim/skills';
 import { NODE_TYPES } from './sim/gathering';
 import { RECIPES, FORGE_REACH } from './sim/crafting';
 import { LANDMARKS, ROCKS, TREES } from './sim/world';
+import { refreshPlayerStats } from './sim/combat';
+import {
+  BLADE_PLAN, DIALOGUE, HUNT_GOALS, NPC, QUEST_STAGES, RECOMMENDED_COMBAT, REWARD, TALK_RANGE, questView,
+} from './sim/quest';
+import { SAVE_VERSION, deserialize, serialize } from './sim/save';
 
 let checks = 0;
 function assert(cond: unknown, msg: string): asserts cond {
@@ -674,6 +679,263 @@ section('M3 golden path: fight, mine, smith, equip, beat the Cave Brute');
   const wb = sameBrute(s);
   const tw = fight(s, wb, 120);
   assert(st(wb) === 'dead' && !s.player.dead, `with the blade, level ${combatLevel} beats the Cave Brute in ${tw.toFixed(1)}s (lowest hp ${Math.round(minHpSeen)}/${s.player.maxHp})`);
+}
+
+// ---------------------------------------------------------------------------
+// M4 helpers
+const kills = (s: GameState, t: string): number => s.quest.kills[t] ?? 0;
+const stage = (s: GameState): string => s.quest.stage; // via a function so TS doesn't narrow across sim calls
+const lineTexts = (s: GameState) => questView(s).lines.map(l => l.text);
+const sawQuest = (s: GameState, what: string) => hasEvent(s, e => e.t === 'quest' && e.what === what);
+/** Click the NPC: walk over and open the dialogue. */
+function talkToNpc(s: GameState) {
+  for (let tries = 0; tries < 5; tries++) {
+    tick(s, { interact: { k: 'npc' } });
+    let opened = hasEvent(s, e => e.t === 'npc');
+    for (let n = 0; busy(s) && n++ < 2000;) { tick(s); opened ||= hasEvent(s, e => e.t === 'npc'); }
+    if (opened) return true;
+    defend(s);
+  }
+  return false;
+}
+/** Walk with click-to-move until within `within` of a point (gives up after maxSec). Enemies that aggro on the way are the caller's problem. */
+function walkTo(s: GameState, x: number, z: number, within = 2, maxSec = 40) {
+  tick(s, { clickTarget: { x, z } });
+  for (let t = 0; t < maxSec && dist2(s.player, { x, z }) > within; t += TICK_DT) {
+    if (s.player.dead || (!s.moveTarget && !s.player.moving)) break;
+    tick(s);
+  }
+  return dist2(s.player, { x, z }) <= within;
+}
+/** Rest (real time) until nearly healed and energy is back. No cheating: the clock keeps running. */
+function rest(s: GameState) {
+  for (let t = 0; t < 90 && (s.player.hp < s.player.maxHp * 0.85 || s.player.energy < 60); t += 1) run(s, 1);
+}
+/** Hunt one living enemy of `type`: walk to it, fight it, recover. */
+function huntOne(s: GameState, type: string) {
+  for (let guard = 0; guard < 6; guard++) {
+    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); continue; }
+    const e = s.enemies.filter(x => x.type === type && st(x) !== 'dead').sort((a, b) => dist2(a, s.player) - dist2(b, s.player))[0];
+    if (!e) { run(s, 2); continue; }
+    rest(s);
+    if (!walkTo(s, e.x, e.z, 2.5)) { if (!s.player.dead && st(e) !== 'dead') standNear(s, e, 2.5); } // path blocked by scenery: step in
+    fight(s, e, 90);
+    if (st(e) === 'dead') return;
+  }
+}
+
+// ---------------------------------------------------------------------------
+section('M4 quest: NPC, dialogue gating, stage transitions, kill credit');
+{
+  const s = quietState(21);
+  assert(stage(s) === 'offer' && questView(s).ready, 'a new character starts at the quest offer');
+  assert(DIALOGUE.offer.options.some(o => o.advance), 'the offer dialogue has an option that accepts the quest');
+  s.player.x = -20; s.player.z = 20; // far from the NPC
+  tick(s, { questAdvance: true });
+  assert(stage(s) === 'offer', 'accepting from across the map does nothing: you have to be in earshot');
+  s.player.x = 0; s.player.z = 6; // the spawn point: walk over
+  assert(talkToNpc(s), 'clicking the NPC walks over and opens the dialogue (npc event)');
+  assert(Math.hypot(s.player.x - NPC.x, s.player.z - NPC.z) <= TALK_RANGE, 'the player stands within talking range');
+  tick(s, { questAdvance: true });
+  assert(stage(s) === 'hunt' && sawQuest(s, 'accept'), 'accepting moves the quest to the hunt and raises a quest event');
+  tick(s, { questAdvance: true });
+  assert(stage(s) === 'hunt', 'advance is a no-op at stages with no hand-in');
+
+  assert(lineTexts(s).includes('Wild Boars slain: 0/4') && lineTexts(s).includes('Dire Wolves slain: 0/3'), 'tracker shows live counters: ' + lineTexts(s).join(' | '));
+  // the Brute earns nothing before its stage
+  const brute = enemyOf(s, 'brute');
+  brute.state = 'idle'; brute.hp = 1; brute.respawnIn = 0;
+  standNear(s, brute, 2.5);
+  fight(s, brute, 30);
+  assert(stage(s) === 'hunt', 'killing the Cave Brute early does not advance the quest');
+  s.player.dead = false; s.player.hp = s.player.maxHp;
+
+  const boar = enemyOf(s, 'boar');
+  boar.state = 'idle'; boar.hp = 1;
+  standNear(s, boar, 2.5);
+  fight(s, boar, 30);
+  assert(kills(s, 'boar') === 1 && sawQuest(s, 'progress') && lineTexts(s)[0] === 'Wild Boars slain: 1/4', 'a boar kill counts and the tracker updates to 1/4');
+  for (let i = 0; i < 3; i++) { const b = enemyOf(s, 'boar', (i + 1) % 3); b.state = 'idle'; b.hp = 1; b.respawnIn = 0; standNear(s, b, 2.5); fight(s, b, 30); s.player.hp = s.player.maxHp; }
+  assert(kills(s, 'boar') === 4 && stage(s) === 'hunt', 'four boars: boar line done, still hunting wolves');
+  const extra = enemyOf(s, 'boar'); extra.state = 'idle'; extra.hp = 1; standNear(s, extra, 2.5); fight(s, extra, 30);
+  assert(kills(s, 'boar') === 4, 'counters cap at the goal');
+  for (let i = 0; i < 3; i++) { const w = enemyOf(s, 'wolf', i); w.state = 'idle'; w.hp = 1; w.respawnIn = 0; standNear(s, w, 2.5); fight(s, w, 30); s.player.hp = s.player.maxHp; }
+  assert(stage(s) === 'report1' && sawQuest(s, 'stage') && questView(s).ready, 'hunt complete: quest moves to "report to the Warden"');
+  assert(questView(s).target?.label === NPC.name, 'the objective arrow points at the Warden');
+
+  assert(talkToNpc(s), 'walk back to the Warden');
+  tick(s, { questAdvance: true });
+  assert(stage(s) === 'forge', 'the Warden sends you to forge the blade');
+  assert(questView(s).lines.length === 3 && questView(s).target?.label === 'Iron Rock', 'tracker lists ore / coal / logs and points at iron: ' + lineTexts(s).join(' | '));
+
+  // the stage ends the moment the blade exists, whatever route got it
+  addItem(s.player.inventory, 'forged_blade', 1);
+  tick(s);
+  assert(stage(s) === 'brute', 'owning the blade moves the quest to the Brute');
+  assert(lineTexts(s).some(t => t.startsWith('Equip the blade')), 'tracker tells you to equip it');
+  tick(s, { inv: [{ k: 'equip', slot: s.player.inventory.findIndex(x => x?.id === 'forged_blade') }] });
+  assert(lineTexts(s).includes('Blade equipped'), 'tracker notices when it is equipped');
+  assert(questView(s).target?.label === 'Cave Brute', 'objective arrow points at the Cave Brute');
+
+  const b2 = enemyOf(s, 'brute');
+  b2.state = 'idle'; b2.hp = 1; standNear(s, b2, 2.5);
+  fight(s, b2, 30);
+  assert(stage(s) === 'report2' && questView(s).ready, 'the Brute dies: quest wants the hand-in');
+  const xp0 = s.player.combat.xp, mine0 = s.player.skills.mining.xp;
+  assert(talkToNpc(s), 'return to the Warden');
+  tick(s, { questAdvance: true });
+  assert(stage(s) === 'done' && sawQuest(s, 'complete'), 'turning in completes the quest');
+  assert(s.player.combat.xp >= xp0 + 400 && s.player.skills.mining.xp === mine0 + 150, 'rewards: combat, mining and smithing XP');
+  tick(s, { questAdvance: true });
+  assert(s.player.combat.xp === xp0 + REWARD[0].xp && questView(s).target === null, 'completing twice pays once; nothing left to point at');
+  for (const stg of QUEST_STAGES) assert(DIALOGUE[stg].lines.length > 0 && DIALOGUE[stg].options.length > 0, `dialogue exists for stage "${stg}"`);
+}
+
+// ---------------------------------------------------------------------------
+section('M4 save / load');
+{
+  const s = quietState(33);
+  s.player.x = 12.5; s.player.z = -3.25; s.player.facing = 1.2;
+  grantXp(s, 'combat', 400, 0, 0); grantXp(s, 'mining', 300, 0, 0); grantXp(s, 'smithing', 90, 0, 0); grantXp(s, 'woodcutting', 30, 0, 0);
+  refreshPlayerStats(s, true);
+  addItem(s.player.inventory, 'iron_ore', 17); addItem(s.player.inventory, 'forged_blade', 1); addItem(s.player.inventory, 'iron_helm', 1);
+  tick(s, { inv: [{ k: 'equip', slot: s.player.inventory.findIndex(x => x?.id === 'iron_helm') }] });
+  s.player.hp = 77; s.player.energy = 42; // after the equip tick, which would regen a little
+  s.quest.stage = 'forge'; s.quest.kills = { boar: 4, wolf: 3 };
+  const node = s.nodes.find(n => n.type === 'iron')!; node.charges = 0; node.respawnIn = 12.5;
+  const tree = s.nodes.find(n => n.type === 'tree')!; tree.charges = 1;
+  const wolf = enemyOf(s, 'wolf'); wolf.state = 'dead'; wolf.respawnIn = 17;
+  s.drops.push({ id: s.nextDropId++, item: 'logs', qty: 3, x: 1, z: 2, age: 5, blocked: false });
+
+  const raw = serialize(s);
+  const l = deserialize(raw)!;
+  assert(l !== null, 'a fresh save loads');
+  assert(Math.abs(l.player.x - 12.5) < 1e-9 && Math.abs(l.player.z + 3.25) < 1e-9 && l.player.hp === 77 && l.player.energy === 42, 'position, health and energy survive');
+  assert(SKILL_IDS.every(id => l.player.skills[id].xp === s.player.skills[id].xp && l.player.skills[id].level === s.player.skills[id].level), 'every skill XP and level survives');
+  assert(l.player.combat === l.player.skills.combat && l.player.maxHp === s.player.maxHp, 'combat track is still the shared object; max hp follows the level');
+  assert(JSON.stringify(l.player.inventory) === JSON.stringify(s.player.inventory) && l.player.equipment.head === 'iron_helm', 'inventory and equipment survive');
+  assert(l.player.stats.armor === s.player.stats.armor && l.player.stats.armor > 0, 'gear stats are re-derived');
+  assert(l.quest.stage === 'forge' && l.quest.kills.boar === 4 && l.quest.kills.wolf === 3, 'quest stage and counters survive');
+  const ln = l.nodes.find(n => n.id === node.id)!;
+  assert(ln.charges === 0 && Math.abs(ln.respawnIn - 12.5) < 1e-9 && l.nodes.find(n => n.id === tree.id)!.charges === 1, 'node depletion and respawn timers survive');
+  const lw = l.enemies.find(e => e.id === wolf.id)!;
+  assert(st(lw) === 'dead' && Math.abs(lw.respawnIn - 17) < 1e-9, 'a dead enemy stays dead and keeps its respawn timer');
+  assert(l.drops.length === 1 && l.drops[0].item === 'logs' && l.drops[0].qty === 3, 'ground drops survive');
+  run(l, 20);
+  assert(st(l.enemies.find(e => e.id === wolf.id)!) === 'idle' && l.nodes.find(n => n.id === node.id)!.charges > 0, 'respawn timers keep ticking after load');
+
+  // saving while chased and dead
+  const d = createState(4);
+  d.player.dead = true; d.player.hp = 0; d.player.x = 25; d.player.z = 25;
+  const dl = deserialize(serialize(d))!;
+  assert(!dl.player.dead && dl.player.hp === dl.player.maxHp && dl.player.z === 6, 'a save made while dead wakes you at the clearing');
+  const chase = createState(4);
+  const ce = enemyOf(chase, 'boar'); ce.state = 'chase'; ce.hp = 5; ce.x += 3;
+  const cl = deserialize(serialize(chase))!;
+  assert(st(cl.enemies.find(e => e.id === ce.id)!) === 'idle' && cl.enemies.find(e => e.id === ce.id)!.hp === ce.maxHp, 'enemies mid-fight reset to calm at their spawn');
+
+  // fail safe
+  const v0 = JSON.parse(raw);
+  assert(deserialize(JSON.stringify({ ...v0, version: SAVE_VERSION + 1 })) === null, 'wrong save version -> null (caller starts a new game)');
+  assert(deserialize(JSON.stringify({ ...v0, version: undefined })) === null, 'missing version -> null');
+  assert(deserialize('not json {{') === null && deserialize('') === null && deserialize('null') === null && deserialize('[]') === null, 'garbage -> null');
+  const badItem = structuredClone(v0); badItem.player.inventory[0] = { id: 'not_an_item', qty: 1 };
+  assert(deserialize(JSON.stringify(badItem)) === null, 'unknown item id -> null');
+  const badXp = structuredClone(v0); badXp.player.xp.combat = 'lots';
+  assert(deserialize(JSON.stringify(badXp)) === null, 'non-numeric xp -> null');
+  const badGear = structuredClone(v0); badGear.player.equipment.weapon = 'iron_helm';
+  assert(deserialize(JSON.stringify(badGear)) === null, 'armour in the weapon slot -> null');
+  const badStage = structuredClone(v0); badStage.quest.stage = 'nonsense';
+  assert(deserialize(JSON.stringify(badStage)) === null, 'unknown quest stage -> null');
+  const short = structuredClone(v0); short.player.inventory.length = 5;
+  assert(deserialize(JSON.stringify(short)) === null, 'truncated inventory -> null');
+}
+
+// ---------------------------------------------------------------------------
+section('M4 FULL GOLDEN PATH: one continuous run as a new character');
+{
+  let s = createState(2026);
+  const t0 = s.tick;
+  const clock = () => (s.tick - t0) * TICK_DT;
+  const milestone = (what: string) => console.log(`  [${(clock() / 60).toFixed(1)} min] ${what}`);
+
+  // 1. a new character: spawn, find the NPC, take the quest
+  assert(stage(s) === 'offer' && s.player.combat.level === 1 && s.player.inventory.every(x => x === null), 'new character: level 1, empty bag, quest not started');
+  assert(talkToNpc(s), 'walk up to Warden Hale; dialogue opens');
+  tick(s, { questAdvance: true });
+  assert(stage(s) === 'hunt', 'quest accepted');
+  milestone('quest accepted');
+
+  // 2. the hunt: real fights, real walking
+  for (const [type, goal] of Object.entries(HUNT_GOALS)) {
+    for (let guard = 0; (s.quest.kills[type] ?? 0) < goal && guard < 20; guard++) huntOne(s, type);
+    assert((s.quest.kills[type] ?? 0) >= goal || stage(s) !== 'hunt', `hunted ${goal} ${ENEMY_TYPES[type].name}(s)`);
+  }
+  assert(stage(s) === 'report1', 'hunt done: tracker says go back to the Warden');
+  assert(s.player.combat.level >= RECOMMENDED_COMBAT, `combat level ${s.player.combat.level} from the hunt alone`);
+  milestone(`hunt complete, combat level ${s.player.combat.level}`);
+
+  // 3. report in; the Warden points at the Brute and the forge
+  assert(talkToNpc(s), 'back to the Warden');
+  tick(s, { questAdvance: true });
+  assert(stage(s) === 'forge', 'the Warden asks for the blade');
+
+  // 4. the RuneScape loop, driven by the tracker's own numbers
+  s.player.inventory = s.player.inventory.map(() => null); // keep loot from hunting out of the way of the counts below
+  gatherUntil(s, 'iron', BLADE_PLAN.ore);
+  assert(lineTexts(s)[0] === `Mine Iron Ore: ${BLADE_PLAN.ore}/${BLADE_PLAN.ore}`, 'tracker: iron done (' + lineTexts(s)[0] + ')');
+  assert(s.player.skills.mining.level >= NODE_TYPES.coal.level, `Mining ${s.player.skills.mining.level}: coal unlocked by the iron`);
+  gatherUntil(s, 'coal', BLADE_PLAN.coal);
+  gatherUntil(s, 'tree', BLADE_PLAN.logs);
+  assert(lineTexts(s).slice(0, 3).every(l => /(\d+)\/\1/.test(l)), 'tracker: all gathering lines complete: ' + lineTexts(s).join(' | '));
+  assert(questView(s).target?.label === 'Forge', 'objective arrow now points at the forge');
+  milestone(`gathered ${BLADE_PLAN.ore} ore, ${BLADE_PLAN.coal} coal, ${BLADE_PLAN.logs} logs`);
+
+  // 5. save here, reload, carry on: progress must survive mid-quest
+  const reloaded = deserialize(serialize(s))!;
+  assert(reloaded !== null && reloaded.quest.stage === 'forge' && countOf(reloaded, 'coal') === countOf(s, 'coal'), 'saved mid-quest and reloaded');
+  s = reloaded;
+  assert(JSON.stringify(questView(s)) === JSON.stringify(questView(deserialize(serialize(s))!)), 'tracker is identical after another round trip');
+
+  assert(atForge(s), 'walk to the forge');
+  craft(s, 'iron_bar', BLADE_PLAN.bars);
+  assert(lineTexts(s).some(l => l.startsWith(`Smelt Iron Bars at the forge: ${BLADE_PLAN.bars}/${BLADE_PLAN.bars}`)), 'tracker: bars done');
+  craft(s, 'steel_bar', BLADE_PLAN.steel);
+  assert(lineTexts(s).some(l => l === `Harden Steel Bars: ${BLADE_PLAN.steel}/${BLADE_PLAN.steel}`) && lineTexts(s).includes("Forge the Forgemaster's Blade"), 'tracker: steel done, blade is the last line');
+  craft(s, 'forged_blade', 1);
+  assert(stage(s) === 'brute' && countOf(s, 'forged_blade') === 1, "forged the blade: the quest moves to the Brute with no further talking needed");
+  milestone('blade forged');
+
+  // 6. equip it, and kill the thing that beat you
+  assert(lineTexts(s).some(l => l.startsWith('Equip the blade')), 'tracker: equip the blade');
+  tick(s, { inv: [{ k: 'equip', slot: s.player.inventory.findIndex(x => x?.id === 'forged_blade') }] });
+  assert(s.player.equipment.weapon === 'forged_blade', 'blade equipped');
+  const brute = enemyOf(s, 'brute');
+  rest(s);
+  walkTo(s, brute.x, brute.z, 3.5, 60);
+  if (dist2(s.player, brute) > 5) standNear(s, brute, 3.5);
+  const bt = fight(s, brute, 120);
+  assert(st(brute) === 'dead' && !s.player.dead, `the Cave Brute falls in ${bt.toFixed(0)}s (lowest hp ${Math.round(minHpSeen)}/${s.player.maxHp})`);
+  assert(stage(s) === 'report2', 'tracker: return to the Warden');
+  milestone('Cave Brute slain');
+
+  // 7. a save after the boss, a reload, and the hand-in
+  s = deserialize(serialize(s))!;
+  assert(stage(s) === 'report2' && s.player.equipment.weapon === 'forged_blade' && s.enemies.find(e => e.type === 'brute')!.state === 'dead', 'reloaded after the boss kill: still at the hand-in, blade still equipped, Brute still dead');
+  const lvl = s.player.combat.level;
+  assert(talkToNpc(s), 'walk back to the Warden');
+  tick(s, { questAdvance: true });
+  assert(stage(s) === 'done' && sawQuest(s, 'complete'), 'quest complete');
+  assert(s.player.combat.level >= lvl, 'reward XP applied');
+  milestone('quest complete');
+  console.log(`  full path: ${(clock() / 60).toFixed(1)} min of game time for a bot that never idles (a first-time player will take longer)`);
+  assert(clock() >= 5 * 60 && clock() <= 30 * 60, 'the path is minutes, not seconds or hours (5 to 30 min of bot play)');
+
+  // every quest stage was reachable without a dead end, and the end state is stable
+  run(s, 30);
+  assert(stage(s) === 'done' && !s.player.dead, 'the world stays quiet after the quest');
+  const finalSave = deserialize(serialize(s))!;
+  assert(finalSave.quest.stage === 'done' && questView(finalSave).lines[0].done, 'a completed quest loads as completed');
 }
 
 console.log(`\nAll ${checks} checks passed.`);

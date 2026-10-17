@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
 import { ENEMY_TYPES } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
+import { NPC, QuestStage } from './sim/quest';
+import { Particles, Rings } from './fx';
 
 const mesh = (g: THREE.BufferGeometry, color: number) =>
   new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color }));
@@ -27,6 +29,12 @@ export class Renderer {
   private weapon: THREE.Mesh;
   private nodes = new Map<number, NodeView>();
   private forgeParts: THREE.Object3D[] = [];
+  private npcParts: THREE.Object3D[] = [];
+  private npcMarker!: THREE.Sprite;
+  private markerTex!: Record<'offer' | 'ready' | 'wait', THREE.Texture>;
+  private particles = new Particles();
+  private rings: Rings;
+  private lastDraw = performance.now();
 
   // orbit camera (render-side only; sim never sees it except via input direction)
   yaw = 0;
@@ -46,6 +54,9 @@ export class Renderer {
     this.ground = mesh(new THREE.PlaneGeometry(WORLD_HALF * 2, WORLD_HALF * 2).rotateX(-Math.PI / 2), 0x5a8f3c);
     this.scene.add(this.ground);
     this.buildZone();
+    this.rings = new Rings(this.scene);
+    this.scene.add(this.particles.points);
+    this.buildNpc();
 
     this.player = mesh(new THREE.CapsuleGeometry(0.5, 1, 4, 12), 0x3a6ea5);
     this.scene.add(this.player);
@@ -109,6 +120,47 @@ export class Renderer {
     }
     // beyond the boundary: dark ground so the edge reads as the end of the world
     add(mesh(new THREE.PlaneGeometry(400, 400).rotateX(-Math.PI / 2), 0x2d4a22), 0, -0.05, 0);
+  }
+
+  /** Quest giver: robed figure with a hood and staff, and a bobbing ! / ? marker above. */
+  private buildNpc() {
+    const group = new THREE.Group();
+    group.position.set(NPC.x, 0, NPC.z);
+    group.rotation.y = Math.atan2(0 - NPC.x, 6 - NPC.z); // faces the spawn point
+    const part = (g: THREE.BufferGeometry, color: number, y: number, x = 0, z = 0) => {
+      const m = mesh(g, color);
+      m.position.set(x, y, z);
+      group.add(m);
+      this.npcParts.push(m);
+      return m;
+    };
+    part(new THREE.ConeGeometry(0.7, 1.7, 10), 0x7a3a8a, 0.85);
+    part(new THREE.SphereGeometry(0.3, 12, 10), 0xe0b890, 1.95);
+    part(new THREE.ConeGeometry(0.34, 0.5, 10), 0x5a2a6a, 2.3);
+    part(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), 0x6b4a2b, 1.3, 0.7, 0.15);
+    part(new THREE.SphereGeometry(0.14, 8, 8), 0x6ad8ff, 2.7, 0.7, 0.15);
+    this.scene.add(group);
+
+    const tex = (ch: string, color: string) => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const g = c.getContext('2d')!;
+      g.font = 'bold 56px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.lineWidth = 6; g.strokeStyle = '#000'; g.strokeText(ch, 32, 34);
+      g.fillStyle = color; g.fillText(ch, 32, 34);
+      return new THREE.CanvasTexture(c);
+    };
+    this.markerTex = { offer: tex('!', '#ffe14a'), ready: tex('?', '#ffe14a'), wait: tex('?', '#9a9a9a') };
+    this.npcMarker = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.markerTex.offer, depthTest: false }));
+    this.npcMarker.scale.set(1.1, 1.1, 1);
+    this.npcMarker.renderOrder = 10;
+    this.scene.add(this.npcMarker);
+  }
+
+  private markerFor(stage: QuestStage): 'offer' | 'ready' | 'wait' | null {
+    if (stage === 'offer') return 'offer';
+    if (stage === 'report1' || stage === 'report2') return 'ready';
+    return stage === 'done' ? null : 'wait';
   }
 
   private resize() {
@@ -205,13 +257,82 @@ export class Renderer {
   onEvents(events: GameEvent[], s: GameState) {
     for (const ev of events) {
       if (ev.t === 'hit') {
-        if (ev.target === 'player') this.shakeMag = Math.max(this.shakeMag, 0.12);
-        else this.shakeMag = Math.max(this.shakeMag, ev.crit ? 0.2 : ev.slot === 1 ? 0.14 : 0.04);
+        if (ev.target === 'player') {
+          this.shakeMag = Math.max(this.shakeMag, 0.12);
+          this.particles.burst(ev.x, 1.2, ev.z, { color: [0xff3030, 0xff7050], count: 12, speed: 4, life: 0.5 });
+        } else {
+          this.shakeMag = Math.max(this.shakeMag, ev.crit ? 0.2 : ev.slot === 1 ? 0.14 : 0.04);
+          this.impact(s, ev);
+        }
       } else if (ev.t === 'cast') this.castPunch = 0.12;
-      else if (ev.t === 'levelup') { this.levelRingAge = 0; this.shakeMag = Math.max(this.shakeMag, 0.1); }
-      else if (ev.t === 'death') this.shakeMag = 0.3;
+      else if (ev.t === 'heal') {
+        this.particles.burst(ev.x, 0.4, ev.z, { color: [0x5aff7a, 0xbaffc8], count: 24, speed: 1.6, up: 3.5, gravity: -1, life: 1 });
+        this.rings.pulse(ev.x, 0.15, ev.z, 0x5aff7a, 2.2, 0.6);
+      } else if (ev.t === 'levelup') {
+        this.levelRingAge = 0;
+        this.shakeMag = Math.max(this.shakeMag, 0.1);
+        const p = s.player;
+        this.particles.burst(p.x, 0.3, p.z, { color: [0xffe14a, 0xffffff, 0xffa030], count: 70, speed: 3, up: 8, gravity: -6, life: 1.4 });
+        this.rings.pulse(p.x, 0.2, p.z, 0xffe14a, 4, 0.9);
+      } else if (ev.t === 'kill') {
+        const type = s.enemies.find(e => e.id === ev.id)!.type, big = type === 'brute';
+        this.particles.burst(ev.x, 0.8, ev.z, { color: [0xbbbbbb, 0x888888, 0xff9a4a], count: big ? 70 : 32, speed: big ? 6 : 4, up: 2, life: 0.9 });
+        this.rings.pulse(ev.x, 0.15, ev.z, 0xffffff, big ? 5 : 2.5, 0.5);
+        if (big) this.shakeMag = Math.max(this.shakeMag, 0.35);
+      } else if (ev.t === 'drop') {
+        this.particles.burst(ev.x, 0.6, ev.z, { color: TIER_COLORS[ITEMS[ev.item].tier], count: 14, speed: 1.5, up: 3, gravity: -5, life: 0.8 });
+      } else if (ev.t === 'loot') {
+        this.particles.burst(s.player.x, 1.6, s.player.z, { color: [0x8affc0, 0xffffff], count: 12, speed: 1.2, up: 2.5, gravity: -3, life: 0.7 });
+      } else if (ev.t === 'depleted') {
+        const n = s.nodes.find(x => x.id === ev.id)!;
+        this.particles.burst(n.x, 1, n.z, { color: n.type === 'tree' ? [0x2f6b2f, 0x6b4a2b] : [0x888888, 0x555555], count: 24, speed: 3, up: 1, life: 0.8 });
+      } else if (ev.t === 'crafted') {
+        const f = LANDMARKS.forge;
+        this.particles.burst(f.x - 3, 0.9, f.z + 2, { color: [0xffb040, 0xff6a1a, 0xffffff], count: 50, speed: 5, up: 4, life: 0.9 });
+        this.rings.pulse(f.x - 3, 0.3, f.z + 2, 0xff9a3a, 3, 0.6);
+      } else if (ev.t === 'quest') {
+        const p = s.player;
+        if (ev.what === 'complete') this.fireworks(p.x, p.z);
+        else this.particles.burst(p.x, 1, p.z, { color: [0x6ad8ff, 0xffffff], count: 26, speed: 2, up: 4, gravity: -3, life: 1 });
+      } else if (ev.t === 'death') {
+        this.shakeMag = 0.3;
+        this.particles.burst(s.player.x, 1, s.player.z, { color: [0xff2020, 0x701010], count: 50, speed: 5, up: 3, life: 1.1 });
+      }
     }
-    void s;
+  }
+
+  /** Ability-specific hit feedback: each of the four reads differently at a glance. */
+  private impact(s: GameState, ev: Extract<GameEvent, { t: 'hit' }>) {
+    const p = s.player, y = 1.2;
+    if (ev.dot) return void this.particles.burst(ev.x, y, ev.z, { color: 0xd070ff, count: 5, speed: 1.5, up: 1, life: 0.4 });
+    if (ev.slot === 1) {
+      this.particles.burst(ev.x, 0.5, ev.z, { color: [0xff8a1a, 0xffd24a, 0xffffff], count: 36, speed: 6, up: 3, life: 0.7 });
+      this.rings.pulse(ev.x, 0.15, ev.z, 0xff8a1a, 3.2, 0.4);
+    } else if (ev.slot === 2) {
+      this.particles.trail(p.x, 1.4, p.z, ev.x, y, ev.z, 0xd070ff);
+      this.particles.burst(ev.x, y, ev.z, { color: [0xd070ff, 0xffffff], count: 16, speed: 3, life: 0.5 });
+    } else {
+      this.particles.burst(ev.x, y, ev.z, { color: [0xffffff, 0xffe9a0], count: 10, speed: 4, life: 0.35 });
+    }
+    if (ev.crit) this.particles.burst(ev.x, y + 0.4, ev.z, { color: [0xffd24a, 0xffffff], count: 20, speed: 5, up: 2, life: 0.6 });
+  }
+
+  /** Quest-complete fanfare: staggered coloured bursts over the player. */
+  private fireworks(x: number, z: number) {
+    const palettes = [[0xff4a4a, 0xffa0a0], [0x4aff7a, 0xa0ffc0], [0x4ab0ff, 0xa0d8ff], [0xffe14a, 0xffffff], [0xd070ff, 0xffffff]];
+    palettes.forEach((pal, i) => setTimeout(() => {
+      const a = (i / palettes.length) * Math.PI * 2;
+      this.particles.burst(x + Math.cos(a) * 3, 6 + (i % 2) * 2, z + Math.sin(a) * 3, { color: pal, count: 50, speed: 5, gravity: -3, life: 1.6 });
+    }, i * 220));
+    this.rings.pulse(x, 0.2, z, 0xffe14a, 6, 1.2);
+    this.shakeMag = Math.max(this.shakeMag, 0.12);
+  }
+
+  /** True when the click lands on the quest giver. */
+  pickNpc(clientX: number, clientY: number): boolean {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    return this.raycaster.intersectObjects([...this.npcParts, this.npcMarker], false).length > 0;
   }
 
   /** Enemy id under a screen position, or null. */
@@ -266,6 +387,16 @@ export class Renderer {
     const x = this.prev.x + (this.curr.x - this.prev.x) * alpha;
     const z = this.prev.z + (this.curr.z - this.prev.z) * alpha;
     this.castPunch = Math.max(0, this.castPunch - 1 / 60);
+    const nowMs = performance.now(), dtFx = Math.min(0.1, (nowMs - this.lastDraw) / 1000);
+    this.lastDraw = nowMs;
+    this.particles.update(dtFx);
+    this.rings.update(dtFx);
+    const mk = this.markerFor(s.quest.stage);
+    this.npcMarker.visible = !!mk;
+    if (mk) {
+      (this.npcMarker.material as THREE.SpriteMaterial).map = this.markerTex[mk];
+      this.npcMarker.position.set(NPC.x, 3.5 + 0.18 * Math.sin(nowMs / 250), NPC.z);
+    }
     this.player.position.set(x, s.player.dead ? 0.5 : 1, z);
     this.player.rotation.y = s.player.facing;
     this.player.rotation.x = s.player.dead ? -Math.PI / 2 : 0;
@@ -363,7 +494,7 @@ export class Renderer {
     g.rotation.y = e.facing;
     g.rotation.z = e.state === 'dead' ? Math.PI / 2 : 0;
     g.position.y = e.state === 'dead' ? ENEMY_TYPES[e.type].radius : 0;
-    g.scale.setScalar(1 + e.swing * 2); // attack lunge
+    g.scale.setScalar(e.state === 'dead' ? Math.max(0.05, 1 - e.deadFor / 2) : 1 + e.swing * 2); // attack lunge / shrink away when dead
     a.mat.emissive.setHex(e.hitFlash > 0 ? 0xff4444 : 0x000000);
   }
 }
