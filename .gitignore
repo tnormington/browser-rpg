@@ -3,3 +3,4 @@ dist
 *.log
 .claude
 .DS_Store
+bench/shots/

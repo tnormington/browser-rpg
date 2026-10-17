@@ -1,6 +1,6 @@
 // Static zone layout and collision. Shared by sim (collision) and renderer (drawing).
 
-export const WORLD_HALF = 30; // zone is a square of side 2*WORLD_HALF
+export let WORLD_HALF = 30; // zone is a square of side 2*WORLD_HALF
 export const PLAYER_RADIUS = 0.5;
 
 export interface Obstacle { x: number; z: number; r: number }
@@ -42,7 +42,7 @@ export const ROCKS: RockSpot[] = [
   { type: 'coal', x: -1, z: -28.5, r: 1.2 },
 ];
 
-const COLLIDERS = [...OBSTACLES, ...TREES, ...ROCKS];
+export const COLLIDERS = [...OBSTACLES, ...TREES, ...ROCKS];
 
 export function clampToWorld(t: { x: number; z: number }, radius = PLAYER_RADIUS) {
   const m = WORLD_HALF - radius;
@@ -63,3 +63,6 @@ export function resolveCollisions(p: { x: number; z: number }, radius = PLAYER_R
     }
   }
 }
+
+/** Dev-only: resize the zone (see sim/stress.ts). Importers see the new value through the live binding. */
+export function setWorldHalf(h: number) { WORLD_HALF = h; }

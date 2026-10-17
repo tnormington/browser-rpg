@@ -5,6 +5,7 @@ import { ENEMY_TYPES } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NPC, QuestStage } from './sim/quest';
 import { Particles, Rings } from './fx';
+import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
 
 const mesh = (g: THREE.BufferGeometry, color: number) =>
   new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color }));
@@ -118,8 +119,14 @@ export class Renderer {
         add(mesh(new THREE.DodecahedronGeometry(1.6), 0x777b80), x, 0.8, z);
       }
     }
+    // dev stress only (?stress=N): scatter extra decorative boulders so boulder count scales with N like everything else
+    if (WORLD_HALF > 30) {
+      const factor = (WORLD_HALF / 30) ** 2, ring = Math.ceil(2 * WORLD_HALF / 3 + 1) * 4;
+      const pts = ringPoints({ rng: 777 }, WORLD_HALF, 30, 3);
+      for (let i = ring; i < Math.round(BOULDERS_PER_FACTOR * factor); i++) { const p = pts.next().value!; add(mesh(new THREE.DodecahedronGeometry(1.6), 0x777b80), p.x, 0.8, p.z); }
+    }
     // beyond the boundary: dark ground so the edge reads as the end of the world
-    add(mesh(new THREE.PlaneGeometry(400, 400).rotateX(-Math.PI / 2), 0x2d4a22), 0, -0.05, 0);
+    add(mesh(new THREE.PlaneGeometry(Math.max(400, WORLD_HALF * 4), Math.max(400, WORLD_HALF * 4)).rotateX(-Math.PI / 2), 0x2d4a22), 0, -0.05, 0);
   }
 
   /** Quest giver: robed figure with a hood and staff, and a bobbing ! / ? marker above. */

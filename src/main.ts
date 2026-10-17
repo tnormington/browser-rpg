@@ -5,8 +5,15 @@ import type { InvAction } from './sim/inventory';
 import type { Interact } from './sim';
 import { loadGame, saveGame, wipeSave } from './storage';
 import { playEvents, toggleMute, unlockAudio } from './sfx';
+import { applyStress } from './sim/stress';
 
-const loaded = loadGame();
+// Dev-only tooling: ?debug=1 (or the dev server) enables ?stress=N and the window.__debug handle. Game code never reads either.
+const params = new URLSearchParams(location.search);
+const debug = import.meta.env.DEV || params.has('debug');
+const stress = debug ? Math.max(1, Number(params.get('stress')) || 1) : 1;
+applyStress(stress);
+
+const loaded = stress > 1 ? { state: null, status: 'none' as const } : loadGame(); // stress worlds never touch the real save
 const state = loaded.state ?? createState();
 const view = new Renderer(document.body, state);
 const pendingInv: InvAction[] = [];
@@ -15,7 +22,7 @@ let pendingAdvance = false;
 
 // --- save / load ---
 const AUTOSAVE_EVERY = 20; // seconds
-let wiped = false, saveDirty = false, sinceSave = 0;
+let wiped = stress > 1, saveDirty = false, sinceSave = 0;
 function save(): boolean { return !wiped && saveGame(state); }
 const hud = new Hud((x, y, z) => view.project(x, y, z), () => view.yaw, {
   inv: a => { pendingInv.push(a); saveDirty = true; },
@@ -34,6 +41,7 @@ else if (loaded.status === 'incompatible') hud.note('Your old save was from a di
 addEventListener('beforeunload', save);
 addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 const canvas = view.renderer.domElement;
+if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scene, view, sim: state, step: () => step(state, readInput()), stress };
 
 // --- input -> sim Input ---
 const keys = new Set<string>();
