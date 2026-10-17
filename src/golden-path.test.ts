@@ -5,6 +5,10 @@ import { addItem, countItem, INVENTORY_SIZE } from './sim/inventory';
 import { ITEMS, DROP_TABLES, deriveStats, emptyEquipment } from './sim/items';
 import { ABILITIES, ENEMY_TYPES, GCD, RESPAWN_DELAY } from './sim/data';
 import { xpForLevel, levelForXp, addXp, newTrack, levelProgress } from './sim/xp';
+import { SKILL_IDS, SKILLS, grantXp } from './sim/skills';
+import { NODE_TYPES } from './sim/gathering';
+import { RECIPES, FORGE_REACH } from './sim/crafting';
+import { LANDMARKS, ROCKS, TREES } from './sim/world';
 
 let checks = 0;
 function assert(cond: unknown, msg: string): asserts cond {
@@ -398,6 +402,278 @@ section('M2 items: drops, pickup, inventory, equipment, stats from gear');
     iron3 = damageTaken(['iron_helm', 'iron_chestplate', 'iron_greaves']);
   assert(naked > hide && hide > iron3, `armour reduces damage taken over 20s of wolf (none ${naked}, hide ${hide}, iron ${iron3})`);
   assert(iron3 < naked * 0.8, `iron set cuts incoming damage by >20% (${((1 - iron3 / naked) * 100).toFixed(0)}%)`);
+}
+
+// ---------------------------------------------------------------------------
+// M3 helpers: a "player bot" that uses only sim Input (interact / craft), so walking, reach and timing are real.
+const dist2 = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
+/** Read through a function so TS doesn't narrow player.action across sim calls. */
+const actionKind = (s: GameState): string | undefined => s.player.action?.k;
+const busy = (s: GameState) => s.interact !== null || s.player.action !== null;
+function untilIdle(s: GameState, maxTicks = 4000) { let n = 0; while (busy(s) && n++ < maxTicks) tick(s); }
+const countOf = (s: GameState, id: string) => countItem(s.player.inventory, id);
+const nodesOf = (s: GameState, type: string) => s.nodes.filter(n => n.type === type);
+const nearestNode = (s: GameState, type: string) =>
+  nodesOf(s, type).filter(n => n.charges > 0).sort((a, b) => dist2(a, s.player) - dist2(b, s.player))[0];
+/** Gather from nodes of `type` until the bag holds `want` of the node's item. Waits for respawns when all are depleted. */
+function gatherUntil(s: GameState, type: string, want: number) {
+  const item = NODE_TYPES[type].item;
+  for (let guard = 0; countOf(s, item) < want && guard < 400; guard++) {
+    const n = nearestNode(s, type);
+    if (!n) { run(s, 1); continue; }
+    tick(s, { interact: { k: 'node', id: n.id } });
+    untilIdle(s);
+    defend(s);
+  }
+}
+function atForge(s: GameState) {
+  for (let tries = 0; tries < 5; tries++) {
+    tick(s, { interact: { k: 'forge' } });
+    let opened = hasEvent(s, e => e.t === 'forge');
+    for (let n = 0; busy(s) && n++ < 2000;) { tick(s); opened ||= hasEvent(s, e => e.t === 'forge'); }
+    if (opened) return true;
+    defend(s); // aggroed on the way: deal with it and retry the walk
+  }
+  return false;
+}
+function craft(s: GameState, recipe: string, count: number) {
+  const out = RECIPES.find(r => r.id === recipe)!.output.id, want = countOf(s, out) + count;
+  for (let tries = 0; tries < 8 && countOf(s, out) < want; tries++) {
+    tick(s, { craft: { recipe, count: want - countOf(s, out) } });
+    untilIdle(s);
+    if (s.player.dead || s.enemies.some(e => st(e) === 'chase')) { defend(s); atForge(s); } // interrupted: fight, walk back, resume
+  }
+}
+/** A world with every enemy parked dead, for testing gather/craft mechanics without wandering into a fight. */
+function quietState(seed: number) {
+  const s = createState(seed);
+  for (const e of s.enemies) { e.state = 'dead'; e.respawnIn = 1e9; }
+  return s;
+}
+/** Bot self-defence: if anything has aggroed, fight it before carrying on. Waits out a death. */
+function defend(s: GameState) {
+  for (let guard = 0; guard < 20; guard++) {
+    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); continue; }
+    const e = s.enemies.find(x => st(x) === 'chase');
+    if (!e) return;
+    s.player.energy = s.player.maxEnergy; s.player.cd.fill(0);
+    fight(s, e, 60);
+  }
+}
+/** Kill things until the combat level reaches `level`: boars first, wolves once boars are too slow. Returns game seconds spent. */
+function grindCombat(s: GameState, level: number) {
+  const t0 = s.tick;
+  for (let guard = 0; s.player.combat.level < level && guard < 400; guard++) {
+    const pool = s.enemies.filter(e => e.type === (s.player.combat.level >= 3 ? 'wolf' : 'boar') && st(e) !== 'dead');
+    if (!pool.length) { run(s, 2); continue; }
+    const e = pool[0];
+    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); continue; }
+    if (s.player.hp < s.player.maxHp * 0.7) run(s, 10); // rest between pulls
+    s.player.energy = s.player.maxEnergy; s.player.cd.fill(0);
+    standNear(s, e, 2.5);
+    fight(s, e);
+  }
+  return (s.tick - t0) * TICK_DT;
+}
+
+// ---------------------------------------------------------------------------
+section('M3 skills: parallel tracks on the RuneScape curve');
+{
+  const s = createState(1);
+  assert(SKILL_IDS.length === 4 && ['combat', 'mining', 'woodcutting', 'smithing'].every(k => SKILLS[k as never]), 'skills: Combat, Mining, Woodcutting, Smithing');
+  assert(SKILL_IDS.every(k => s.player.skills[k].level === 1 && s.player.skills[k].xp === 0), 'every skill starts at level 1, 0 xp');
+  assert(s.player.skills.combat === s.player.combat, 'combat skill is the same track combat code reads');
+  grantXp(s, 'mining', 100, 0, 0);
+  assert(s.player.skills.mining.level === 2 && s.player.skills.mining.xp === 100, 'mining xp levels mining (100 xp -> lv 2)');
+  assert(s.player.skills.smithing.xp === 0 && s.player.skills.woodcutting.xp === 0 && s.player.combat.xp === 0, 'skills are independent: nothing else moved');
+  assert(hasEvent(s, e => e.t === 'levelup' && e.skill === 'mining' && e.level === 2), 'levelup event names the skill');
+  const curve = [1, 2, 3, 4, 5, 10, 20].map(l => `${l}:${xpForLevel(l)}`).join(' ');
+  console.log(`  xp to reach level  ${curve}`);
+}
+
+// ---------------------------------------------------------------------------
+section('M3 gathering: nodes, timing, depletion, respawn, interruption');
+{
+  const s = quietState(2);
+  const def = NODE_TYPES.iron;
+  const rock = nodesOf(s, 'iron')[0];
+  assert(nodesOf(s, 'iron').length >= 3 && nodesOf(s, 'coal').length >= 2 && nodesOf(s, 'tree').length === TREES.length, 'iron rocks, coal seams and trees are placed in the zone');
+  const cave = LANDMARKS.caveMouth;
+  assert(ROCKS.every(r => dist2(r, cave) < 20), 'ore is hand-placed near the cave mouth');
+  assert(ROCKS.every(r => dist2(r, enemyOf(s, 'brute')) > ENEMY_TYPES.brute.aggroRadius + 1), 'no ore node sits inside the Cave Brute aggro radius');
+
+  const far = dist2(s.player, rock);
+  tick(s, { interact: { k: 'node', id: rock.id } });
+  assert(s.interact !== null && s.moveTarget !== null && s.player.action === null, `clicking a far node (${far.toFixed(0)}u) starts a walk, not an instant gather`);
+  let guard = 0;
+  while (s.interact && guard++ < 2000) tick(s);
+  assert(actionKind(s) === 'gather' && dist2(s.player, rock) < rock.r + 2.5, 'player walks into reach, then the gather action begins');
+  const a = s.player.action!;
+  run(s, def.time / 2);
+  assert(s.player.action === a && countOf(s, 'iron_ore') === 0, 'gathering takes time: nothing yielded halfway');
+  run(s, def.time / 2 + TICK_DT * 2);
+  assert(countOf(s, 'iron_ore') === 1 && s.player.skills.mining.xp === def.xp, `first swing yields 1 Iron Ore and ${def.xp} Mining XP`);
+  assert(rock.charges === def.charges - 1 && s.player.action !== null, 'gathering continues automatically on the same node');
+  untilIdle(s);
+  assert(countOf(s, 'iron_ore') === def.charges && rock.charges === 0 && rock.respawnIn > 0, `node depletes after ${def.charges} ore`);
+  tick(s, { interact: { k: 'node', id: rock.id } });
+  assert(hasEvent(s, e => e.t === 'actionfail' && e.reason === 'depleted') && s.player.action === null, 'depleted node cannot be gathered');
+  run(s, def.respawn - 2);
+  assert(rock.charges === 0, 'node stays depleted until its timer');
+  run(s, 3);
+  assert(rock.charges === def.charges, `node respawns after ${def.respawn}s with full charges`);
+
+  // interruption: moving cancels, getting hit cancels
+  tick(s, { interact: { k: 'node', id: rock.id } });
+  run(s, 1);
+  assert(s.player.action !== null, 'gathering again');
+  tick(s, { dirX: 0, dirZ: 1 });
+  assert(s.player.action === null, 'moving cancels the gather');
+  tick(s, { interact: { k: 'node', id: rock.id } });
+  run(s, 1);
+  assert(s.player.action !== null, 'gathering a third time');
+  const w = enemyOf(s, 'wolf');
+  w.x = s.player.x + 1; w.z = s.player.z; w.hp = w.maxHp; w.state = 'chase'; w.attackCd = 0;
+  run(s, 0.3);
+  assert(s.player.action === null, 'getting hit by an enemy cancels the gather');
+  w.state = 'dead'; w.respawnIn = 1e9;
+
+  // trees feed Woodcutting
+  const tree = nearestNode(s, 'tree');
+  s.player.hp = s.player.maxHp = 999;
+  tick(s, { interact: { k: 'node', id: tree.id } });
+  untilIdle(s);
+  assert(countOf(s, 'logs') === NODE_TYPES.tree.charges && s.player.skills.woodcutting.xp === NODE_TYPES.tree.xp * NODE_TYPES.tree.charges, 'chopping a tree yields Logs and Woodcutting XP');
+  assert(tree.charges === 0, 'trees deplete too');
+
+  // full bag stops the gather instead of losing the ore
+  const s2 = quietState(2);
+  s2.player.inventory.fill({ id: 'boar_hide', qty: 50 });
+  tick(s2, { interact: { k: 'node', id: nodesOf(s2, 'iron')[0].id } });
+  untilIdle(s2);
+  assert(hasEvent(s2, e => e.t === 'actionfail' && e.reason === 'full') && s2.player.action === null && nodesOf(s2, 'iron')[0].charges === 3, 'full inventory refuses to gather and tells the player');
+}
+
+// ---------------------------------------------------------------------------
+section('M3 level requirements: gated nodes and recipes');
+{
+  const s = quietState(3);
+  const coal = nodesOf(s, 'coal')[0];
+  s.player.x = coal.x + 2; s.player.z = coal.z + 2;
+  tick(s, { interact: { k: 'node', id: coal.id } });
+  const fail = s.events.find(e => e.t === 'actionfail');
+  assert(fail && fail.t === 'actionfail' && fail.reason === 'level' && fail.skill === 'mining' && fail.need === NODE_TYPES.coal.level,
+    `level-1 player is refused at a Coal Seam and told it needs Mining ${NODE_TYPES.coal.level}`);
+  run(s, 1);
+  assert(s.player.action === null && countOf(s, 'coal') === 0 && s.player.skills.mining.xp === 0, 'refused: no action, no coal, no xp');
+  grantXp(s, 'mining', xpForLevel(NODE_TYPES.coal.level), 0, 0);
+  assert(s.player.skills.mining.level === NODE_TYPES.coal.level, 'levelling Mining up');
+  tick(s, { interact: { k: 'node', id: coal.id } });
+  untilIdle(s);
+  assert(countOf(s, 'coal') === NODE_TYPES.coal.charges, 'at the required level the same Coal Seam can be mined');
+
+  // recipes: out of range, under level, missing materials
+  s.player.x = LANDMARKS.forge.x - 20; s.player.z = LANDMARKS.forge.z;
+  addItem(s.player.inventory, 'iron_ore', 4);
+  tick(s, { craft: { recipe: 'iron_bar', count: 1 } });
+  assert(hasEvent(s, e => e.t === 'actionfail' && e.reason === 'range') && s.player.action === null, 'cannot craft away from the forge');
+  s.player.x = LANDMARKS.forge.x - 4; s.player.z = LANDMARKS.forge.z + 3;
+  assert(dist2(s.player, LANDMARKS.forge) <= FORGE_REACH, 'standing at the forge');
+  addItem(s.player.inventory, 'steel_bar', 3); addItem(s.player.inventory, 'logs', 1);
+  tick(s, { craft: { recipe: 'forged_blade', count: 1 } });
+  const lf = s.events.find(e => e.t === 'actionfail');
+  assert(lf && lf.t === 'actionfail' && lf.reason === 'level' && lf.skill === 'smithing' && lf.need === 4, 'Smithing 1 cannot forge the blade: told it needs Smithing 4');
+  s.player.inventory.fill(null);
+  tick(s, { craft: { recipe: 'iron_bar', count: 1 } });
+  assert(hasEvent(s, e => e.t === 'actionfail' && e.reason === 'materials') && s.player.action === null, 'missing materials: refused');
+}
+
+// ---------------------------------------------------------------------------
+section('M3 smithing: forge recipes');
+{
+  assert(RECIPES.every(r => ITEMS[r.output.id] && r.inputs.every(i => ITEMS[i.id])), 'every recipe references real items');
+  const s = quietState(4);
+  addItem(s.player.inventory, 'iron_ore', 4);
+  assert(atForge(s) && dist2(s.player, LANDMARKS.forge) <= FORGE_REACH, 'clicking the forge walks there and opens it');
+  tick(s, { craft: { recipe: 'iron_bar', count: 2 } });
+  assert(actionKind(s) === 'craft' && countOf(s, 'iron_bar') === 0, 'craft starts; nothing is produced instantly');
+  run(s, RECIPES[0].time + TICK_DT * 2);
+  assert(countOf(s, 'iron_bar') === 1 && countOf(s, 'iron_ore') === 2, 'crafting consumes 2 Iron Ore and produces 1 Iron Bar');
+  assert(s.player.skills.smithing.xp === RECIPES[0].xp, `crafting grants Smithing XP (${RECIPES[0].xp})`);
+  untilIdle(s);
+  assert(countOf(s, 'iron_bar') === 2 && countOf(s, 'iron_ore') === 0, 'a batch of 2 runs to completion');
+  const b = quietState(4);
+  b.player.x = LANDMARKS.forge.x - 4; b.player.z = LANDMARKS.forge.z + 3;
+  addItem(b.player.inventory, 'iron_ore', 10);
+  tick(b, { craft: { recipe: 'iron_bar', count: 99 } });
+  untilIdle(b);
+  assert(countOf(b, 'iron_bar') === 5, 'a "make all" batch stops when materials run out');
+  addItem(b.player.inventory, 'iron_ore', 2);
+  tick(b, { craft: { recipe: 'iron_bar', count: 1 } });
+  tick(b, { dirX: 1, dirZ: 0 });
+  assert(b.player.action === null, 'walking away cancels a craft');
+}
+
+// ---------------------------------------------------------------------------
+section('M3 golden path: fight, mine, smith, equip, beat the Cave Brute');
+{
+  const s = createState(8);
+  const brute = enemyOf(s, 'brute');
+  const blade = ITEMS.forged_blade;
+  const bestDrop = Math.max(...Object.entries(ITEMS)
+    .filter(([id, it]) => it.slot === 'weapon' && Object.values(DROP_TABLES).some(t => t.entries.some(e => e.id === id)))
+    .map(([, it]) => it.stats!.damage!));
+  assert(blade.stats!.damage! >= bestDrop + 4, `Forgemaster's Blade (+${blade.stats!.damage}) clearly beats the best enemy-dropped weapon (+${bestDrop})`);
+  assert(!Object.values(DROP_TABLES).some(t => t.entries.some(e => e.id === 'forged_blade')), 'the blade is craft-only');
+
+  // 1. the Brute beats the fresh player (M1), who goes off to level
+  standNear(s, brute, 3);
+  fight(s, brute, 60);
+  assert(s.player.dead, 'the Cave Brute kills the fresh player');
+  run(s, RESPAWN_DELAY + 1);
+
+  // 2. real combat levelling
+  const combatSecs = grindCombat(s, 5);
+  assert(s.player.combat.level >= 5, `ground out combat level ${s.player.combat.level} on boars/wolves (${combatSecs.toFixed(0)}s game time)`);
+  const combatLevel = s.player.combat.level;
+  s.player.inventory.fill(null); // keep the bag clean: only the crafted weapon matters below
+
+  // 3. the RuneScape loop, timed from the first swing to the blade in hand
+  const t0 = s.tick;
+  gatherUntil(s, 'iron', 8);
+  assert(s.player.skills.mining.level >= NODE_TYPES.coal.level, `mined ${countOf(s, 'iron_ore')} iron ore: Mining is now level ${s.player.skills.mining.level}, Coal Seams unlocked`);
+  gatherUntil(s, 'iron', 10);
+  gatherUntil(s, 'coal', 6);
+  assert(countOf(s, 'coal') >= 6 && countOf(s, 'iron_ore') >= 10, `gathered ${countOf(s, 'iron_ore')} Iron Ore + ${countOf(s, 'coal')} Coal (nodes yield in threes)`);
+  gatherUntil(s, 'tree', 1);
+  const mineSecs = (s.tick - t0) * TICK_DT;
+  assert(countOf(s, 'logs') >= 1 && s.player.skills.woodcutting.level >= 1, 'chopped Logs for the hilt');
+
+  assert(atForge(s), 'walked to the forge');
+  craft(s, 'iron_bar', 5);
+  assert(countOf(s, 'iron_bar') === 5 && s.player.skills.smithing.level >= 3, `smelted 5 Iron Bars: Smithing ${s.player.skills.smithing.level}`);
+  craft(s, 'steel_bar', 3);
+  assert(countOf(s, 'steel_bar') === 3 && s.player.skills.smithing.level >= 4, `hardened 3 Steel Bars: Smithing ${s.player.skills.smithing.level}`);
+  craft(s, 'forged_blade', 1);
+  const pathSecs = (s.tick - t0) * TICK_DT;
+  assert(countOf(s, 'forged_blade') === 1, `forged the Forgemaster's Blade (ore-to-weapon ${pathSecs.toFixed(0)}s game time; gathering ${mineSecs.toFixed(0)}s)`);
+  console.log(`  ore-to-weapon path: ${(pathSecs / 60).toFixed(1)} min (mining/chopping ${(mineSecs / 60).toFixed(1)} min, smithing ${((pathSecs - mineSecs) / 60).toFixed(1)} min, incl. walking)`);
+  assert(pathSecs >= 120 && pathSecs <= 480, 'path takes a few minutes of play (2 to 8 min)');
+
+  // 4. equip it; counterfactual at the same level without it
+  const noBlade = structuredClone(s);
+  noBlade.player.inventory.fill(null);
+  s.player.hp = s.player.maxHp; s.player.energy = s.player.maxEnergy; s.player.cd.fill(0); s.player.outOfCombat = 99;
+  tick(s, { inv: [{ k: 'equip', slot: s.player.inventory.findIndex(x => x?.id === 'forged_blade') }] });
+  assert(s.player.equipment.weapon === 'forged_blade' && s.player.stats.weaponDamage === blade.stats!.damage, 'equipped: derived stats show the blade damage');
+
+  const sameBrute = (g: GameState) => { const b = enemyOf(g, 'brute'); run(g, 70); b.hp = b.maxHp; b.state = 'idle'; g.player.hp = g.player.maxHp; g.player.energy = g.player.maxEnergy; g.player.cd.fill(0); g.player.gcd = 0; standNear(g, b, 3); return b; };
+  const nb = sameBrute(noBlade);
+  const tn = fight(noBlade, nb, 120);
+  assert(noBlade.player.dead && st(nb) !== 'dead', `without the blade, level ${combatLevel} still loses to the Cave Brute (brute left ${Math.round(nb.hp)}/${nb.maxHp} after ${tn.toFixed(0)}s)`);
+  const wb = sameBrute(s);
+  const tw = fight(s, wb, 120);
+  assert(st(wb) === 'dead' && !s.player.dead, `with the blade, level ${combatLevel} beats the Cave Brute in ${tw.toFixed(1)}s (lowest hp ${Math.round(minHpSeen)}/${s.player.maxHp})`);
 }
 
 console.log(`\nAll ${checks} checks passed.`);

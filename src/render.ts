@@ -1,6 +1,6 @@
 // Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
-import { GameState, GameEvent, Enemy, LANDMARKS, TREES, WORLD_HALF } from './sim';
+import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
 import { ENEMY_TYPES } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 
@@ -25,6 +25,8 @@ export class Renderer {
   private castPunch = 0;
   private drops = new Map<number, DropView>();
   private weapon: THREE.Mesh;
+  private nodes = new Map<number, NodeView>();
+  private forgeParts: THREE.Object3D[] = [];
 
   // orbit camera (render-side only; sim never sees it except via input direction)
   yaw = 0;
@@ -64,6 +66,7 @@ export class Renderer {
     this.levelRing.visible = false;
     this.scene.add(this.levelRing);
     for (const e of s.enemies) this.addActor(e);
+    for (const n of s.nodes) this.addNode(n);
 
     this.marker = mesh(new THREE.TorusGeometry(0.5, 0.08, 8, 24).rotateX(Math.PI / 2), 0xffe14a);
     this.marker.visible = false;
@@ -84,10 +87,11 @@ export class Renderer {
 
     // forge: stone hut, chimney, glowing furnace, anvil
     const f = LANDMARKS.forge;
-    add(mesh(new THREE.BoxGeometry(4, 2.5, 3), 0x777777), f.x, 1.25, f.z);
-    add(mesh(new THREE.BoxGeometry(1, 2, 1), 0x555555), f.x + 1, 3.4, f.z);
-    add(mesh(new THREE.BoxGeometry(1.2, 1, 0.1), 0xff6a1a), f.x - 1, 1, f.z + 1.55);
-    add(mesh(new THREE.BoxGeometry(0.8, 0.6, 0.5), 0x222222), f.x - 3, 0.3, f.z + 2);
+    this.forgeParts.push(
+      add(mesh(new THREE.BoxGeometry(4, 2.5, 3), 0x777777), f.x, 1.25, f.z),
+      add(mesh(new THREE.BoxGeometry(1, 2, 1), 0x555555), f.x + 1, 3.4, f.z),
+      add(mesh(new THREE.BoxGeometry(1.2, 1, 0.1), 0xff6a1a), f.x - 1, 1, f.z + 1.55),
+      add(mesh(new THREE.BoxGeometry(0.8, 0.6, 0.5), 0x222222), f.x - 3, 0.3, f.z + 2));
     add(new THREE.PointLight(0xff7a2a, 30, 12), f.x - 1, 1.2, f.z + 2.5);
 
     // cave mouth: dark opening between rocks, facing +z
@@ -96,11 +100,6 @@ export class Renderer {
     add(mesh(new THREE.DodecahedronGeometry(3), 0x666a70), k.x + 3, 2, k.z - 2);
     add(mesh(new THREE.DodecahedronGeometry(3.4), 0x5c6066), k.x, 3.6, k.z - 3.5);
     add(mesh(new THREE.BoxGeometry(3.2, 3, 0.3), 0x050505), k.x, 1.5, k.z - 1.4);
-
-    for (const t of TREES) {
-      add(mesh(new THREE.CylinderGeometry(0.25, 0.35, 2, 8), 0x6b4a2b), t.x, 1, t.z);
-      add(mesh(new THREE.ConeGeometry(1.4, 3.5, 8), 0x2f6b2f), t.x, 3.5, t.z);
-    }
 
     // boundary: ring of boulders along the edge
     for (let i = -WORLD_HALF; i <= WORLD_HALF; i += 3) {
@@ -125,6 +124,48 @@ export class Renderer {
 
   zoom(delta: number) {
     this.distance = Math.max(3, Math.min(20, this.distance + delta * 0.01));
+  }
+
+  private addNode(n: ResourceNode) {
+    const group = new THREE.Group();
+    group.position.set(n.x, 0, n.z);
+    group.userData.nodeId = n.id;
+    let crown: THREE.Mesh | undefined;
+    const mats: THREE.MeshLambertMaterial[] = [];
+    const part = (g: THREE.BufferGeometry, color: number, y: number) => {
+      const m = mesh(g, color);
+      m.position.y = y;
+      group.add(m);
+      mats.push(m.material as THREE.MeshLambertMaterial);
+      return m;
+    };
+    if (n.type === 'tree') {
+      part(new THREE.CylinderGeometry(0.25, 0.35, 2, 8), 0x6b4a2b, 1);
+      crown = part(new THREE.ConeGeometry(1.4, 3.5, 8), 0x2f6b2f, 3.5);
+    } else {
+      const coal = n.type === 'coal';
+      part(new THREE.DodecahedronGeometry(1.3), coal ? 0x2b2b30 : 0x7a7f86, 0.9);
+      // ore flecks: rust for iron, glossy black for coal
+      for (const [dx, dy, dz] of [[0.7, 1.2, 0.6], [-0.6, 1.0, 0.8], [0.1, 1.6, -0.5]]) {
+        const fleck = part(new THREE.OctahedronGeometry(0.28), coal ? 0x111114 : 0xc9733a, dy);
+        fleck.position.x = dx; fleck.position.z = dz;
+      }
+    }
+    this.scene.add(group);
+    this.nodes.set(n.id, { group, crown, mats, base: mats.map(m => m.color.getHex()) });
+  }
+
+  private drawNodes(s: GameState) {
+    const now = performance.now() / 1000;
+    const active = s.player.action?.k === 'gather' ? s.player.action.nodeId : -1;
+    for (const n of s.nodes) {
+      const v = this.nodes.get(n.id)!;
+      const depleted = n.charges <= 0;
+      if (v.crown) v.crown.visible = !depleted; // a felled tree leaves a stump
+      else v.group.scale.setScalar(depleted ? 0.4 : 1);
+      v.mats.forEach((m, i) => m.color.setHex(depleted && !v.crown ? 0x3a3a3a : v.base[i]));
+      v.group.rotation.z = n.id === active ? Math.sin(now * 18) * 0.05 : 0;
+    }
   }
 
   private addActor(e: Enemy) {
@@ -182,6 +223,22 @@ export class Renderer {
     return hit ? (hit.object.userData.enemyId as number) : null;
   }
 
+  /** Gatherable node id under a screen position, or null. */
+  pickNode(clientX: number, clientY: number): number | null {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    const hit = this.raycaster.intersectObjects([...this.nodes.values()].map(n => n.group), true)[0];
+    for (let o: THREE.Object3D | null = hit?.object ?? null; o; o = o.parent) if (o.userData.nodeId !== undefined) return o.userData.nodeId as number;
+    return null;
+  }
+
+  /** True when the click lands on the forge building. */
+  pickForge(clientX: number, clientY: number): boolean {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    return this.raycaster.intersectObjects(this.forgeParts, false).length > 0;
+  }
+
   /** Ground-drop id under a screen position, or null. Drops are generous to click. */
   pickDrop(clientX: number, clientY: number): number | null {
     this.raycaster.setFromCamera(
@@ -216,6 +273,7 @@ export class Renderer {
 
     for (const e of s.enemies) this.drawActor(e, alpha);
     this.drawDrops(s);
+    this.drawNodes(s);
     const w = s.player.equipment.weapon;
     this.weapon.visible = !!w;
     if (w) (this.weapon.material as THREE.MeshLambertMaterial).color.setHex(TIER_COLORS[ITEMS[w].tier]);
@@ -319,4 +377,5 @@ interface Actor {
   flash: number;
 }
 
+interface NodeView { group: THREE.Group; crown?: THREE.Mesh; mats: THREE.MeshLambertMaterial[]; base: number[] }
 interface DropView { group: THREE.Group; gem: THREE.Mesh; hit: THREE.Mesh }

@@ -24,10 +24,14 @@ export const ITEMS: Record<string, ItemDef> = {
   wolf_pelt: { name: 'Wolf Pelt', stack: 50, dropWeight: 40, tier: 0, desc: 'Thick grey fur. Crafting material.' },
   iron_ore: { name: 'Iron Ore', stack: 50, dropWeight: 0, tier: 0, desc: 'Smelts into iron at the forge.' },
   coal: { name: 'Coal', stack: 50, dropWeight: 0, tier: 0, desc: 'Fuel for the forge.' },
+  logs: { name: 'Logs', stack: 50, dropWeight: 0, tier: 0, desc: 'Seasoned wood. Makes a good hilt.' },
+  iron_bar: { name: 'Iron Bar', stack: 50, dropWeight: 0, tier: 0, desc: 'Smelted at the forge.' },
+  steel_bar: { name: 'Steel Bar', stack: 50, dropWeight: 0, tier: 0, desc: 'Iron hardened with coal.' },
   // weapons
   rusty_blade: { name: 'Rusty Blade', slot: 'weapon', stats: { damage: 2 }, stack: 1, dropWeight: 10, tier: 1, desc: 'Better than bare hands.' },
   iron_sword: { name: 'Iron Sword', slot: 'weapon', stats: { damage: 5 }, stack: 1, dropWeight: 6, tier: 2, desc: 'A reliable soldier\'s sword.' },
   steel_sword: { name: 'Steel Sword', slot: 'weapon', stats: { damage: 9 }, stack: 1, dropWeight: 3, tier: 3, desc: 'Keen, balanced, rare.' },
+  forged_blade: { name: "Forgemaster's Blade", slot: 'weapon', stats: { damage: 18 }, stack: 1, dropWeight: 0, tier: 3, desc: 'Steel you smelted and shaped yourself. Better than anything the enemies carry.' },
   // armour
   leather_cap: { name: 'Leather Cap', slot: 'head', stats: { armor: 2 }, stack: 1, dropWeight: 10, tier: 1, desc: 'Stitched hide.' },
   hide_jerkin: { name: 'Hide Jerkin', slot: 'chest', stats: { armor: 4 }, stack: 1, dropWeight: 8, tier: 1, desc: 'Stitched hide.' },

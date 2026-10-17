@@ -29,7 +29,17 @@ export const TREES: Obstacle[] = [
   { x: -26, z: 22, r: 1 }, { x: 8, z: 26, r: 1 }, { x: 28, z: -20, r: 1 },
 ];
 
-const COLLIDERS = [...OBSTACLES, ...TREES];
+// Ore rocks (gatherable, see sim/gathering.ts). Iron sits east of the cave mouth, the harder coal seams further
+// along the same ridge; all are placed (and reachable) outside the Cave Brute's aggro radius so mining is not a death trap.
+export interface RockSpot extends Obstacle { type: 'iron' | 'coal' }
+export const ROCKS: RockSpot[] = [
+  { type: 'iron', x: -10, z: -25.5, r: 1.2 }, { type: 'iron', x: -9, z: -27.5, r: 1.2 },
+  { type: 'iron', x: -12.5, z: -28, r: 1.2 }, { type: 'iron', x: -7, z: -24, r: 1.2 },
+  { type: 'coal', x: -5, z: -27.5, r: 1.2 }, { type: 'coal', x: -2.5, z: -25.5, r: 1.2 },
+  { type: 'coal', x: -1, z: -28.5, r: 1.2 },
+];
+
+const COLLIDERS = [...OBSTACLES, ...TREES, ...ROCKS];
 
 export function clampToWorld(t: { x: number; z: number }, radius = PLAYER_RADIUS) {
   const m = WORLD_HALF - radius;

@@ -1,6 +1,6 @@
 // Combat rules: targeting, abilities, damage, enemy AI, death and respawn. Pure sim, no DOM/Three.
 import type { GameState, Enemy, EnemyState } from '../sim';
-import { addXp } from './xp';
+import { grantXp } from './skills';
 import { rollDrops } from './loot';
 import { nextRandom } from './rng';
 import { resolveCollisions } from './world';
@@ -71,13 +71,8 @@ function killEnemy(s: GameState, e: Enemy) {
   e.bleed = null;
   if (s.targetId === e.id) s.targetId = null;
   s.events.push({ t: 'kill', id: e.id, x: e.x, z: e.z });
-  s.events.push({ t: 'xp', amount: def.xp, x: e.x, z: e.z });
   rollDrops(s, e.type, e.x, e.z);
-  const gained = addXp(s.player.combat, def.xp);
-  if (gained > 0) {
-    refreshPlayerStats(s, true); // levelling restores health: a punchy reward
-    s.events.push({ t: 'levelup', level: s.player.combat.level });
-  }
+  if (grantXp(s, 'combat', def.xp, e.x, e.z) > 0) refreshPlayerStats(s, true); // levelling restores health: a punchy reward
 }
 
 // ---------- abilities ----------
@@ -112,6 +107,7 @@ function tryUse(s: GameState, slot: number) {
   if (p.energy < a.cost) return fail(s, 'energy', slot);
 
   p.energy -= a.cost;
+  p.action = null; // fighting interrupts gathering/crafting
   p.gcd = GCD;
   p.cd[slot] = a.cooldown;
   p.cast = 0.12;
@@ -152,6 +148,8 @@ function killPlayer(s: GameState) {
   const p = s.player;
   p.hp = 0;
   p.dead = true;
+  p.action = null;
+  s.interact = null;
   p.respawnIn = RESPAWN_DELAY;
   p.queued = null;
   s.targetId = null;
@@ -230,6 +228,7 @@ export function updateEnemies(s: GameState, dt: number) {
           const amount = Math.max(1, Math.round(def.damage * (0.85 + 0.3 * rand(s)) * (1 - p.stats.reduction)));
           p.hp = Math.max(0, p.hp - amount);
           p.outOfCombat = 0;
+          p.action = null; // getting hit breaks concentration
           s.events.push({ t: 'hit', target: 'player', x: p.x, z: p.z, amount, crit: false, slot: -1, dot: false });
           if (p.hp <= 0) killPlayer(s);
         }

@@ -35,6 +35,28 @@ export function addItem(inv: Inventory, id: string, qty: number): number {
   return qty;
 }
 
+/** True if qty of id would fit entirely (existing stacks first, then empty slots). */
+export function hasRoom(inv: Inventory, id: string, qty = 1): boolean {
+  const def = ITEMS[id];
+  if (!def) return false;
+  let space = 0;
+  for (const st of inv) space += !st ? def.stack : st.id === id ? def.stack - st.qty : 0;
+  return space >= qty;
+}
+
+/** Removes up to qty of id (last stacks first). Returns the quantity actually removed. */
+export function removeItem(inv: Inventory, id: string, qty: number): number {
+  let left = qty;
+  for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
+    const st = inv[i];
+    if (!st || st.id !== id) continue;
+    const n = Math.min(left, st.qty);
+    st.qty -= n; left -= n;
+    if (st.qty <= 0) inv[i] = null;
+  }
+  return qty - left;
+}
+
 export const countItem = (inv: Inventory, id: string) =>
   inv.reduce((n, st) => n + (st && st.id === id ? st.qty : 0), 0);
 

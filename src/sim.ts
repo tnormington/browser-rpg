@@ -1,10 +1,14 @@
 // Authoritative simulation. No Three.js / DOM imports: this module must be able to run server-side.
 // Rules live in src/sim/*; this file owns state shape and the fixed-step driver.
 
-import { XpTrack, newTrack } from './sim/xp';
+import { XpTrack } from './sim/xp';
 import { DerivedStats, Equipment, deriveStats, emptyEquipment } from './sim/items';
 import { Inventory, InvAction, applyInvAction, newInventory } from './sim/inventory';
 import { GroundDrop, updateDrops } from './sim/loot';
+import { SkillId, Skills, newSkills } from './sim/skills';
+import { ResourceNode, createNodes, updateNodes } from './sim/gathering';
+import { beginCraft } from './sim/crafting';
+import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { PLAYER_RADIUS, clampToWorld, resolveCollisions } from './sim/world';
 import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN } from './sim/data';
 import {
@@ -14,6 +18,8 @@ import {
 
 export * from './sim/world';
 export type { GroundDrop } from './sim/loot';
+export type { ResourceNode } from './sim/gathering';
+export type { Action, Interact } from './sim/actions';
 
 export const TICK_RATE = 30;
 export const TICK_DT = 1 / TICK_RATE;
@@ -48,7 +54,9 @@ export interface Player {
   dead: boolean;
   respawnIn: number;
   outOfCombat: number;
-  combat: XpTrack;
+  skills: Skills;
+  combat: XpTrack;         // the same object as skills.combat: combat code reads it directly
+  action: Action | null;   // the one timed gather/craft in progress
   inventory: Inventory;
   equipment: Equipment;
   stats: DerivedStats;     // always deriveStats(equipment); combat reads this, never the items
@@ -60,8 +68,13 @@ export type GameEvent =
   | { t: 'fail'; reason: 'range' | 'cooldown' | 'gcd' | 'energy' | 'target'; slot: number }
   | { t: 'cast'; slot: number }
   | { t: 'kill'; id: number; x: number; z: number }
-  | { t: 'xp'; amount: number; x: number; z: number }
-  | { t: 'levelup'; level: number }
+  | { t: 'xp'; skill: SkillId; amount: number; x: number; z: number }
+  | { t: 'levelup'; skill: SkillId; level: number }
+  | { t: 'actionfail'; reason: 'level' | 'depleted' | 'full' | 'materials' | 'range'; skill: SkillId; need: number; what: string }
+  | { t: 'forge' }                                      // player reached the forge: open the recipe list
+  | { t: 'crafted'; item: string; qty: number }
+  | { t: 'depleted'; id: number }
+  | { t: 'respawned'; id: number }
   | { t: 'drop'; id: number; item: string; x: number; z: number }
   | { t: 'loot'; item: string; qty: number }
   | { t: 'invfull' }
@@ -77,6 +90,8 @@ export interface GameState {
   enemies: Enemy[];
   drops: GroundDrop[];
   nextDropId: number;
+  nodes: ResourceNode[];
+  interact: Interact | null; // walking toward a node/forge to use it
   events: GameEvent[]; // cleared at the start of every step; presentation reads them after each step
 }
 
@@ -91,11 +106,14 @@ export interface Input {
   ability: number | null;                       // ability slot pressed this tick
   pickup: number | null;                        // ground-drop id clicked this tick: walk to it
   inv: InvAction[];                             // inventory/equipment actions this tick
+  interact: Interact | null;                    // node or forge clicked this tick: walk there and use it
+  craft: { recipe: string; count: number } | null; // forge recipe chosen this tick
 }
 
-export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, pickup: null, inv: [] };
+export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, pickup: null, inv: [], interact: null, craft: null };
 
 export function createState(seed = 1): GameState {
+  const skills = newSkills();
   const s: GameState = {
     tick: 0,
     rng: seed,
@@ -104,7 +122,7 @@ export function createState(seed = 1): GameState {
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
       gcd: 0, cd: ABILITIES.map(() => 0), queued: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
-      combat: newTrack(), inventory: newInventory(), equipment: emptyEquipment(), stats: deriveStats(emptyEquipment()),
+      skills, combat: skills.combat, action: null, inventory: newInventory(), equipment: emptyEquipment(), stats: deriveStats(emptyEquipment()),
     },
     moveTarget: null,
     targetId: null,
@@ -115,6 +133,8 @@ export function createState(seed = 1): GameState {
     })),
     drops: [],
     nextDropId: 1,
+    nodes: createNodes(),
+    interact: null,
     events: [],
   };
   refreshPlayerStats(s, true);
@@ -130,6 +150,11 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
   if (p.dead) {
     updatePlayerDeath(s, dt);
   } else {
+    // any movement intent abandons the current gather/craft and any walk-to-use
+    if (input.dirX !== 0 || input.dirZ !== 0 || input.clickTarget || input.clickEnemy !== null || input.pickup !== null) {
+      s.interact = null;
+      p.action = null;
+    }
     if (input.clearTarget) clearTarget(s);
     if (input.clickEnemy !== null) setTarget(s, input.clickEnemy);
     else if (input.clickTarget) s.moveTarget = clampToWorld(input.clickTarget);
@@ -138,13 +163,18 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
       const d = s.drops.find(x => x.id === input.pickup);
       if (d) s.moveTarget = clampToWorld(d);
     }
+    if (input.interact) requestInteract(s, input.interact);
+    if (input.craft) beginCraft(s, input.craft.recipe, input.craft.count);
     if (input.tab) tabTarget(s);
     movePlayer(s, input, dt);
+    updateInteract(s);
+    updateAction(s, dt);
     updatePlayerCombat(s, dt);
     if (input.ability !== null) pressAbility(s, input.ability);
   }
   updateEnemies(s, dt);
   updateDrops(s, dt);
+  updateNodes(s, dt);
 }
 
 function movePlayer(s: GameState, input: Input, dt: number) {

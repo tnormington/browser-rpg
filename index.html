@@ -49,10 +49,22 @@ canvas{display:block}
 .tname{font-weight:bold;font-size:14px}.tslot{opacity:.6;font-size:11px}.tstat{color:#6aff8a;margin-top:2px}.tdesc{opacity:.7;margin-top:4px;font-style:italic}.tcmp{margin-top:4px}.thint{margin-top:4px;opacity:.5;font-size:10px}
 .ctxmenu{position:fixed;display:none;z-index:11;background:rgba(5,6,10,.95);border:1px solid #888;border-radius:4px;pointer-events:auto}
 .mrow{padding:4px 14px;font-size:12px;cursor:pointer}.mrow:hover{background:#334}
+.skillspanel{left:12px;top:150px;width:220px}
+.skillrow{margin-bottom:7px}.skillhead{display:flex;justify-content:space-between;font-size:13px}.skilllvl{color:#ffe14a;font-weight:bold}
+.skillbar{height:12px}.skillbar .fill{background:#4a8ad0}.skillbar .label{line-height:12px;font-size:9px}
+.forgepanel{left:50%;top:90px;transform:translateX(-50%);width:330px}
+.pclose{float:right;cursor:pointer;color:#fff;opacity:.6}.pclose:hover{opacity:1}
+.recipe{background:rgba(40,44,56,.9);border:1px solid #555;border-radius:4px;padding:6px 8px;margin-bottom:6px}.recipe.locked{opacity:.8}
+.rhead{display:flex;justify-content:space-between}.rname{font-weight:bold}.rreq{font-size:12px;color:#8affc0}.rreq.bad,.rin.bad,.psub.bad{color:#ff6b5a}
+.rstat{color:#6aff8a;font-size:12px}.rinputs{margin-top:3px;font-size:12px}.rin{display:inline-block;margin-right:10px;color:#8affc0}
+.rmeta{font-size:11px;opacity:.6;margin-top:2px}.rbtns{margin-top:5px;display:flex;gap:6px}
+.rbtn{padding:3px 10px;background:#3b5d2a;border:1px solid #000;border-radius:3px;font-size:12px;cursor:pointer}.rbtn:hover{background:#4a7a35}.rbtn.off{background:#444;opacity:.6}
+.castbar{position:absolute;left:50%;bottom:110px;width:240px;margin-left:-120px;display:none;height:18px}.castbar .fill{background:#d08a30;width:0}.castbar .label{line-height:18px}
+.nodeplate .psub{font-size:10px;color:#8affc0}
 </style>
 </head>
 <body>
-<div id="help">WASD move · click ground to move · drag to orbit · wheel to zoom · I inventory · C character</div>
+<div id="help">WASD move · click ground to move · drag to orbit · wheel to zoom · I inventory · C character · K skills · click rocks, trees and the forge</div>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

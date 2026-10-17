@@ -4,7 +4,25 @@ import { ABILITIES, ENEMY_TYPES, GCD } from './sim/data';
 import { levelProgress } from './sim/xp';
 import { ITEMS } from './sim/items';
 import { InvAction } from './sim/inventory';
+import { SKILLS } from './sim/skills';
+import { NODE_TYPES } from './sim/gathering';
+import { recipeById } from './sim/crafting';
 import { InventoryUi } from './inventory-ui';
+import { SkillsUi } from './skills-ui';
+import { ForgeUi } from './forge-ui';
+
+export interface HudActions { inv: (a: InvAction) => void; craft: (recipe: string, count: number) => void }
+
+/** The player-facing message for a refused gather/craft. Level failures say exactly what is needed. */
+function actionFailText(ev: Extract<GameEvent, { t: 'actionfail' }>): string {
+  switch (ev.reason) {
+    case 'level': return `You need ${SKILLS[ev.skill].name} level ${ev.need} to ${SKILLS[ev.skill].verb} ${ev.what}`;
+    case 'depleted': return `${ev.what} is depleted: it will return shortly`;
+    case 'full': return 'Inventory full';
+    case 'materials': return `Missing materials for ${ev.what}`;
+    case 'range': return 'Move closer to the forge';
+  }
+}
 
 type Project = (x: number, y: number, z: number) => { x: number; y: number } | null;
 
@@ -49,8 +67,12 @@ export class Hud {
   private msgAge = 99;
   private feed: HTMLElement;
   private invUi: InventoryUi;
+  private skillsUi: SkillsUi;
+  private forgeUi: ForgeUi;
+  private castBar: ReturnType<typeof bar>;
+  private nodePlates = new Map<number, { root: HTMLElement; sub: HTMLElement }>();
 
-  constructor(private project: Project, send: (a: InvAction) => void) {
+  constructor(private project: Project, actions: HudActions) {
     const pf = el(this.root, 'frame player');
     this.playerLvl = el(pf, 'name');
     this.hp = bar(pf, 'hp');
@@ -78,10 +100,15 @@ export class Hud {
     this.banner = el(this.root, 'banner');
     this.deathOverlay = el(this.root, 'death');
     this.feed = el(this.root, 'feed');
-    this.invUi = new InventoryUi(this.root, send);
+    this.invUi = new InventoryUi(this.root, actions.inv);
+    this.skillsUi = new SkillsUi(this.root);
+    this.forgeUi = new ForgeUi(this.root, actions.craft);
+    this.castBar = bar(this.root, 'castbar');
   }
 
-  toggle(which: 'inv' | 'char') { this.invUi.toggle(which); }
+  toggle(which: 'inv' | 'char' | 'skills') {
+    if (which === 'skills') this.skillsUi.toggle(); else this.invUi.toggle(which);
+  }
 
   onEvents(events: GameEvent[], s: GameState) {
     for (const ev of events) {
@@ -92,7 +119,7 @@ export class Hud {
       } else if (ev.t === 'heal') {
         if (ev.amount > 0) this.float(`+${ev.amount}`, 'heal', ev.x, 2.6, ev.z);
       } else if (ev.t === 'xp') {
-        this.float(`+${ev.amount} XP`, 'xpgain', ev.x, 3.2, ev.z);
+        this.float(`+${ev.amount} ${ev.skill === 'combat' ? '' : SKILLS[ev.skill].name + ' '}XP`, 'xpgain', ev.x, 3.2, ev.z);
       } else if (ev.t === 'fail') {
         if (ev.reason === 'gcd') continue; // too noisy while mashing; the sweep already shows it
         this.say(FAIL_TEXT[ev.reason]);
@@ -103,10 +130,19 @@ export class Hud {
         setTimeout(() => line.remove(), 5000);
       } else if (ev.t === 'drop') {
         this.float(ITEMS[ev.item].name, 'dropname', ev.x, 1.6, ev.z);
+      } else if (ev.t === 'actionfail') {
+        this.say(actionFailText(ev));
+      } else if (ev.t === 'forge') {
+        this.forgeUi.setOpen(true);
+      } else if (ev.t === 'crafted') {
+        const name = ITEMS[ev.item].name;
+        this.float(`Smithed ${name}`, 'loot', s.player.x, 3.0, s.player.z);
+        const line = el(this.feed, 'feedline', `Smithed ${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`);
+        setTimeout(() => line.remove(), 5000);
       } else if (ev.t === 'invfull') {
         this.say('Inventory full');
       } else if (ev.t === 'levelup') {
-        this.banner.textContent = `LEVEL UP!  Combat ${ev.level}`;
+        this.banner.textContent = `LEVEL UP!  ${SKILLS[ev.skill].name} ${ev.level}`;
         this.banner.classList.remove('show');
         void this.banner.offsetWidth; // restart the CSS animation
         this.banner.classList.add('show');
@@ -192,12 +228,54 @@ export class Hud {
     });
 
     this.invUi.update(s);
+    this.skillsUi.update(s);
+    this.forgeUi.update(s);
+    this.updateCastBar(s);
+    this.updateNodePlates(s);
 
     this.msgAge += dtSeconds;
     this.msg.style.opacity = String(Math.max(0, Math.min(1, 1.6 - this.msgAge * 1.5)));
 
     this.deathOverlay.style.display = p.dead ? 'flex' : 'none';
     if (p.dead) this.deathOverlay.textContent = `You died.  Waking at the clearing in ${Math.ceil(p.respawnIn)}...`;
+  }
+
+  /** Progress bar for the current gather/craft. */
+  private updateCastBar(s: GameState) {
+    const a = s.player.action;
+    this.castBar.fill.parentElement!.style.display = a ? 'block' : 'none';
+    if (!a) return;
+    let label: string;
+    if (a.k === 'gather') {
+      const d = NODE_TYPES[s.nodes.find(n => n.id === a.nodeId)!.type];
+      label = `${SKILLS[d.skill].name}: ${d.name}`;
+    } else {
+      label = `${SKILLS.smithing.name}: ${recipeById(a.recipe)!.name}${a.left > 1 ? `  (${a.left} left)` : ''}`;
+    }
+    this.setBar(this.castBar, a.t / a.duration, label);
+  }
+
+  /** Floating labels over nearby nodes: name and the level it needs (red when you are too low). */
+  private updateNodePlates(s: GameState) {
+    const p = s.player;
+    for (const n of s.nodes) {
+      const def = NODE_TYPES[n.type];
+      const scr = Math.hypot(n.x - p.x, n.z - p.z) < 16 ? this.project(n.x, n.type === 'tree' ? 5 : 2.4, n.z) : null;
+      let plate = this.nodePlates.get(n.id);
+      if (!scr) { if (plate) plate.root.style.display = 'none'; continue; }
+      if (!plate) {
+        const root = el(this.root, 'plate nodeplate');
+        el(root, 'pname', def.name);
+        plate = { root, sub: el(root, 'psub') };
+        this.nodePlates.set(n.id, plate);
+      }
+      const low = p.skills[def.skill].level < def.level;
+      plate.sub.textContent = n.charges <= 0 ? 'depleted' : `${SKILLS[def.skill].name} ${def.level}`;
+      plate.sub.className = `psub${n.charges > 0 && low ? ' bad' : ''}`;
+      plate.root.style.display = 'block';
+      plate.root.style.opacity = n.charges <= 0 ? '0.5' : '1';
+      plate.root.style.transform = `translate(${scr.x}px, ${scr.y}px) translate(-50%, -100%)`;
+    }
   }
 
   private setBar(b: { fill: HTMLElement; label: HTMLElement }, frac: number, text: string) {
