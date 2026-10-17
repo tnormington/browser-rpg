@@ -7,12 +7,7 @@ import { NPC, QuestStage } from './sim/quest';
 import { Particles, Rings } from './fx';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
 
-/** Graphics-spike switches (?gfx=none | ?gfx=pbr,shadow,aces,ibl). All on by default; each can be dropped to price it in isolation. */
-const gfxParam = new URLSearchParams(location.search).get('gfx');
-const gfxOn = gfxParam === null ? ['pbr', 'shadow', 'aces', 'ibl'] : gfxParam.split(',');
-const GFX = { pbr: gfxOn.includes('pbr'), shadow: gfxOn.includes('shadow'), aces: gfxOn.includes('aces'), ibl: gfxOn.includes('ibl') };
-
-type Mat = THREE.MeshStandardMaterial | THREE.MeshLambertMaterial;
+type Mat = THREE.MeshStandardMaterial;
 /** Roughness / metalness per material class. */
 const MATERIALS = {
   ground: [0.95, 0], dirt: [0.98, 0], foliage: [0.85, 0], wood: [0.8, 0], rock: [0.9, 0], stone: [0.85, 0],
@@ -23,7 +18,7 @@ type MatClass = keyof typeof MATERIALS;
 
 const material = (color: number, cls: MatClass): Mat => {
   const [roughness, metalness] = MATERIALS[cls];
-  return GFX.pbr ? new THREE.MeshStandardMaterial({ color, roughness, metalness }) : new THREE.MeshLambertMaterial({ color });
+  return new THREE.MeshStandardMaterial({ color, roughness, metalness });
 };
 const mesh = (g: THREE.BufferGeometry, color: number, cls: MatClass, shadow: 'cast' | 'receive' | 'both' | 'none' = 'both') => {
   const m = new THREE.Mesh(g, material(color, cls));
@@ -62,7 +57,7 @@ export class Renderer {
   private particles = new Particles();
   private rings: Rings;
   private lastDraw = performance.now();
-  private sun = new THREE.DirectionalLight(0xfff4e0, GFX.ibl ? 2.2 : 1.4);
+  private sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
 
   // orbit camera (render-side only; sim never sees it except via input direction)
   yaw = 0;
@@ -73,9 +68,10 @@ export class Renderer {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     parent.appendChild(this.renderer.domElement);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    if (GFX.aces) { this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 0.85; }
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.85;
     this.setupSky();
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x556b2f, GFX.ibl ? 0.12 : 1.1));
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x556b2f, 0.12));
     this.setupSun();
 
     this.ground = mesh(new THREE.PlaneGeometry(WORLD_HALF * 2, WORLD_HALF * 2).rotateX(-Math.PI / 2), 0x5a8f3c, 'ground', 'receive');
@@ -119,9 +115,7 @@ export class Renderer {
   /** Gradient sky baked once through PMREM: background and image-based ambient light in one. */
   private setupSky() {
     const horizon = 0xb4d4f0;
-    this.scene.background = new THREE.Color(0x87ceeb);
-    this.scene.fog = new THREE.Fog(GFX.ibl ? horizon : 0x87ceeb, 40, 110);
-    if (!GFX.ibl) return;
+    this.scene.fog = new THREE.Fog(horizon, 40, 110);
     const sky = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false,
       uniforms: {
@@ -152,7 +146,6 @@ export class Renderer {
     const sun = this.sun;
     sun.position.copy(SUN_OFFSET);
     this.scene.add(sun, sun.target);
-    if (!GFX.shadow) return;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     sun.castShadow = true;

@@ -18,7 +18,7 @@ const shotOnly = process.argv.includes('--shot-only');
 const headed = process.argv.includes('--headed');
 const WINDOW_CAP_MS = 20000; // timing window ends at `frames` frames or this wall time, whichever is first
 const VIEW = { width: 1280, height: 720 };
-const query = opt('query', ''); // extra URL params, e.g. --query gfx=none
+const query = opt('query', ''); // extra URL params appended to the dev-server URL
 const tag = opt('tag', '');     // suffix for output file names, e.g. --tag noshadow
 const shots = join(root, 'bench', 'shots');
 mkdirSync(shots, { recursive: true });
