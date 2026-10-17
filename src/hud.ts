@@ -2,6 +2,9 @@
 import { GameState, GameEvent } from './sim';
 import { ABILITIES, ENEMY_TYPES, GCD } from './sim/data';
 import { levelProgress } from './sim/xp';
+import { ITEMS } from './sim/items';
+import { InvAction } from './sim/inventory';
+import { InventoryUi } from './inventory-ui';
 
 type Project = (x: number, y: number, z: number) => { x: number; y: number } | null;
 
@@ -44,8 +47,10 @@ export class Hud {
   private plates = new Map<number, { root: HTMLElement; fill: HTMLElement }>();
   private floaters: Floater[] = [];
   private msgAge = 99;
+  private feed: HTMLElement;
+  private invUi: InventoryUi;
 
-  constructor(private project: Project) {
+  constructor(private project: Project, send: (a: InvAction) => void) {
     const pf = el(this.root, 'frame player');
     this.playerLvl = el(pf, 'name');
     this.hp = bar(pf, 'hp');
@@ -72,7 +77,11 @@ export class Hud {
     this.msg = el(this.root, 'msg');
     this.banner = el(this.root, 'banner');
     this.deathOverlay = el(this.root, 'death');
+    this.feed = el(this.root, 'feed');
+    this.invUi = new InventoryUi(this.root, send);
   }
+
+  toggle(which: 'inv' | 'char') { this.invUi.toggle(which); }
 
   onEvents(events: GameEvent[], s: GameState) {
     for (const ev of events) {
@@ -87,6 +96,15 @@ export class Hud {
       } else if (ev.t === 'fail') {
         if (ev.reason === 'gcd') continue; // too noisy while mashing; the sweep already shows it
         this.say(FAIL_TEXT[ev.reason]);
+      } else if (ev.t === 'loot') {
+        const name = ITEMS[ev.item].name;
+        this.float(`+${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`, 'loot', s.player.x, 3.0, s.player.z);
+        const line = el(this.feed, 'feedline', `Looted ${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`);
+        setTimeout(() => line.remove(), 5000);
+      } else if (ev.t === 'drop') {
+        this.float(ITEMS[ev.item].name, 'dropname', ev.x, 1.6, ev.z);
+      } else if (ev.t === 'invfull') {
+        this.say('Inventory full');
       } else if (ev.t === 'levelup') {
         this.banner.textContent = `LEVEL UP!  Combat ${ev.level}`;
         this.banner.classList.remove('show');
@@ -94,7 +112,6 @@ export class Hud {
         this.banner.classList.add('show');
       }
     }
-    void s;
   }
 
   private say(text: string) {
@@ -173,6 +190,8 @@ export class Hud {
       f.el.style.opacity = String(Math.min(1, (1.1 - f.age) * 3));
       return true;
     });
+
+    this.invUi.update(s);
 
     this.msgAge += dtSeconds;
     this.msg.style.opacity = String(Math.max(0, Math.min(1, 1.6 - this.msgAge * 1.5)));

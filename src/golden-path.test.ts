@@ -1,6 +1,8 @@
 // Headless verification: drives the sim with synthetic input. Run with `npm run verify`.
 // Exits non-zero on the first failed assertion. Extended every milestone.
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState, Enemy } from './sim';
+import { addItem, countItem, INVENTORY_SIZE } from './sim/inventory';
+import { ITEMS, DROP_TABLES, deriveStats, emptyEquipment } from './sim/items';
 import { ABILITIES, ENEMY_TYPES, GCD, RESPAWN_DELAY } from './sim/data';
 import { xpForLevel, levelForXp, addXp, newTrack, levelProgress } from './sim/xp';
 
@@ -273,12 +275,129 @@ section('Later in the golden path: levelled + upgraded player beats the Brute');
   addXp(s.player.combat, xpForLevel(6)); // ~ what a few wolves/boars give
   s.player.combat.level = levelForXp(s.player.combat.xp);
   s.player.maxHp = 100 + 15 * (s.player.combat.level - 1); s.player.hp = s.player.maxHp;
-  s.player.weaponBonus = 6; // stand-in for the smithed weapon
+  addItem(s.player.inventory, 'iron_sword', 1); // stand-in for the smithed weapon (M3)
+  tick(s, { inv: [{ k: 'equip', slot: 0 }] });
   const brute = enemyOf(s, 'brute');
   standNear(s, brute, 3);
   const t = fight(s, brute, 120);
   assert(st(brute) === 'dead' && !s.player.dead,
     `level ${s.player.combat.level} + weapon beats the Cave Brute in ${t.toFixed(1)}s, lowest hp ${Math.round(minHpSeen)}/${s.player.maxHp}`);
+}
+
+// ---------------------------------------------------------------------------
+section('M2 items: drops, pickup, inventory, equipment, stats from gear');
+{
+  // item data sanity
+  assert(INVENTORY_SIZE === 28, 'inventory has 28 slots');
+  const slots = new Set(Object.values(ITEMS).map(i => i.slot).filter(Boolean));
+  assert(['weapon', 'head', 'chest', 'legs'].every(x => slots.has(x as never)), 'items exist for weapon/head/chest/legs');
+  assert(ITEMS.iron_ore && ITEMS.coal, 'M3 crafting materials seeded');
+  for (const [t, tbl] of Object.entries(DROP_TABLES)) assert(tbl.entries.every(e => ITEMS[e.id]), `drop table "${t}" references real items`);
+
+  // killing an enemy produces a drop (rng-seeded, so bounded loop), at the corpse
+  const s = createState(21);
+  const boar = enemyOf(s, 'boar');
+  let kills = 0;
+  while (s.drops.length === 0 && kills < 50) {
+    boar.hp = 1; s.targetId = boar.id; standNear(s, boar, 2);
+    s.player.cd.fill(0); s.player.gcd = 0; s.player.energy = 100;
+    tick(s, { ability: 0 });
+    kills++;
+    if (s.drops.length === 0) run(s, ENEMY_TYPES.boar.respawn + 1);
+  }
+  assert(s.drops.length > 0, `boar kill produced a drop after ${kills} kill(s)`);
+  const drop = s.drops[0];
+  assert(hasEvent(s, e => e.t === 'drop') && Math.hypot(drop.x - boar.x, drop.z - boar.z) < 2, 'drop event raised, drop lies at the corpse');
+  assert(countItem(s.player.inventory, drop.item) === 0, 'drop is NOT silently auto-looted');
+
+  // pickup: click it, the player walks over, it lands in the inventory
+  s.player.x = drop.x + 8; s.player.z = drop.z;
+  tick(s, { pickup: drop.id });
+  assert(s.moveTarget !== null, 'clicking a drop starts walking to it');
+  const qty = drop.qty, item = drop.item;
+  let guard = 0;
+  while (s.drops.includes(drop) && guard++ < 150) tick(s);
+  assert(!s.drops.includes(drop) && countItem(s.player.inventory, item) === qty, `walked over drop: ${qty}x ${ITEMS[item].name} in inventory`);
+  assert(s.moveTarget === null, 'walk target cleared after pickup');
+
+  // stacking + full-inventory refusal
+  const inv = s.player.inventory;
+  inv.fill(null);
+  assert(addItem(inv, 'boar_hide', 30) === 0 && addItem(inv, 'boar_hide', 30) === 0 && inv.filter(Boolean).length === 2, 'stackable items stack (cap 50)');
+  assert(inv[0]!.qty === 50 && inv[1]!.qty === 10, 'overflow starts a new stack');
+  inv.fill({ id: 'iron_ore', qty: 50 });
+  s.drops.push({ id: 900, item: 'boar_hide', qty: 1, x: s.player.x, z: s.player.z, age: 0, blocked: false });
+  tick(s);
+  assert(s.drops.some(d => d.id === 900) && hasEvent(s, e => e.t === 'invfull'), 'full inventory: drop stays on the ground, player is told');
+  s.drops = [];
+
+  // move / merge / drop / destroy
+  inv.fill(null);
+  addItem(inv, 'iron_sword', 1); addItem(inv, 'boar_hide', 5); addItem(inv, 'boar_hide', 50);
+  // slots: 0 sword, 1 hide x50 (merged to 50, 5 left over?) -> addItem fills the first stack first
+  tick(s, { inv: [{ k: 'move', from: 0, to: 5 }] });
+  assert(inv[0] === null && inv[5]?.id === 'iron_sword', 'move relocates an item');
+  const hideTotal = countItem(inv, 'boar_hide');
+  const a = inv.findIndex(x => x?.id === 'boar_hide'), b = inv.findIndex((x, i) => i > a && x?.id === 'boar_hide');
+  tick(s, { inv: [{ k: 'move', from: b, to: a }] });
+  assert(countItem(inv, 'boar_hide') === hideTotal && inv[a]!.qty <= ITEMS.boar_hide.stack, 'move merges matching stacks without losing items');
+  tick(s, { inv: [{ k: 'drop', slot: 5 }] });
+  assert(inv[5] === null && s.drops.length === 1 && s.drops[0].item === 'iron_sword', 'drop puts the item on the ground');
+  tick(s); tick(s);
+  assert(s.drops.length === 1, 'a just-dropped item is not instantly re-grabbed');
+  s.player.x += 6; tick(s); s.player.x -= 6;
+  tick(s);
+  assert(Number(s.drops.length) === 0 && countItem(inv, 'iron_sword') === 1, 'stepping away then back picks it up again');
+  const slotOf = inv.findIndex(x => x?.id === 'iron_sword');
+  tick(s, { inv: [{ k: 'destroy', slot: slotOf }] });
+  assert(countItem(inv, 'iron_sword') === 0, 'destroy deletes the item');
+
+  // equip / unequip, swap returns the old item
+  inv.fill(null);
+  addItem(inv, 'rusty_blade', 1); addItem(inv, 'iron_sword', 1); addItem(inv, 'hide_jerkin', 1);
+  tick(s, { inv: [{ k: 'equip', slot: 0 }] });
+  assert(s.player.equipment.weapon === 'rusty_blade' && inv[0] === null, 'equip moves item into its slot');
+  assert(s.player.stats.weaponDamage === 2, 'derived stats update on equip');
+  tick(s, { inv: [{ k: 'equip', slot: 1 }] });
+  assert(String(s.player.equipment.weapon) === 'iron_sword' && inv[1]?.id === 'rusty_blade', 'equipping over a worn item swaps it back to the bag');
+  tick(s, { inv: [{ k: 'equip', slot: 2 }] });
+  assert(s.player.equipment.chest === 'hide_jerkin' && s.player.stats.armor === 4, 'armour equips into its slot');
+  tick(s, { inv: [{ k: 'unequip', slot: 'chest' }] });
+  assert(s.player.equipment.chest == null && Number(s.player.stats.armor) === 0 && countItem(inv, 'hide_jerkin') === 1, 'unequip returns it to the bag and drops the stats');
+  tick(s, { inv: [{ k: 'equip', slot: 7 }] });
+  assert(String(s.player.equipment.weapon) === 'iron_sword', 'equipping an empty/invalid slot is a no-op');
+  assert(deriveStats(emptyEquipment()).reduction === 0, 'no gear: no reduction');
+
+  // measurable damage: identical seed, bare hands vs better weapons, parked target
+  const strikeTotal = (weapon: string | null) => {
+    const g = createState(99);
+    const b = enemyOf(g, 'boar');
+    b.x = b.spawnX = 0; b.z = b.spawnZ = 0; b.maxHp = b.hp = 1e6; b.state = 'idle'; b.attackCd = 1e9;
+    g.player.x = 0; g.player.z = 2.5;
+    if (weapon) { addItem(g.player.inventory, weapon, 1); tick(g, { inv: [{ k: 'equip', slot: 0 }] }); }
+    tick(g, { clickEnemy: b.id });
+    const start = b.hp;
+    for (let i = 0; i < 20; i++) { g.player.energy = 100; b.state = 'idle'; b.attackCd = 1e9; tick(g, { ability: 0 }); run(g, GCD); }
+    return start - b.hp;
+  };
+  const bare = strikeTotal(null), rusty = strikeTotal('rusty_blade'), iron = strikeTotal('iron_sword'), steel = strikeTotal('steel_sword');
+  assert(bare < rusty && rusty < iron && iron < steel, `weapon tiers deal more damage over 20 Strikes (bare ${bare}, rusty ${rusty}, iron ${iron}, steel ${steel})`);
+  assert(iron > bare * 1.4, `Iron Sword is a >40% Strike upgrade (${(iron / bare).toFixed(2)}x)`);
+
+  // measurable mitigation: same seed, same enemy, only armour differs
+  const damageTaken = (gear: string[]) => {
+    const g = createState(77);
+    for (const id of gear) { addItem(g.player.inventory, id, 1); tick(g, { inv: [{ k: 'equip', slot: g.player.inventory.findIndex(x => x?.id === id) }] }); }
+    const w = enemyOf(g, 'wolf');
+    g.player.x = w.x + 1.5; g.player.z = w.z;
+    g.player.maxHp = g.player.hp = 1e6;
+    run(g, 20);
+    return 1e6 - g.player.hp;
+  };
+  const naked = damageTaken([]), hide = damageTaken(['leather_cap', 'hide_jerkin', 'hide_leggings']),
+    iron3 = damageTaken(['iron_helm', 'iron_chestplate', 'iron_greaves']);
+  assert(naked > hide && hide > iron3, `armour reduces damage taken over 20s of wolf (none ${naked}, hide ${hide}, iron ${iron3})`);
+  assert(iron3 < naked * 0.8, `iron set cuts incoming damage by >20% (${((1 - iron3 / naked) * 100).toFixed(0)}%)`);
 }
 
 console.log(`\nAll ${checks} checks passed.`);

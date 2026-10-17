@@ -1,10 +1,12 @@
 import { createState, step, TICK_DT, Input } from './sim';
 import { Renderer } from './render';
 import { Hud } from './hud';
+import type { InvAction } from './sim/inventory';
 
 const state = createState();
 const view = new Renderer(document.body, state);
-const hud = new Hud((x, y, z) => view.project(x, y, z));
+const pendingInv: InvAction[] = [];
+const hud = new Hud((x, y, z) => view.project(x, y, z), a => pendingInv.push(a));
 const canvas = view.renderer.domElement;
 
 // --- input -> sim Input ---
@@ -15,6 +17,8 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   if (e.code === 'Tab') { e.preventDefault(); pendingTab = true; }
   else if (e.code === 'Escape') pendingClear = true;
+  else if (e.code === 'KeyI') hud.toggle('inv');
+  else if (e.code === 'KeyC') hud.toggle('char');
   else if (/^Digit[1-4]$/.test(e.code)) pendingAbility = Number(e.code.slice(5)) - 1;
 });
 addEventListener('keyup', e => keys.delete(e.code));
@@ -23,13 +27,15 @@ addEventListener('blur', () => keys.clear());
 // Left-click without dragging = click-to-move; left-drag = orbit.
 let pendingClick: { x: number; z: number } | null = null;
 let pendingEnemy: number | null = null;
+let pendingPickup: number | null = null;
 let dragging = false, dragMoved = 0;
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('mousedown', () => { dragging = true; dragMoved = 0; });
 addEventListener('mouseup', e => {
   if (dragging && e.button === 0 && dragMoved < 5) {
-    pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
-    if (pendingEnemy === null) pendingClick = view.pick(e.clientX, e.clientY);
+    pendingPickup = view.pickDrop(e.clientX, e.clientY);
+    if (pendingPickup === null) pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
+    if (pendingPickup === null && pendingEnemy === null) pendingClick = view.pick(e.clientX, e.clientY);
   }
   dragging = false;
 });
@@ -54,8 +60,10 @@ function readInput(): Input {
     tab: pendingTab,
     clearTarget: pendingClear,
     ability: pendingAbility,
+    pickup: pendingPickup,
+    inv: pendingInv.splice(0),
   };
-  pendingClick = null; pendingEnemy = null; pendingTab = false; pendingClear = false; pendingAbility = null;
+  pendingClick = null; pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingClear = false; pendingAbility = null;
   return input;
 }
 

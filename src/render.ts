@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { GameState, GameEvent, Enemy, LANDMARKS, TREES, WORLD_HALF } from './sim';
 import { ENEMY_TYPES } from './sim/data';
+import { ITEMS, TIER_COLORS } from './sim/items';
 
 const mesh = (g: THREE.BufferGeometry, color: number) =>
   new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color }));
@@ -22,6 +23,8 @@ export class Renderer {
   private levelRing: THREE.Mesh;
   private levelRingAge = 99;
   private castPunch = 0;
+  private drops = new Map<number, DropView>();
+  private weapon: THREE.Mesh;
 
   // orbit camera (render-side only; sim never sees it except via input direction)
   yaw = 0;
@@ -48,6 +51,11 @@ export class Renderer {
     const nose = mesh(new THREE.BoxGeometry(0.2, 0.2, 0.4), 0xffd24a);
     nose.position.set(0, 0.4, 0.5);
     this.player.add(nose);
+
+    // held weapon: colour follows the equipped item's tier, hidden when bare-handed
+    this.weapon = mesh(new THREE.BoxGeometry(0.1, 0.1, 1.1), 0xffffff);
+    this.weapon.position.set(0.6, 0.3, 0.7);
+    this.player.add(this.weapon);
 
     this.selection = mesh(new THREE.TorusGeometry(1, 0.07, 8, 32).rotateX(Math.PI / 2), 0xff3b3b);
     this.selection.visible = false;
@@ -174,6 +182,14 @@ export class Renderer {
     return hit ? (hit.object.userData.enemyId as number) : null;
   }
 
+  /** Ground-drop id under a screen position, or null. Drops are generous to click. */
+  pickDrop(clientX: number, clientY: number): number | null {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    const hit = this.raycaster.intersectObjects([...this.drops.values()].map(d => d.hit), false)[0];
+    return hit ? (hit.object.userData.dropId as number) : null;
+  }
+
   /** World point to screen pixels; null when behind the camera. */
   project(x: number, y: number, z: number): { x: number; y: number } | null {
     const v = new THREE.Vector3(x, y, z).project(this.camera);
@@ -199,6 +215,10 @@ export class Renderer {
     this.player.scale.setScalar(1 + this.castPunch * 1.2);
 
     for (const e of s.enemies) this.drawActor(e, alpha);
+    this.drawDrops(s);
+    const w = s.player.equipment.weapon;
+    this.weapon.visible = !!w;
+    if (w) (this.weapon.material as THREE.MeshLambertMaterial).color.setHex(TIER_COLORS[ITEMS[w].tier]);
 
     const target = s.targetId === null ? undefined : s.enemies.find(e => e.id === s.targetId);
     this.selection.visible = !!target;
@@ -238,6 +258,45 @@ export class Renderer {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /** Sync ground-drop meshes with sim state: bobbing gem + a light beam for good items. */
+  private drawDrops(s: GameState) {
+    const live = new Set<number>();
+    const now = performance.now() / 1000;
+    for (const d of s.drops) {
+      live.add(d.id);
+      let v = this.drops.get(d.id);
+      if (!v) {
+        const def = ITEMS[d.item], color = TIER_COLORS[def.tier];
+        const group = new THREE.Group();
+        const gem = mesh(def.slot ? new THREE.OctahedronGeometry(0.35) : new THREE.BoxGeometry(0.4, 0.4, 0.4), color);
+        (gem.material as THREE.MeshLambertMaterial).emissive.setHex(color).multiplyScalar(0.5);
+        gem.position.y = 0.6;
+        group.add(gem);
+        if (def.tier >= 2) {
+          const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 4, 8, 1, true),
+            new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35 }));
+          beam.position.y = 2;
+          group.add(beam);
+        }
+        const hit = new THREE.Mesh(new THREE.SphereGeometry(1.1, 6, 6), new THREE.MeshBasicMaterial({ visible: false }));
+        hit.position.y = 0.6;
+        hit.userData.dropId = d.id;
+        group.add(hit);
+        group.position.set(d.x, 0, d.z);
+        this.scene.add(group);
+        v = { group, gem, hit };
+        this.drops.set(d.id, v);
+      }
+      v.gem.position.y = 0.6 + 0.12 * Math.sin(now * 3 + d.id);
+      v.gem.rotation.y = now * 1.5;
+    }
+    for (const [id, v] of this.drops) {
+      if (live.has(id)) continue;
+      this.scene.remove(v.group);
+      this.drops.delete(id);
+    }
+  }
+
   private drawActor(e: Enemy, alpha: number) {
     const a = this.actors.get(e.id)!;
     const g = a.group;
@@ -259,3 +318,5 @@ interface Actor {
   px: number; pz: number; cx: number; cz: number;
   flash: number;
 }
+
+interface DropView { group: THREE.Group; gem: THREE.Mesh; hit: THREE.Mesh }

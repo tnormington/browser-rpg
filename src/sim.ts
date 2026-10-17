@@ -2,6 +2,9 @@
 // Rules live in src/sim/*; this file owns state shape and the fixed-step driver.
 
 import { XpTrack, newTrack } from './sim/xp';
+import { DerivedStats, Equipment, deriveStats, emptyEquipment } from './sim/items';
+import { Inventory, InvAction, applyInvAction, newInventory } from './sim/inventory';
+import { GroundDrop, updateDrops } from './sim/loot';
 import { PLAYER_RADIUS, clampToWorld, resolveCollisions } from './sim/world';
 import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN } from './sim/data';
 import {
@@ -10,6 +13,7 @@ import {
 } from './sim/combat';
 
 export * from './sim/world';
+export type { GroundDrop } from './sim/loot';
 
 export const TICK_RATE = 30;
 export const TICK_DT = 1 / TICK_RATE;
@@ -45,7 +49,9 @@ export interface Player {
   respawnIn: number;
   outOfCombat: number;
   combat: XpTrack;
-  weaponBonus: number;     // flat damage added to direct hits; the smithing milestone sets this
+  inventory: Inventory;
+  equipment: Equipment;
+  stats: DerivedStats;     // always deriveStats(equipment); combat reads this, never the items
 }
 
 export type GameEvent =
@@ -56,6 +62,9 @@ export type GameEvent =
   | { t: 'kill'; id: number; x: number; z: number }
   | { t: 'xp'; amount: number; x: number; z: number }
   | { t: 'levelup'; level: number }
+  | { t: 'drop'; id: number; item: string; x: number; z: number }
+  | { t: 'loot'; item: string; qty: number }
+  | { t: 'invfull' }
   | { t: 'death' }
   | { t: 'respawn' };
 
@@ -66,6 +75,8 @@ export interface GameState {
   moveTarget: { x: number; z: number } | null;
   targetId: number | null;
   enemies: Enemy[];
+  drops: GroundDrop[];
+  nextDropId: number;
   events: GameEvent[]; // cleared at the start of every step; presentation reads them after each step
 }
 
@@ -78,9 +89,11 @@ export interface Input {
   tab: boolean;
   clearTarget: boolean;
   ability: number | null;                       // ability slot pressed this tick
+  pickup: number | null;                        // ground-drop id clicked this tick: walk to it
+  inv: InvAction[];                             // inventory/equipment actions this tick
 }
 
-export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null };
+export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, pickup: null, inv: [] };
 
 export function createState(seed = 1): GameState {
   const s: GameState = {
@@ -91,7 +104,7 @@ export function createState(seed = 1): GameState {
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
       gcd: 0, cd: ABILITIES.map(() => 0), queued: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
-      combat: newTrack(), weaponBonus: 0,
+      combat: newTrack(), inventory: newInventory(), equipment: emptyEquipment(), stats: deriveStats(emptyEquipment()),
     },
     moveTarget: null,
     targetId: null,
@@ -100,6 +113,8 @@ export function createState(seed = 1): GameState {
       hp: ENEMY_TYPES[sp.type].hp, maxHp: ENEMY_TYPES[sp.type].hp, state: 'idle',
       attackCd: 0, respawnIn: 0, deadFor: 0, hitFlash: 0, swing: 0, bleed: null,
     })),
+    drops: [],
+    nextDropId: 1,
     events: [],
   };
   refreshPlayerStats(s, true);
@@ -118,12 +133,18 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     if (input.clearTarget) clearTarget(s);
     if (input.clickEnemy !== null) setTarget(s, input.clickEnemy);
     else if (input.clickTarget) s.moveTarget = clampToWorld(input.clickTarget);
+    for (const a of input.inv) applyInvAction(s, a);
+    if (input.pickup !== null) {
+      const d = s.drops.find(x => x.id === input.pickup);
+      if (d) s.moveTarget = clampToWorld(d);
+    }
     if (input.tab) tabTarget(s);
     movePlayer(s, input, dt);
     updatePlayerCombat(s, dt);
     if (input.ability !== null) pressAbility(s, input.ability);
   }
   updateEnemies(s, dt);
+  updateDrops(s, dt);
 }
 
 function movePlayer(s: GameState, input: Input, dt: number) {

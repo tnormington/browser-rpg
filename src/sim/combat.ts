@@ -1,6 +1,7 @@
 // Combat rules: targeting, abilities, damage, enemy AI, death and respawn. Pure sim, no DOM/Three.
 import type { GameState, Enemy, EnemyState } from '../sim';
 import { addXp } from './xp';
+import { rollDrops } from './loot';
 import { nextRandom } from './rng';
 import { resolveCollisions } from './world';
 import {
@@ -71,6 +72,7 @@ function killEnemy(s: GameState, e: Enemy) {
   if (s.targetId === e.id) s.targetId = null;
   s.events.push({ t: 'kill', id: e.id, x: e.x, z: e.z });
   s.events.push({ t: 'xp', amount: def.xp, x: e.x, z: e.z });
+  rollDrops(s, e.type, e.x, e.z);
   const gained = addXp(s.player.combat, def.xp);
   if (gained > 0) {
     refreshPlayerStats(s, true); // levelling restores health: a punchy reward
@@ -123,7 +125,7 @@ function tryUse(s: GameState, slot: number) {
     p.hp += amount;
     s.events.push({ t: 'heal', x: p.x, z: p.z, amount });
   } else if (target) {
-    const { amount, crit } = rollDamage(s, a.damage, power, p.weaponBonus);
+    const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage);
     if (a.kind === 'dot') target.bleed = { ticks: a.dotTicks!, timer: 1, damage: Math.round(a.dotDamage! * power) };
     damageEnemy(s, target, amount, crit, slot);
   }
@@ -225,7 +227,7 @@ export function updateEnemies(s: GameState, dt: number) {
         if (dist(e, p) <= def.attackRange && e.attackCd <= 0) {
           e.attackCd = def.attackInterval;
           e.swing = 0.15;
-          const amount = Math.max(1, Math.round(def.damage * (0.85 + 0.3 * rand(s))));
+          const amount = Math.max(1, Math.round(def.damage * (0.85 + 0.3 * rand(s)) * (1 - p.stats.reduction)));
           p.hp = Math.max(0, p.hp - amount);
           p.outOfCombat = 0;
           s.events.push({ t: 'hit', target: 'player', x: p.x, z: p.z, amount, crit: false, slot: -1, dot: false });
