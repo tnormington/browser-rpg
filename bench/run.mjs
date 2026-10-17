@@ -18,6 +18,8 @@ const shotOnly = process.argv.includes('--shot-only');
 const headed = process.argv.includes('--headed');
 const WINDOW_CAP_MS = 20000; // timing window ends at `frames` frames or this wall time, whichever is first
 const VIEW = { width: 1280, height: 720 };
+const query = opt('query', ''); // extra URL params, e.g. --query gfx=none
+const tag = opt('tag', '');     // suffix for output file names, e.g. --tag noshadow
 const shots = join(root, 'bench', 'shots');
 mkdirSync(shots, { recursive: true });
 
@@ -42,13 +44,13 @@ async function measure(level) {
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   const t0 = Date.now();
-  await page.goto(`${base}?debug=1&stress=${level}`);
+  await page.goto(`${base}?debug=1&stress=${level}${query ? '&' + query : ''}`);
   await page.waitForFunction(() => window.__debug, null, { timeout: 180000 });
   const loadMs = Date.now() - t0;
   await page.locator('.helpok').click({ timeout: 5000 }).catch(() => {}); // dismiss the controls overlay
   // warm-up: a stable run of frames (shader compile, first uploads) before measuring anything
   await page.evaluate(() => new Promise(res => { let n = 0; const f = () => (++n >= 60 ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }));
-  const label = `stress-${level}x${headed ? '-headed' : ''}`;
+  const label = `stress-${level}x${headed ? '-headed' : ''}${tag ? '-' + tag : ''}`;
   if (shotOnly) { await page.screenshot({ path: join(shots, `${label}.png`) }); await page.close(); return { label, level }; }
 
   const raw = await page.evaluate(({ frames, cap }) => new Promise(done => {
@@ -104,7 +106,7 @@ finally { await browser.close(); await server.close(); }
 
 if (!shotOnly) {
   const meta = { browser: how, headless: !headed, viewport: VIEW, frameWindow: `${frames} frames (cap ${WINDOW_CAP_MS / 1000}s)`, date: new Date().toISOString() };
-  writeFileSync(join(shots, headed ? 'results-headed.json' : 'results.json'), JSON.stringify({ meta, results }, null, 2));
+  writeFileSync(join(shots, headed ? 'results-headed.json' : `results${tag ? '-' + tag : ''}.json`), JSON.stringify({ meta, results }, null, 2));
   console.log(JSON.stringify({ meta, results }));
   const f = (v, d = 2) => (v == null ? '-' : Number(v).toFixed(d));
   console.error(`\n${meta.browser}, ${meta.headless ? 'headless' : 'headed'}, GPU: ${results[0]?.gpu}`);

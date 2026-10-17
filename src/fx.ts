@@ -29,7 +29,7 @@ export class Particles {
     g.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
     this.pos.fill(-1000);
     this.points = new THREE.Points(g, new THREE.PointsMaterial({
-      size: 0.28, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
+      size: 0.28, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, toneMapped: false, // emissive FX stay vivid under ACES
     }));
     this.points.frustumCulled = false;
   }
@@ -89,7 +89,7 @@ export class Rings {
   constructor(private scene: THREE.Scene) {}
 
   pulse(x: number, y: number, z: number, color: number, to: number, dur = 0.5, from = 0.3) {
-    const mesh = new THREE.Mesh(this.geo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false }));
+    const mesh = new THREE.Mesh(this.geo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, toneMapped: false }));
     mesh.position.set(x, y, z);
     this.scene.add(mesh);
     this.rings.push({ mesh, age: 0, dur, from, to });

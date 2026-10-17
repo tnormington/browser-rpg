@@ -7,8 +7,34 @@ import { NPC, QuestStage } from './sim/quest';
 import { Particles, Rings } from './fx';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
 
-const mesh = (g: THREE.BufferGeometry, color: number) =>
-  new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color }));
+/** Graphics-spike switches (?gfx=none | ?gfx=pbr,shadow,aces,ibl). All on by default; each can be dropped to price it in isolation. */
+const gfxParam = new URLSearchParams(location.search).get('gfx');
+const gfxOn = gfxParam === null ? ['pbr', 'shadow', 'aces', 'ibl'] : gfxParam.split(',');
+const GFX = { pbr: gfxOn.includes('pbr'), shadow: gfxOn.includes('shadow'), aces: gfxOn.includes('aces'), ibl: gfxOn.includes('ibl') };
+
+type Mat = THREE.MeshStandardMaterial | THREE.MeshLambertMaterial;
+/** Roughness / metalness per material class. */
+const MATERIALS = {
+  ground: [0.95, 0], dirt: [0.98, 0], foliage: [0.85, 0], wood: [0.8, 0], rock: [0.9, 0], stone: [0.85, 0],
+  metal: [0.4, 0.9], ore: [0.55, 0.6], coal: [0.3, 0.1], cloth: [0.9, 0], skin: [0.6, 0], hide: [0.92, 0],
+  gem: [0.3, 0.2], glow: [0.6, 0], dark: [1, 0],
+} as const;
+type MatClass = keyof typeof MATERIALS;
+
+const material = (color: number, cls: MatClass): Mat => {
+  const [roughness, metalness] = MATERIALS[cls];
+  return GFX.pbr ? new THREE.MeshStandardMaterial({ color, roughness, metalness }) : new THREE.MeshLambertMaterial({ color });
+};
+const mesh = (g: THREE.BufferGeometry, color: number, cls: MatClass, shadow: 'cast' | 'receive' | 'both' | 'none' = 'both') => {
+  const m = new THREE.Mesh(g, material(color, cls));
+  m.castShadow = shadow === 'cast' || shadow === 'both';
+  m.receiveShadow = shadow === 'receive' || shadow === 'both';
+  return m;
+};
+
+// Directional light sits at a fixed offset from its shadow target and follows the player, so the shadow frustum stays tight.
+const SUN_OFFSET = new THREE.Vector3(30, 50, 20);
+const SHADOW_EXTENT = 28, SHADOW_MAP = 2048;
 
 export class Renderer {
   readonly renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -36,6 +62,7 @@ export class Renderer {
   private particles = new Particles();
   private rings: Rings;
   private lastDraw = performance.now();
+  private sun = new THREE.DirectionalLight(0xfff4e0, GFX.ibl ? 2.2 : 1.4);
 
   // orbit camera (render-side only; sim never sees it except via input direction)
   yaw = 0;
@@ -45,42 +72,41 @@ export class Renderer {
   constructor(parent: HTMLElement, s: GameState) {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     parent.appendChild(this.renderer.domElement);
-    this.scene.background = new THREE.Color(0x87ceeb);
-    this.scene.fog = new THREE.Fog(0x87ceeb, 40, 110);
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x556b2f, 1.1));
-    const sun = new THREE.DirectionalLight(0xffffee, 1.4);
-    sun.position.set(30, 50, 20);
-    this.scene.add(sun);
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    if (GFX.aces) { this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 0.85; }
+    this.setupSky();
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x556b2f, GFX.ibl ? 0.12 : 1.1));
+    this.setupSun();
 
-    this.ground = mesh(new THREE.PlaneGeometry(WORLD_HALF * 2, WORLD_HALF * 2).rotateX(-Math.PI / 2), 0x5a8f3c);
+    this.ground = mesh(new THREE.PlaneGeometry(WORLD_HALF * 2, WORLD_HALF * 2).rotateX(-Math.PI / 2), 0x5a8f3c, 'ground', 'receive');
     this.scene.add(this.ground);
     this.buildZone();
     this.rings = new Rings(this.scene);
     this.scene.add(this.particles.points);
     this.buildNpc();
 
-    this.player = mesh(new THREE.CapsuleGeometry(0.5, 1, 4, 12), 0x3a6ea5);
+    this.player = mesh(new THREE.CapsuleGeometry(0.5, 1, 4, 12), 0x3a6ea5, 'cloth', 'cast');
     this.scene.add(this.player);
     // a nose so facing is visible
-    const nose = mesh(new THREE.BoxGeometry(0.2, 0.2, 0.4), 0xffd24a);
+    const nose = mesh(new THREE.BoxGeometry(0.2, 0.2, 0.4), 0xffd24a, 'skin', 'cast');
     nose.position.set(0, 0.4, 0.5);
     this.player.add(nose);
 
     // held weapon: colour follows the equipped item's tier, hidden when bare-handed
-    this.weapon = mesh(new THREE.BoxGeometry(0.1, 0.1, 1.1), 0xffffff);
+    this.weapon = mesh(new THREE.BoxGeometry(0.1, 0.1, 1.1), 0xffffff, 'metal', 'cast');
     this.weapon.position.set(0.6, 0.3, 0.7);
     this.player.add(this.weapon);
 
-    this.selection = mesh(new THREE.TorusGeometry(1, 0.07, 8, 32).rotateX(Math.PI / 2), 0xff3b3b);
+    this.selection = mesh(new THREE.TorusGeometry(1, 0.07, 8, 32).rotateX(Math.PI / 2), 0xff3b3b, 'glow', 'none');
     this.selection.visible = false;
     this.scene.add(this.selection);
-    this.levelRing = mesh(new THREE.TorusGeometry(1, 0.1, 8, 40).rotateX(Math.PI / 2), 0xffe14a);
+    this.levelRing = mesh(new THREE.TorusGeometry(1, 0.1, 8, 40).rotateX(Math.PI / 2), 0xffe14a, 'glow', 'none');
     this.levelRing.visible = false;
     this.scene.add(this.levelRing);
     for (const e of s.enemies) this.addActor(e);
     for (const n of s.nodes) this.addNode(n);
 
-    this.marker = mesh(new THREE.TorusGeometry(0.5, 0.08, 8, 24).rotateX(Math.PI / 2), 0xffe14a);
+    this.marker = mesh(new THREE.TorusGeometry(0.5, 0.08, 8, 24).rotateX(Math.PI / 2), 0xffe14a, 'glow', 'none');
     this.marker.visible = false;
     this.scene.add(this.marker);
 
@@ -90,43 +116,101 @@ export class Renderer {
     this.resize();
   }
 
+  /** Gradient sky baked once through PMREM: background and image-based ambient light in one. */
+  private setupSky() {
+    const horizon = 0xb4d4f0;
+    this.scene.background = new THREE.Color(0x87ceeb);
+    this.scene.fog = new THREE.Fog(GFX.ibl ? horizon : 0x87ceeb, 40, 110);
+    if (!GFX.ibl) return;
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false,
+      uniforms: {
+        zenith: { value: new THREE.Color(0x3a78c8) }, horizon: { value: new THREE.Color(horizon) },
+        ground: { value: new THREE.Color(0x6a7f55) }, sun: { value: SUN_OFFSET.clone().normalize() },
+      },
+      vertexShader: 'varying vec3 d; void main() { d = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform vec3 zenith, horizon, ground, sun; varying vec3 d;
+        void main() {
+          vec3 n = normalize(d);
+          vec3 c = mix(horizon, zenith, pow(clamp(n.y, 0.0, 1.0), 0.5));
+          c = mix(c, ground, smoothstep(0.0, -0.25, n.y));
+          c += vec3(1.0, 0.85, 0.6) * pow(max(dot(n, sun), 0.0), 48.0) * 1.5; // soft sun glow
+          gl_FragColor = vec4(c, 1.0);
+        }`,
+    }));
+    const skyScene = new THREE.Scene();
+    skyScene.add(sky);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const rt = pmrem.fromScene(skyScene);
+    this.scene.environment = this.scene.background = rt.texture;
+    this.scene.environmentIntensity = 1.0;
+    this.scene.backgroundIntensity = 1.3;
+    pmrem.dispose();
+  }
+
+  private setupSun() {
+    const sun = this.sun;
+    sun.position.copy(SUN_OFFSET);
+    this.scene.add(sun, sun.target);
+    if (!GFX.shadow) return;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
+    const c = sun.shadow.camera;
+    c.left = c.bottom = -SHADOW_EXTENT; c.right = c.top = SHADOW_EXTENT;
+    c.near = 10; c.far = 120;
+    sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04;
+  }
+
+  /** Re-centre the shadow frustum on the player, snapped to shadow-texel steps so shadows do not swim as it moves. */
+  private followSun(x: number, z: number) {
+    const dir = SUN_OFFSET.clone().normalize();
+    const right = new THREE.Vector3(0, 1, 0).cross(dir).normalize(), up = dir.clone().cross(right);
+    const target = new THREE.Vector3(x, 0, z), texel = (2 * SHADOW_EXTENT) / SHADOW_MAP;
+    const a = target.dot(right), b = target.dot(up);
+    target.addScaledVector(right, Math.round(a / texel) * texel - a).addScaledVector(up, Math.round(b / texel) * texel - b);
+    this.sun.target.position.copy(target);
+    this.sun.position.copy(target).add(SUN_OFFSET);
+  }
+
   private buildZone() {
     const add = (m: THREE.Object3D, x: number, y: number, z: number) => { m.position.set(x, y, z); this.scene.add(m); return m; };
 
     // clearing: pale dirt disc
     const c = LANDMARKS.clearing;
-    add(mesh(new THREE.CylinderGeometry(c.r, c.r, 0.05, 40), 0xb59b6a), c.x, 0.03, c.z);
+    add(mesh(new THREE.CylinderGeometry(c.r, c.r, 0.05, 40), 0xb59b6a, 'dirt', 'receive'), c.x, 0.03, c.z);
 
     // forge: stone hut, chimney, glowing furnace, anvil
     const f = LANDMARKS.forge;
     this.forgeParts.push(
-      add(mesh(new THREE.BoxGeometry(4, 2.5, 3), 0x777777), f.x, 1.25, f.z),
-      add(mesh(new THREE.BoxGeometry(1, 2, 1), 0x555555), f.x + 1, 3.4, f.z),
-      add(mesh(new THREE.BoxGeometry(1.2, 1, 0.1), 0xff6a1a), f.x - 1, 1, f.z + 1.55),
-      add(mesh(new THREE.BoxGeometry(0.8, 0.6, 0.5), 0x222222), f.x - 3, 0.3, f.z + 2));
+      add(mesh(new THREE.BoxGeometry(4, 2.5, 3), 0x777777, 'stone'), f.x, 1.25, f.z),
+      add(mesh(new THREE.BoxGeometry(1, 2, 1), 0x555555, 'stone'), f.x + 1, 3.4, f.z),
+      add(mesh(new THREE.BoxGeometry(1.2, 1, 0.1), 0xff6a1a, 'glow', 'receive'), f.x - 1, 1, f.z + 1.55),
+      add(mesh(new THREE.BoxGeometry(0.8, 0.6, 0.5), 0x222222, 'metal'), f.x - 3, 0.3, f.z + 2));
     add(new THREE.PointLight(0xff7a2a, 30, 12), f.x - 1, 1.2, f.z + 2.5);
 
     // cave mouth: dark opening between rocks, facing +z
     const k = LANDMARKS.caveMouth;
-    add(mesh(new THREE.DodecahedronGeometry(3), 0x666a70), k.x - 3, 2, k.z - 2);
-    add(mesh(new THREE.DodecahedronGeometry(3), 0x666a70), k.x + 3, 2, k.z - 2);
-    add(mesh(new THREE.DodecahedronGeometry(3.4), 0x5c6066), k.x, 3.6, k.z - 3.5);
-    add(mesh(new THREE.BoxGeometry(3.2, 3, 0.3), 0x050505), k.x, 1.5, k.z - 1.4);
+    add(mesh(new THREE.DodecahedronGeometry(3), 0x666a70, 'rock'), k.x - 3, 2, k.z - 2);
+    add(mesh(new THREE.DodecahedronGeometry(3), 0x666a70, 'rock'), k.x + 3, 2, k.z - 2);
+    add(mesh(new THREE.DodecahedronGeometry(3.4), 0x5c6066, 'rock'), k.x, 3.6, k.z - 3.5);
+    add(mesh(new THREE.BoxGeometry(3.2, 3, 0.3), 0x050505, 'dark', 'receive'), k.x, 1.5, k.z - 1.4);
 
     // boundary: ring of boulders along the edge
     for (let i = -WORLD_HALF; i <= WORLD_HALF; i += 3) {
       for (const [x, z] of [[i, -WORLD_HALF], [i, WORLD_HALF], [-WORLD_HALF, i], [WORLD_HALF, i]]) {
-        add(mesh(new THREE.DodecahedronGeometry(1.6), 0x777b80), x, 0.8, z);
+        add(mesh(new THREE.DodecahedronGeometry(1.6), 0x777b80, 'rock'), x, 0.8, z);
       }
     }
     // dev stress only (?stress=N): scatter extra decorative boulders so boulder count scales with N like everything else
     if (WORLD_HALF > 30) {
       const factor = (WORLD_HALF / 30) ** 2, ring = Math.ceil(2 * WORLD_HALF / 3 + 1) * 4;
       const pts = ringPoints({ rng: 777 }, WORLD_HALF, 30, 3);
-      for (let i = ring; i < Math.round(BOULDERS_PER_FACTOR * factor); i++) { const p = pts.next().value!; add(mesh(new THREE.DodecahedronGeometry(1.6), 0x777b80), p.x, 0.8, p.z); }
+      for (let i = ring; i < Math.round(BOULDERS_PER_FACTOR * factor); i++) { const p = pts.next().value!; add(mesh(new THREE.DodecahedronGeometry(1.6), 0x777b80, 'rock'), p.x, 0.8, p.z); }
     }
     // beyond the boundary: dark ground so the edge reads as the end of the world
-    add(mesh(new THREE.PlaneGeometry(Math.max(400, WORLD_HALF * 4), Math.max(400, WORLD_HALF * 4)).rotateX(-Math.PI / 2), 0x2d4a22), 0, -0.05, 0);
+    add(mesh(new THREE.PlaneGeometry(Math.max(400, WORLD_HALF * 4), Math.max(400, WORLD_HALF * 4)).rotateX(-Math.PI / 2), 0x2d4a22, 'ground', 'receive'), 0, -0.05, 0);
   }
 
   /** Quest giver: robed figure with a hood and staff, and a bobbing ! / ? marker above. */
@@ -134,18 +218,18 @@ export class Renderer {
     const group = new THREE.Group();
     group.position.set(NPC.x, 0, NPC.z);
     group.rotation.y = Math.atan2(0 - NPC.x, 6 - NPC.z); // faces the spawn point
-    const part = (g: THREE.BufferGeometry, color: number, y: number, x = 0, z = 0) => {
-      const m = mesh(g, color);
+    const part = (g: THREE.BufferGeometry, color: number, cls: MatClass, y: number, x = 0, z = 0) => {
+      const m = mesh(g, color, cls, 'cast');
       m.position.set(x, y, z);
       group.add(m);
       this.npcParts.push(m);
       return m;
     };
-    part(new THREE.ConeGeometry(0.7, 1.7, 10), 0x7a3a8a, 0.85);
-    part(new THREE.SphereGeometry(0.3, 12, 10), 0xe0b890, 1.95);
-    part(new THREE.ConeGeometry(0.34, 0.5, 10), 0x5a2a6a, 2.3);
-    part(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), 0x6b4a2b, 1.3, 0.7, 0.15);
-    part(new THREE.SphereGeometry(0.14, 8, 8), 0x6ad8ff, 2.7, 0.7, 0.15);
+    part(new THREE.ConeGeometry(0.7, 1.7, 10), 0x7a3a8a, 'cloth', 0.85);
+    part(new THREE.SphereGeometry(0.3, 12, 10), 0xe0b890, 'skin', 1.95);
+    part(new THREE.ConeGeometry(0.34, 0.5, 10), 0x5a2a6a, 'cloth', 2.3);
+    part(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), 0x6b4a2b, 'wood', 1.3, 0.7, 0.15);
+    part(new THREE.SphereGeometry(0.14, 8, 8), 0x6ad8ff, 'gem', 2.7, 0.7, 0.15);
     this.scene.add(group);
 
     const tex = (ch: string, color: string) => {
@@ -155,7 +239,9 @@ export class Renderer {
       g.font = 'bold 56px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.lineWidth = 6; g.strokeStyle = '#000'; g.strokeText(ch, 32, 34);
       g.fillStyle = color; g.fillText(ch, 32, 34);
-      return new THREE.CanvasTexture(c);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace; // canvas pixels are sRGB: without this the ! / ? read washed out
+      return t;
     };
     this.markerTex = { offer: tex('!', '#ffe14a'), ready: tex('?', '#ffe14a'), wait: tex('?', '#9a9a9a') };
     this.npcMarker = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.markerTex.offer, depthTest: false }));
@@ -190,23 +276,23 @@ export class Renderer {
     group.position.set(n.x, 0, n.z);
     group.userData.nodeId = n.id;
     let crown: THREE.Mesh | undefined;
-    const mats: THREE.MeshLambertMaterial[] = [];
-    const part = (g: THREE.BufferGeometry, color: number, y: number) => {
-      const m = mesh(g, color);
+    const mats: Mat[] = [];
+    const part = (g: THREE.BufferGeometry, color: number, cls: MatClass, y: number) => {
+      const m = mesh(g, color, cls);
       m.position.y = y;
       group.add(m);
-      mats.push(m.material as THREE.MeshLambertMaterial);
+      mats.push(m.material as Mat);
       return m;
     };
     if (n.type === 'tree') {
-      part(new THREE.CylinderGeometry(0.25, 0.35, 2, 8), 0x6b4a2b, 1);
-      crown = part(new THREE.ConeGeometry(1.4, 3.5, 8), 0x2f6b2f, 3.5);
+      part(new THREE.CylinderGeometry(0.25, 0.35, 2, 8), 0x6b4a2b, 'wood', 1);
+      crown = part(new THREE.ConeGeometry(1.4, 3.5, 8), 0x2f6b2f, 'foliage', 3.5);
     } else {
       const coal = n.type === 'coal';
-      part(new THREE.DodecahedronGeometry(1.3), coal ? 0x2b2b30 : 0x7a7f86, 0.9);
+      part(new THREE.DodecahedronGeometry(1.3), coal ? 0x2b2b30 : 0x7a7f86, 'rock', 0.9);
       // ore flecks: rust for iron, glossy black for coal
       for (const [dx, dy, dz] of [[0.7, 1.2, 0.6], [-0.6, 1.0, 0.8], [0.1, 1.6, -0.5]]) {
-        const fleck = part(new THREE.OctahedronGeometry(0.28), coal ? 0x111114 : 0xc9733a, dy);
+        const fleck = part(new THREE.OctahedronGeometry(0.28), coal ? 0x111114 : 0xc9733a, coal ? 'coal' : 'ore', dy);
         fleck.position.x = dx; fleck.position.z = dz;
       }
     }
@@ -231,15 +317,17 @@ export class Renderer {
     const def = ENEMY_TYPES[e.type];
     const color = e.type === 'boar' ? 0x8a5a3a : e.type === 'wolf' ? 0x777c88 : 0x8a2f2f;
     const group = new THREE.Group();
-    const mat = new THREE.MeshLambertMaterial({ color });
+    const mat = material(color, 'hide');
     const body = new THREE.Mesh(
       e.type === 'brute' ? new THREE.BoxGeometry(1.6, 2.2, 1.2) : new THREE.CapsuleGeometry(def.radius * 0.8, def.radius * 1.2, 4, 10).rotateX(Math.PI / 2),
       mat);
+    body.castShadow = body.receiveShadow = true;
     body.position.y = e.type === 'brute' ? 1.5 : def.radius + 0.2;
     body.userData.enemyId = e.id;
     group.add(body);
     // snout/fist so facing is readable
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), new THREE.MeshLambertMaterial({ color: 0xffd24a }));
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), material(0xffd24a, 'skin'));
+    nose.castShadow = true;
     nose.position.set(0, body.position.y + 0.1, def.radius + 0.4);
     nose.userData.enemyId = e.id;
     group.add(nose);
@@ -414,7 +502,7 @@ export class Renderer {
     this.drawNodes(s);
     const w = s.player.equipment.weapon;
     this.weapon.visible = !!w;
-    if (w) (this.weapon.material as THREE.MeshLambertMaterial).color.setHex(TIER_COLORS[ITEMS[w].tier]);
+    if (w) (this.weapon.material as Mat).color.setHex(TIER_COLORS[ITEMS[w].tier]);
 
     const target = s.targetId === null ? undefined : s.enemies.find(e => e.id === s.targetId);
     this.selection.visible = !!target;
@@ -451,6 +539,7 @@ export class Renderer {
       this.camera.position.y += (Math.random() - 0.5) * this.shakeMag;
     }
     this.camera.lookAt(x, 1.5, z);
+    this.followSun(x, z);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -464,8 +553,8 @@ export class Renderer {
       if (!v) {
         const def = ITEMS[d.item], color = TIER_COLORS[def.tier];
         const group = new THREE.Group();
-        const gem = mesh(def.slot ? new THREE.OctahedronGeometry(0.35) : new THREE.BoxGeometry(0.4, 0.4, 0.4), color);
-        (gem.material as THREE.MeshLambertMaterial).emissive.setHex(color).multiplyScalar(0.5);
+        const gem = mesh(def.slot ? new THREE.OctahedronGeometry(0.35) : new THREE.BoxGeometry(0.4, 0.4, 0.4), color, 'gem', 'cast');
+        (gem.material as Mat).emissive.setHex(color).multiplyScalar(0.5);
         gem.position.y = 0.6;
         group.add(gem);
         if (def.tier >= 2) {
@@ -509,11 +598,11 @@ export class Renderer {
 interface Actor {
   group: THREE.Group;
   body: THREE.Mesh;
-  mat: THREE.MeshLambertMaterial;
+  mat: Mat;
   base: number;
   px: number; pz: number; cx: number; cz: number;
   flash: number;
 }
 
-interface NodeView { group: THREE.Group; crown?: THREE.Mesh; mats: THREE.MeshLambertMaterial[]; base: number[] }
+interface NodeView { group: THREE.Group; crown?: THREE.Mesh; mats: Mat[]; base: number[] }
 interface DropView { group: THREE.Group; gem: THREE.Mesh; hit: THREE.Mesh }
