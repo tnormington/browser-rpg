@@ -240,7 +240,18 @@ export class Renderer {
     this.post = new PostStack(this.renderer, this.scene, this.camera, quality);
     addEventListener('resize', () => this.resize());
     this.resize();
-    this.modelsReady = this.populate(s);
+    this.modelsReady = this.populate(s).then(() => this.warmUp());
+  }
+
+  /** Compile every shader the first fight needs before the player's first frame: hidden effects (slash pool, rings, ground telegraphs) otherwise compile the first time they appear, a 10-20 ms stall mid-combat. One synchronous render, so no frame of it is ever presented. */
+  private warmUp() {
+    const saved = new Map<THREE.Object3D, [boolean, boolean]>();
+    this.scene.traverse(o => { saved.set(o, [o.visible, o.frustumCulled]); o.visible = true; o.frustumCulled = false; });
+    this.rings.pulse(0, 0.2, 0, 0xffffff, 1, 0.1);
+    this.slashes.swipe(0, 0, 0);
+    this.post.render(this.scene);
+    this.rings.update(1); this.slashes.update(1); // expire the throwaways
+    for (const [o, [v, f]] of saved) { o.visible = v; o.frustumCulled = f; }
   }
 
   /** Gradient sky baked once through PMREM: background and image-based ambient light in one. */
