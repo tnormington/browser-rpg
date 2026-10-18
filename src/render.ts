@@ -62,10 +62,23 @@ const mesh = (g: THREE.BufferGeometry, color: number, cls: MatClass, shadow: 'ca
 // Directional light sits at a fixed offset from its shadow target and follows the player, so the shadow frustum stays tight.
 const SUN_OFFSET = new THREE.Vector3(-38, 36, 26); // ~37 degrees: long silhouettes, but shadow bands stay short enough not to swallow the combat arena
 const SHADOW_EXTENT = 28, SHADOW_MAP = 2048;
-/** Where the red snout cube sits on each enemy model (local to the actor, +z forward). */
-const NOSE: Record<string, { y: number; z: number }> = { boar: { y: 0.6, z: 0.95 }, wolf: { y: 0.95, z: 0.8 }, brute: { y: 2.1, z: 0.55 } };
+/**
+ * Findability of hostiles at range, replacing the old red snout cube. Two quiet cues, both in the blood family:
+ * a dull ember lift on the enemy's own materials (its silhouette stays warmer than the cold ground around it), and a
+ * dim blood-red ring on the ground under it. The ring ignores fog, so it still reads at 25-40 m where the model has
+ * faded into haze, and it is hidden again just before the fog would have hidden the model (FOG_CULL), so it never
+ * outlives the thing it marks.
+ */
+const HOSTILE_TINT = 0x2c0e08;
+const RING_OPACITY = 0.42;
 const FOG = { near: 8, far: 46 };
-const FORGE_LIGHT = { intensity: 140, distance: 24, y: 1.2 };
+/** Actors past this camera distance are not drawn or animated. Strictly beyond FOG.far, where fog is already 100%: nothing still meant to be visible is culled. */
+const FOG_CULL = FOG.far + 8;
+/** The Warden's arcane gem floats just above his right fist (glTF loading strips the dot from "Fist.R"), carried by the bone. */
+const GEM_HAND = 'FistR', GEM_LIFT = 0.4;
+/** Furnace core emissive: hot enough to bloom orange, not so hot it clips to a white hole and washes out the building. */
+const FURNACE_GLOW = 1.3;
+const FORGE_LIGHT = { intensity: 120, distance: 24, y: 1.2 };
 
 export class Renderer {
   readonly renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -89,6 +102,7 @@ export class Renderer {
   private forgeParts: THREE.Object3D[] = [];
   private npcParts: THREE.Object3D[] = [];
   private npcMarker!: THREE.Sprite;
+  private staffLight!: THREE.PointLight;
   private markerTex!: Record<'offer' | 'ready' | 'wait', THREE.Texture>;
   private particles = new Particles();
   private rings: Rings;
@@ -257,12 +271,14 @@ export class Renderer {
 
     // forge: stone hut, chimney, glowing furnace, anvil
     const f = LANDMARKS.forge;
+    const furnace = mesh(new THREE.BoxGeometry(1.2, 1, 0.1), P.fire, 'glow', 'receive');
+    (furnace.material as Mat).emissiveIntensity = FURNACE_GLOW;
     this.forgeParts.push(
       add(mesh(new THREE.BoxGeometry(4, 2.5, 3), P.stone, 'stone'), f.x, 1.25, f.z),
       add(mesh(new THREE.BoxGeometry(1, 2, 1), P.stoneDark, 'stone'), f.x + 1, 3.4, f.z),
-      add(mesh(new THREE.BoxGeometry(1.2, 1, 0.1), P.fire, 'glow', 'receive'), f.x - 1, 1, f.z + 1.55),
+      add(furnace, f.x - 1, 1, f.z + 1.55),
       add(mesh(new THREE.BoxGeometry(0.8, 0.6, 0.5), P.anvil, 'metal'), f.x - 3, 0.3, f.z + 2));
-    this.forgeLight = add(new THREE.PointLight(P.forgeLight, FORGE_LIGHT.intensity, FORGE_LIGHT.distance), f.x - 1, FORGE_LIGHT.y, f.z + 2.5) as THREE.PointLight;
+    this.forgeLight = add(new THREE.PointLight(P.forgeLight, FORGE_LIGHT.intensity, FORGE_LIGHT.distance), f.x - 1, FORGE_LIGHT.y, f.z + 3.6) as THREE.PointLight;
 
     // cave mouth: dark opening between rocks, facing +z
     const k = LANDMARKS.caveMouth;
@@ -303,11 +319,11 @@ export class Renderer {
     part(new THREE.ConeGeometry(0.7, 1.7, 6), P.robe, 'cloth', 0.85);
     part(new THREE.SphereGeometry(0.3, 6, 4), P.skin, 'skin', 1.95);
     part(new THREE.ConeGeometry(0.34, 0.5, 6), P.hood, 'cloth', 2.3);
-    part(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 5), P.staffWood, 'wood', 1.3, 0.7, 0.15);
-    part(new THREE.OctahedronGeometry(0.25), P.arcane, 'glow', 2.7, 0.7, 0.15); // arcane light on the staff
-    const staffLight = new THREE.PointLight(P.arcane, 6, 7);
-    staffLight.position.set(NPC.x + 0.7, 2.7, NPC.z + 0.15);
-    this.scene.add(staffLight);
+    part(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 5), P.staffWood, 'wood', 1.3, 0.7, 0.15); // stand-in until the model loads
+    part(new THREE.OctahedronGeometry(0.25), P.arcane, 'glow', 2.7, 0.7, 0.15);
+    this.staffLight = new THREE.PointLight(P.arcane, 6, 7);
+    this.staffLight.position.set(NPC.x + 0.7, 2.7, NPC.z + 0.15);
+    this.scene.add(this.staffLight);
     this.scene.add(group);
     this.npcGroup = group;
 
@@ -398,19 +414,31 @@ export class Renderer {
 
   private dressNpc(p: Prepared) {
     const inst = spawn(p);
-    // the robe, head and hood are replaced; the staff and its arcane gem stay (the quest light hangs on them)
-    this.hide(...this.npcParts.slice(0, 3));
+    // every primitive is replaced (they stay as invisible pick proxies). The wizard model carries no staff, so the arcane gem
+    // and the quest light hang over his hand instead of on a second, primitive staff
+    this.hide(...this.npcParts);
     this.npcGroup.add(inst.root);
+    this.npcGroup.updateMatrixWorld(true);
+    const hand = inst.root.getObjectByName(GEM_HAND);
+    if (hand) {
+      const gem = mesh(new THREE.OctahedronGeometry(0.16), P.arcane, 'glow', 'none');
+      (gem.material as Mat).emissiveIntensity = 0.55; // arcane light, not a white blowout
+      gem.scale.setScalar(1 / hand.getWorldScale(new THREE.Vector3()).x); // bone space is rig-scaled: undo it so the gem is in world units
+      gem.position.copy(hand.worldToLocal(hand.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, GEM_LIFT, 0))));
+      this.staffLight.position.copy(gem.position);
+      hand.add(gem, this.staffLight);
+    }
     this.npcAnim = new Animator(inst.root, inst.clips, SLOTS.warden.anim);
   }
 
   private dressActor(a: Actor, p: Prepared) {
     const inst = spawn(p, true);
     this.hide(a.body);
-    a.nose.position.set(0, NOSE[a.type].y, NOSE[a.type].z); // the red accent moves to where this model's snout is
+    this.hide(a.nose);
     a.group.add(inst.root);
     a.model = inst.root;
     a.mats = inst.materials;
+    for (const m of a.mats) m.emissive.setHex(HOSTILE_TINT);
     a.anim = new Animator(inst.root, inst.clips, SLOTS[a.type as 'boar'].anim);
   }
 
@@ -576,17 +604,22 @@ export class Renderer {
     body.position.y = e.type === 'brute' ? 1.5 : def.radius + 0.2;
     body.userData.enemyId = e.id;
     group.add(body);
-    // snout/fist so facing is readable
-    const noseMat = material(P.bloodDark, 'skin');
-    noseMat.emissive.setHex(P.blood).multiplyScalar(0.55); // glowing red snout: the aggressive accent that finds an enemy in the dark
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), noseMat);
+    mat.emissive.setHex(HOSTILE_TINT);
+    // snout/fist so facing is readable on the placeholder body; the model carries its own face
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), material(P.bone, 'skin'));
     nose.castShadow = true;
     nose.position.set(0, body.position.y + 0.1, def.radius + 0.4);
     nose.userData.enemyId = e.id;
     group.add(nose);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(def.radius * 1.15, def.radius * 1.5, 24).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: P.blood, transparent: true, opacity: RING_OPACITY, fog: false, depthWrite: false }));
+    ring.position.y = 0.06;
+    ring.renderOrder = 1;
+    ring.raycast = () => {}; // a ground mark, not a click target
+    group.add(ring);
     group.scale.setScalar(1);
     this.scene.add(group);
-    this.actors.set(e.id, { group, body, nose, mats: [mat], type: e.type, px: e.x, pz: e.z, cx: e.x, cz: e.z, swing: 0, flash: 0, dead: false, t: e.id });
+    this.actors.set(e.id, { group, body, nose, ring, mats: [mat], type: e.type, px: e.x, pz: e.z, cx: e.x, cz: e.z, swing: 0, flash: 0, dead: false, t: e.id });
   }
 
   /** Called once per sim tick so we can interpolate between the last two states. */
@@ -864,7 +897,7 @@ export class Renderer {
     g.visible = !dead || e.deadFor < 2;
     g.position.set(a.px + (a.cx - a.px) * alpha, 0, a.pz + (a.cz - a.pz) * alpha);
     // past the fog a model is invisible but still costs a skinned draw and a mixer update: skip both
-    if (an && Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) > FOG.far + 8) { g.visible = false; a.swing = e.swing; a.flash = e.hitFlash; return; }
+    if (an && Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) > FOG_CULL) { g.visible = false; a.swing = e.swing; a.flash = e.hitFlash; return; }
     g.rotation.y = e.facing;
     let lunge = 1 + e.swing * 2, shrink = Math.max(0.05, 1 - e.deadFor / 2), fall = dead;
     if (an) {
@@ -885,8 +918,9 @@ export class Renderer {
     g.rotation.z = fall ? Math.PI / 2 : 0;
     g.position.y = fall ? ENEMY_TYPES[e.type].radius : 0;
     g.scale.setScalar(dead ? shrink : lunge); // attack lunge / shrink away when dead
-    const flash = e.hitFlash > 0 ? P.bloodLight : 0x000000;
+    const flash = e.hitFlash > 0 ? P.bloodLight : HOSTILE_TINT;
     for (const m of a.mats) m.emissive.setHex(flash);
+    a.ring.visible = !dead && Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) < FOG.far;
   }
 }
 
@@ -894,6 +928,7 @@ interface Actor {
   group: THREE.Group;
   body: THREE.Mesh;
   nose: THREE.Mesh;
+  ring: THREE.Mesh;
   mats: Mat[];
   type: string;
   px: number; pz: number; cx: number; cz: number;

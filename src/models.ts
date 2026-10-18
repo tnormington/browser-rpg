@@ -45,7 +45,7 @@ export const SLOTS = {
   caveRock: { file: 'rock2', footprint: 6.4, look: { sat: 0.5, light: 1.5, named: { Rock: 0x4b525b } } },
   boulder: { file: 'rock6', footprint: 3.6, look: { sat: 0.5, light: 1.5, named: { Rock: 0x454b53 } } },
   forge: { file: 'blacksmith', footprint: 5.2, look: { sat: 0.45, light: 2.2 } },
-  anvil: { file: 'anvil', height: 0.9, look: { sat: 0.3, light: 0.5 } },
+  anvil: { file: 'anvil', height: 0.9, look: { sat: 0.3, light: 0.5, named: { MI_Trim_Metal: 0x2a2c33 } }, metal: 0.6, roughness: 0.5 },
   helmet: { file: 'helmet', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794, DarkGrey: 0x4a525c } } },
   pauldrons: { file: 'pauldrons', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794 } } },
   sword: { file: 'sword', height: 1.15, look: { sat: 1, light: 1, named: {} } },
@@ -54,10 +54,11 @@ export type SlotId = keyof typeof SLOTS;
 
 const hsl = { h: 0, s: 0, l: 0 };
 function restyle(src: THREE.MeshStandardMaterial, def: SlotDef): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({
-    map: src.map, vertexColors: !!src.vertexColors, roughness: def.roughness ?? 0.85, metalness: def.metal ?? 0.05, flatShading: true,
-  });
   const named = def.look.named?.[src.name];
+  const m = new THREE.MeshStandardMaterial({
+    map: named === undefined ? src.map : null, // a hard colour replaces the pack's texture too (the anvil's stock texture is lime green)
+    vertexColors: !!src.vertexColors, roughness: def.roughness ?? 0.85, metalness: def.metal ?? 0.05, flatShading: true,
+  });
   if (named !== undefined) m.color.setHex(named);
   else {
     m.color.copy(src.color).getHSL(hsl, THREE.SRGBColorSpace);
