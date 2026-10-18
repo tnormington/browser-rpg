@@ -7,6 +7,8 @@ import { NPC, QuestStage } from './sim/quest';
 import { Particles, Rings } from './fx';
 import { PostStack, Quality } from './post';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
+import { Animator } from './anim';
+import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
 
 /**
  * Every colour in the scene, in one place. Desaturated, cold and narrow: the world sits in a tight dark band so that
@@ -60,6 +62,8 @@ const mesh = (g: THREE.BufferGeometry, color: number, cls: MatClass, shadow: 'ca
 // Directional light sits at a fixed offset from its shadow target and follows the player, so the shadow frustum stays tight.
 const SUN_OFFSET = new THREE.Vector3(-38, 36, 26); // ~37 degrees: long silhouettes, but shadow bands stay short enough not to swallow the combat arena
 const SHADOW_EXTENT = 28, SHADOW_MAP = 2048;
+/** Where the red snout cube sits on each enemy model (local to the actor, +z forward). */
+const NOSE: Record<string, { y: number; z: number }> = { boar: { y: 0.6, z: 0.95 }, wolf: { y: 0.95, z: 0.8 }, brute: { y: 2.1, z: 0.55 } };
 const FOG = { near: 8, far: 46 };
 const FORGE_LIGHT = { intensity: 140, distance: 24, y: 1.2 };
 
@@ -90,6 +94,19 @@ export class Renderer {
   private rings: Rings;
   private lastDraw = performance.now();
   private forgeLight!: THREE.PointLight;
+  private boundary: THREE.Mesh[] = [];
+  private caveRocks: THREE.Mesh[] = [];
+  private npcGroup!: THREE.Group;
+  private npcAnim?: Animator;
+  private playerAnim?: Animator;
+  private playerModel?: THREE.Object3D;
+  private weaponMats: Mat[] = [];
+  private playerHitT = 0;
+  private lungeT = 0;
+  private playerWasDead = false;
+  /** Resolves once every model slot has either swapped in or failed (and kept its primitive). Models stream in; the first frame never waits. */
+  readonly modelsReady: Promise<void>;
+  debugCam: { pos: number[]; at: number[] } | null = null;
   private sun = new THREE.DirectionalLight(P.moon, 3);
   post!: PostStack;
 
@@ -146,6 +163,7 @@ export class Renderer {
     this.post = new PostStack(this.renderer, this.scene, this.camera, quality);
     addEventListener('resize', () => this.resize());
     this.resize();
+    this.modelsReady = this.populate(s);
   }
 
   /** Gradient sky baked once through PMREM: background and image-based ambient light in one. */
@@ -248,22 +266,23 @@ export class Renderer {
 
     // cave mouth: dark opening between rocks, facing +z
     const k = LANDMARKS.caveMouth;
-    add(mesh(new THREE.DodecahedronGeometry(3), P.slate, 'rock'), k.x - 3, 2, k.z - 2);
-    add(mesh(new THREE.DodecahedronGeometry(3), P.slate, 'rock'), k.x + 3, 2, k.z - 2);
-    add(mesh(new THREE.DodecahedronGeometry(3.4), P.slateDark, 'rock'), k.x, 3.6, k.z - 3.5);
+    this.caveRocks.push(
+      add(mesh(new THREE.DodecahedronGeometry(3), P.slate, 'rock'), k.x - 3, 2, k.z - 2) as THREE.Mesh,
+      add(mesh(new THREE.DodecahedronGeometry(3), P.slate, 'rock'), k.x + 3, 2, k.z - 2) as THREE.Mesh,
+      add(mesh(new THREE.DodecahedronGeometry(3.4), P.slateDark, 'rock'), k.x, 3.6, k.z - 3.5) as THREE.Mesh);
     add(mesh(new THREE.BoxGeometry(3.2, 3, 0.3), P.cave, 'dark', 'receive'), k.x, 1.5, k.z - 1.4);
 
     // boundary: ring of boulders along the edge
     for (let i = -WORLD_HALF; i <= WORLD_HALF; i += 3) {
       for (const [x, z] of [[i, -WORLD_HALF], [i, WORLD_HALF], [-WORLD_HALF, i], [WORLD_HALF, i]]) {
-        add(mesh(new THREE.DodecahedronGeometry(1.6), P.boulder, 'rock'), x, 0.8, z);
+        this.boundary.push(add(mesh(new THREE.DodecahedronGeometry(1.6), P.boulder, 'rock'), x, 0.8, z) as THREE.Mesh);
       }
     }
     // dev stress only (?stress=N): scatter extra decorative boulders so boulder count scales with N like everything else
     if (WORLD_HALF > 30) {
       const factor = (WORLD_HALF / 30) ** 2, ring = Math.ceil(2 * WORLD_HALF / 3 + 1) * 4;
       const pts = ringPoints({ rng: 777 }, WORLD_HALF, 30, 3);
-      for (let i = ring; i < Math.round(BOULDERS_PER_FACTOR * factor); i++) { const p = pts.next().value!; add(mesh(new THREE.DodecahedronGeometry(1.6), P.boulder, 'rock'), p.x, 0.8, p.z); }
+      for (let i = ring; i < Math.round(BOULDERS_PER_FACTOR * factor); i++) { const p = pts.next().value!; this.boundary.push(add(mesh(new THREE.DodecahedronGeometry(1.6), P.boulder, 'rock'), p.x, 0.8, p.z) as THREE.Mesh); }
     }
     // beyond the boundary: dark ground so the edge reads as the end of the world
     add(mesh(new THREE.PlaneGeometry(Math.max(400, WORLD_HALF * 4), Math.max(400, WORLD_HALF * 4)).rotateX(-Math.PI / 2), P.beyond, 'ground', 'receive'), 0, -0.05, 0);
@@ -290,6 +309,7 @@ export class Renderer {
     staffLight.position.set(NPC.x + 0.7, 2.7, NPC.z + 0.15);
     this.scene.add(staffLight);
     this.scene.add(group);
+    this.npcGroup = group;
 
     const tex = (ch: string, color: string) => {
       const c = document.createElement('canvas');
@@ -307,6 +327,172 @@ export class Renderer {
     this.npcMarker.scale.set(1.1, 1.1, 1);
     this.npcMarker.renderOrder = 10;
     this.scene.add(this.npcMarker);
+  }
+
+  // ---- models: each slot swaps in when its file is parsed; a slot that fails to load keeps its styled primitive ----
+
+  private async populate(s: GameState) {
+    const fill = (id: SlotId, apply: (p: Prepared) => void) =>
+      loadSlot(id).then(apply).catch(err => console.warn(`model slot "${id}" kept as a primitive:`, err));
+    const types = new Set(s.enemies.map(e => e.type));
+    await Promise.all([
+      fill('player', p => this.dressPlayer(p)),
+      fill('warden', p => this.dressNpc(p)),
+      ...[...types].map(t => fill(t as SlotId, p => { for (const a of this.actors.values()) if (a.type === t) this.dressActor(a, p); })),
+      Promise.all([loadSlot('tree'), loadSlot('stump')]).then(([t, st]) => this.dressTrees(t, st)).catch(err => console.warn('model slot "tree" kept as a primitive:', err)),
+      fill('ironRock', p => this.dressRocks('iron', p)),
+      fill('coalRock', p => this.dressRocks('coal', p)),
+      fill('forge', p => this.dressForge(p)),
+      fill('anvil', p => this.dressAnvil(p)),
+      fill('caveRock', p => this.dressCave(p)),
+      fill('boulder', p => this.dressBoundary(p)),
+    ]);
+  }
+
+  /** Swap a primitive for a model: it stays in the scene as an invisible pick proxy (raycasts ignore material.visible). */
+  private hide(...objs: THREE.Object3D[]) {
+    for (const o of objs) o.traverse(c => {
+      const m = c as THREE.Mesh;
+      if (m.isMesh) { (m.material as Mat).visible = false; m.castShadow = m.receiveShadow = false; }
+    });
+  }
+
+  /** Fixed per-id jitter so repeated props do not all face the same way; no rng state touched. */
+  private jitter = (id: number) => Math.abs(Math.sin(id * 78.233) * 43758.5453) % 1;
+
+  /** The knight plus the pieces bound to its bones. Everything is attached at the bind pose, before the first animation frame. */
+  private async dressPlayer(p: Prepared) {
+    const [helmet, pauldrons, sword] = await Promise.all(
+      (['helmet', 'pauldrons', 'sword'] as const).map(id => loadSlot(id).catch(err => { console.warn(`model slot "${id}" skipped:`, err); return null; })));
+    const inst = spawn(p);
+    const model = inst.root.children[0], bone = (name: string) => inst.root.getObjectByName(name);
+    inst.root.updateMatrixWorld(true);
+    // Armour pieces are authored centred on their own origin, in the rig's scale: stand each on its bone (plus a rig-space
+    // offset), then attach() so it follows the bone from there. Offsets are tuned by eye against bench/look.mjs shots.
+    for (const [piece, joint, up] of [[helmet, 'Head', 0.55], [pauldrons, 'Torso', 0.3]] as const) {
+      const j = bone(joint);
+      if (!piece || !j) continue;
+      const mesh = spawn(piece).root;
+      mesh.matrixAutoUpdate = true;
+      mesh.position.copy(model.worldToLocal(j.getWorldPosition(new THREE.Vector3()))).y += up;
+      model.add(mesh);
+      model.updateMatrixWorld(true);
+      j.attach(mesh);
+    }
+    const hand = bone('MiddleHandR');
+    if (sword && hand) {
+      const blade = spawn(sword, true);
+      blade.root.matrixAutoUpdate = true;
+      blade.root.scale.setScalar(1 / hand.getWorldScale(new THREE.Vector3()).x);
+      blade.root.rotation.z = Math.PI * 0.75; // blade forward and up from the fist
+      hand.add(blade.root);
+      this.hide(this.weapon);
+      this.weapon = blade.root as THREE.Mesh;
+      this.weaponMats = blade.materials;
+    }
+    this.hide(this.player);
+    this.player.add(inst.root);
+    this.playerAnim = new Animator(inst.root, inst.clips, SLOTS.player.anim);
+    this.playerModel = inst.root;
+  }
+
+  private dressNpc(p: Prepared) {
+    const inst = spawn(p);
+    // the robe, head and hood are replaced; the staff and its arcane gem stay (the quest light hangs on them)
+    this.hide(...this.npcParts.slice(0, 3));
+    this.npcGroup.add(inst.root);
+    this.npcAnim = new Animator(inst.root, inst.clips, SLOTS.warden.anim);
+  }
+
+  private dressActor(a: Actor, p: Prepared) {
+    const inst = spawn(p, true);
+    this.hide(a.body);
+    a.nose.position.set(0, NOSE[a.type].y, NOSE[a.type].z); // the red accent moves to where this model's snout is
+    a.group.add(inst.root);
+    a.model = inst.root;
+    a.mats = inst.materials;
+    a.anim = new Animator(inst.root, inst.clips, SLOTS[a.type as 'boar'].anim);
+  }
+
+  private dressTrees(tree: Prepared, stump: Prepared) {
+    for (const v of this.nodes.values()) {
+      if (v.type !== 'tree') continue;
+      const id = v.group.userData.nodeId as number, r = this.jitter(id);
+      const live = spawn(tree).root, cut = spawn(stump).root;
+      for (const m of [live, cut]) {
+        m.rotation.y = r * Math.PI * 2;
+        m.scale.setScalar(m === live ? 0.9 + r * 0.25 : 1);
+        m.updateMatrix();
+        v.group.add(m);
+      }
+      cut.visible = false;
+      v.live = live; v.stump = cut;
+      if (v.crown) v.crown.visible = false;
+      this.hide(...v.group.children.filter(c => c !== live && c !== cut));
+    }
+  }
+
+  private dressRocks(type: 'iron' | 'coal', p: Prepared) {
+    for (const v of this.nodes.values()) {
+      if (v.type !== type) continue;
+      const id = v.group.userData.nodeId as number, inst = spawn(p, true);
+      inst.root.rotation.y = this.jitter(id) * Math.PI * 2;
+      inst.root.updateMatrix();
+      this.hide(v.group.children[0]);
+      v.group.add(inst.root);
+      v.mats.push(...inst.materials);
+      v.base.push(...inst.materials.map(m => m.color.getHex()));
+    }
+  }
+
+  private dressForge(p: Prepared) {
+    const f = LANDMARKS.forge, inst = spawn(p);
+    this.hide(this.forgeParts[0], this.forgeParts[1]);
+    inst.root.position.set(f.x, 0, f.z);
+    this.scene.add(inst.root);
+    freeze(inst.root);
+    this.forgeParts.push(inst.root);
+  }
+
+  private dressAnvil(p: Prepared) {
+    const f = LANDMARKS.forge, inst = spawn(p);
+    this.hide(this.forgeParts[3]);
+    inst.root.position.set(f.x - 3, 0, f.z + 2);
+    this.scene.add(inst.root);
+    freeze(inst.root);
+  }
+
+  /** Cave-mouth rocks sit on the sim's collider circles, scaled so the model's footprint matches the collider. */
+  private dressCave(p: Prepared) {
+    const k = LANDMARKS.caveMouth, side = SLOTS.caveRock.footprint;
+    const spots = [{ x: k.x - 3, z: k.z - 2, r: 2.2 }, { x: k.x + 3, z: k.z - 2, r: 2.2 }, { x: k.x, z: k.z - 3.5, r: 3 }];
+    this.hide(...this.caveRocks);
+    spots.forEach((o, i) => {
+      const inst = spawn(p);
+      inst.root.position.set(o.x, -0.2, o.z);
+      inst.root.rotation.y = i * 2.1;
+      inst.root.scale.setScalar((o.r * 2.2) / side);
+      this.scene.add(inst.root);
+      freeze(inst.root);
+    });
+  }
+
+  /** The 80-odd boundary boulders become one instanced draw: a single scene object instead of one per rock. */
+  private dressBoundary(p: Prepared) {
+    const im = new THREE.InstancedMesh(p.geometry!, p.materials.length === 1 ? p.materials[0] : p.materials, this.boundary.length);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(), pos = new THREE.Vector3();
+    this.boundary.forEach((b, i) => {
+      const r = this.jitter(i + 1);
+      sc.setScalar(0.8 + r * 0.45);
+      m.compose(pos.set(b.position.x, -0.25, b.position.z), q.setFromAxisAngle(up, r * 40), sc);
+      im.setMatrixAt(i, m);
+      this.scene.remove(b);
+      b.geometry.dispose(); (b.material as Mat).dispose();
+    });
+    this.boundary = [];
+    im.castShadow = im.receiveShadow = true;
+    im.matrixAutoUpdate = false;
+    this.scene.add(im);
   }
 
   private markerFor(stage: QuestStage): 'offer' | 'ready' | 'wait' | null {
@@ -361,7 +547,7 @@ export class Renderer {
       }
     }
     this.scene.add(group);
-    this.nodes.set(n.id, { group, crown, mats, base: mats.map(m => m.color.getHex()) });
+    this.nodes.set(n.id, { group, type: n.type, crown, mats, base: mats.map(m => m.color.getHex()) });
   }
 
   private drawNodes(s: GameState) {
@@ -372,6 +558,7 @@ export class Renderer {
       const depleted = n.charges <= 0;
       if (v.crown) v.crown.visible = !depleted; // a felled tree leaves a stump
       else v.group.scale.setScalar(depleted ? 0.4 : 1);
+      if (v.live) { v.live.visible = !depleted; v.stump!.visible = depleted; }
       v.mats.forEach((m, i) => { const spent = depleted && !v.crown; m.color.setHex(spent ? P.spent : v.base[i]); m.emissiveIntensity = spent ? 0 : 1; });
       v.group.rotation.z = n.id === active ? Math.sin(now * 18) * 0.05 : 0;
     }
@@ -399,7 +586,7 @@ export class Renderer {
     group.add(nose);
     group.scale.setScalar(1);
     this.scene.add(group);
-    this.actors.set(e.id, { group, body, mat, base: color, px: e.x, pz: e.z, cx: e.x, cz: e.z, flash: 0 });
+    this.actors.set(e.id, { group, body, nose, mats: [mat], type: e.type, px: e.x, pz: e.z, cx: e.x, cz: e.z, swing: 0, flash: 0, dead: false, t: e.id });
   }
 
   /** Called once per sim tick so we can interpolate between the last two states. */
@@ -419,13 +606,14 @@ export class Renderer {
     for (const ev of events) {
       if (ev.t === 'hit') {
         if (ev.target === 'player') {
+          this.playerHitT = 0.25;
           this.shakeMag = Math.max(this.shakeMag, 0.12);
           this.particles.burst(ev.x, 1.2, ev.z, { color: [P.blood, P.bloodLight], count: 12, speed: 4, life: 0.5 });
         } else {
           this.shakeMag = Math.max(this.shakeMag, ev.crit ? 0.2 : ev.slot === 1 ? 0.14 : 0.04);
           this.impact(s, ev);
         }
-      } else if (ev.t === 'cast') this.castPunch = 0.12;
+      } else if (ev.t === 'cast') { this.castPunch = 0.12; if (ev.slot !== 3 && this.playerAnim?.attack(ev.slot === 1)) this.lungeT = 0.22; } // slot 3 is the heal: no swing
       else if (ev.t === 'heal') {
         this.particles.burst(ev.x, 0.4, ev.z, { color: [P.heal, P.arcaneLight], count: 24, speed: 1.6, up: 3.5, gravity: -1, life: 1 });
         this.rings.pulse(ev.x, 0.15, ev.z, P.heal, 2.2, 0.6);
@@ -558,17 +746,37 @@ export class Renderer {
       (this.npcMarker.material as THREE.SpriteMaterial).map = this.markerTex[mk];
       this.npcMarker.position.set(NPC.x, 3.5 + 0.18 * Math.sin(nowMs / 250), NPC.z);
     }
-    this.player.position.set(x, s.player.dead ? 0.5 : 1, z);
-    this.player.rotation.y = s.player.facing;
-    this.player.rotation.x = s.player.dead ? -Math.PI / 2 : 0;
-    this.player.scale.setScalar(1 + this.castPunch * 1.2);
+    const pa = this.playerAnim, pl = s.player;
+    this.player.rotation.y = pl.facing;
+    if (pa) {
+      if (pl.dead !== this.playerWasDead) { if (pl.dead) pa.die(); else pa.revive(); this.playerWasDead = pl.dead; }
+      pa.locomotion(pl.moving && !pl.dead, 6);
+      pa.update(dtFx);
+      // no hit-reaction clip on this rig: a short backward flinch on the fit wrapper stands in
+      this.playerHitT = Math.max(0, this.playerHitT - dtFx);
+      this.playerModel!.rotation.x = -0.35 * Math.sin((this.playerHitT / 0.25) * Math.PI);
+      this.lungeT = Math.max(0, this.lungeT - dtFx);
+      this.playerModel!.position.z = 0.35 * Math.sin((this.lungeT / 0.22) * Math.PI); // a step into the blow, out and back, so the swing carries weight
+      this.player.position.set(x, 0, z);
+      this.player.rotation.x = pl.dead && !pa.hasDeath ? -Math.PI / 2 : 0;
+      this.player.scale.setScalar(1);
+    } else {
+      this.player.position.set(x, pl.dead ? 0.5 : 1, z);
+      this.player.rotation.x = pl.dead ? -Math.PI / 2 : 0;
+      this.player.scale.setScalar(1 + this.castPunch * 1.2);
+    }
+    if (this.npcAnim) { this.npcAnim.locomotion(false); this.npcAnim.update(dtFx); }
 
-    for (const e of s.enemies) this.drawActor(e, alpha);
+    for (const e of s.enemies) this.drawActor(e, alpha, dtFx);
     this.drawDrops(s);
     this.drawNodes(s);
     const w = s.player.equipment.weapon;
     this.weapon.visible = !!w;
-    if (w) (this.weapon.material as Mat).color.setHex(TIER_COLORS[ITEMS[w].tier]);
+    if (w) {
+      const tier = TIER_COLORS[ITEMS[w].tier];
+      if (this.weaponMats.length) for (const m of this.weaponMats) { if (m.name === 'Metal') m.color.setHex(tier); } // the blade takes the tier colour
+      else (this.weapon.material as Mat).color.setHex(tier);
+    }
 
     const target = s.targetId === null ? undefined : s.enemies.find(e => e.id === s.targetId);
     this.selection.visible = !!target;
@@ -605,6 +813,7 @@ export class Renderer {
       this.camera.position.y += (Math.random() - 0.5) * this.shakeMag;
     }
     this.camera.lookAt(x, 1.5, z);
+    if (this.debugCam) { this.camera.position.fromArray(this.debugCam.pos); this.camera.lookAt(...(this.debugCam.at as [number, number, number])); } // dev only: bench/look.mjs close-ups
     this.forgeLight.intensity = FORGE_LIGHT.intensity * (1 + 0.07 * Math.sin(nowMs / 90) + 0.05 * Math.sin(nowMs / 37));
     this.followSun(x, z);
     this.post.render(this.scene);
@@ -649,27 +858,49 @@ export class Renderer {
     }
   }
 
-  private drawActor(e: Enemy, alpha: number) {
+  private drawActor(e: Enemy, alpha: number, dt: number) {
     const a = this.actors.get(e.id)!;
-    const g = a.group;
-    g.visible = e.state !== 'dead' || e.deadFor < 2;
+    const g = a.group, an = a.anim, dead = e.state === 'dead';
+    g.visible = !dead || e.deadFor < 2;
     g.position.set(a.px + (a.cx - a.px) * alpha, 0, a.pz + (a.cz - a.pz) * alpha);
     g.rotation.y = e.facing;
-    g.rotation.z = e.state === 'dead' ? Math.PI / 2 : 0;
-    g.position.y = e.state === 'dead' ? ENEMY_TYPES[e.type].radius : 0;
-    g.scale.setScalar(e.state === 'dead' ? Math.max(0.05, 1 - e.deadFor / 2) : 1 + e.swing * 2); // attack lunge / shrink away when dead
-    a.mat.emissive.setHex(e.hitFlash > 0 ? P.bloodLight : 0x000000);
+    let lunge = 1 + e.swing * 2, shrink = Math.max(0.05, 1 - e.deadFor / 2), fall = dead;
+    if (an) {
+      const speed = ENEMY_TYPES[a.type].speed, moving = !dead && Math.hypot(a.cx - a.px, a.cz - a.pz) > 1e-3;
+      if (dead !== a.dead) { if (dead) an.die(); else an.revive(); }
+      if (!dead && e.swing > a.swing) an.attack();
+      lunge = an.hasAttack ? 1 : 1 + e.swing * 2; // a real swing replaces the scale lunge
+      if (!dead && e.hitFlash > 0 && a.flash <= 0) an.react();
+      an.locomotion(moving, speed);
+      an.update(dt);
+      // models with a death clip play it and then shrink away; the rest fall over as before
+      if (an.hasDeath) { fall = false; shrink = e.deadFor < 1 ? 1 : Math.max(0.05, 2 - e.deadFor); }
+      // no walk clip (the boar pack ships only idle + jump): hop procedurally instead
+      const def = SLOTS[a.type as 'boar'].anim!;
+      if (a.model) a.model.position.y = def.move === def.idle && moving ? 0.1 * Math.abs(Math.sin(performance.now() / 70 + a.t)) : 0;
+    }
+    a.swing = e.swing; a.flash = e.hitFlash; a.dead = dead;
+    g.rotation.z = fall ? Math.PI / 2 : 0;
+    g.position.y = fall ? ENEMY_TYPES[e.type].radius : 0;
+    g.scale.setScalar(dead ? shrink : lunge); // attack lunge / shrink away when dead
+    const flash = e.hitFlash > 0 ? P.bloodLight : 0x000000;
+    for (const m of a.mats) m.emissive.setHex(flash);
   }
 }
 
 interface Actor {
   group: THREE.Group;
   body: THREE.Mesh;
-  mat: Mat;
-  base: number;
+  nose: THREE.Mesh;
+  mats: Mat[];
+  type: string;
   px: number; pz: number; cx: number; cz: number;
-  flash: number;
+  swing: number; flash: number; // last seen sim timers: a rise is an attack / a hit landing
+  dead: boolean;
+  t: number; // per-actor phase for procedural bob
+  model?: THREE.Object3D;
+  anim?: Animator;
 }
 
-interface NodeView { group: THREE.Group; crown?: THREE.Mesh; mats: Mat[]; base: number[] }
+interface NodeView { group: THREE.Group; type: string; crown?: THREE.Mesh; live?: THREE.Object3D; stump?: THREE.Object3D; mats: Mat[]; base: number[] }
 interface DropView { group: THREE.Group; gem: THREE.Mesh; hit: THREE.Mesh }

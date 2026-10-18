@@ -48,6 +48,7 @@ async function measure(level) {
   await page.goto(`${base}?debug=1&stress=${level}${query ? '&' + query : ''}`);
   await page.waitForFunction(() => window.__debug, null, { timeout: 180000 });
   const loadMs = Date.now() - t0;
+  await page.evaluate(() => window.__debug.view.modelsReady); // models stream in: wait for every slot to settle before measuring
   await page.locator('.helpok').click({ timeout: 5000 }).catch(() => {}); // dismiss the controls overlay
   await page.evaluate(q => window.__debug.view.setQuality(q), quality);
   // warm-up: a stable run of frames (shader compile, first uploads) before measuring anything
