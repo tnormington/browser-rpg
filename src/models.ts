@@ -26,11 +26,13 @@ export interface SlotDef {
   look: Look;
   metal?: number; roughness?: number;
   anim?: AnimDef;
+  /** Cut the 'Armor' mesh in two by bone weight: the leg triangles become their own mesh and material ('ArmorLegs'), so legs and chest can be dressed apart. */
+  splitLegs?: boolean;
 }
 
 const SKIN = 0xb89a7e;
 export const SLOTS = {
-  player: { file: 'knight', height: 2.0, look: { sat: 0.55, light: 1.9, named: { Skin: SKIN, Armor: 0x6a7684, Boots: 0x2a2622 } },
+  player: { file: 'knight', height: 2.0, look: { sat: 0.55, light: 1.9, named: { Skin: SKIN, Armor: 0x6a7684, ArmorLegs: 0x6a7684, Boots: 0x2a2622 } }, splitLegs: true,
     anim: { idle: 'Idle', move: 'Run', moveSpeed: 6, attack: ['Run_swordAttack', 'swordAttackJump'], upper: ['Run_swordAttack'], death: 'Death', jump: 'Jump', impact: { Run_swordAttack: 0.4, swordAttackJump: 0.62 } } },
   warden: { file: 'wizard', height: 2.1, look: { sat: 0.6, light: 1.6, named: { Skin: SKIN, Clothes: 0x4c3b66, Hat: 0x33283f, Belt: 0x3a2d22, Gold: 0xb8893a } }, anim: { idle: 'Idle', move: 'Walk' } },
   boar: { file: 'pig', height: 1.0, look: { sat: 0.5, light: 0.95, named: { 'Material.003': 0x93705a, Material: 0x3a281c } },
@@ -83,6 +85,42 @@ export interface Prepared {
   fit: { scale: number; offset: THREE.Vector3 };
 }
 
+const LEG_BONE = /^(UpperLeg|LowerLeg|Foot)/;
+
+/**
+ * Peel the leg triangles off a skinned mesh into a second mesh that shares its vertex data (a triangle is a leg when the
+ * mean of its corners' leg-bone weight is over half). The pack ships the whole outfit as one material, so this is the only
+ * way to dress chest and legs separately. Returns null when one side is empty.
+ */
+function splitLegs(m: THREE.SkinnedMesh): THREE.SkinnedMesh | null {
+  const g = m.geometry, index = g.index, joints = g.getAttribute('skinIndex'), weights = g.getAttribute('skinWeight');
+  if (!index || !joints || !weights) return null;
+  const leg = m.skeleton.bones.map(b => LEG_BONE.test(b.name));
+  const legWeight = (v: number) => {
+    let w = 0;
+    for (let k = 0; k < 4; k++) if (leg[joints.getComponent(v, k)]) w += weights.getComponent(v, k);
+    return w;
+  };
+  const body: number[] = [], legs: number[] = [];
+  for (let i = 0; i < index.count; i += 3) {
+    const a = index.getX(i), b = index.getX(i + 1), c = index.getX(i + 2);
+    ((legWeight(a) + legWeight(b) + legWeight(c)) / 3 > 0.5 ? legs : body).push(a, b, c);
+  }
+  if (!legs.length || !body.length) return null;
+  const legGeo = new THREE.BufferGeometry();
+  for (const k of Object.keys(g.attributes)) legGeo.setAttribute(k, g.getAttribute(k));
+  legGeo.setIndex(legs);
+  g.setIndex(body);
+  const mat = (m.material as THREE.Material).clone();
+  mat.name = 'ArmorLegs';
+  const out = m.clone(false); // clone, not construct: it keeps the node transform and bind matrix the skinning depends on
+  out.geometry = legGeo;
+  out.material = mat;
+  out.name = `${m.name}Legs`;
+  m.parent!.add(out);
+  return out;
+}
+
 const loader = new GLTFLoader();
 const cache = new Map<SlotId, Promise<Prepared>>();
 
@@ -104,6 +142,12 @@ async function load(id: SlotId): Promise<Prepared> {
   const meshes: THREE.Mesh[] = [];
   let skinned = false;
   root.traverse(o => { if ((o as THREE.Mesh).isMesh) { meshes.push(o as THREE.Mesh); skinned ||= (o as THREE.SkinnedMesh).isSkinnedMesh; } });
+  if (def.splitLegs) for (const m of [...meshes]) {
+    if ((m as THREE.SkinnedMesh).isSkinnedMesh && (m.material as THREE.Material).name === 'Armor') {
+      const legs = splitLegs(m as THREE.SkinnedMesh);
+      if (legs) meshes.push(legs);
+    }
+  }
   const mats = new Map<THREE.Material, THREE.MeshStandardMaterial>();
   const styled = (m: THREE.Material) => { let s = mats.get(m); if (!s) { s = restyle(m as THREE.MeshStandardMaterial, def); mats.set(m, s); } return s; };
 

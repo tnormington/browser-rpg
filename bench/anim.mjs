@@ -20,6 +20,8 @@ await page.goto(`${server.resolvedUrls.local[0]}?debug=1`);
 await page.waitForFunction(() => window.__debug, null, { timeout: 60000 });
 await page.evaluate(() => window.__debug.view.modelsReady);
 await page.locator('.helpok').click({ timeout: 3000 }).catch(() => {});
+// GEAR='{"weapon":"steel_sword","head":"iron_helm",...}' dresses the player before staging, to check worn gear through a motion
+if (process.env.GEAR) await page.evaluate(g => Object.assign(window.__debug.sim.player.equipment, JSON.parse(g)), process.env.GEAR);
 await page.addScriptTag({ content: `
   window.__home = { x: window.__debug.sim.player.x, z: window.__debug.sim.player.z };
   document.querySelectorAll("body > :not(canvas)").forEach(n => { n.style.visibility = "hidden"; });

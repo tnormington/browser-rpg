@@ -15,7 +15,7 @@ mkdirSync(out, { recursive: true });
 const server = await preview({ root, logLevel: 'error', preview: { port: 4174, open: false } });
 const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--use-angle=d3d11'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-page.on('pageerror', e => console.error('pageerror', String(e)));
+page.on('pageerror', e => console.error('pageerror', e.stack ?? String(e)));
 page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') console.error(m.text()); });
 await page.goto(`${server.resolvedUrls.local[0]}?debug=1`);
 await page.waitForFunction(() => window.__debug, null, { timeout: 60000 });

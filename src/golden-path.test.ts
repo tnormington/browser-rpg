@@ -16,6 +16,7 @@ import { refreshPlayerStats } from './sim/combat';
 import {
   BLADE_PLAN, DIALOGUE, HUNT_GOALS, NPC, QUEST_STAGES, RECOMMENDED_COMBAT, REWARD, TALK_RANGE, questView,
 } from './sim/quest';
+import { appearanceOf, TIER_LOOKS } from './gear-look';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
 
 let checks = 0;

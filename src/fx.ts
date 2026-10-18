@@ -82,6 +82,50 @@ export class Particles {
   }
 }
 
+/** Tiny slow motes that drift off high-tier gear: a separate, small-point system so they read as dust of light, not as combat sparks. */
+export class Motes {
+  private max = 48;
+  private pos = new Float32Array(this.max * 3).fill(-1000);
+  private col = new Float32Array(this.max * 3);
+  private base = new Float32Array(this.max * 3);
+  private vel = new Float32Array(this.max * 3);
+  private life = new Float32Array(this.max);
+  private next = 0;
+  readonly points: THREE.Points;
+  private static LIFE = 1.3;
+
+  constructor() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
+    this.points = new THREE.Points(g, new THREE.PointsMaterial({
+      size: 0.045, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, toneMapped: false,
+    }));
+    this.points.frustumCulled = false;
+  }
+
+  emit(x: number, y: number, z: number, color: number) {
+    const i = this.next, c = new THREE.Color(color), j = i * 3;
+    this.next = (this.next + 1) % this.max;
+    this.pos.set([x + (Math.random() - 0.5) * 0.3, y + (Math.random() - 0.5) * 0.3, z + (Math.random() - 0.5) * 0.3], j);
+    this.vel.set([(Math.random() - 0.5) * 0.2, 0.25 + Math.random() * 0.25, (Math.random() - 0.5) * 0.2], j);
+    this.base.set([c.r * 1.6, c.g * 1.6, c.b * 1.6], j);
+    this.life[i] = Motes.LIFE;
+  }
+
+  update(dt: number) {
+    for (let i = 0; i < this.max; i++) {
+      if (this.life[i] <= 0) continue;
+      this.life[i] -= dt;
+      const j = i * 3, k = Math.max(0, this.life[i] / Motes.LIFE);
+      if (this.life[i] <= 0) { this.pos[j + 1] = -1000; this.col.fill(0, j, j + 3); continue; }
+      for (let a = 0; a < 3; a++) { this.pos[j + a] += this.vel[j + a] * dt; this.col[j + a] = this.base[j + a] * k; }
+    }
+    this.points.geometry.attributes.position.needsUpdate = true;
+    this.points.geometry.attributes.color.needsUpdate = true;
+  }
+}
+
 interface Ring { mesh: THREE.Mesh; age: number; dur: number; from: number; to: number }
 
 /** Expanding, fading ground rings (shockwaves, heals, level-ups). */

@@ -6,6 +6,7 @@ import type { Interact } from './sim';
 import { loadGame, loadQuality, saveGame, saveQuality, wipeSave } from './storage';
 import { playEvents, toggleMute, unlockAudio } from './sfx';
 import { applyStress } from './sim/stress';
+import { ITEMS } from './sim/items';
 
 // Dev-only tooling: ?debug=1 (or the dev server) enables ?stress=N and the window.__debug handle. Game code never reads either.
 const params = new URLSearchParams(location.search);
@@ -45,7 +46,7 @@ else if (loaded.status === 'incompatible') hud.note('Your old save was from a di
 addEventListener('beforeunload', save);
 addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 const canvas = view.renderer.domElement;
-if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scene, view, sim: state, step: () => step(state, readInput()), stress };
+if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scene, view, sim: state, step: () => step(state, readInput()), stress, items: ITEMS };
 
 // --- input -> sim Input ---
 const keys = new Set<string>();

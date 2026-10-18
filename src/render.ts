@@ -4,10 +4,11 @@ import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from
 import { ENEMY_TYPES, JUMP_VELOCITY, GRAVITY, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NPC, QuestStage } from './sim/quest';
-import { Particles, Rings, Slashes } from './fx';
+import { Motes, Particles, Rings, Slashes } from './fx';
 import { PostStack, Quality } from './post';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
 import { Animator } from './anim';
+import { PlayerGear } from './gear';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
 
 /**
@@ -117,6 +118,7 @@ export class Renderer {
   private staffLight!: THREE.PointLight;
   private markerTex!: Record<'offer' | 'ready' | 'wait', THREE.Texture>;
   private particles = new Particles();
+  private motes = new Motes();
   private rings: Rings;
   private slashes: Slashes;
   private lastDraw = performance.now();
@@ -126,7 +128,7 @@ export class Renderer {
   private npcGroup!: THREE.Group;
   private npcAnim?: Animator;
   private playerAnim?: Animator;
-  private weaponMats: Mat[] = [];
+  private gear?: PlayerGear;
   private playerWasDead = false;
   /** Resolves once every model slot has either swapped in or failed (and kept its primitive). Models stream in; the first frame never waits. */
   readonly modelsReady: Promise<void>;
@@ -155,7 +157,7 @@ export class Renderer {
     this.buildZone();
     this.rings = new Rings(this.scene);
     this.slashes = new Slashes(this.scene);
-    this.scene.add(this.particles.points);
+    this.scene.add(this.particles.points, this.motes.points);
     this.buildNpc();
 
     this.player = mesh(new THREE.CapsuleGeometry(0.5, 1, 2, 6), P.player, 'cloth', 'cast');
@@ -392,31 +394,10 @@ export class Renderer {
     const [helmet, pauldrons, sword] = await Promise.all(
       (['helmet', 'pauldrons', 'sword'] as const).map(id => loadSlot(id).catch(err => { console.warn(`model slot "${id}" skipped:`, err); return null; })));
     const inst = spawn(p);
-    const model = inst.root.children[0], bone = (name: string) => inst.root.getObjectByName(name);
     inst.root.updateMatrixWorld(true);
-    // Armour pieces are authored centred on their own origin, in the rig's scale: stand each on its bone (plus a rig-space
-    // offset), then attach() so it follows the bone from there. Offsets are tuned by eye against bench/look.mjs shots.
-    for (const [piece, joint, up] of [[helmet, 'Head', 0.55], [pauldrons, 'Torso', 0.3]] as const) {
-      const j = bone(joint);
-      if (!piece || !j) continue;
-      const mesh = spawn(piece).root;
-      mesh.matrixAutoUpdate = true;
-      mesh.position.copy(model.worldToLocal(j.getWorldPosition(new THREE.Vector3()))).y += up;
-      model.add(mesh);
-      model.updateMatrixWorld(true);
-      j.attach(mesh);
-    }
-    const hand = bone('MiddleHandR');
-    if (sword && hand) {
-      const blade = spawn(sword, true);
-      blade.root.matrixAutoUpdate = true;
-      blade.root.scale.setScalar(1 / hand.getWorldScale(new THREE.Vector3()).x);
-      blade.root.rotation.z = Math.PI * 0.75; // blade forward and up from the fist
-      hand.add(blade.root);
-      this.hide(this.weapon);
-      this.weapon = blade.root as THREE.Mesh;
-      this.weaponMats = blade.materials;
-    }
+    // gear is mounted from the sim's equipment record every frame (see gear.ts); nothing is attached unconditionally
+    this.gear = new PlayerGear(inst, { helmet, pauldrons, sword });
+    this.hide(this.weapon);
     this.hide(this.player);
     this.player.add(inst.root);
     this.playerAnim = new Animator(inst.root, inst.clips, SLOTS.player.anim);
@@ -846,6 +827,7 @@ export class Renderer {
     const nowMs = performance.now(), dtFx = Math.min(0.1, (nowMs - this.lastDraw) / 1000);
     this.lastDraw = nowMs;
     this.particles.update(dtFx);
+    this.motes.update(dtFx);
     this.rings.update(dtFx);
     this.slashes.update(dtFx);
     const mk = this.markerFor(s.quest.stage);
@@ -877,12 +859,11 @@ export class Renderer {
     for (const e of s.enemies) this.drawActor(e, alpha, dtFx);
     this.drawDrops(s);
     this.drawNodes(s);
-    const w = s.player.equipment.weapon;
-    this.weapon.visible = !!w;
-    if (w) {
-      const tier = TIER_COLORS[ITEMS[w].tier];
-      if (this.weaponMats.length) for (const m of this.weaponMats) { if (m.name === 'Metal') m.color.setHex(tier); } // the blade takes the tier colour
-      else (this.weapon.material as Mat).color.setHex(tier);
+    if (this.gear) this.gear.sync(s.player.equipment, dtFx, this.motes);
+    else { // primitive fallback until (or unless) the knight model loads
+      const w = s.player.equipment.weapon;
+      this.weapon.visible = !!w;
+      if (w) (this.weapon.material as Mat).color.setHex(TIER_COLORS[ITEMS[w].tier]);
     }
 
     const target = s.targetId === null ? undefined : s.enemies.find(e => e.id === s.targetId);
