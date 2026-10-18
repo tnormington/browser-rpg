@@ -4,7 +4,7 @@ import { grantXp } from './skills';
 import { rollDrops } from './loot';
 import { questOnKill } from './quest';
 import { nextRandom } from './rng';
-import { resolveCollisions } from './world';
+import { resolveCollisions, sameSideOfDoor } from './world';
 import {
   ABILITIES, ENEMY_TYPES, GCD, QUEUE_WINDOW, CRIT_CHANCE, CRIT_MULT, ENERGY_MAX, ENERGY_REGEN,
   RESPAWN_DELAY, OOC_DELAY, OOC_REGEN_FRAC, TAB_RANGE, PLAYER_SPAWN, maxHpForLevel, powerForLevel,
@@ -19,6 +19,8 @@ export const enemyById = (s: GameState, id: number | null): Enemy | undefined =>
   id === null ? undefined : s.enemies.find(e => e.id === id);
 
 const targetable = (e: Enemy) => e.state !== 'dead' && e.state !== 'return';
+/** Can the player single this one out from where they stand? Not through the cave wall: see sameSideOfDoor. */
+const pickable = (s: GameState, e: Enemy) => targetable(e) && sameSideOfDoor(s.player, e);
 
 // ---------- player stats ----------
 
@@ -63,7 +65,7 @@ const byDistance = (s: GameState) => (a: Enemy, b: Enemy) => dist(a, s.player) -
 
 /** The Tab order right now: everything in front, nearest first, then everything behind, nearest first. */
 function tabOrder(s: GameState): number[] {
-  const cands = s.enemies.filter(e => targetable(e) && dist(e, s.player) <= TAB_RANGE).sort(byDistance(s));
+  const cands = s.enemies.filter(e => pickable(s, e) && dist(e, s.player) <= TAB_RANGE).sort(byDistance(s));
   return [...cands.filter(e => inFront(s, e)), ...cands.filter(e => !inFront(s, e))].map(e => e.id);
 }
 
@@ -94,7 +96,7 @@ export function tabTarget(s: GameState) {
  * This is the entry point for a forgiving click and for an attack key pressed with nothing targeted.
  */
 export function acquireFront(s: GameState): boolean {
-  const alive = s.enemies.filter(targetable).sort(byDistance(s));
+  const alive = s.enemies.filter(e => pickable(s, e)).sort(byDistance(s));
   const pick = alive.find(e => dist(e, s.player) <= ACQUIRE_RANGE && inFront(s, e))
     ?? alive.find(e => dist(e, s.player) <= ACQUIRE_BEHIND_RANGE);
   if (!pick) { s.events.push({ t: 'fail', reason: 'target', slot: AUTO_SLOT }); return false; }
@@ -234,6 +236,7 @@ function tryUse(s: GameState, slot: number) {
     target.stagger = STAGGER_TIME;
     target.attackCd = Math.max(target.attackCd, 1);
     if (def.heavy) target.heavyCd = Math.max(target.heavyCd, def.heavy.every * STAGGER_HEAVY_KEEP);
+    if (def.hazard) target.hazardCd = Math.max(target.hazardCd, def.hazard.every * STAGGER_HEAVY_KEEP);
     p.outOfCombat = 0;
     s.events.push({ t: 'interrupt', id: target.id, x: target.x, z: target.z });
   } else if (target && a.kind === 'cleave') {
@@ -341,6 +344,7 @@ function aggro(s: GameState, e: Enemy) {
   e.state = 'chase';
   e.attackCd = Math.max(e.attackCd, 0.6);
   if (def.heavy) e.heavyCd = Math.max(e.heavyCd, def.heavy.first);
+  if (def.hazard) e.hazardCd = Math.max(e.hazardCd, def.hazard.first);
   if (def.pack) for (const o of s.enemies) if (o !== e && o.type === e.type && o.state === 'idle' && dist(o, e) <= def.pack) aggro(s, o);
 }
 
@@ -361,6 +365,13 @@ function startCast(s: GameState, e: Enemy, kind: 'heavy' | 'bolt', windup: numbe
   s.events.push({ t: 'telegraph', id: e.id, kind, windup });
 }
 
+/** Mark the ground under the player: the circle is fixed here, and lands where they were, not where they are. */
+function startGroundCast(s: GameState, e: Enemy) {
+  const h = ENEMY_TYPES[e.type].hazard!, p = s.player;
+  e.cast = { kind: 'ground', t: 0, total: h.windup, x: p.x, z: p.z, radius: h.radius };
+  s.events.push({ t: 'telegraph', id: e.id, kind: 'ground', windup: h.windup, x: p.x, z: p.z, radius: h.radius });
+}
+
 /** Tick a wind-up. The enemy stands still and watches the player; when it completes, the attack lands only if the player is still in reach. */
 function updateCast(s: GameState, e: Enemy, dt: number) {
   const p = s.player, def = ENEMY_TYPES[e.type], c = e.cast!;
@@ -370,7 +381,12 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
   e.cast = null;
   e.attackCd = def.attackInterval;
   e.swing = 0.15;
-  if (c.kind === 'heavy') {
+  if (c.kind === 'ground') {
+    const h = def.hazard!;
+    e.hazardCd = h.every;
+    s.events.push({ t: 'slam', id: e.id, x: c.x!, z: c.z!, radius: h.radius });
+    if (!p.dead && dist({ x: c.x!, z: c.z! }, p) <= h.radius) hurtPlayer(s, e, Math.max(1, Math.round(h.damage * (1 - p.stats.reduction))), h.name, true);
+  } else if (c.kind === 'heavy') {
     const h = def.heavy!;
     e.heavyCd = h.every;
     s.events.push({ t: 'slam', id: e.id, x: e.x, z: e.z, radius: h.radius });
@@ -427,6 +443,7 @@ export function updateEnemies(s: GameState, dt: number) {
     }
     e.attackCd = Math.max(0, e.attackCd - dt);
     e.heavyCd = Math.max(0, e.heavyCd - dt);
+    e.hazardCd = Math.max(0, e.hazardCd - dt);
     e.hitFlash = Math.max(0, e.hitFlash - dt);
     e.swing = Math.max(0, e.swing - dt);
     const dp = dist(e, p);
@@ -441,6 +458,8 @@ export function updateEnemies(s: GameState, dt: number) {
         e.stagger = Math.max(0, e.stagger - dt); // stunned by a Pummel
       } else if (e.cast) {
         updateCast(s, e, dt);
+      } else if (def.hazard && e.hazardCd <= 0 && dp <= def.hazard.range) {
+        startGroundCast(s, e);
       } else if (def.ranged) {
         updateRanged(s, e, dt);
       } else {

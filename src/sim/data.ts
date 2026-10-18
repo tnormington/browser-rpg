@@ -86,8 +86,21 @@ export interface EnemyDef {
   heavy?: { name: string; windup: number; every: number; first: number; damage: number; radius: number };
   /** Attacks from a distance and backs away from melee: a short interruptible wind-up, then a bolt that lands if the player is still within `range`. */
   ranged?: { name: string; range: number; keepAway: number; windup: number };
+  /**
+   * Marks the ground under the player and, `windup` seconds later, hits everything within `radius` of that spot for flat `damage`.
+   * The spot is fixed when the wind-up starts, so a player who keeps moving is long gone and one who stands and trades blows is not.
+   * Interruptible. `range` is how far away the enemy will still start one.
+   */
+  hazard?: { name: string; windup: number; every: number; first: number; damage: number; radius: number; range: number };
   /** Aggro spreads to every pack-mate within this many units. */
   pack?: number;
+  /** Which loaded model slot draws it, and how: no new art, so cave enemies are existing rigs scaled and tinted. Read by the renderer only. */
+  look?: { model: string; scale: number; tint: number };
+}
+
+/** The name of the wind-up an enemy is casting, for cast bars and the telegraph line. One place, so a new kind cannot crash a HUD that guessed. */
+export function castName(def: EnemyDef, kind: 'heavy' | 'bolt' | 'ground'): string {
+  return (kind === 'heavy' ? def.heavy?.name : kind === 'ground' ? def.hazard?.name : def.ranged?.name) ?? def.name;
 }
 
 export const ENEMY_TYPES: Record<string, EnemyDef> = {
@@ -103,6 +116,31 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
   hexer: { name: 'Cave Hexer', level: 4, hp: 140, damage: 9, attackInterval: 2.6, speed: 4.4,
     aggroRadius: 10, leash: 24, attackRange: 11, radius: 0.6, xp: 90, respawn: 40,
     ranged: { name: 'Hex Bolt', range: 11, keepAway: 5, windup: 0.9 } },
+
+  // The cave. Every one of these is a level above anything outside, and built around one tell the player must read:
+  // the Ravagers come in a pack (Cleave), the Archers shoot from range, the Seer punishes standing still, the Ogre slams,
+  // and the Warden does the last two at once. They are tuned against the mithril set (see sim/cave balance checks in verify).
+  ravager: { name: 'Cave Ravager', level: 7, hp: 320, damage: 11, attackInterval: 1.6, speed: 5.6,
+    aggroRadius: 9, leash: 26, attackRange: 1.9, radius: 0.65, xp: 110, respawn: 45, pack: 8,
+    look: { model: 'wolf', scale: 1.15, tint: 0x4a5a7a } },
+  archer: { name: 'Gloom Archer', level: 8, hp: 320, damage: 28, attackInterval: 2.4, speed: 5.2,
+    aggroRadius: 11, leash: 26, attackRange: 14, radius: 0.6, xp: 170, respawn: 50,
+    ranged: { name: 'Gloom Arrow', range: 14, keepAway: 7, windup: 0.8 },
+    look: { model: 'hexer', scale: 1.0, tint: 0x3a4a6a } },
+  seer: { name: 'Cave Seer', level: 9, hp: 650, damage: 12, attackInterval: 3.0, speed: 4.2,
+    aggroRadius: 11, leash: 24, attackRange: 12, radius: 0.65, xp: 230, respawn: 60,
+    ranged: { name: 'Hex Bolt', range: 12, keepAway: 5, windup: 0.9 },
+    hazard: { name: 'Withering Ground', windup: 1.2, every: 4, first: 1.5, damage: 85, radius: 3, range: 14 },
+    look: { model: 'hexer', scale: 1.25, tint: 0x6a3a8a } },
+  ogre: { name: 'Hollow Ogre', level: 9, hp: 1250, damage: 42, attackInterval: 2.4, speed: 3.8,
+    aggroRadius: 9, leash: 26, attackRange: 2.8, radius: 1.2, xp: 420, respawn: 90,
+    heavy: { name: 'Boulder Slam', windup: 1.6, every: 7, first: 3, damage: 140, radius: 5 },
+    look: { model: 'brute', scale: 1.15, tint: 0x3a4658 } },
+  warden: { name: 'Hollow Warden', level: 11, hp: 1600, damage: 40, attackInterval: 2.4, speed: 4.0,
+    aggroRadius: 12, leash: 30, attackRange: 3.2, radius: 1.6, xp: 1500, respawn: 240,
+    heavy: { name: 'Seismic Crush', windup: 1.8, every: 8, first: 4, damage: 135, radius: 6.5 },
+    hazard: { name: 'Falling Rock', windup: 1.6, every: 6, first: 5, damage: 80, radius: 3.2, range: 14 },
+    look: { model: 'brute', scale: 1.5, tint: 0x5a6a9a } },
 };
 
 export const SPAWNS: { type: string; x: number; z: number }[] = [
@@ -112,4 +150,10 @@ export const SPAWNS: { type: string; x: number; z: number }[] = [
   // pack of pups (one wakes, all wake): the reason to Cleave
   { type: 'pup', x: -5, z: 15 }, { type: 'pup', x: -3.5, z: 16.2 }, { type: 'pup', x: -6.2, z: 16.6 },
   { type: 'hexer', x: 19, z: 19 },
+  // inside the cave (see CAVE_ROOMS): the vein guards, the ranged pair, the seer, the ogres, and the Warden at the end
+  { type: 'ravager', x: -25, z: -50 }, { type: 'ravager', x: -23.8, z: -51.2 }, { type: 'ravager', x: -26.2, z: -51.6 },
+  { type: 'archer', x: -12, z: -52 }, { type: 'archer', x: -26, z: -61 },
+  { type: 'seer', x: -18, z: -57 },
+  { type: 'ogre', x: -8, z: -58 }, { type: 'ogre', x: -29, z: -60 },
+  { type: 'warden', x: -18, z: -82 },
 ];

@@ -24,6 +24,19 @@ export const RECIPES: Recipe[] = [
     inputs: [{ id: 'iron_bar', qty: 1 }, { id: 'coal', qty: 2 }], output: { id: 'steel_bar', qty: 1 } },
   { id: 'forged_blade', name: "Forgemaster's Blade", skill: 'smithing', level: 4, time: 6, xp: 120,
     inputs: [{ id: 'steel_bar', qty: 3 }, { id: 'logs', qty: 1 }], output: { id: 'forged_blade', qty: 1 } },
+  // The cave's ladder: mithril ore (Mining 9) smelted with coal, then the set. Each piece asks for more Smithing than the last,
+  // and the bars alone carry a smith past all the gates, so a player who does the chain in order is never made to grind a skill.
+  { id: 'mithril_bar', name: 'Mithril Bar', skill: 'smithing', level: 7, time: 5, xp: 70,
+    inputs: [{ id: 'mithril_ore', qty: 1 }, { id: 'coal', qty: 2 }], output: { id: 'mithril_bar', qty: 1 } },
+  { id: 'mithril_helm', name: 'Mithril Helm', skill: 'smithing', level: 8, time: 7, xp: 150,
+    inputs: [{ id: 'mithril_bar', qty: 2 }], output: { id: 'mithril_helm', qty: 1 } },
+  { id: 'mithril_greaves', name: 'Mithril Greaves', skill: 'smithing', level: 9, time: 8, xp: 210,
+    inputs: [{ id: 'mithril_bar', qty: 3 }], output: { id: 'mithril_greaves', qty: 1 } },
+  { id: 'mithril_chestplate', name: 'Mithril Chestplate', skill: 'smithing', level: 10, time: 10, xp: 300,
+    inputs: [{ id: 'mithril_bar', qty: 4 }], output: { id: 'mithril_chestplate', qty: 1 } },
+  // the reason to keep killing the Warden after the quest: shards drop at random, three make the best weapon in the game
+  { id: 'warden_edge', name: "Warden's Edge", skill: 'smithing', level: 11, time: 12, xp: 450,
+    inputs: [{ id: 'mithril_bar', qty: 3 }, { id: 'warden_shard', qty: 3 }], output: { id: 'warden_edge', qty: 1 } },
 ];
 
 export const FORGE_REACH = 6; // centre-to-centre; the hut is 2.6 radius

@@ -43,9 +43,10 @@ export interface Enemy {
   swing: number;
   bleed: { ticks: number; timer: number; damage: number } | null;
   /** A wind-up in progress: the tell the player reads. Cleared by a Pummel, by dying, or when it lands. */
-  cast: { kind: 'heavy' | 'bolt'; t: number; total: number } | null;
+  cast: { kind: 'heavy' | 'bolt' | 'ground'; t: number; total: number; x?: number; z?: number; radius?: number } | null;
   stagger: number;   // seconds left stunned after an interrupt: it does nothing
   heavyCd: number;   // seconds until the heavy attack may start again
+  hazardCd: number;  // seconds until the ground hazard may be marked again
 }
 
 /** One incoming hit remembered for the death recap. `at` is game seconds (tick * TICK_DT). */
@@ -83,7 +84,7 @@ export type GameEvent =
   | { t: 'heal'; x: number; z: number; amount: number }
   | { t: 'fail'; reason: 'range' | 'cooldown' | 'gcd' | 'energy' | 'target' | 'locked' | 'nocast'; slot: number }
   | { t: 'unlock'; slot: number; level: number }       // combat level handed over an ability: fires once per ability
-  | { t: 'telegraph'; id: number; kind: 'heavy' | 'bolt'; windup: number }  // an enemy starts a wind-up
+  | { t: 'telegraph'; id: number; kind: 'heavy' | 'bolt' | 'ground'; windup: number; x?: number; z?: number; radius?: number }  // an enemy starts a wind-up; a 'ground' one carries the spot it will land on
   | { t: 'interrupt'; id: number; x: number; z: number }  // a Pummel landed on a wind-up
   | { t: 'slam'; id: number; x: number; z: number; radius: number }  // a heavy attack resolved (hit or miss: the ground shakes either way)
   | { t: 'cast'; slot: number }
@@ -168,7 +169,7 @@ export function createState(seed = 1): GameState {
       id: i + 1, type: sp.type, x: sp.x, z: sp.z, facing: 0, spawnX: sp.x, spawnZ: sp.z,
       hp: ENEMY_TYPES[sp.type].hp, maxHp: ENEMY_TYPES[sp.type].hp, state: 'idle',
       attackCd: 0, respawnIn: 0, deadFor: 0, hitFlash: 0, swing: 0, bleed: null, cast: null, stagger: 0,
-      heavyCd: ENEMY_TYPES[sp.type].heavy?.first ?? 0,
+      heavyCd: ENEMY_TYPES[sp.type].heavy?.first ?? 0, hazardCd: ENEMY_TYPES[sp.type].hazard?.first ?? 0,
     })),
     drops: [],
     nextDropId: 1,

@@ -8,7 +8,7 @@ import { INVENTORY_SIZE, refreshGearStats } from './inventory';
 import { EQUIP_SLOTS, ITEMS } from './items';
 import { refreshPlayerStats } from './combat';
 import { PLAYER_SPAWN } from './data';
-import { QUEST_STAGES, QuestStage } from './quest';
+import { QUEST2_STAGES, QUEST_STAGES, Quest2Stage, QuestStage } from './quest';
 import { resolveCollisions } from './world';
 
 export const SAVE_VERSION = 1;
@@ -25,7 +25,7 @@ interface SaveFile {
     inventory: ({ id: string; qty: number } | null)[];
     equipment: Record<string, string | null>;
   };
-  quest: { stage: QuestStage; kills: Record<string, number> };
+  quest: { stage: QuestStage; kills: Record<string, number>; second?: Quest2Stage }; // `second` is absent in saves from before the cave
   enemies: { id: number; type: string; deadIn: number }[]; // deadIn > 0: still respawning
   nodes: { id: number; type: string; charges: number; respawnIn: number }[];
   drops: { id: number; item: string; qty: number; x: number; z: number; age: number }[];
@@ -47,7 +47,7 @@ export function serialize(s: GameState): string {
       inventory: p.inventory.map(st => st && { id: st.id, qty: st.qty }),
       equipment: { ...p.equipment },
     },
-    quest: { stage: s.quest.stage, kills: { ...s.quest.kills } },
+    quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second },
     enemies: s.enemies.map(e => ({ id: e.id, type: e.type, deadIn: e.state === 'dead' ? Math.max(0, e.respawnIn) : 0 })),
     nodes: s.nodes.map(n => ({ id: n.id, type: n.type, charges: n.charges, respawnIn: n.respawnIn })),
     drops: s.drops.map(d => ({ id: d.id, item: d.item, qty: d.qty, x: d.x, z: d.z, age: d.age })),
@@ -105,6 +105,10 @@ export function deserialize(raw: string): GameState | null {
     const fq = f.quest;
     if (!isObj(fq) || !QUEST_STAGES.includes(fq.stage as QuestStage) || !isObj(fq.kills)) return null;
     s.quest.stage = fq.stage as QuestStage;
+    // an older save has no second chain: it is on offer if the first was handed in, locked otherwise
+    if (fq.second !== undefined && !QUEST2_STAGES.includes(fq.second)) return null;
+    s.quest.second = fq.second ?? (fq.stage === 'done' ? 'offer' : 'locked');
+    if ((s.quest.second === 'locked') !== (s.quest.stage !== 'done')) return null; // the chains cannot disagree about whether the first is over
     for (const [type, n] of Object.entries(fq.kills)) s.quest.kills[type] = num(n, 0, 1000, 'kills');
 
     // enemies / nodes: matched by id and type, so a changed spawn table is ignored rather than mis-applied

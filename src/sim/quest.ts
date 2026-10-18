@@ -7,18 +7,25 @@ import { NODE_TYPES } from './gathering';
 import { recipeById } from './crafting';
 import { countItem } from './inventory';
 import { refreshPlayerStats } from './combat';
+import { EQUIP_SLOTS, ITEMS, MITHRIL_SET } from './items';
 
 export type QuestStage = 'offer' | 'hunt' | 'report1' | 'forge' | 'brute' | 'report2' | 'done';
-export interface QuestState { stage: QuestStage; kills: Record<string, number> }
+/**
+ * The second chain starts where the first ends and runs on the same machinery (kill credit, item gates, a hand-in with a
+ * reward, a tracker, dialogue) beside it. `locked` until the first quest is handed in; `stage` stays at 'done' throughout.
+ */
+export type Quest2Stage = 'locked' | 'offer' | 'delve' | 'armour' | 'warden' | 'report' | 'cleared';
+export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage }
 export const QUEST_STAGES: QuestStage[] = ['offer', 'hunt', 'report1', 'forge', 'brute', 'report2', 'done'];
+export const QUEST2_STAGES: Quest2Stage[] = ['locked', 'offer', 'delve', 'armour', 'warden', 'report', 'cleared'];
 
-export const newQuest = (): QuestState => ({ stage: 'offer', kills: {} });
+export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked' });
 
 export const QUEST_NAME = 'The Brute of the Cave Mouth';
 export const NPC = { name: 'Warden Hale', x: LANDMARKS.npc.x, z: LANDMARKS.npc.z, r: LANDMARKS.npc.r };
 export const TALK_RANGE = 7;                       // centre to centre: advancing the quest needs this
 export const HUNT_GOALS: Record<string, number> = { boar: 4, wolf: 3 };
-const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves' };
+const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves', ravager: 'Cave Ravagers' };
 /**
  * What the Forgemaster's Blade costs in raw terms (see RECIPES), padded to the XP the gates need: Steel wants Smithing 3
  * (five bars of practice, two more than the three the blade uses) and Coal wants Mining 4 (eight ore of XP, ten gathered).
@@ -29,7 +36,30 @@ export const REWARD: { skill: SkillId; xp: number }[] = [
   { skill: 'combat', xp: 400 }, { skill: 'mining', xp: 150 }, { skill: 'smithing', xp: 150 },
 ];
 
+export const QUEST2_NAME = 'The Hollow Below';
+/** The cave's Ravager pack guards the first veins: mining them out means clearing them. */
+export const DELVE_GOALS: Record<string, number> = { ravager: 3 };
+/**
+ * What the mithril set costs in raw terms (see RECIPES): nine bars (2 + 3 + 4 across helm, greaves and chestplate), each one ore
+ * and two coal. Nine ore is exactly three veins' worth; the coal is the same ridge as the first quest, or the seams in the cave.
+ */
+export const MITHRIL_PLAN = { ore: 9, coal: 18, bars: 9 };
+export const RECOMMENDED_COMBAT_2 = 8;
+export const REWARD2: { skill: SkillId; xp: number }[] = [
+  { skill: 'combat', xp: 1500 }, { skill: 'mining', xp: 500 }, { skill: 'smithing', xp: 700 },
+];
+
 export const nearNpc = (s: GameState) => Math.hypot(s.player.x - NPC.x, s.player.z - NPC.z) <= TALK_RANGE;
+
+/** Inventory plus what is worn: a piece you put on has not stopped being yours. */
+const owned = (s: GameState, id: string) =>
+  countItem(s.player.inventory, id) + EQUIP_SLOTS.filter(slot => s.player.equipment[slot] === id).length;
+/** Bars already spent on pieces you own count toward the plan, so tracker progress never goes backwards at the forge. */
+const BARS_IN: Record<string, number> = { mithril_helm: 2, mithril_greaves: 3, mithril_chestplate: 4 };
+const mithrilBars = (s: GameState) => owned(s, 'mithril_bar') + MITHRIL_SET.reduce((n, id) => n + owned(s, id) * BARS_IN[id], 0);
+const mithrilOre = (s: GameState) => countItem(s.player.inventory, 'mithril_ore') + mithrilBars(s);
+const pieces = (s: GameState) => MITHRIL_SET.filter(id => owned(s, id) > 0).length;
+const worn = (s: GameState) => MITHRIL_SET.filter(id => Object.values(s.player.equipment).includes(id)).length;
 
 const hasBlade = (s: GameState) =>
   countItem(s.player.inventory, 'forged_blade') > 0 || Object.values(s.player.equipment).includes('forged_blade');
@@ -48,10 +78,16 @@ export function questOnKill(s: GameState, type: string) {
   } else if (q.stage === 'brute' && type === 'brute') {
     q.stage = 'report2';
     questEvent(s, 'stage');
+  } else if (q.second === 'delve' && DELVE_GOALS[type] && (q.kills[type] ?? 0) < DELVE_GOALS[type]) {
+    q.kills[type] = (q.kills[type] ?? 0) + 1;
+    questEvent(s, 'progress'); // the stage itself ends in updateQuest, which also wants the ore
+  } else if (q.second === 'warden' && type === 'warden') {
+    q.second = 'report';
+    questEvent(s, 'stage');
   }
 }
 
-/** The player picked the "advance" dialogue option. Only meaningful at the three NPC stages, and only in earshot. */
+/** The player picked the "advance" dialogue option. Only meaningful at the NPC stages of either chain, and only in earshot. */
 export function advanceQuest(s: GameState) {
   const q = s.quest;
   if (s.player.dead || !nearNpc(s)) return;
@@ -59,14 +95,26 @@ export function advanceQuest(s: GameState) {
   else if (q.stage === 'report1') { q.stage = 'forge'; questEvent(s, 'stage'); }
   else if (q.stage === 'report2') {
     q.stage = 'done';
+    q.second = 'offer';
     for (const r of REWARD) if (grantXp(s, r.skill, r.xp, NPC.x, NPC.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
+    questEvent(s, 'complete');
+  } else if (q.stage === 'done' && q.second === 'offer') { q.second = 'delve'; questEvent(s, 'accept'); }
+  else if (q.stage === 'done' && q.second === 'report') {
+    q.second = 'cleared';
+    for (const r of REWARD2) if (grantXp(s, r.skill, r.xp, NPC.x, NPC.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
     questEvent(s, 'complete');
   }
 }
 
 /** Per tick: the forge stage ends the moment the blade exists (crafted, or already owned when the stage began). */
 export function updateQuest(s: GameState) {
-  if (s.quest.stage === 'forge' && hasBlade(s)) { s.quest.stage = 'brute'; questEvent(s, 'stage'); }
+  const q = s.quest;
+  if (q.stage === 'forge' && hasBlade(s)) { q.stage = 'brute'; questEvent(s, 'stage'); }
+  // the delve ends when the Ravagers are down and nine ore's worth is in hand (or already smelted); the smithing ends when the set exists
+  if (q.second === 'delve' && Object.entries(DELVE_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n) && mithrilOre(s) >= MITHRIL_PLAN.ore) {
+    q.second = 'armour'; questEvent(s, 'stage');
+  }
+  if (q.second === 'armour' && pieces(s) === MITHRIL_SET.length) { q.second = 'warden'; questEvent(s, 'stage'); }
 }
 
 // ---------- dialogue ----------
@@ -127,6 +175,61 @@ export const DIALOGUE: Record<QuestStage, Dialogue> = {
   },
 };
 
+export const DIALOGUE2: Record<Exclude<Quest2Stage, 'locked'>, Dialogue> = {
+  offer: {
+    lines: [
+      'You did it. The Brute is dead, and that frightens me more than it comforts me.',
+      'It was a sentry. Something has been driving creatures up out of the cave for weeks, and the miners swear the walls down there run blue with mithril. A Warden keeps the deep hall.',
+      'Plain iron will not hold against what lives down there. Go in. Take the ore from the veins, smith yourself armour at the forge, and put that Warden down.',
+    ],
+    options: [
+      { label: "I'll go below.", advance: true,
+        reply: 'The cave mouth is north-west, and the passage runs on into the dark. Mithril needs Mining 9; the Ravagers that guard the veins will not let you work in peace. Smelt bars at the forge (Smithing 7), then smith the helm, greaves and chestplate, and wear them.' },
+      CLOSE('Not yet.'),
+    ],
+  },
+  delve: {
+    lines: ['Three Ravagers and nine ore, that is all I ask of the first trip. The veins are in the hollow, south-west of the passage.',
+      'Cleave the pack, do not fight it one by one. And bring coal: the ridge has it, and so does the far wall of the hollow.'],
+    options: [
+      { label: 'Where do I find mithril?', reply: 'Past the cave mouth, up the passage and into the big cavern: the blue-veined rocks in the south-west corner. Mining 9 to work them.' },
+      CLOSE('Back to it.'),
+    ],
+  },
+  armour: {
+    lines: ['Smelt the ore with coal at the forge, then smith the helm, greaves and chestplate. Each wants more Smithing than the last, but the bars will carry you there.',
+      "The Hollow's archers and its seer are tuned to iron. You will want every plate of this before you go deeper."],
+    options: [
+      { label: 'How much coal?', reply: 'Two coal to every bar, nine bars in all: eighteen. The ridge and the hollow both have seams.' },
+      CLOSE('Back to work.'),
+    ],
+  },
+  warden: {
+    lines: ['Magnificent. Put it on (press I and click each piece), then go down to the Warden. The deep hall is at the far end of the cave, past the neck beyond the big cavern.',
+      'Watch the ground. It marks where you stand and the rock comes down a moment later. Keep moving, and Pummel the slam.'],
+    options: [CLOSE('For the clearing!')],
+  },
+  report: {
+    lines: ['The Warden is dead? Then the Hollow is quiet at last.', 'Take this. The mountain owes you far more than I can pay.'],
+    options: [{ label: 'Thank you.', advance: true, reply: 'The clearing will sing of this. And if you ever want a blade to match that armour, the Warden leaves shards of itself behind: bring them to the forge.' }],
+  },
+  cleared: {
+    lines: ['The Hollow is yours, hero. Its Warden returns in time, and so do its shards: the forge can make a blade of them, if you want one.'],
+    options: [CLOSE('Farewell.')],
+  },
+};
+
+/** What the dialogue panel shows right now: the first chain until it is handed in, the second after. */
+export const activeDialogue = (s: GameState): Dialogue =>
+  s.quest.stage === 'done' && s.quest.second !== 'locked' ? DIALOGUE2[s.quest.second] : DIALOGUE[s.quest.stage];
+
+/** Which marker floats over the Warden: '!' he has something to offer, '?' he is waiting for you, grey he is not, none for nothing left to say. */
+export function npcMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
+  const { stage, second } = s.quest;
+  if (stage !== 'done') return stage === 'offer' ? 'offer' : stage === 'report1' || stage === 'report2' ? 'ready' : 'wait';
+  return second === 'offer' ? 'offer' : second === 'report' ? 'ready' : second === 'cleared' ? null : 'wait';
+}
+
 // ---------- tracker ----------
 
 export interface QuestLine { text: string; done: boolean }
@@ -135,7 +238,8 @@ export interface QuestView {
   lines: QuestLine[];
   target: { x: number; z: number; label: string } | null; // where to go next, for the HUD arrow
   ready: boolean;                                          // true when only a conversation is left
-  stageNo: number;                                         // 1-based
+  stageNo: number;                                         // 1-based, within the chain
+  progress: string;                                        // "(3/6)" for the tracker title; empty once the chain is done
 }
 
 const nearest = <T extends { x: number; z: number }>(s: GameState, list: T[]): T | undefined =>
@@ -157,7 +261,8 @@ export function questView(s: GameState): QuestView {
   const stageNo = QUEST_STAGES.indexOf(q.stage) + 1;
   const talk = (what: string) => ({ text: `${what} (click or press E)`, done: false });
   const npcTarget = { x: NPC.x, z: NPC.z, label: NPC.name };
-  const v = (lines: QuestLine[], target: QuestView['target'], ready = false): QuestView => ({ title: QUEST_NAME, lines, target, ready, stageNo });
+  const progress = stageNo >= QUEST_STAGES.length ? '' : `(${stageNo}/${QUEST_STAGES.length - 1})`;
+  const v = (lines: QuestLine[], target: QuestView['target'], ready = false): QuestView => ({ title: QUEST_NAME, lines, target, ready, stageNo, progress });
 
   switch (q.stage) {
     case 'offer': return v([talk(`Speak to ${NPC.name} in the clearing`)], npcTarget, true);
@@ -208,6 +313,61 @@ export function questView(s: GameState): QuestView {
       return v(lines, enemyTarget(s, 'brute'));
     }
     case 'report2': return v([{ text: 'Cave Brute slain', done: true }, talk(`Return to ${NPC.name} for your reward`)], npcTarget, true);
-    case 'done': return { title: QUEST_NAME, lines: [{ text: 'Quest complete. The clearing is safe.', done: true }], target: null, ready: false, stageNo };
+    case 'done': return { title: QUEST_NAME, lines: [{ text: 'Quest complete. The clearing is safe.', done: true }], target: null, ready: false, stageNo, progress };
   }
 }
+
+/** The first chain's tracker until it is handed in, then the second's. This is what the HUD shows; `questView` stays the first chain only. */
+export function activeQuestView(s: GameState): QuestView {
+  const q = s.quest;
+  if (q.stage !== 'done' || q.second === 'locked') return questView(s);
+  const have = (id: string) => countItem(s.player.inventory, id);
+  const stageNo = QUEST2_STAGES.indexOf(q.second); // 'offer' is 1: stage 0 is the lock
+  const total = QUEST2_STAGES.indexOf('cleared') - 1;
+  const v = (lines: QuestLine[], target: QuestView['target'], ready = false): QuestView =>
+    ({ title: QUEST2_NAME, lines, target, ready, stageNo, progress: q.second === 'cleared' ? '' : `(${stageNo}/${total})` });
+  const npcTarget = { x: NPC.x, z: NPC.z, label: NPC.name };
+  const lvl = s.player.combat.level;
+  const advice = (n: number): QuestLine[] => lvl < n ? [{ text: `Recommended Combat ${n} (you are ${lvl})`, done: false }] : [];
+
+  switch (q.second) {
+    case 'offer': return v([{ text: `${QUEST_NAME} complete`, done: true }, { text: `${NPC.name} has one more task (click or press E)`, done: false }], npcTarget, true);
+    case 'delve': {
+      const P = MITHRIL_PLAN, ore = Math.min(P.ore, mithrilOre(s)), locked = s.player.skills.mining.level < NODE_TYPES.mithril.level;
+      const open = Object.entries(DELVE_GOALS).find(([t, n]) => (q.kills[t] ?? 0) < n);
+      const lines: QuestLine[] = [
+        { text: `Mine Mithril Ore: ${ore}/${P.ore}${ore < P.ore && locked ? ` (needs Mining ${NODE_TYPES.mithril.level})` : ''}`, done: ore >= P.ore },
+        ...Object.entries(DELVE_GOALS).map(([t, n]) => ({ text: `${PLURAL[t]} slain: ${Math.min(n, q.kills[t] ?? 0)}/${n}`, done: (q.kills[t] ?? 0) >= n })),
+        ...advice(RECOMMENDED_COMBAT_2),
+      ];
+      // practise on coal until the veins open; then the veins; then the pack
+      const target = ore < P.ore ? nodeTarget(s, locked ? 'coal' : 'mithril') : open ? enemyTarget(s, open[0]) : null;
+      return v(lines, target);
+    }
+    case 'armour': {
+      const P = MITHRIL_PLAN, bars = mithrilBars(s);
+      const coal = Math.min(P.coal, have('coal') + 2 * bars), barLevel = recipeById('mithril_bar')!.level;
+      const smithing = s.player.skills.smithing.level;
+      const lines: QuestLine[] = [
+        { text: `Mine Coal: ${coal}/${P.coal}`, done: coal >= P.coal },
+        { text: `Smelt Mithril Bars at the forge: ${Math.min(P.bars, bars)}/${P.bars}${bars < P.bars && smithing < barLevel ? ` (needs Smithing ${barLevel})` : ''}`, done: bars >= P.bars },
+        ...MITHRIL_SET.map(id => {
+          const need = recipeById(id)!.level, has = owned(s, id) > 0;
+          return { text: `Smith the ${ITEMS[id].name}${!has && smithing < need ? ` (needs Smithing ${need})` : ''}`, done: has };
+        }),
+      ];
+      const target = coal < P.coal ? nodeTarget(s, 'coal') : { x: LANDMARKS.forge.x, z: LANDMARKS.forge.z, label: 'Forge' };
+      return v(lines, target);
+    }
+    case 'warden':
+      return v([
+        { text: 'Mithril set forged', done: true },
+        { text: `Wear the mithril set (press I): ${worn(s)}/${MITHRIL_SET.length}`, done: worn(s) === MITHRIL_SET.length },
+        { text: 'Slay the Hollow Warden (the deep hall, far end of the cave)', done: false },
+        ...advice(RECOMMENDED_COMBAT_2 + 1),
+      ], enemyTarget(s, 'warden'));
+    case 'report': return v([{ text: 'Hollow Warden slain', done: true }, { text: `Return to ${NPC.name} for your reward (click or press E)`, done: false }], npcTarget, true);
+    case 'cleared': return v([{ text: 'Quest complete. The Hollow is quiet.', done: true }], null);
+  }
+}
+

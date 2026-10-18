@@ -2,19 +2,24 @@
 // Exits non-zero on the first failed assertion. Extended every milestone.
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState, Enemy } from './sim';
 import { addItem, countItem, INVENTORY_SIZE } from './sim/inventory';
-import { ITEMS, DROP_TABLES, deriveStats, emptyEquipment } from './sim/items';
+import { ITEMS, DROP_TABLES, MITHRIL_SET, TIER_COLORS, deriveStats, emptyEquipment } from './sim/items';
 import {
-  ABILITIES, ENEMY_TYPES, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
+  ABILITIES, ENEMY_TYPES, SPAWNS, castName, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
   GRAVITY, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW,
 } from './sim/data';
 import { xpForLevel, levelForXp, addXp, newTrack, levelProgress } from './sim/xp';
 import { SKILL_IDS, SKILLS, grantXp } from './sim/skills';
 import { NODE_TYPES } from './sim/gathering';
 import { RECIPES, FORGE_REACH } from './sim/crafting';
-import { LANDMARKS, ROCKS, TREES } from './sim/world';
+import {
+  CAVE_DOOR_Z, CAVE_PILLARS, CAVE_ROCKS, CAVE_ROOMS, COLLIDERS, LANDMARKS, PLAYER_RADIUS, ROCKS, TREES, WORLD_HALF,
+  caveDepth, caveWallPoints, inCave, resolveCollisions, sameSideOfDoor,
+} from './sim/world';
+import { refreshGearStats } from './sim/inventory';
 import { refreshPlayerStats } from './sim/combat';
 import {
-  BLADE_PLAN, DIALOGUE, HUNT_GOALS, NPC, QUEST_STAGES, RECOMMENDED_COMBAT, REWARD, TALK_RANGE, questView,
+  BLADE_PLAN, DELVE_GOALS, DIALOGUE, DIALOGUE2, HUNT_GOALS, MITHRIL_PLAN, NPC, QUEST2_NAME, QUEST2_STAGES, QUEST_STAGES,
+  RECOMMENDED_COMBAT, RECOMMENDED_COMBAT_2, REWARD, REWARD2, TALK_RANGE, activeDialogue, activeQuestView, npcMarker, questView,
 } from './sim/quest';
 import { appearanceOf, TIER_LOOKS } from './gear-look';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
@@ -74,8 +79,14 @@ function botMove(s: GameState, e: Enemy): Partial<Input> {
   const p = s.player, h = ENEMY_TYPES[e.type].heavy, d = Math.hypot(e.x - p.x, e.z - p.z) || 1;
   const away = { dirX: (p.x - e.x) / d, dirZ: (p.z - e.z) / d };
   const canPummel = p.combat.level >= ABILITIES[SLOT.pummel].unlockLevel && p.cd[SLOT.pummel] === 0 && p.energy >= ABILITIES[SLOT.pummel].cost;
+  if (botSmart) for (const m of s.enemies) { // a ground mark under us: step off it, unless a Pummel is about to cancel it
+    const c = m.cast;
+    if (c?.kind !== 'ground' || (m === e && canPummel && d <= ABILITIES[SLOT.pummel].range)) continue;
+    const dd = Math.hypot(p.x - c.x!, p.z - c.z!);
+    if (dd < c.radius! + 0.7) return { dirX: (p.x - c.x!) / (dd || 1), dirZ: (p.z - c.z!) / (dd || 1) };
+  }
   if (!botSmart && h) return d > 2.2 && !e.cast ? { dirX: -away.dirX, dirZ: -away.dirZ } : {}; // stands in the circle and trades blows
-  if (ENEMY_TYPES[e.type].ranged) return d > 3 ? { dirX: -away.dirX, dirZ: -away.dirZ } : {}; // close the gap: it backs away from melee
+  if (ENEMY_TYPES[e.type].ranged) return d > (ENEMY_TYPES[e.type].hazard ? 2.2 : 3) ? { dirX: -away.dirX, dirZ: -away.dirZ } : {}; // close the gap: it backs away from melee
   if (!h) return {}; // everything else the player simply stands and trades with
   if (e.cast) return !canPummel && d < h.radius + 0.6 ? away : {};
   return d > 2.2 ? { dirX: -away.dirX, dirZ: -away.dirZ } : {};
@@ -1646,6 +1657,309 @@ section('HOM-16 combat state, queueing into cooldowns, and the death recap');
   run(s, RESPAWN_DELAY + 0.5);
   tick(s, { ability: SLOT.strike });
   assert(s.player.recap.length === 0, 'the recap starts fresh in the next life');
+}
+
+// ---------------------------------------------------------------------------
+// HOM-15: the cave, the mithril ladder, the second quest.
+const walkableFor = (x: number, z: number, r: number) => { const p = { x, z }; resolveCollisions(p, r); return Math.hypot(p.x - x, p.z - z) < 1e-6; };
+/** Flood fill over the floor at half-unit steps for a body of radius r. */
+function floodFill(r: number, from: { x: number; z: number }, blocked: (x: number, z: number) => boolean = () => false) {
+  const STEP = 0.5, X0 = -38, Z0 = -98, key = (i: number, j: number) => `${i},${j}`;
+  const at = (i: number, j: number) => ({ x: X0 + i * STEP, z: Z0 + j * STEP });
+  const start = { i: Math.round((from.x - X0) / STEP), j: Math.round((from.z - Z0) / STEP) };
+  const seen = new Set<string>([key(start.i, start.j)]), queue = [start];
+  while (queue.length) {
+    const c = queue.pop()!;
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const i = c.i + di, j = c.j + dj, p = at(i, j);
+      if (i < 0 || j < 0 || p.x > 36 || p.z > 36 || seen.has(key(i, j)) || blocked(p.x, p.z) || !walkableFor(p.x, p.z, r)) continue;
+      seen.add(key(i, j)); queue.push({ i, j });
+    }
+  }
+  return { has: (x: number, z: number) => seen.has(key(Math.round((x - X0) / STEP), Math.round((z - Z0) / STEP))), size: seen.size };
+}
+
+section('HOM-15 the cave: a second pocket of walkable world behind the mouth');
+{
+  assert(CAVE_ROOMS.length >= 3 && CAVE_ROOMS.every(r => r.rect.x1 - r.rect.x0 >= 5 && r.rect.z1 - r.rect.z0 >= 10), 'the cave is rooms of real size, not a niche');
+  assert(!COLLIDERS.some(o => o.x === -18 && o.z === -28 && o.r === 3), 'the rock that sealed the mouth is gone');
+  const spawn = { x: 0, z: 6 };
+  const player = floodFill(0.5, spawn);
+  assert(player.has(-18, -80) && player.has(-18, -55) && player.has(-27, -47), 'a player can walk from the clearing to the hollow, the veins and the warden hall');
+  const ogre = floodFill(ENEMY_TYPES.ogre.radius, spawn);
+  assert(ogre.has(-18, -55) && ogre.has(-28, -61), 'an ogre fits through the mouth and the throat: the cave heavies can follow you out');
+  const warden = floodFill(ENEMY_TYPES.warden.radius, { x: -18, z: -82 });
+  assert(warden.has(-18, -76) && warden.has(-18, -66), 'the Warden can move about its hall and the neck');
+  const sealed = floodFill(0.5, spawn, (x, z) => x > -20.5 && x < -15.5 && z < -29.5 && z > -46);
+  assert(!sealed.has(-18, -55) && !sealed.has(-27, -47), 'with the throat shut, nothing outside reaches the hollow: the mouth is the only way in');
+  const strip = quietState(901); strip.player.x = -26; strip.player.z = -29;
+  run(strip, 6, { dirX: 1, dirZ: 0 });
+  assert(strip.player.x < -19.5, `walking east along the strip behind the mouth rocks stops at the wall (x=${strip.player.x.toFixed(1)}), not in the throat`);
+
+  assert(SPAWNS.every(sp => walkableFor(sp.x, sp.z, ENEMY_TYPES[sp.type].radius)), 'every enemy spawn is on open floor for its own size');
+  const caveSpawns = SPAWNS.filter(sp => inCave(sp.x, sp.z));
+  assert(caveSpawns.length >= 8 && caveSpawns.every(sp => ENEMY_TYPES[sp.type].level > ENEMY_TYPES.brute.level), `${caveSpawns.length} spawns inside the cave, every one above the Brute level ${ENEMY_TYPES.brute.level}`);
+  assert(CAVE_ROCKS.every(r => inCave(r.x, r.z) && [[2.5, 0], [-2.5, 0], [0, 2.5], [0, -2.5]].some(([dx, dz]) => player.has(r.x + dx, r.z + dz))) && CAVE_PILLARS.every(o => inCave(o.x, o.z)), 'cave ore and pillars are inside the rooms, and the ore can be reached');
+
+  // walls are sealed: wherever a body is shoved from, it ends on floor
+  let seed = 12345; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  let leaks = 0, unstable = 0;
+  for (let i = 0; i < 4000; i++) {
+    const r = [0.45, 0.5, 0.65, 1.2, 1.6][i % 5], p = { x: -50 + rnd() * 100, z: -115 + rnd() * 160 };
+    resolveCollisions(p, r);
+    const q = { x: p.x, z: p.z };
+    resolveCollisions(q, r);
+    const inOutdoors = Math.abs(p.x) <= WORLD_HALF - r + 1e-6 && Math.abs(p.z) <= WORLD_HALF - r + 1e-6;
+    const inRoom = CAVE_ROOMS.some(({ rect }) => p.x >= rect.x0 - 1e-6 && p.x <= rect.x1 + 1e-6 && p.z >= rect.z0 - 1e-6 && p.z <= rect.z1 + 1e-6);
+    if (!inOutdoors && !inRoom) leaks++;
+    // deep in the cave a player-sized body settles. (A heavy wedged between a rock and a wall, or the overlapping rocks of the old ridge and mouth, can be nudged again.)
+    if (r <= 0.65 && inRoom && p.z < CAVE_DOOR_Z - 2) unstable = Math.max(unstable, Math.hypot(q.x - p.x, q.z - p.z));
+  }
+  assert(leaks === 0, '4000 random shoves from far outside end on floor every time: no hole in the walls');
+  assert(unstable < 0.01, `a player-sized body settles: a second resolve moves it ${unstable.toFixed(2)}u inside the cave`);
+  const wall = caveWallPoints(2);
+  assert(wall.length > 40, `${wall.length} wall points for the renderer to hang rock on`);
+  const wallBad = wall.filter(w => { const p = { x: w.x, z: w.z }; resolveCollisions(p, PLAYER_RADIUS); return Math.hypot(p.x - w.x, p.z - w.z) < PLAYER_RADIUS - 0.05; });
+  assert(wallBad.length === 0, 'a body placed on any wall point is pushed off it by at least its own radius');
+
+  // threshold: daylight gives way to cave dark as you walk in, smoothly
+  const depth = (z: number) => caveDepth(-18, z);
+  const along = [-10, -23, -25, -28, -31, -34, -37, -45, -80].map(depth);
+  assert(depth(-10) === 0 && depth(0) === 0 && caveDepth(10, -40) === 0, 'outdoors, the cave dark is 0');
+  assert(along.every((d, k) => k === 0 || d >= along[k - 1]) && depth(-40) === 1 && depth(-80) === 1, 'walking in, depth only grows, and ends fully dark');
+  assert(depth(-28) > 0.05 && depth(-28) < 0.95 && depth(-31) > 0.2 && depth(-31) < 0.95, 'there is a threshold: a few strides of dusk between daylight and dark');
+  assert(caveDepth(-10, -28) === 0, 'ridge miners on the outdoor side of the wall stay in daylight');
+}
+
+section('HOM-15 the cave stays out of the first quest');
+{
+  const original = ['boar', 'boar', 'boar', 'wolf', 'wolf', 'wolf', 'brute', 'pup', 'pup', 'pup', 'hexer'];
+  assert(SPAWNS.slice(0, original.length).map(x => x.type).join() === original.join(), 'the original eleven enemies keep their ids and places: the first 20 minutes are the same world');
+  assert(NODE_TYPES.mithril && ROCKS.every(r => r.type !== 'mithril') && ROCKS.length === 7, 'the ridge outside is unchanged: seven iron and coal rocks, no mithril');
+  const s = createState(902);
+  const kinds = s.nodes.map(n => n.type);
+  assert(kinds.slice(0, ROCKS.length + TREES.length).join() === [...ROCKS.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(ROCKS.length + TREES.length).every(t => t === 'mithril' || t === 'coal'),
+    'cave nodes are added after every existing node, so old node ids (and saves) keep meaning the same rock');
+  const caveFolk = SPAWNS.filter(sp => inCave(sp.x, sp.z));
+  const ridge = [...ROCKS, ...TREES, LANDMARKS.npc];
+  assert(caveFolk.every(sp => ridge.every(r => dist2(sp, r) > ENEMY_TYPES[sp.type].aggroRadius + 4)), 'no ridge rock, tree or the Warden Hale is within reach of a cave enemy waking up');
+  assert(caveFolk.every(sp => dist2(sp, LANDMARKS.clearing) > 40), 'nothing in the cave is near the clearing');
+
+  // a ridge miner is not offered an archer behind the rock: Tab, and the forgiving click, skip the far side of the door
+  const t = quietState(903);
+  const arch = enemyOf(t, 'archer');
+  placeAt(arch, -14, -48);
+  t.player.x = -10; t.player.z = -27; t.player.facing = Math.PI;
+  tick(t, { tab: true });
+  assert(t.targetId === null && !sameSideOfDoor(t.player, arch), 'Tab on the ridge does not select an archer inside the cave');
+  t.player.facing = 0;
+  tick(t, { acquire: true });
+  assert(t.targetId === null, 'nor does a forgiving click, even facing the right way');
+  t.player.x = -18; t.player.z = -40;
+  tick(t, { tab: true });
+  assert(t.targetId === arch.id, 'inside the cave the same press selects it');
+  const u = quietState(904), brute = enemyOf(u, 'brute');
+  placeAt(brute, -18, -29); u.player.x = -18; u.player.z = -31;
+  tick(u, { tab: true });
+  assert(u.targetId === brute.id, 'the Brute that follows you to the door and a step inside can still be Tabbed: the rule only hides what is far and behind rock');
+
+  // cost: the interior is rectangles in a clamp, so a body in the cave costs about what a body outside does
+  const time = (x: number, z: number) => {
+    const p = { x, z }, t0 = performance.now();
+    for (let i = 0; i < 200000; i++) { p.x = x + (i & 1) * 0.01; p.z = z; resolveCollisions(p, 0.5); }
+    return ((performance.now() - t0) / 200000) * 1000;
+  };
+  const outside = time(0, 0), inside = time(-18, -55);
+  console.log(`  resolveCollisions: ${outside.toFixed(2)}us outside, ${inside.toFixed(2)}us in the cave (${COLLIDERS.length} colliders, ${CAVE_ROOMS.length} rooms)`);
+  assert(inside < 50 && outside < 50, 'a collision resolve stays a few microseconds');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-15 enemy mechanic: the ground mark punishes standing still');
+{
+  const seer = ENEMY_TYPES.seer, hz = seer.hazard!;
+  const setup = (seedNo: number, level = 9) => {
+    const s = quietState(seedNo);
+    atLevel(s, level);
+    const e = enemyOf(s, 'seer');
+    placeAt(e, 0, 0); e.attackCd = 99; // its bolts are not what is under test
+    s.player.x = 0; s.player.z = 9; s.player.facing = Math.PI;
+    return { s, e };
+  };
+  const heavyHits = (s: GameState) => s.events.filter((ev): ev is Extract<typeof ev, { t: 'hit' }> => ev.t === 'hit' && ev.target === 'player' && ev.heavy === true);
+  type Tele = Extract<GameState['events'][number], { t: 'telegraph' }>;
+  const untilMark = (s: GameState) => {
+    for (let i = 0; i < 300; i++) { tick(s); const t = s.events.find((ev): ev is Tele => ev.t === 'telegraph' && ev.kind === 'ground'); if (t) return t; }
+    return undefined;
+  };
+
+  // stand still: it lands where you were, for the listed damage less armour
+  {
+    const { s, e } = setup(151);
+    const tele = untilMark(s);
+    assert(tele !== undefined && Math.abs(tele.x! - s.player.x) < 1e-6 && Math.abs(tele.z! - s.player.z) < 1e-6 && tele.radius === hz.radius && tele.windup === hz.windup, 'the Seer marks the ground under the player and the telegraph carries the spot, radius and wind-up');
+    assert(e.cast?.kind === 'ground' && e.cast.x === tele.x && e.cast.radius === hz.radius, 'the wind-up is a cast the HUD can read, with the spot attached');
+    const hp0 = s.player.hp, reduction = s.player.stats.reduction;
+    let hit: ReturnType<typeof heavyHits>[number] | undefined, slam: Extract<GameState['events'][number], { t: 'slam' }> | undefined;
+    for (let i = 0; i < Math.round((hz.windup + 0.5) / TICK_DT) && !hit; i++) { tick(s); hit = heavyHits(s)[0]; slam ||= s.events.find((ev): ev is Extract<typeof ev, { t: 'slam' }> => ev.t === 'slam'); }
+    assert(hit !== undefined && hit.amount === Math.max(1, Math.round(hz.damage * (1 - reduction))) && hit.slot === -1 && s.player.hp === hp0 - hit.amount, `standing in it costs ${hit?.amount} (${hz.damage} less ${(100 * reduction).toFixed(0)}% armour)`);
+    assert(slam !== undefined && slam.x === tele.x && slam.z === tele.z && slam.radius === hz.radius, 'the slam event names the marked spot, not the Seer');
+    assert(e.hazardCd > hz.every - 0.5, `and it cannot mark again for ${hz.every}s`);
+  }
+  // keep moving: the same cast lands on empty ground
+  {
+    const { s } = setup(152);
+    const tele = untilMark(s)!;
+    const hp0 = s.player.hp;
+    let hits = 0;
+    for (let i = 0; i < Math.round((hz.windup + 0.6) / TICK_DT); i++) { tick(s, { dirX: 1, dirZ: 0 }); hits += heavyHits(s).length; }
+    assert(hits === 0 && s.player.hp === hp0 && Math.hypot(s.player.x - tele.x!, s.player.z - tele.z!) > hz.radius, `moving off it (${hz.windup}s is ${(hz.windup * 6).toFixed(0)}u of running, the circle is ${hz.radius}u wide) costs nothing`);
+  }
+  // Pummel breaks the cast, as it does the slam
+  {
+    const { s, e } = setup(153, 9);
+    untilMark(s);
+    s.player.x = e.x; s.player.z = e.z + 3; tick(s, { clickEnemy: e.id });
+    const cd0 = e.hazardCd;
+    tick(s, { ability: SLOT.pummel });
+    assert(e.cast === null && e.stagger > 0 && hasEvent(s, ev => ev.t === 'interrupt') && e.hazardCd >= hz.every * 0.7 - 0.1, 'Pummel on the mark cancels it, staggers the Seer and pushes the next mark back');
+    let hits = 0;
+    for (let i = 0; i < 60; i++) { tick(s); hits += heavyHits(s).length; }
+    assert(hits === 0 && cd0 < e.hazardCd, 'and the cancelled mark never lands');
+  }
+  assert(castName(ENEMY_TYPES.ogre, 'heavy') === 'Boulder Slam' && castName(seer, 'ground') === 'Withering Ground' && castName(seer, 'bolt') === 'Hex Bolt' && castName(ENEMY_TYPES.boar, 'ground') === 'Wild Boar',
+    'castName gives the right name for every kind of wind-up and never throws, for any enemy');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'seer,warden', 'only the Seer and the Warden mark the ground');
+  assert(Object.values(ENEMY_TYPES).every(d => !d.look || ['wolf', 'hexer', 'brute', 'boar', 'pup'].includes(d.look.model)), 'every cave look reuses a model that is already loaded: no new art');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 5, 'all five cave enemies say how to draw themselves, and nothing older does');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-15 mithril: a Mining gate above coal, a Smithing ladder, and gear at the top rung');
+{
+  assert(NODE_TYPES.mithril.level > NODE_TYPES.coal.level && NODE_TYPES.mithril.skill === 'mining' && NODE_TYPES.mithril.item === 'mithril_ore', `mithril is Mining ${NODE_TYPES.mithril.level}, above coal (${NODE_TYPES.coal.level})`);
+  const veins = CAVE_ROCKS.filter(r => r.type === 'mithril').length;
+  assert(veins * NODE_TYPES.mithril.charges >= MITHRIL_PLAN.ore, `${veins} veins of ${NODE_TYPES.mithril.charges} give ${veins * NODE_TYPES.mithril.charges} ore without waiting on a respawn: the plan wants ${MITHRIL_PLAN.ore}`);
+  assert(CAVE_ROCKS.some(r => r.type === 'coal'), 'there is coal inside the cave too');
+
+  // the gate: a level-8 miner is turned away, a level-9 one is not
+  const g = quietState(911);
+  const vein = g.nodes.find(n => n.type === 'mithril')!;
+  g.player.skills.mining.xp = xpForLevel(8); g.player.skills.mining.level = 8;
+  g.player.x = vein.x + 2; g.player.z = vein.z;
+  tick(g, { interact: { k: 'node', id: vein.id } });
+  assert(hasEvent(g, e => e.t === 'actionfail' && e.reason === 'level' && e.need === NODE_TYPES.mithril.level), `Mining 8 is refused (needs ${NODE_TYPES.mithril.level}) and told so`);
+  g.player.skills.mining.xp = xpForLevel(9); g.player.skills.mining.level = 9;
+  tick(g, { interact: { k: 'node', id: vein.id } });
+  untilIdle(g);
+  assert(countOf(g, 'mithril_ore') >= 1 && g.player.skills.mining.xp > xpForLevel(9), 'Mining 9 gets ore and XP');
+
+  // the ladder
+  const rec = (id: string) => RECIPES.find(r => r.id === id)!;
+  const ladder = ['mithril_bar', 'mithril_helm', 'mithril_greaves', 'mithril_chestplate', 'warden_edge'].map(rec);
+  assert(ladder.every((r, k) => r.skill === 'smithing' && (k === 0 || r.level > ladder[k - 1].level)) && ladder[0].level > rec('steel_bar').level, `Smithing gates climb above steel: ${ladder.map(r => r.level).join(' < ')}`);
+  const barsNeeded = MITHRIL_SET.reduce((n, id) => n + rec(id).inputs.find(i => i.id === 'mithril_bar')!.qty, 0);
+  const bar = rec('mithril_bar');
+  assert(barsNeeded === MITHRIL_PLAN.bars && bar.inputs.find(i => i.id === 'mithril_ore')!.qty * barsNeeded === MITHRIL_PLAN.ore && bar.inputs.find(i => i.id === 'coal')!.qty * barsNeeded === MITHRIL_PLAN.coal,
+    `the quest plan is the recipes: ${barsNeeded} bars = ${MITHRIL_PLAN.ore} ore + ${MITHRIL_PLAN.coal} coal`);
+  assert(ladder.slice(1).every(r => ITEMS[r.output.id].slot) && MITHRIL_SET.every(id => ITEMS[id].slot && rec(id)), 'the set is made at the forge');
+  const slots = MITHRIL_SET.map(id => ITEMS[id].slot).sort().join();
+  assert(slots === 'chest,head,legs', 'one piece for each armour slot');
+
+  // smithing it
+  const f = quietState(912);
+  f.player.x = LANDMARKS.forge.x - 4; f.player.z = LANDMARKS.forge.z + 2;
+  addItem(f.player.inventory, 'mithril_ore', 9); addItem(f.player.inventory, 'coal', 18);
+  f.player.skills.smithing.xp = xpForLevel(6); f.player.skills.smithing.level = 6;
+  tick(f, { craft: { recipe: 'mithril_bar', count: 1 } });
+  assert(hasEvent(f, e => e.t === 'actionfail' && e.reason === 'level' && e.need === bar.level) && countOf(f, 'mithril_bar') === 0, `Smithing 6 cannot smelt a bar (needs ${bar.level})`);
+  grantXp(f, 'smithing', xpForLevel(bar.level) - f.player.skills.smithing.xp, 0, 0);
+  craft(f, 'mithril_bar', 9);
+  assert(countOf(f, 'mithril_bar') === 9 && countOf(f, 'mithril_ore') === 0 && countOf(f, 'coal') === 0, 'nine bars use up exactly nine ore and eighteen coal');
+  assert(f.player.skills.smithing.level >= rec('mithril_chestplate').level, `the bars alone carry Smithing to ${f.player.skills.smithing.level}: every piece is open without grinding`);
+  for (const id of MITHRIL_SET) craft(f, id, 1);
+  assert(MITHRIL_SET.every(id => countOf(f, id) === 1) && countOf(f, 'mithril_bar') === 0, 'helm, greaves and chestplate smithed from the nine bars');
+
+  // gear at the top of the ladder
+  const iron = deriveStats({ ...emptyEquipment(), head: 'iron_helm', chest: 'iron_chestplate', legs: 'iron_greaves' });
+  const mith = deriveStats({ ...emptyEquipment(), head: 'mithril_helm', chest: 'mithril_chestplate', legs: 'mithril_greaves' });
+  assert(mith.armor >= iron.armor * 2 && mith.reduction > iron.reduction + 0.15, `the set is ${mith.armor} armour (${(100 * mith.reduction).toFixed(0)}% off) against iron's ${iron.armor} (${(100 * iron.reduction).toFixed(0)}%)`);
+  const top = TIER_LOOKS.length - 1;
+  assert(top === 4 && TIER_COLORS.length === top + 1, 'the worn-look ladder has a reserved tier 4 and every tier has a colour');
+  for (const id of [...MITHRIL_SET, 'warden_edge']) {
+    const look = appearanceOf(id);
+    assert(ITEMS[id].tier === 4 && look.rung === TIER_LOOKS[4].rung && look.glow > 0 && look.motes !== 0 && look.scale >= TIER_LOOKS[3].scale, `${ITEMS[id].name} is tier 4 and gets the epic look: rung ${look.rung}, glow, motes`);
+  }
+  assert(Object.entries(ITEMS).every(([id, d]) => d.tier < TIER_COLORS.length && (!d.slot || (appearanceOf(id).rung >= 1 && appearanceOf(id).tint > 0))), 'every equippable item has an appearance and a rarity colour');
+  assert(Object.entries(ITEMS).filter(([, d]) => d.slot).every(([id, d]) => d.tier < 3 || appearanceOf(id).glow !== 0), 'every rare-or-better piece glows: the better the gear, the better it looks');
+
+  // what is made is not dropped, and what is made is best
+  const dropped = new Set(Object.values(DROP_TABLES).flatMap(t => t.entries.map(e => e.id)));
+  assert(![...MITHRIL_SET, 'warden_edge', 'mithril_bar', 'forged_blade'].some(id => dropped.has(id)), 'no enemy drops the mithril set, the Warden Edge or the Forgemaster Blade: they are made');
+  const bestDropped = Math.max(...[...dropped].filter(id => ITEMS[id].slot === 'weapon').map(id => ITEMS[id].stats!.damage!));
+  assert(ITEMS.warden_edge.stats!.damage! > ITEMS.forged_blade.stats!.damage! && ITEMS.forged_blade.stats!.damage! >= bestDropped + 4, `crafted beats dropped all the way up: Edge +${ITEMS.warden_edge.stats!.damage} > Blade +${ITEMS.forged_blade.stats!.damage} > best drop +${bestDropped}`);
+  assert(DROP_TABLES.warden.entries.some(e => e.id === 'warden_shard') && rec('warden_edge').inputs.some(i => i.id === 'warden_shard' && i.qty >= 2), 'the Warden drops the shards the Edge is made from: the reason to keep killing it');
+  assert(DROP_TABLES.ogre.entries.some(e => e.id === 'mithril_ore') && Object.keys(ENEMY_TYPES).filter(k => ENEMY_TYPES[k].level > ENEMY_TYPES.brute.level).every(k => DROP_TABLES[k]), 'cave enemies drop things, and ogres drop ore: killing the cave feeds the forge');
+}
+
+// ---------------------------------------------------------------------------
+// The contract the Brute and the blade already keep, one tier up: the cave is unfair without the new armour and fair with it.
+section('HOM-15 the contract: the cave is unfair without the mithril set and fair with it');
+{
+  const KITS: Record<string, Partial<GameState['player']['equipment']>> = {
+    blade: { weapon: 'forged_blade' },
+    iron: { weapon: 'forged_blade', head: 'iron_helm', chest: 'iron_chestplate', legs: 'iron_greaves' },
+    mithril: { weapon: 'forged_blade', head: 'mithril_helm', chest: 'mithril_chestplate', legs: 'mithril_greaves' },
+    edge: { weapon: 'warden_edge', head: 'mithril_helm', chest: 'mithril_chestplate', legs: 'mithril_greaves' },
+  };
+  /**
+   * The test bot against some of the cave's own enemies, at a combat level in a kit, where they actually stand. The bot walks
+   * at the nearest one and fights what wakes. Returns whether it lived and killed them all.
+   */
+  function caveFight(level: number, kit: string, groups: [string, number][], start: { x: number; z: number }, seedNo: number, smart = true) {
+    const s = quietState(seedNo);
+    atLevel(s, level);
+    Object.assign(s.player.equipment, KITS[kit]); refreshGearStats(s);
+    s.player.x = start.x; s.player.z = start.z;
+    const es: Enemy[] = [];
+    for (const [type, n] of groups) for (const e of s.enemies.filter(x => x.type === type).slice(0, n)) { e.state = 'idle'; e.respawnIn = 0; e.hp = e.maxHp; e.attackCd = 0; es.push(e); }
+    botSmart = smart;
+    const maxHp = s.player.maxHp;
+    let low = 1; // the worst moment, as a share of health at the start: what is left at the end is flattered by the level-up that kills give
+    for (let guard = 0; guard < 6 && !s.player.dead && es.some(e => st(e) !== 'dead'); guard++) {
+      const e = es.filter(x => st(x) !== 'dead').sort((a, b) => dist2(a, s.player) - dist2(b, s.player))[0];
+      fight(s, e, 120);
+      low = Math.min(low, minHpSeen / maxHp);
+    }
+    botSmart = true;
+    return { won: !s.player.dead && es.every(e => st(e) === 'dead'), left: s.player.dead ? 0 : low, s };
+  }
+  const SEEDS = [1, 2, 3, 4, 5, 6];
+  type Scene = { name: string; level: number; groups: [string, number][]; start: { x: number; z: number } };
+  const WARDEN: Scene = { name: 'Hollow Warden', level: 10, groups: [['warden', 1]], start: { x: -18, z: -72 } };
+  const OGRE: Scene = { name: 'Hollow Ogre', level: 9, groups: [['ogre', 1]], start: { x: -14, z: -50 } };
+  const PACK: Scene = { name: 'Ravager pack', level: 9, groups: [['ravager', 3]], start: { x: -22, z: -44 } };
+  const ROOM: Scene = { name: 'ogre+archer+seer', level: 10, groups: [['ogre', 1], ['archer', 1], ['seer', 1]], start: { x: -18, z: -45 } };
+  const wins = (sc: Scene, kit: string, smart = true) => SEEDS.filter(n => caveFight(sc.level, kit, sc.groups, sc.start, 940 + n, smart).won).length;
+  const PAIR: Scene = { name: 'archer+seer', level: 10, groups: [['archer', 1], ['seer', 1]], start: { x: -18, z: -46 } };
+  const BRUISER: Scene = { name: 'ogre+archer', level: 10, groups: [['ogre', 1], ['archer', 1]], start: { x: -14, z: -48 } };
+  for (const sc of [WARDEN, OGRE, PACK, PAIR, BRUISER, ROOM]) console.log(`  L${sc.level} ${sc.name.padEnd(17)} ${Object.keys(KITS).map(k => `${k} ${wins(sc, k)}/6`).join('   ')}`);
+  assert(wins(WARDEN, 'mithril') === 6 && wins(WARDEN, 'iron') <= 1 && wins(WARDEN, 'blade') === 0, 'the Warden: with the set and the blade every run wins; in iron almost none; with no armour none');
+  assert(wins(WARDEN, 'mithril', false) === 0, 'the Warden: a player who ignores the tells (stands in the slam and the marks, never Pummels) loses even in the set');
+  /** Mean health left across the seeds, counting a death as nothing: a smoother read than wins when a fight is a cliff. */
+  const health = (sc: Scene, kit: string) => SEEDS.reduce((m, n) => { const r = caveFight(sc.level, kit, sc.groups, sc.start, 940 + n); return m + (r.won ? r.left : 0); }, 0) / SEEDS.length;
+  assert(wins(OGRE, 'mithril') === 6 && wins(OGRE, 'blade') <= 1, 'the Ogre: the set walks it; with no armour it almost never wins');
+  assert(wins(PACK, 'iron') >= 5 && wins(PACK, 'mithril') === 6 && wins(PACK, 'blade') < 6 && health(PACK, 'mithril') > health(PACK, 'iron') + 0.05,
+    'the Ravagers guard the veins: a fair fight in whatever armour the drops gave you (the first trip is done before the set exists), clearly easier in mithril');
+  assert(wins(PAIR, 'blade') === 0 && wins(PAIR, 'mithril') >= 5, 'an archer and a seer together: out of reach bare, taken in the set');
+  console.log(`  ogre+archer mean health left: iron ${health(BRUISER, 'iron').toFixed(2)}, mithril ${health(BRUISER, 'mithril').toFixed(2)}, edge ${health(BRUISER, 'edge').toFixed(2)}`);
+  assert(health(BRUISER, 'mithril') >= health(BRUISER, 'iron') && wins(BRUISER, 'blade') === 0, 'an ogre with an archer behind it: the set is what changes the odds');
+  assert(wins(ROOM, 'mithril') <= 3 && wins(ROOM, 'blade') === 0, 'pulling the whole room at Combat 10 is beyond any kit: it has to be taken in pieces, which is the pillars and the corridor for');
+  const margin = (kit: string) => SEEDS.map(n => caveFight(WARDEN.level, kit, WARDEN.groups, WARDEN.start, 940 + n)).filter(r => r.won).reduce((m, r) => m + r.left, 0) / 6;
+  console.log(`  Warden lowest health: mithril ${margin('mithril').toFixed(2)}, edge ${margin('edge').toFixed(2)}`);
+  assert(margin('edge') > margin('mithril') + 0.05, 'the Warden Edge makes the same fight easier: the second chase is felt');
+  const q = caveFight(WARDEN.level, 'mithril', WARDEN.groups, WARDEN.start, 941);
+  assert(q.won && q.left > 0.05 && q.left < 0.7, `a won Warden fight at Combat 10 dips to ${(100 * q.left).toFixed(0)}% health at its worst: tense, not trivial`);
 }
 
 console.log(`\nAll ${checks} checks passed.`);

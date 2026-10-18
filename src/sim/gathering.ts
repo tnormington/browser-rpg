@@ -1,7 +1,7 @@
 // Gathering nodes: ore rocks and trees. Timed action -> item + skill XP; nodes deplete and respawn. Pure sim.
 import type { GameState } from '../sim';
 import type { Action } from './actions';
-import { ROCKS, TREES } from './world';
+import { CAVE_ROCKS, ROCKS, TREES } from './world';
 import { SkillId, grantXp } from './skills';
 import { addItem, hasRoom } from './inventory';
 
@@ -19,6 +19,7 @@ export interface NodeDef {
 export const NODE_TYPES: Record<string, NodeDef> = {
   iron: { name: 'Iron Rock', skill: 'mining', level: 1, item: 'iron_ore', time: 3.5, xp: 35, charges: 3, respawn: 25 },
   coal: { name: 'Coal Seam', skill: 'mining', level: 4, item: 'coal', time: 4.5, xp: 50, charges: 3, respawn: 30 },
+  mithril: { name: 'Mithril Vein', skill: 'mining', level: 9, item: 'mithril_ore', time: 5, xp: 80, charges: 3, respawn: 45 },
   tree: { name: 'Tree', skill: 'woodcutting', level: 1, item: 'logs', time: 3, xp: 25, charges: 2, respawn: 20 },
 };
 
@@ -31,7 +32,8 @@ export interface ResourceNode {
 }
 
 export function createNodes(): ResourceNode[] {
-  const spots = [...ROCKS, ...TREES.map(t => ({ ...t, type: 'tree' }))];
+  // ids are positions in this list: new ground goes last so every older node keeps its id (and its save)
+  const spots = [...ROCKS, ...TREES.map(t => ({ ...t, type: 'tree' })), ...CAVE_ROCKS];
   return spots.map((sp, i) => ({
     id: i + 1, type: sp.type, x: sp.x, z: sp.z, r: sp.r, charges: NODE_TYPES[sp.type].charges, respawnIn: 0,
   }));
