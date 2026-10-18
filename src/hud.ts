@@ -1,5 +1,5 @@
 // HUD: DOM overlay. Reads GameState and sim events; never mutates sim state.
-import { GameState, GameEvent, ResourceNode } from './sim';
+import { GameState, GameEvent, ResourceNode, Enemy } from './sim';
 import { ABILITIES, ENEMY_TYPES, GCD, castName } from './sim/data';
 import { levelProgress } from './sim/xp';
 import { ITEMS } from './sim/items';
@@ -64,6 +64,7 @@ function bar(parent: HTMLElement, cls: string) {
 const PLATE_BLOCKERS = '.frame, .tracker, .panel, .actionbar, .msglog, .menubar, .xp';
 const PLATE_HALF_W = 45, PLATE_H = 28; // generous footprint of a nameplate around its anchor
 const NODE_PLATE_W = 96, NODE_PLATE_H = 36; // two plates closer than this on screen overlap
+const PLATE_W = 96, PLATE_STACK_H = 40; // enemy plate footprint; a clustered plate is lifted one step per plate beneath it
 const FLOATER_HALF_W = 24, FLOATER_HALF_H = 14; // footprint of a floating number around its centre
 
 interface Floater { el: HTMLElement; x: number; y: number; z: number; age: number; drift: number }
@@ -348,10 +349,19 @@ export class Hud {
     // nameplates
     const blockers = this.visibleBlockers();
     const seen = new Set<number>();
+    const cand: { e: Enemy; scr: { x: number; y: number }; d: number }[] = [];
     for (const e of s.enemies) {
-      const visible = e.state !== 'dead' && Math.hypot(e.x - p.x, e.z - p.z) < 28;
-      const scr = visible ? this.project(e.x, ENEMY_TYPES[e.type].radius * 2 + (e.type === 'brute' ? 1.6 : 0.9), e.z) : null;
-      if (!scr || this.behindHud(blockers, scr)) continue;
+      const d = Math.hypot(e.x - p.x, e.z - p.z);
+      const scr = e.state !== 'dead' && d < 28 ? this.project(e.x, ENEMY_TYPES[e.type].radius * 2 + (e.type === 'brute' ? 1.6 : 0.9), e.z) : null;
+      if (scr && !this.behindHud(blockers, scr)) cand.push({ e, scr, d });
+    }
+    // the target first, then nearest: a plate that would print over one already placed (a pack) is lifted above it, never overprinted
+    cand.sort((a, b) => Number(b.e.id === s.targetId) - Number(a.e.id === s.targetId) || a.d - b.d);
+    const placed: { x: number; y: number }[] = [];
+    for (const { e, scr } of cand) {
+      let y = scr.y;
+      while (placed.some(o => Math.abs(o.x - scr.x) < PLATE_W && Math.abs(o.y - y) < PLATE_STACK_H)) y -= PLATE_STACK_H;
+      placed.push({ x: scr.x, y });
       seen.add(e.id);
       let plate = this.plates.get(e.id);
       if (!plate) {
@@ -363,7 +373,7 @@ export class Hud {
         this.plates.set(e.id, plate);
       }
       plate.root.style.display = 'block';
-      plate.root.style.transform = `translate(${scr.x}px, ${scr.y}px) translate(-50%, -100%)`;
+      plate.root.style.transform = `translate(${scr.x}px, ${y}px) translate(-50%, -100%)`;
       plate.fill.style.width = `${(e.hp / e.maxHp) * 100}%`;
       plate.cast.style.display = e.cast ? 'block' : 'none';
       if (e.cast) plate.castFill.style.width = `${(e.cast.t / e.cast.total) * 100}%`;
