@@ -2321,4 +2321,47 @@ section('HOM-15 getting around: one click gets you out of the cave, and nothing 
   assert(st(c) === 'idle' && t1 < 6 / (ENEMY_TYPES.ogre.speed * 1.8) + 0.5 && dist2(c, { x: c.spawnX, z: c.spawnZ }) < 0.5, `an enemy with a clear way home just walks it (${t1.toFixed(1)}s)`);
 }
 
+section('HOM-30 the Cave Brute is a door guard, and it stays dead');
+{
+  // leash: lured as far as it will go, it still stops at the door, long before the first Ravager fight
+  const a = createState(970), b = enemyOf(a, 'brute'), post = { x: b.spawnX, z: b.spawnZ };
+  for (const e of a.enemies) if (e !== b) { e.state = 'dead'; e.respawnIn = 1e9; }
+  a.player.maxHp = a.player.hp = 1e6; a.player.x = -18; a.player.z = -24;
+  let far = 0;
+  for (let n = 0; n < 30 * 40; n++) { a.player.z = Math.max(-47, a.player.z - 0.05); a.player.hp = a.player.maxHp; tick(a); far = Math.max(far, dist2(b, post)); }
+  assert(far > 6 && far <= ENEMY_TYPES.brute.leash + 1 && b.z > CAVE_DOOR_Z - 1, `a Brute lured down the throat turns back at the door (furthest ${far.toFixed(1)} from its post, leash ${ENEMY_TYPES.brute.leash})`);
+  assert(dist2(post, { x: -23, z: -47 }) - ENEMY_TYPES.brute.leash > 10, 'a fight at the Ravagers (-23,-47) is out of its reach by a wide margin');
+
+  // a quest that still needs it: it respawns as ever; a finished one: it does not, and neither does a copy an older save left standing
+  const q = quietState(971), qb = enemyOf(q, 'brute');
+  q.quest.stage = 'brute'; qb.respawnIn = 1;
+  run(q, 2);
+  assert(st(qb) === 'idle' && qb.hp === qb.maxHp, 'while the quest still needs it, a fallen Brute respawns');
+  const w = createState(972), wb = enemyOf(w, 'brute');
+  for (const e of w.enemies) if (e !== wb) { e.state = 'dead'; e.respawnIn = 1e9; }
+  w.quest.stage = 'brute'; wb.hp = 1; w.player.x = wb.x + 2.5; w.player.z = wb.z; w.player.hp = w.player.maxHp = 1e6;
+  fight(w, wb, 30);
+  assert(stage(w) === 'report2' && st(wb) === 'dead', 'killing it moves the quest on');
+  run(w, ENEMY_TYPES.brute.respawn + 30);
+  assert(st(wb) === 'dead', `${ENEMY_TYPES.brute.respawn + 30}s later (respawn is ${ENEMY_TYPES.brute.respawn}s) the Brute is still dead`);
+  const r = deserialize(serialize(w))!, rb = enemyOf(r, 'brute');
+  run(r, ENEMY_TYPES.brute.respawn + 30);
+  assert(st(rb) === 'dead', 'and stays dead after a save and a reload');
+  const old = createState(973);
+  old.quest.stage = 'done'; old.quest.second = 'offer';
+  const old2 = deserialize(serialize(old))!, ob = enemyOf(old2, 'brute');
+  old2.player.x = ob.x + 3; old2.player.z = ob.z;
+  run(old2, 5);
+  assert(st(ob) === 'dead' && old2.player.hp === old2.player.maxHp, 'a save with the Brute still standing at the door, after the quest, finds it gone and unharmed');
+  assert(Object.entries(ENEMY_TYPES).every(([k, d]) => k === 'brute' || !d.retiresAt), 'only the quest-1 Brute retires; every cave enemy still respawns');
+
+  // found on the way: walking from the throat to a ridge rock used to stall in the strip between the rocks
+  const m = quietState(974);
+  m.player.x = -18; m.player.z = -40;
+  const rock = ROCKS[0];
+  tick(m, { interact: { k: 'node', id: m.nodes.find(n => n.type === rock.type && n.x === rock.x && n.z === rock.z)!.id } });
+  for (let n = 0; n < 30 * 30 && busy(m); n++) tick(m);
+  assert(dist2(m.player, rock) < 6, `a click on a ridge rock from inside the throat walks all the way out to it (${dist2(m.player, rock).toFixed(1)} away)`);
+}
+
 console.log(`\nAll ${checks} checks passed.`);

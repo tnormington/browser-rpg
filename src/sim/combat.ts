@@ -2,7 +2,7 @@
 import type { GameState, Enemy, EnemyState } from '../sim';
 import { grantXp } from './skills';
 import { rollDrops } from './loot';
-import { questOnKill } from './quest';
+import { questOnKill, questReached } from './quest';
 import { nextRandom } from './rng';
 import { resolveCollisions, sameSideOfDoor } from './world';
 import {
@@ -424,8 +424,11 @@ export function updateEnemies(s: GameState, dt: number) {
   const p = s.player;
   for (const e of s.enemies) {
     const def = ENEMY_TYPES[e.type];
+    const retired = !!def.retiresAt && questReached(s, def.retiresAt);
+    if (retired && e.state === 'idle') { e.state = 'dead'; e.hp = 0; e.respawnIn = def.respawn; e.deadFor = 99; } // an older save left it standing
     if (e.state === 'dead') {
       e.deadFor += dt;
+      if (retired) { e.respawnIn = def.respawn; continue; }
       e.respawnIn -= dt;
       if (e.respawnIn <= 0) {
         e.hp = e.maxHp; e.x = e.spawnX; e.z = e.spawnZ; e.state = 'idle'; e.attackCd = 0;

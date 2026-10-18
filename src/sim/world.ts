@@ -129,6 +129,8 @@ const WAY_OUT = [MOUTH_APPROACH, { x: -18, z: -38 }, { x: -18, z: -60 }, { x: -1
 /** The point to walk towards on the way to `to`: `to` itself unless a wall is in between, then the next junction on the route. */
 export function steerPoint(from: { x: number; z: number }, to: { x: number; z: number }): { x: number; z: number } {
   const a = caveRank(from.x, from.z), b = caveRank(to.x, to.z);
+  // the strip between the throat and the open square (rank 0 but still between the rocks): walk out of it before heading for anything outdoors
+  if (a === 0 && b === 0 && inCave(from.x, from.z) && !inCave(to.x, to.z)) return MOUTH_APPROACH;
   if (a === b) return to;
   // the way in is a gap in the rocks: line up on it outdoors first, or the walk meets the rock beside it
   if (a === 0 && from.z > -24 && Math.abs(from.x - MOUTH_APPROACH.x) > 1) return MOUTH_APPROACH;

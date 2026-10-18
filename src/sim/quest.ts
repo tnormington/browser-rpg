@@ -19,6 +19,9 @@ export interface QuestState { stage: QuestStage; kills: Record<string, number>; 
 export const QUEST_STAGES: QuestStage[] = ['offer', 'hunt', 'report1', 'forge', 'brute', 'report2', 'done'];
 export const QUEST2_STAGES: Quest2Stage[] = ['locked', 'offer', 'delve', 'armour', 'warden', 'report', 'cleared'];
 
+/** True once the first quest has got as far as `stage`. */
+export const questReached = (s: GameState, stage: QuestStage) => QUEST_STAGES.indexOf(s.quest.stage) >= QUEST_STAGES.indexOf(stage);
+
 export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked' });
 
 export const QUEST_NAME = 'The Brute of the Cave Mouth';

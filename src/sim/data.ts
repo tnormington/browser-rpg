@@ -92,6 +92,8 @@ export interface EnemyDef {
    * Interruptible. `range` is how far away the enemy will still start one.
    */
   hazard?: { name: string; windup: number; every: number; first: number; damage: number; radius: number; range: number };
+  /** Once the first quest has reached this stage the enemy is gone for good: it does not respawn, and a copy that is still standing (an older save) is cleared. */
+  retiresAt?: 'report2';
   /** Aggro spreads to every pack-mate within this many units. */
   pack?: number;
   /** Which loaded model slot draws it, and how: no new art, so cave enemies are existing rigs scaled and tinted. Read by the renderer only. */
@@ -109,7 +111,7 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
   wolf: { name: 'Dire Wolf', level: 3, hp: 180, damage: 8, attackInterval: 1.8, speed: 5.0,
     aggroRadius: 8, leash: 25, attackRange: 1.9, radius: 0.6, xp: 60, respawn: 30 },
   brute: { name: 'Cave Brute', level: 6, hp: 600, damage: 17, attackInterval: 2.2, speed: 4.0,
-    aggroRadius: 9, leash: 25, attackRange: 2.6, radius: 1.1, xp: 220, respawn: 60,
+    aggroRadius: 9, leash: 12, attackRange: 2.6, radius: 1.1, xp: 220, respawn: 60, retiresAt: 'report2', // leash 12 from (-18,-18) ends at the door (z -30): it never follows you down the throat
     heavy: { name: 'Crushing Slam', windup: 1.8, every: 8, first: 3, damage: 60, radius: 4.5 } },
   pup: { name: 'Wolf Pup', level: 2, hp: 60, damage: 4, attackInterval: 1.6, speed: 5.4,
     aggroRadius: 7, leash: 22, attackRange: 1.5, radius: 0.45, xp: 16, respawn: 25, pack: 7 },
