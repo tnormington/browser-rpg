@@ -125,7 +125,7 @@ const CAMERA_JUMP_FOLLOW = 0.5;
  * this fraction of the orbit. A rock the player is itself standing in (the throat and neck are only 5 wide and the boulders poke into them) is
  * ignored, so the camera may be no nearer such a boulder than the player is; the floor test is what keeps it out of the wall behind.
  */
-const CAMERA_FLOOR_MARGIN = 0.3, CAMERA_ROCK_MARGIN = 0.2, CAMERA_MIN_PULL = 0.25, CAMERA_ROCK_FILL = 0.38; // a faceted boulder fills about this fraction of its width from the centre
+const CAMERA_FLOOR_MARGIN = 0.3, CAMERA_ROCK_MARGIN = 0.6, CAMERA_MIN_PULL = 0.25, CAMERA_ROCK_FILL = 0.5; // a boulder is up to this fraction of its width from the centre to its edge (a neck-mouth boulder row hides the player at 0.38)
 
 const QUADRUPEDS = new Set(['boar', 'wolf', 'pup']);
 function pickVolume(type: string): { height: number; radius: number } {
