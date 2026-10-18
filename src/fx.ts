@@ -14,6 +14,27 @@ export interface BurstOpts {
 /** Emissive FX are pushed past 1.0 so they cross the bloom threshold in the HDR buffer; they stay vivid either way. */
 export const FX_HDR = 2.5;
 
+/** Round soft sprite for point FX, so a particle is a mote of light, not a square. */
+function discTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const x = c.getContext('2d')!, g = x.createRadialGradient(16, 16, 0, 16, 16, 16);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.5, 'rgba(255,255,255,0.6)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 32, 32);
+  return new THREE.CanvasTexture(c);
+}
+
+/** Point FX use world-size attenuation, which balloons a particle spawned beside the camera into a screen-filling quad (HOM-27); cap it at a fraction of the viewport. */
+function pointFxMaterial(size: number): THREE.PointsMaterial {
+  const m = new THREE.PointsMaterial({
+    size, map: discTexture(), vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, toneMapped: false, // emissive FX stay vivid under ACES
+  });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <logdepthbuf_vertex>', 'gl_PointSize = min(gl_PointSize, scale * 0.05);\n#include <logdepthbuf_vertex>');
+  };
+  return m;
+}
+
 export class Particles {
   private max = 900;
   private pos = new Float32Array(this.max * 3);
@@ -31,9 +52,7 @@ export class Particles {
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
     g.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
     this.pos.fill(-1000);
-    this.points = new THREE.Points(g, new THREE.PointsMaterial({
-      size: 0.28, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, toneMapped: false, // emissive FX stay vivid under ACES
-    }));
+    this.points = new THREE.Points(g, pointFxMaterial(0.28));
     this.points.frustumCulled = false;
   }
 
@@ -98,9 +117,7 @@ export class Motes {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
     g.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
-    this.points = new THREE.Points(g, new THREE.PointsMaterial({
-      size: 0.045, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, toneMapped: false,
-    }));
+    this.points = new THREE.Points(g, pointFxMaterial(0.045));
     this.points.frustumCulled = false;
   }
 
