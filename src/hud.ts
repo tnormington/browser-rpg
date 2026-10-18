@@ -1,5 +1,5 @@
 // HUD: DOM overlay. Reads GameState and sim events; never mutates sim state.
-import { GameState, GameEvent } from './sim';
+import { GameState, GameEvent, ResourceNode } from './sim';
 import { ABILITIES, ENEMY_TYPES, GCD } from './sim/data';
 import { levelProgress } from './sim/xp';
 import { ITEMS } from './sim/items';
@@ -60,6 +60,8 @@ function bar(parent: HTMLElement, cls: string) {
 /** Opaque HUD panels that world-space plates must not draw over. */
 const PLATE_BLOCKERS = '.frame, .tracker, .panel, .actionbar, .msglog, .menubar, .xp';
 const PLATE_HALF_W = 45, PLATE_H = 28; // generous footprint of a nameplate around its anchor
+const NODE_PLATE_W = 96, NODE_PLATE_H = 36; // two plates closer than this on screen overlap
+const FLOATER_HALF_W = 24, FLOATER_HALF_H = 14; // footprint of a floating number around its centre
 
 interface Floater { el: HTMLElement; x: number; y: number; z: number; age: number; drift: number }
 
@@ -287,13 +289,14 @@ export class Hud {
     }
     for (const [id, plate] of this.plates) if (!seen.has(id)) plate.root.style.display = 'none';
 
-    // floating numbers
+    // floating numbers (kept off the HUD panels the same way plates are)
     this.floaters = this.floaters.filter(f => {
       f.age += dtSeconds;
       const scr = f.age < 1.1 ? this.project(f.x, f.y, f.z) : null;
       if (!scr) { f.el.remove(); return false; }
       const rise = f.age * 55, k = Math.min(1, f.age * 6);
-      f.el.style.transform = `translate(${scr.x + f.drift * f.age}px, ${scr.y - rise}px) translate(-50%, -50%) scale(${0.6 + 0.4 * k})`;
+      const fx = scr.x + f.drift * f.age, fy = this.clearOfHud(blockers, fx, scr.y - rise);
+      f.el.style.transform = `translate(${fx}px, ${fy}px) translate(-50%, -50%) scale(${0.6 + 0.4 * k})`;
       f.el.style.opacity = String(Math.min(1, (1.1 - f.age) * 3));
       return true;
     });
@@ -330,10 +333,22 @@ export class Hud {
   /** Floating labels over nearby nodes: name and the level it needs (red when you are too low). */
   private updateNodePlates(s: GameState, blockers: DOMRect[]) {
     const p = s.player;
+    // nearest plate wins: a farther plate is hidden when it would print over one already placed (ore fields cluster)
+    const cand: { n: ResourceNode; scr: { x: number; y: number }; d: number }[] = [];
     for (const n of s.nodes) {
-      const def = NODE_TYPES[n.type];
-      let scr = Math.hypot(n.x - p.x, n.z - p.z) < 16 ? this.project(n.x, n.type === 'tree' ? 5 : 2.4, n.z) : null;
-      if (scr && this.behindHud(blockers, scr)) scr = null;
+      const d = Math.hypot(n.x - p.x, n.z - p.z);
+      const scr = d < 16 ? this.project(n.x, n.type === 'tree' ? 5 : 2.4, n.z) : null;
+      if (scr && !this.behindHud(blockers, scr)) cand.push({ n, scr, d });
+    }
+    cand.sort((a, b) => a.d - b.d);
+    const shown = new Map<number, { x: number; y: number }>(), placed: { x: number; y: number }[] = [];
+    for (const c of cand) {
+      if (placed.some(o => Math.abs(o.x - c.scr.x) < NODE_PLATE_W && Math.abs(o.y - c.scr.y) < NODE_PLATE_H)) continue;
+      placed.push(c.scr);
+      shown.set(c.n.id, c.scr);
+    }
+    for (const n of s.nodes) {
+      const def = NODE_TYPES[n.type], scr = shown.get(n.id);
       let plate = this.nodePlates.get(n.id);
       if (!scr) { if (plate) plate.root.style.display = 'none'; continue; }
       if (!plate) {
@@ -349,6 +364,15 @@ export class Hud {
       plate.root.style.opacity = n.charges <= 0 ? '0.5' : '1';
       plate.root.style.transform = `translate(${scr.x}px, ${scr.y}px) translate(-50%, -100%)`;
     }
+  }
+
+  /** Pushes a floater centre out of any HUD panel it sits in, to whichever edge is nearer, so combat text never prints over the action bar. */
+  private clearOfHud(blockers: DOMRect[], x: number, y: number): number {
+    for (const r of blockers) {
+      if (x < r.left - FLOATER_HALF_W || x > r.right + FLOATER_HALF_W || y < r.top - FLOATER_HALF_H || y > r.bottom + FLOATER_HALF_H) continue;
+      y = y < (r.top + r.bottom) / 2 ? r.top - FLOATER_HALF_H : r.bottom + FLOATER_HALF_H;
+    }
+    return y;
   }
 
   private visibleBlockers(): DOMRect[] {

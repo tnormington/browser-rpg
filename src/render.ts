@@ -14,7 +14,7 @@ import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
  */
 const PALETTE = {
   // terrain: drained grey-green, ash, cold slate
-  grass: 0x3a4336, grassAlt: 0x465040, beyond: 0x181d17, dirt: 0x6b675d,
+  grass: 0x3a4336, grassAlt: 0x465040, beyond: 0x181d17, dirt: 0x58574f, dirtAlt: 0x4a4b45,
   slate: 0x4b525b, slateDark: 0x3a4048, boulder: 0x454b53, cave: 0x040405,
   stone: 0x5d6169, stoneDark: 0x3d4046, anvil: 0x1b1c20,
   bark: 0x4a3b2e, pine: 0x35493a,
@@ -29,7 +29,7 @@ const PALETTE = {
   blood: 0xd02424, bloodDark: 0x701010, bloodLight: 0xff7a5a,
   arcane: 0x6ad8ff, arcaneLight: 0xc4efff, violet: 0xb070ff, heal: 0x5affd0,
   // atmosphere
-  moon: 0xa9b8cc, rim: 0x6d8aa8, skyZenith: 0x15171d, skyMid: 0x2a2f33, horizon: 0x505a3a, skyGround: 0x20251c, hemiSky: 0x5a6678, hemiGround: 0x262a20,
+  moon: 0xa9b8cc, rim: 0x6d8aa8, skyZenith: 0x10141c, skyMid: 0x232c38, horizon: 0x3b4a5c, skyGround: 0x161b22, hemiSky: 0x5a6a82, hemiGround: 0x232a33,
   ash: 0xa8a49a, smoke: [0xbbbbbb, 0x888888] as number[],
 } as const;
 const P = PALETTE;
@@ -58,7 +58,7 @@ const mesh = (g: THREE.BufferGeometry, color: number, cls: MatClass, shadow: 'ca
 };
 
 // Directional light sits at a fixed offset from its shadow target and follows the player, so the shadow frustum stays tight.
-const SUN_OFFSET = new THREE.Vector3(-40, 22, 28); // low and raking: a moon, not noon
+const SUN_OFFSET = new THREE.Vector3(-38, 36, 26); // ~37 degrees: long silhouettes, but shadow bands stay short enough not to swallow the combat arena
 const SHADOW_EXTENT = 28, SHADOW_MAP = 2048;
 const FOG = { near: 8, far: 46 };
 const FORGE_LIGHT = { intensity: 140, distance: 24, y: 1.2 };
@@ -105,7 +105,7 @@ export class Renderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.5;
     this.setupSky();
-    this.scene.add(new THREE.HemisphereLight(P.hemiSky, P.hemiGround, 0.5));
+    this.scene.add(new THREE.HemisphereLight(P.hemiSky, P.hemiGround, 0.85));
     this.setupRim();
     this.setupSun();
 
@@ -163,7 +163,7 @@ export class Renderer {
         void main() {
           vec3 n = normalize(d);
           float h = clamp(n.y, 0.0, 1.0);
-          vec3 c = mix(horizon, mid, smoothstep(0.0, 0.22, h));   // sick band hugging the horizon, then bruised overcast
+          vec3 c = mix(horizon, mid, smoothstep(0.0, 0.22, h));   // cold blue-grey band hugging the horizon, then deepening dusk
           c = mix(c, zenith, smoothstep(0.1, 0.8, h));
           c = mix(c, ground, smoothstep(0.0, -0.25, n.y));
           c += moon * pow(max(dot(n, sun), 0.0), 40.0) * 0.55;    // cold smear where the moon sits behind the cloud
@@ -207,9 +207,14 @@ export class Renderer {
     const g = new THREE.PlaneGeometry(WORLD_HALF * 2, WORLD_HALF * 2, segs, segs).rotateX(-Math.PI / 2).toNonIndexed();
     const a = new THREE.Color(P.grass), b = new THREE.Color(P.grassAlt), c = new THREE.Color();
     const col = new Float32Array(g.attributes.position.count * 3);
+    const clr = LANDMARKS.clearing, da = new THREE.Color(P.dirt), db = new THREE.Color(P.dirtAlt), pos = g.attributes.position;
     for (let t = 0; t < col.length / 9; t++) {
       const r = Math.abs(Math.sin(t * 12.9898) * 43758.5453) % 1; // deterministic per-triangle jitter, no rng state touched
       c.copy(a).lerp(b, r);
+      // the clearing is the same faceted ground, tinted toward bare earth: no separate slab, so no hard straight edge
+      const cx = (pos.getX(t * 3) + pos.getX(t * 3 + 1) + pos.getX(t * 3 + 2)) / 3, cz = (pos.getZ(t * 3) + pos.getZ(t * 3 + 1) + pos.getZ(t * 3 + 2)) / 3;
+      const k = THREE.MathUtils.clamp((clr.r + 1.5 - Math.hypot(cx - clr.x, cz - clr.z)) / 3, 0, 1);
+      if (k > 0) c.lerp(new THREE.Color().copy(da).lerp(db, r), k);
       for (let v = 0; v < 3; v++) c.toArray(col, t * 9 + v * 3);
     }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -231,10 +236,6 @@ export class Renderer {
 
   private buildZone() {
     const add = (m: THREE.Object3D, x: number, y: number, z: number) => { m.position.set(x, y, z); this.scene.add(m); return m; };
-
-    // clearing: pale dirt disc
-    const c = LANDMARKS.clearing;
-    add(mesh(new THREE.CylinderGeometry(c.r, c.r, 0.05, 20), P.dirt, 'dirt', 'receive'), c.x, 0.03, c.z);
 
     // forge: stone hut, chimney, glowing furnace, anvil
     const f = LANDMARKS.forge;
