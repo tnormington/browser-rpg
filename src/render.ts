@@ -594,7 +594,7 @@ export class Renderer {
 
   private addActor(e: Enemy) {
     const def = ENEMY_TYPES[e.type];
-    const color = e.type === 'boar' ? P.boar : e.type === 'wolf' ? P.wolf : P.brute;
+    const color = e.type === 'boar' ? P.boar : e.type === 'wolf' || e.type === 'pup' ? P.wolf : e.type === 'hexer' ? P.robe : P.brute;
     const group = new THREE.Group();
     const mat = material(color, 'hide');
     const body = new THREE.Mesh(
@@ -619,7 +619,20 @@ export class Renderer {
     group.add(ring);
     group.scale.setScalar(1);
     this.scene.add(group);
-    this.actors.set(e.id, { group, body, nose, ring, mats: [mat], type: e.type, px: e.x, pz: e.z, cx: e.x, cz: e.z, swing: 0, flash: 0, dead: false, t: e.id });
+    let tele: Actor['tele'];
+    if (def.heavy) { // the ground circle a slam lands in: an outline that stays, and a fill that grows to meet it
+      const r = def.heavy.radius, tm = (o: number) => new THREE.MeshBasicMaterial({ color: P.blood, transparent: true, opacity: o, fog: false, depthWrite: false, side: THREE.DoubleSide });
+      const outline = new THREE.Mesh(new THREE.RingGeometry(r - 0.12, r, 48).rotateX(-Math.PI / 2), tm(0.85));
+      const fill = new THREE.Mesh(new THREE.CircleGeometry(r, 48).rotateX(-Math.PI / 2), tm(0.3));
+      const root = new THREE.Group();
+      root.add(outline, fill);
+      for (const m of [outline, fill]) { m.raycast = () => {}; m.renderOrder = 2; }
+      root.position.y = 0.08;
+      root.visible = false;
+      this.scene.add(root);
+      tele = { root, fill, outline };
+    }
+    this.actors.set(e.id, { group, body, nose, ring, tele, mats: [mat], type: e.type, px: e.x, pz: e.z, cx: e.x, cz: e.z, swing: 0, flash: 0, dead: false, t: e.id });
   }
 
   /** Called once per sim tick so we can interpolate between the last two states. */
@@ -640,14 +653,36 @@ export class Renderer {
       if (ev.t === 'hit') {
         if (ev.target === 'player') {
           this.playerHitT = 0.25;
-          this.shakeMag = Math.max(this.shakeMag, 0.12);
-          this.particles.burst(ev.x, 1.2, ev.z, { color: [P.blood, P.bloodLight], count: 12, speed: 4, life: 0.5 });
+          this.shakeMag = Math.max(this.shakeMag, ev.heavy ? 0.4 : 0.12);
+          this.particles.burst(ev.x, 1.2, ev.z, { color: [P.blood, P.bloodLight], count: ev.heavy ? 30 : 12, speed: ev.heavy ? 6 : 4, life: 0.5 });
+          const src = ev.src === undefined ? undefined : s.enemies.find(e => e.id === ev.src);
+          if (src && ENEMY_TYPES[src.type].ranged) this.particles.trail(src.x, 1.7, src.z, ev.x, 1.3, ev.z, P.violet); // the bolt
         } else {
-          this.shakeMag = Math.max(this.shakeMag, ev.crit ? 0.2 : ev.slot === 1 ? 0.14 : 0.04);
+          this.shakeMag = Math.max(this.shakeMag, ev.crit ? 0.2 : ev.slot === 1 || ev.slot === 4 ? 0.14 : 0.04);
           this.impact(s, ev);
         }
-      } else if (ev.t === 'cast') { this.castPunch = 0.12; if (ev.slot !== 3 && this.playerAnim?.attack(ev.slot === 1)) this.lungeT = 0.22; } // slot 3 is the heal: no swing
-      else if (ev.t === 'heal') {
+      } else if (ev.t === 'cast') {
+        this.castPunch = 0.12;
+        if (ev.slot !== 3 && this.playerAnim?.attack(ev.slot === 1 || ev.slot === 4)) this.lungeT = 0.22; // slot 3 is the heal: no swing; the cleave takes the heavy swing
+        if (ev.slot === 4) { // the sweep: a wide arc of dust and light in front of the player
+          const p = s.player, a = p.facing;
+          this.rings.pulse(p.x + Math.sin(a) * 1.4, 0.3, p.z + Math.cos(a) * 1.4, P.arcaneLight, 3.8, 0.28, 1.2);
+          for (let k = -2; k <= 2; k++) this.particles.burst(p.x + Math.sin(a + k * 0.45) * 2.2, 1.0, p.z + Math.cos(a + k * 0.45) * 2.2, { color: [P.arcaneLight, P.ash], count: 6, speed: 2.5, life: 0.35 });
+        }
+      }
+      else if (ev.t === 'slam') {
+        this.particles.burst(ev.x, 0.3, ev.z, { color: [P.ash, P.bloodLight, P.ember], count: 40, speed: 7, up: 2, life: 0.8 });
+        this.rings.pulse(ev.x, 0.15, ev.z, P.blood, ev.radius * 1.15, 0.5, ev.radius * 0.3);
+        this.shakeMag = Math.max(this.shakeMag, Math.hypot(ev.x - s.player.x, ev.z - s.player.z) < ev.radius ? 0.35 : 0.2);
+      } else if (ev.t === 'interrupt') {
+        this.particles.burst(ev.x, 1.6, ev.z, { color: [P.gold, P.arcaneLight], count: 30, speed: 5, up: 1, life: 0.5 });
+        this.rings.pulse(ev.x, 1.4, ev.z, P.gold, 2, 0.3);
+        this.shakeMag = Math.max(this.shakeMag, 0.12);
+      } else if (ev.t === 'unlock') {
+        const p = s.player;
+        this.particles.burst(p.x, 0.4, p.z, { color: [P.gold, P.ember, P.arcaneLight], count: 36, speed: 2.5, up: 5, gravity: -3, life: 1.1 });
+        this.rings.pulse(p.x, 0.2, p.z, P.gold, 2.6, 0.7);
+      } else if (ev.t === 'heal') {
         this.particles.burst(ev.x, 0.4, ev.z, { color: [P.heal, P.arcaneLight], count: 24, speed: 1.6, up: 3.5, gravity: -1, life: 1 });
         this.rings.pulse(ev.x, 0.15, ev.z, P.heal, 2.2, 0.6);
       } else if (ev.t === 'levelup') {
@@ -897,7 +932,7 @@ export class Renderer {
     g.visible = !dead || e.deadFor < 2;
     g.position.set(a.px + (a.cx - a.px) * alpha, 0, a.pz + (a.cz - a.pz) * alpha);
     // past the fog a model is invisible but still costs a skinned draw and a mixer update: skip both
-    if (an && Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) > FOG_CULL) { g.visible = false; a.swing = e.swing; a.flash = e.hitFlash; return; }
+    if (an && Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) > FOG_CULL) { g.visible = false; if (a.tele) a.tele.root.visible = false; a.swing = e.swing; a.flash = e.hitFlash; return; }
     g.rotation.y = e.facing;
     let lunge = 1 + e.swing * 2, shrink = Math.max(0.05, 1 - e.deadFor / 2), fall = dead;
     if (an) {
@@ -918,8 +953,23 @@ export class Renderer {
     g.rotation.z = fall ? Math.PI / 2 : 0;
     g.position.y = fall ? ENEMY_TYPES[e.type].radius : 0;
     g.scale.setScalar(dead ? shrink : lunge); // attack lunge / shrink away when dead
-    const flash = e.hitFlash > 0 ? P.bloodLight : HOSTILE_TINT;
-    for (const m of a.mats) m.emissive.setHex(flash);
+    // the tell: a wind-up reddens and swells the model (and leans it back), and a heavy fills its ground circle until it lands
+    const wind = e.cast && !dead ? e.cast.t / e.cast.total : 0;
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / (90 - 50 * wind));
+    if (wind > 0) g.scale.multiplyScalar(1 + 0.12 * wind);
+    if (a.model) a.model.rotation.x = -0.3 * wind;
+    if (a.tele) {
+      a.tele.root.visible = e.cast?.kind === 'heavy' && !dead;
+      a.tele.root.position.set(g.position.x, 0.08, g.position.z);
+      a.tele.fill.scale.set(wind, 1, wind);
+      (a.tele.fill.material as THREE.MeshBasicMaterial).opacity = 0.2 + 0.4 * wind;
+      (a.tele.outline.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * pulse;
+    }
+    if (e.hitFlash > 0) for (const m of a.mats) m.emissive.setHex(P.bloodLight);
+    else if (wind > 0) for (const m of a.mats) m.emissive.setRGB(0.12 + 0.38 * wind * (0.6 + 0.4 * pulse), 0.06, 0.03);
+    else for (const m of a.mats) m.emissive.setHex(HOSTILE_TINT);
+    if (e.stagger > 0 && !dead) for (const m of a.mats) m.emissive.setRGB(0.5, 0.45, 0.1); // stunned: a dull gold flash
+    a.ring.scale.setScalar(wind > 0 ? 1 + 0.25 * pulse : 1);
     a.ring.visible = !dead && Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) < FOG.far;
   }
 }
@@ -929,6 +979,7 @@ interface Actor {
   body: THREE.Mesh;
   nose: THREE.Mesh;
   ring: THREE.Mesh;
+  tele?: { root: THREE.Group; fill: THREE.Mesh; outline: THREE.Mesh };
   mats: Mat[];
   type: string;
   px: number; pz: number; cx: number; cz: number;

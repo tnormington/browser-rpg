@@ -24,7 +24,7 @@ const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves'
  * (five bars of practice, two more than the three the blade uses) and Coal wants Mining 4 (eight ore of XP, ten gathered).
  */
 export const BLADE_PLAN = { ore: 10, coal: 6, logs: 1, bars: 5, steel: 3 };
-export const RECOMMENDED_COMBAT = 3; // finishing the hunt gets you there; the blade, not the level, is what beats the Brute
+export const RECOMMENDED_COMBAT = 4; // finishing the hunt gets you there, and level 4 is what hands over the Pummel the Brute fight is built around; the blade is still what beats it
 export const REWARD: { skill: SkillId; xp: number }[] = [
   { skill: 'combat', xp: 400 }, { skill: 'mining', xp: 150 }, { skill: 'smithing', xp: 150 },
 ];
@@ -84,13 +84,13 @@ export const DIALOGUE: Record<QuestStage, Dialogue> = {
     ],
     options: [
       { label: "I'll deal with them.", advance: true,
-        reply: 'Good. Click an enemy (or press Tab) to target it, then press 1-4 to fight. Rest if you are hurt: health returns out of combat. Come back when it is done.' },
+        reply: 'Good. Click an enemy (or press Tab) to target it, then press 1 to strike. You will learn more as you level: watch the action bar. Rest if you are hurt: health returns out of combat. Come back when it is done.' },
       CLOSE('Not right now.'),
     ],
   },
   hunt: {
     lines: ['Still some left out there. The boars wander the edges of the clearing; the wolves keep further out.',
-      'Tab targets the nearest enemy. Strike on 1, Crushing Blow on 2, bleed on 3, heal on 4.'],
+      'Tab targets the nearest enemy. Strike on 1. Every level hands you a new trick: the locked slots show when. Wolf pups hunt in packs, and the Cleave on 5 loves a pack.'],
     options: [CLOSE('Back to it.')],
   },
   report1: {
@@ -98,6 +98,7 @@ export const DIALOGUE: Record<QuestStage, Dialogue> = {
       'Well fought! The pack is scattered.',
       'But the Cave Brute, in the cave mouth to the north-west, is another matter. It crushed the last hunter who tried, and plain weapons barely scratch it.',
       "You need a better blade. Mine iron ore and coal on the ridge by the cave, chop a log for the hilt, and smith the Forgemaster's Blade at the forge to the east.",
+      'And watch its fist. It raises it before every crushing slam: Pummel it (6) to break the swing, or step out of the circle on the ground.',
     ],
     options: [
       { label: "I'll forge the blade.", advance: true,

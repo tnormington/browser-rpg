@@ -36,16 +36,45 @@ function standNear(s: GameState, e: Enemy, d = 2) {
   s.player.x = e.x + d; s.player.z = e.z;
 }
 
-/** Simple player policy: heal when low, keep bleed up, Crushing Blow on cooldown, Strike otherwise. */
+/** Fixture: give the player a combat level directly. XP, stats and unlocks follow; nothing is announced. */
+function atLevel(s: GameState, level: number) {
+  const p = s.player;
+  p.combat.xp = xpForLevel(level); p.combat.level = level;
+  refreshPlayerStats(s, true);
+  p.unlocked = level;
+  p.energy = p.maxEnergy;
+}
+const SLOT = { strike: 0, crushing: 1, throw: 2, wind: 3, cleave: 4, pummel: 5 };
+
+/**
+ * Simple player policy, aware of the unlocks: Pummel a wind-up, heal when low, keep bleed up, Cleave into a crowd,
+ * Crushing Blow on cooldown, Strike otherwise.
+ */
+let botSmart = true; // false: a player who ignores the Brute's tells (never Pummels, never steps out)
 function botAbility(s: GameState, e: Enemy): number | null {
   const p = s.player;
-  const ready = (slot: number) => p.cd[slot] === 0 && p.energy >= ABILITIES[slot].cost;
+  const ready = (slot: number) => p.combat.level >= ABILITIES[slot].unlockLevel && p.cd[slot] === 0 && p.energy >= ABILITIES[slot].cost;
+  if (botSmart && e.cast && ready(SLOT.pummel) && Math.hypot(e.x - p.x, e.z - p.z) <= ABILITIES[SLOT.pummel].range) return SLOT.pummel; // off the GCD
   if (p.gcd > 0.05) return null;
-  if (p.hp < p.maxHp * 0.45 && ready(3)) return 3;
-  if (!e.bleed && e.hp > 60 && ready(2)) return 2;
-  if (ready(1)) return 1;
-  if (ready(0)) return 0;
+  if (p.hp < p.maxHp * 0.45 && ready(SLOT.wind)) return SLOT.wind;
+  const near = s.enemies.filter(x => st(x) !== 'dead' && Math.hypot(x.x - p.x, x.z - p.z) <= ABILITIES[SLOT.cleave].range).length;
+  if (near >= 2 && ready(SLOT.cleave)) return SLOT.cleave;
+  if (!e.bleed && e.hp > 60 && ready(SLOT.throw)) return SLOT.throw;
+  if (ready(SLOT.crushing)) return SLOT.crushing;
+  if (ready(SLOT.strike)) return SLOT.strike;
   return null;
+}
+
+/** Movement half of the policy: step out of a telegraphed slam that cannot be Pummelled, then walk back in. */
+function botMove(s: GameState, e: Enemy): Partial<Input> {
+  const p = s.player, h = ENEMY_TYPES[e.type].heavy, d = Math.hypot(e.x - p.x, e.z - p.z) || 1;
+  const away = { dirX: (p.x - e.x) / d, dirZ: (p.z - e.z) / d };
+  const canPummel = p.combat.level >= ABILITIES[SLOT.pummel].unlockLevel && p.cd[SLOT.pummel] === 0 && p.energy >= ABILITIES[SLOT.pummel].cost;
+  if (!botSmart && h) return d > 2.2 && !e.cast ? { dirX: -away.dirX, dirZ: -away.dirZ } : {}; // stands in the circle and trades blows
+  if (ENEMY_TYPES[e.type].ranged) return d > 3 ? { dirX: -away.dirX, dirZ: -away.dirZ } : {}; // close the gap: it backs away from melee
+  if (!h) return {}; // everything else the player simply stands and trades with
+  if (e.cast) return !canPummel && d < h.radius + 0.6 ? away : {};
+  return d > 2.2 ? { dirX: -away.dirX, dirZ: -away.dirZ } : {};
 }
 
 let minHpSeen = 0;
@@ -56,7 +85,7 @@ function fight(s: GameState, e: Enemy, maxSeconds = 120) {
   let t = 0;
   minHpSeen = s.player.hp;
   while (t < maxSeconds && st(e) !== 'dead' && !s.player.dead) {
-    tick(s, { ability: botAbility(s, e) });
+    tick(s, { ability: botAbility(s, e), ...botMove(s, e) });
     minHpSeen = Math.min(minHpSeen, s.player.hp);
     t += TICK_DT;
   }
@@ -115,6 +144,7 @@ section('Targeting');
 section('Abilities: GCD, cooldowns, energy, range');
 {
   const s = createState();
+  atLevel(s, 6); // the full kit: this section tests the ability mechanics, not the unlocks
   const boar = enemyOf(s, 'boar');
   boar.x = boar.spawnX = 0; boar.z = boar.spawnZ = 0; // park it where nothing interferes
   boar.state = 'idle';
@@ -173,6 +203,7 @@ section('Abilities: GCD, cooldowns, energy, range');
 section('Kill a basic enemy: duration, XP, level-up');
 {
   const s = createState(7);
+  for (const e of s.enemies) if (e.type !== 'boar') { e.state = 'dead'; e.respawnIn = 1e9; } // a Strike-only level 1 cannot also fend off the wolf next door: this section times boar fights
   const durations: number[] = [];
   const boars = s.enemies.filter(e => e.type === 'boar');
   for (const b of boars) {
@@ -284,7 +315,7 @@ section('Later in the golden path: levelled + upgraded player beats the Brute');
   addXp(s.player.combat, xpForLevel(6)); // ~ what a few wolves/boars give
   s.player.combat.level = levelForXp(s.player.combat.xp);
   s.player.maxHp = 100 + 15 * (s.player.combat.level - 1); s.player.hp = s.player.maxHp;
-  addItem(s.player.inventory, 'iron_sword', 1); // stand-in for the smithed weapon (M3)
+  addItem(s.player.inventory, 'forged_blade', 1); // the smithed weapon (an iron sword no longer carries a level-6 player through the Brute's slams)
   tick(s, { inv: [{ k: 'equip', slot: 0 }] });
   const brute = enemyOf(s, 'brute');
   standNear(s, brute, 3);
@@ -936,6 +967,213 @@ section('M4 FULL GOLDEN PATH: one continuous run as a new character');
   assert(stage(s) === 'done' && !s.player.dead, 'the world stays quiet after the quest');
   const finalSave = deserialize(serialize(s))!;
   assert(finalSave.quest.stage === 'done' && questView(finalSave).lines[0].done, 'a completed quest loads as completed');
+}
+
+
+// ---------------------------------------------------------------------------
+section('Phase 3: ability unlocks tied to combat level');
+{
+  const shipped = ABILITIES.map(a => `${a.name} ${a.unlockLevel}`).join(', ');
+  assert(ABILITIES[SLOT.strike].unlockLevel === 1 && ABILITIES.every(a => a.unlockLevel >= 1), `Strike is the only level-1 ability (${shipped})`);
+  assert(ABILITIES.filter(a => a.unlockLevel === 1).length === 1, 'a fresh character starts with exactly one ability');
+  assert(ABILITIES.some(a => a.kind === 'cleave') && ABILITIES.some(a => a.kind === 'interrupt'), 'the kit includes a cleave and an interrupt');
+  assert(ABILITIES.every(a => a.unlockLevel <= 5), 'the whole kit is handed over by combat level 5, within the quest levelling');
+
+  // locked: does nothing, costs nothing, says why
+  const s = createState(41);
+  for (const e of s.enemies) { e.state = 'dead'; e.respawnIn = 1e9; }
+  const boar = enemyOf(s, 'boar');
+  boar.state = 'idle'; boar.respawnIn = 0; boar.hp = boar.maxHp; boar.x = boar.spawnX = 0; boar.z = boar.spawnZ = 0; boar.attackCd = 99;
+  s.player.x = 0; s.player.z = 2.5;
+  tick(s, { clickEnemy: boar.id });
+  const energy0 = s.player.energy, hp0 = boar.hp;
+  tick(s, { ability: SLOT.crushing });
+  assert(hasEvent(s, e => e.t === 'fail' && e.reason === 'locked' && e.slot === SLOT.crushing), 'a locked ability fails with reason "locked"');
+  assert(s.player.energy >= energy0 && boar.hp === hp0 && s.player.gcd === 0 && s.player.cd[SLOT.crushing] === 0 && !hasEvent(s, e => e.t === 'cast'),
+    'pressing a locked slot spends no energy, starts no GCD or cooldown, and does no damage');
+
+  // unlock fires once, at the level, and the ability then works
+  assert(!hasEvent(s, e => e.t === 'unlock'), 'no unlock events at the start');
+  grantXp(s, 'combat', xpForLevel(3), 0, 0); // straight to level 3: two unlocks in one jump
+  tick(s);
+  const unlocks = s.events.filter(e => e.t === 'unlock') as { t: 'unlock'; slot: number; level: number }[];
+  assert(unlocks.length === 2 && unlocks.some(u => u.slot === SLOT.throw && u.level === 2) && unlocks.some(u => u.slot === SLOT.crushing && u.level === 3),
+    `a two-level jump announces both abilities it crossed (${unlocks.map(u => ABILITIES[u.slot].name).join(', ')})`);
+  let again = 0; for (let i = 0; i < 90; i++) { tick(s); again += s.events.filter(e => e.t === 'unlock').length; }
+  assert(again === 0, 'each unlock fires exactly once');
+  s.player.energy = s.player.maxEnergy; boar.attackCd = 99;
+  tick(s, { ability: SLOT.crushing });
+  assert(hasEvent(s, e => e.t === 'cast' && e.slot === SLOT.crushing) && boar.hp < hp0, 'the ability works the moment its level is reached');
+  tick(s, { ability: SLOT.wind });
+  assert(hasEvent(s, e => e.t === 'fail' && e.reason === 'locked' && e.slot === SLOT.wind), 'abilities above the current level stay locked (Second Wind at level 3)');
+
+  // levels 4 and 5 each hand over what the table says; nothing is announced twice
+  grantXp(s, 'combat', xpForLevel(5) - s.player.combat.xp, 0, 0);
+  tick(s);
+  const later = s.events.filter(e => e.t === 'unlock').map(e => (e as { slot: number }).slot).sort();
+  assert(JSON.stringify(later) === JSON.stringify([SLOT.wind, SLOT.cleave, SLOT.pummel].sort()), 'levels 4 and 5 hand over Second Wind, Pummel and Cleave');
+
+  // a loaded save does not re-announce abilities already earned
+  const loaded = deserialize(serialize(s))!;
+  let reAnnounced = 0; for (let i = 0; i < 5; i++) { tick(loaded); reAnnounced += loaded.events.filter(e => e.t === 'unlock').length; }
+  assert(reAnnounced === 0 && loaded.player.combat.level === 5, 'loading a save does not replay the unlock moments');
+}
+
+// ---------------------------------------------------------------------------
+section('Phase 3: Pummel interrupts a wind-up');
+{
+  const mk = (seed: number) => {
+    const s = quietState(seed);
+    atLevel(s, 5);
+    const b = enemyOf(s, 'brute');
+    b.state = 'idle'; b.respawnIn = 0; b.hp = b.maxHp; b.x = b.spawnX = 0; b.z = b.spawnZ = 0;
+    s.player.x = 0; s.player.z = 2.5; // within Pummel range (3.5) and inside the slam circle
+    tick(s, { clickEnemy: b.id });
+    return { s, b };
+  };
+  const untilCast = (s: GameState, b: Enemy) => { for (let i = 0; i < 400 && !b.cast; i++) tick(s); return b.cast; };
+
+  // nothing to interrupt: nothing happens
+  {
+    const { s, b } = mk(51);
+    run(s, 0.1);
+    assert(!b.cast, 'the Brute is not winding up right after aggro');
+    const e0 = s.player.energy;
+    tick(s, { ability: SLOT.pummel });
+    assert(hasEvent(s, e => e.t === 'fail' && e.reason === 'nocast'), 'Pummel with nothing to interrupt fails ("nocast")');
+    assert(s.player.energy >= e0 && s.player.cd[SLOT.pummel] === 0 && !hasEvent(s, e => e.t === 'interrupt') && b.stagger === 0, 'and costs nothing, goes on no cooldown, staggers nothing');
+  }
+  // interrupt in progress: the cast is cancelled, the Brute is stunned, the slam never lands
+  {
+    const { s, b } = mk(52);
+    const c = untilCast(s, b);
+    assert(c !== null && c.kind === 'heavy' && c.total >= 1.2, `the Cave Brute winds up a heavy attack (${c?.total}s cast)`);
+    run(s, 0.4);
+    s.player.gcd = 1.4; s.player.energy = s.player.maxEnergy; // mid-GCD: the global cooldown must not matter
+    const hp0 = s.player.hp, e0 = s.player.energy;
+    tick(s, { ability: SLOT.pummel });
+    assert(b.cast === null && hasEvent(s, e => e.t === 'interrupt' && e.id === b.id), 'Pummel cancels the wind-up in progress');
+    assert(s.player.gcd > 1.3, 'Pummel is off the global cooldown: it worked mid-GCD and did not restart it');
+    assert(b.stagger > 1 && s.player.energy < e0 && s.player.cd[SLOT.pummel] > 0, 'the Brute is staggered; Pummel costs energy and goes on cooldown');
+    assert(b.heavyCd >= ENEMY_TYPES.brute.heavy!.every * 0.5, `an interrupted Brute cannot slam again straight away (${b.heavyCd.toFixed(1)}s before the next one)`);
+    let slammed = false; for (let i = 0; i < 60; i++) { tick(s); slammed ||= hasEvent(s, e => e.t === 'slam' || (e.t === 'hit' && e.target === 'player' && !!e.heavy)); }
+    assert(!slammed && s.player.hp >= hp0 - 1, 'the interrupted slam never lands');
+  }
+  // no interrupt, no escape: the heavy attack lands for its full damage
+  {
+    const { s, b } = mk(53);
+    untilCast(s, b);
+    s.player.hp = s.player.maxHp;
+    let dmg = -1, slammed = false;
+    for (let i = 0; i < 90 && dmg < 0; i++) {
+      tick(s);
+      slammed ||= hasEvent(s, e => e.t === 'slam');
+      for (const ev of s.events) if (ev.t === 'hit' && ev.target === 'player' && ev.heavy) dmg = ev.amount;
+    }
+    const def = ENEMY_TYPES.brute.heavy!;
+    assert(slammed && dmg === Math.round(def.damage * (1 - s.player.stats.reduction)), `an unanswered Crushing Slam lands for its full ${def.damage} (took ${dmg})`);
+    assert(def.damage > ENEMY_TYPES.brute.damage * 2.5, `...which is far more than a normal swing (${ENEMY_TYPES.brute.damage})`);
+  }
+  // escape: leave the circle before it lands
+  {
+    const { s, b } = mk(54);
+    untilCast(s, b);
+    s.player.hp = s.player.maxHp;
+    const def = ENEMY_TYPES.brute.heavy!;
+    let hit = false, slammed = false;
+    for (let i = 0; i < 90; i++) {
+      const inside = Math.hypot(s.player.x - b.x, s.player.z - b.z) < def.radius + 0.6;
+      tick(s, inside ? { dirZ: 1 } : {});
+      slammed ||= hasEvent(s, e => e.t === 'slam');
+      hit ||= hasEvent(s, e => e.t === 'hit' && e.target === 'player' && !!e.heavy);
+    }
+    assert(slammed && !hit, 'stepping out of the circle before the wind-up ends avoids the slam entirely');
+  }
+  // the tell is not decoration: standing and trading loses, answering it wins (same level, same blade, same Brute)
+  {
+    const fightAt = (smart: boolean, seed: number) => {
+      botSmart = smart;
+      const s = createState(seed);
+      atLevel(s, RECOMMENDED_COMBAT);
+      addItem(s.player.inventory, 'forged_blade', 1);
+      tick(s, { inv: [{ k: 'equip', slot: 0 }] });
+      const brute = enemyOf(s, 'brute');
+      standNear(s, brute, 3);
+      fight(s, brute, 120);
+      botSmart = true;
+      return st(brute) === 'dead' && !s.player.dead;
+    };
+    const stood = [61, 62, 63].map(sd => fightAt(false, sd)), answered = [61, 62, 63].map(sd => fightAt(true, sd));
+    assert(stood.every(w => !w), `at the recommended level (${RECOMMENDED_COMBAT}) with the blade, ignoring the slam loses every time`);
+    assert(answered.every(w => w), 'at the same level, Pummelling or sidestepping it wins every time');
+  }
+}
+
+// ---------------------------------------------------------------------------
+section('Phase 3: Cleave hits a crowd');
+{
+  const s = quietState(71);
+  atLevel(s, 5);
+  const [a, b, behind] = s.enemies.filter(e => e.type === 'boar').slice(0, 3);
+  const [pup] = s.enemies.filter(e => e.type === 'pup');
+  for (const e of [a, b, behind, pup]) { e.state = 'idle'; e.respawnIn = 0; e.hp = e.maxHp; e.attackCd = 99; }
+  s.player.x = 0; s.player.z = 0;
+  const place = (e: Enemy, x: number, z: number) => { e.x = e.spawnX = x; e.z = e.spawnZ = z; };
+  place(a, 0, 2.5); place(b, 1.4, 2.2); place(behind, 0, -2.5); place(pup, 3, 0); // in front, in front-right, behind, to the side (inside reach, outside the arc)
+  tick(s, { clickEnemy: a.id });
+  const hp = [a, b, behind, pup].map(e => e.hp);
+  tick(s, { ability: SLOT.cleave });
+  const hit = [a, b, behind, pup].map((e, i) => e.hp < hp[i]);
+  assert(hasEvent(s, e => e.t === 'cast' && e.slot === SLOT.cleave), 'Cleave casts');
+  assert(hit[0] && hit[1], 'Cleave hits the target and the enemy beside it');
+  assert(!hit[2] && !hit[3], 'Cleave leaves enemies behind and beside the arc alone');
+  assert(s.events.filter(e => e.t === 'hit' && e.target !== 'player').length === 2, 'one hit event per enemy struck');
+  assert(st(a) === 'chase' && st(b) === 'chase', 'both enemies it hit are now fighting you');
+}
+
+// ---------------------------------------------------------------------------
+section('Phase 3: ranged attacker and pack aggro');
+{
+  const s = quietState(81);
+  atLevel(s, 4);
+  const h = enemyOf(s, 'hexer'), r = ENEMY_TYPES.hexer.ranged!;
+  assert(ENEMY_TYPES.hexer.attackRange > 8 && r.keepAway > 3.5, 'the Cave Hexer is built to fight from outside melee range');
+  h.state = 'idle'; h.respawnIn = 0; h.hp = h.maxHp; h.x = h.spawnX = 0; h.z = h.spawnZ = 0;
+  s.player.x = 0; s.player.z = 8.5; // inside its aggro and firing range, far outside melee (3)
+  const hp0 = s.player.hp;
+  let bolt: { dist: number; amount: number } | null = null, sawTell = false, standing = true;
+  for (let i = 0; i < 150 && !bolt; i++) {
+    tick(s);
+    sawTell ||= hasEvent(s, e => e.t === 'telegraph' && e.kind === 'bolt');
+    for (const ev of s.events) if (ev.t === 'hit' && ev.target === 'player' && ev.src === h.id) bolt = { dist: Math.hypot(h.x - s.player.x, h.z - s.player.z), amount: ev.amount };
+    standing &&= Math.hypot(h.x - s.player.x, h.z - s.player.z) > ABILITIES[SLOT.strike].range;
+  }
+  assert(sawTell && bolt !== null, 'the Hexer winds up and then hits');
+  assert(bolt!.dist > ABILITIES[SLOT.strike].range * 2 && s.player.hp < hp0 && standing, `the bolt landed from ${bolt!.dist.toFixed(1)}u away: outside melee (${ABILITIES[SLOT.strike].range}u)`);
+
+  // it does not want to be in melee: step in and it backs off
+  s.player.x = h.x; s.player.z = h.z + 2; h.attackCd = 99; h.cast = null; h.state = 'chase';
+  run(s, 1.2);
+  assert(Math.hypot(h.x - s.player.x, h.z - s.player.z) > 3.5 || Math.hypot(h.x - h.spawnX, h.z - h.spawnZ) > 3, 'closed to melee, the Hexer backs away');
+
+  // a Pummel on the bolt wind-up cancels it
+  const s2 = quietState(82);
+  atLevel(s2, 5);
+  const h2 = enemyOf(s2, 'hexer');
+  h2.state = 'idle'; h2.respawnIn = 0; h2.hp = h2.maxHp; h2.x = h2.spawnX = 0; h2.z = h2.spawnZ = 0;
+  s2.player.x = 0; s2.player.z = 3; tick(s2, { clickEnemy: h2.id });
+  for (let i = 0; i < 200 && !h2.cast; i++) { s2.player.x = 0; s2.player.z = 3; tick(s2); }
+  s2.player.x = h2.x; s2.player.z = h2.z + 2.5;
+  tick(s2, { ability: SLOT.pummel });
+  assert(h2.cast === null && hasEvent(s2, e => e.t === 'interrupt'), 'Pummel cancels a Hexer bolt too');
+
+  // pack: one pup wakes the lot, and none of the other kinds
+  const s3 = quietState(83);
+  const pups = s3.enemies.filter(e => e.type === 'pup'), boar = enemyOf(s3, 'boar');
+  for (const e of [...pups, boar]) { e.state = 'idle'; e.respawnIn = 0; e.hp = e.maxHp; }
+  s3.player.x = pups[0].x + 5; s3.player.z = pups[0].z; // inside aggro (7) of one pup
+  run(s3, 0.2);
+  assert(pups.every(p => st(p) === 'chase') && st(boar) === 'idle', `a pack wakes together (${pups.length} pups) and nothing else does`);
 }
 
 console.log(`\nAll ${checks} checks passed.`);

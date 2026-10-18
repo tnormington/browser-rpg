@@ -19,25 +19,36 @@ export const powerForLevel = (level: number) => 1 + 0.07 * (level - 1); // scale
 export interface AbilityDef {
   name: string;
   desc: string;
-  kind: 'strike' | 'dot' | 'heal';
-  damage: number;     // direct damage (kind strike/dot) or heal amount (kind heal), at power 1
+  kind: 'strike' | 'dot' | 'heal' | 'cleave' | 'interrupt';
+  unlockLevel: number; // combat level that hands the ability over; locked slots do nothing and say why
+  damage: number;     // direct damage (strike/dot/cleave) or heal amount (heal), at power 1; 0 for interrupt
   dotDamage?: number; // per tick
   dotTicks?: number;  // one tick per second
   cost: number;       // energy
   cooldown: number;   // seconds, on top of the GCD
   range: number;      // world units, center to center; 0 = self
+  arc?: number;       // cleave: full width in degrees of the cone, centred on the line to the target
+  offGcd?: boolean;   // interrupt: usable mid-GCD, so it can answer a wind-up the instant it starts
 }
 
 export const ABILITIES: AbilityDef[] = [
   { name: 'Strike', desc: 'Cheap, reliable melee hit. Your GCD filler.',
-    kind: 'strike', damage: 8, cost: 10, cooldown: 0, range: 3 },
+    kind: 'strike', unlockLevel: 1, damage: 10, cost: 10, cooldown: 0, range: 3 },
   { name: 'Crushing Blow', desc: 'Heavy melee hit. Save energy for it.',
-    kind: 'strike', damage: 26, cost: 30, cooldown: 6, range: 3 },
+    kind: 'strike', unlockLevel: 3, damage: 26, cost: 30, cooldown: 6, range: 3 },
   { name: 'Serrated Throw', desc: 'Ranged opener that makes the target bleed.',
-    kind: 'dot', damage: 4, dotDamage: 4, dotTicks: 6, cost: 20, cooldown: 9, range: 9 },
+    kind: 'dot', unlockLevel: 2, damage: 4, dotDamage: 4, dotTicks: 6, cost: 20, cooldown: 9, range: 9 },
   { name: 'Second Wind', desc: 'Heal yourself. Long cooldown: pick your moment.',
-    kind: 'heal', damage: 45, cost: 25, cooldown: 20, range: 0 },
+    kind: 'heal', unlockLevel: 4, damage: 45, cost: 25, cooldown: 20, range: 0 },
+  { name: 'Cleave', desc: 'Sweep a wide arc: hits every enemy in front of you, not just your target.',
+    kind: 'cleave', unlockLevel: 5, damage: 12, cost: 25, cooldown: 8, range: 3.5, arc: 140 },
+  { name: 'Pummel', desc: 'Off the global cooldown. Stops an enemy wind-up dead and staggers it. Useless when nothing is winding up.',
+    kind: 'interrupt', unlockLevel: 4, damage: 0, cost: 10, cooldown: 10, range: 3.5, offGcd: true },
 ];
+
+/** How long an interrupted enemy is stunned, and what share of its heavy-attack cooldown it keeps (so it cannot slam again at once). */
+export const STAGGER_TIME = 2.2;
+export const STAGGER_HEAVY_KEEP = 0.7;
 
 export interface EnemyDef {
   name: string;
@@ -52,19 +63,34 @@ export interface EnemyDef {
   radius: number;
   xp: number;
   respawn: number;     // seconds
+  /** A telegraphed ground slam: stands still for `windup`, then hits everything within `radius` of itself for flat `damage`. Interruptible; or step out of the radius. */
+  heavy?: { name: string; windup: number; every: number; first: number; damage: number; radius: number };
+  /** Attacks from a distance and backs away from melee: a short interruptible wind-up, then a bolt that lands if the player is still within `range`. */
+  ranged?: { name: string; range: number; keepAway: number; windup: number };
+  /** Aggro spreads to every pack-mate within this many units. */
+  pack?: number;
 }
 
 export const ENEMY_TYPES: Record<string, EnemyDef> = {
-  boar: { name: 'Wild Boar', level: 1, hp: 130, damage: 5, attackInterval: 2.0, speed: 4.5,
-    aggroRadius: 8, leash: 25, attackRange: 1.8, radius: 0.6, xp: 25, respawn: 20 },
+  boar: { name: 'Wild Boar', level: 1, hp: 100, damage: 4, attackInterval: 2.0, speed: 4.5,
+    aggroRadius: 8, leash: 25, attackRange: 1.8, radius: 0.6, xp: 30, respawn: 20 },
   wolf: { name: 'Dire Wolf', level: 3, hp: 180, damage: 8, attackInterval: 1.8, speed: 5.0,
-    aggroRadius: 8, leash: 25, attackRange: 1.9, radius: 0.6, xp: 55, respawn: 30 },
-  brute: { name: 'Cave Brute', level: 6, hp: 450, damage: 17, attackInterval: 2.2, speed: 4.0,
-    aggroRadius: 9, leash: 25, attackRange: 2.6, radius: 1.1, xp: 220, respawn: 60 },
+    aggroRadius: 8, leash: 25, attackRange: 1.9, radius: 0.6, xp: 60, respawn: 30 },
+  brute: { name: 'Cave Brute', level: 6, hp: 600, damage: 17, attackInterval: 2.2, speed: 4.0,
+    aggroRadius: 9, leash: 25, attackRange: 2.6, radius: 1.1, xp: 220, respawn: 60,
+    heavy: { name: 'Crushing Slam', windup: 1.8, every: 8, first: 3, damage: 60, radius: 4.5 } },
+  pup: { name: 'Wolf Pup', level: 2, hp: 60, damage: 4, attackInterval: 1.6, speed: 5.4,
+    aggroRadius: 7, leash: 22, attackRange: 1.5, radius: 0.45, xp: 16, respawn: 25, pack: 7 },
+  hexer: { name: 'Cave Hexer', level: 4, hp: 140, damage: 9, attackInterval: 2.6, speed: 4.4,
+    aggroRadius: 10, leash: 24, attackRange: 11, radius: 0.6, xp: 90, respawn: 40,
+    ranged: { name: 'Hex Bolt', range: 11, keepAway: 5, windup: 0.9 } },
 };
 
 export const SPAWNS: { type: string; x: number; z: number }[] = [
   { type: 'boar', x: -15, z: -3 }, { type: 'boar', x: 16, z: 3 }, { type: 'boar', x: 12, z: -10 },
   { type: 'wolf', x: -8, z: -14 }, { type: 'wolf', x: 14, z: -15 }, { type: 'wolf', x: -22, z: 12 },
   { type: 'brute', x: -18, z: -18 },
+  // pack of pups (one wakes, all wake): the reason to Cleave
+  { type: 'pup', x: -5, z: 15 }, { type: 'pup', x: -3.5, z: 16.2 }, { type: 'pup', x: -6.2, z: 16.6 },
+  { type: 'hexer', x: 19, z: 19 },
 ];

@@ -43,6 +43,10 @@ export interface Enemy {
   hitFlash: number; // presentation timers kept in sim so they tick deterministically
   swing: number;
   bleed: { ticks: number; timer: number; damage: number } | null;
+  /** A wind-up in progress: the tell the player reads. Cleared by a Pummel, by dying, or when it lands. */
+  cast: { kind: 'heavy' | 'bolt'; t: number; total: number } | null;
+  stagger: number;   // seconds left stunned after an interrupt: it does nothing
+  heavyCd: number;   // seconds until the heavy attack may start again
 }
 
 export interface Player {
@@ -51,6 +55,7 @@ export interface Player {
   energy: number; maxEnergy: number;
   gcd: number;
   cd: number[];            // per-ability cooldown remaining
+  unlocked: number;        // combat level up to which ability unlocks have been announced (so each fires exactly once)
   queued: number | null;   // ability pressed just before the GCD ended
   cast: number;            // short attack-animation timer
   dead: boolean;
@@ -65,9 +70,13 @@ export interface Player {
 }
 
 export type GameEvent =
-  | { t: 'hit'; target: 'player' | number; x: number; z: number; amount: number; crit: boolean; slot: number; dot: boolean }
+  | { t: 'hit'; target: 'player' | number; x: number; z: number; amount: number; crit: boolean; slot: number; dot: boolean; heavy?: boolean; src?: number }
   | { t: 'heal'; x: number; z: number; amount: number }
-  | { t: 'fail'; reason: 'range' | 'cooldown' | 'gcd' | 'energy' | 'target'; slot: number }
+  | { t: 'fail'; reason: 'range' | 'cooldown' | 'gcd' | 'energy' | 'target' | 'locked' | 'nocast'; slot: number }
+  | { t: 'unlock'; slot: number; level: number }       // combat level handed over an ability: fires once per ability
+  | { t: 'telegraph'; id: number; kind: 'heavy' | 'bolt'; windup: number }  // an enemy starts a wind-up
+  | { t: 'interrupt'; id: number; x: number; z: number }  // a Pummel landed on a wind-up
+  | { t: 'slam'; id: number; x: number; z: number; radius: number }  // a heavy attack resolved (hit or miss: the ground shakes either way)
   | { t: 'cast'; slot: number }
   | { t: 'kill'; id: number; x: number; z: number }
   | { t: 'xp'; skill: SkillId; amount: number; x: number; z: number }
@@ -126,7 +135,7 @@ export function createState(seed = 1): GameState {
     player: {
       x: PLAYER_SPAWN.x, z: PLAYER_SPAWN.z, facing: Math.PI, moving: false,
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
-      gcd: 0, cd: ABILITIES.map(() => 0), queued: null, cast: 0,
+      gcd: 0, cd: ABILITIES.map(() => 0), unlocked: 1, queued: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
       skills, combat: skills.combat, action: null, inventory: newInventory(), equipment: emptyEquipment(), stats: deriveStats(emptyEquipment()),
     },
@@ -135,7 +144,8 @@ export function createState(seed = 1): GameState {
     enemies: SPAWNS.map((sp, i): Enemy => ({
       id: i + 1, type: sp.type, x: sp.x, z: sp.z, facing: 0, spawnX: sp.x, spawnZ: sp.z,
       hp: ENEMY_TYPES[sp.type].hp, maxHp: ENEMY_TYPES[sp.type].hp, state: 'idle',
-      attackCd: 0, respawnIn: 0, deadFor: 0, hitFlash: 0, swing: 0, bleed: null,
+      attackCd: 0, respawnIn: 0, deadFor: 0, hitFlash: 0, swing: 0, bleed: null, cast: null, stagger: 0,
+      heavyCd: ENEMY_TYPES[sp.type].heavy?.first ?? 0,
     })),
     drops: [],
     nextDropId: 1,

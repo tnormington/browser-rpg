@@ -58,6 +58,7 @@ export const DROP_TABLES: Record<string, DropTable> = {
     { id: 'wolf_pelt', qty: [1, 2] }, { id: 'hide_jerkin' }, { id: 'leather_cap' }, { id: 'hide_leggings' },
     { id: 'rusty_blade' }, { id: 'iron_sword', weight: 4 },
   ] },
+  hexer: { rolls: 1, nothing: 30, entries: [{ id: 'leather_cap' }, { id: 'hide_leggings' }, { id: 'rusty_blade' }] },
   brute: { rolls: 3, nothing: 20, entries: [
     { id: 'iron_sword' }, { id: 'steel_sword' }, { id: 'iron_helm' }, { id: 'iron_chestplate' }, { id: 'iron_greaves' },
     { id: 'wolf_pelt', qty: [2, 4] },

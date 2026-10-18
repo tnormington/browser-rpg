@@ -96,6 +96,7 @@ export function deserialize(raw: string): GameState | null {
     }
     refreshGearStats(s);
     refreshPlayerStats(s, false);
+    p.unlocked = p.combat.level; // abilities already earned are not announced again
     p.x = num(fp.x, -1000, 1000, 'x'); p.z = num(fp.z, -1000, 1000, 'z'); p.facing = num(fp.facing, -100, 100, 'facing');
     resolveCollisions(p);
     p.hp = Math.min(p.maxHp, Math.max(1, num(fp.hp, 0, 1e6, 'hp')));

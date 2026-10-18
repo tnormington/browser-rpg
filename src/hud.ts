@@ -14,6 +14,8 @@ import { QuestUi } from './quest-ui';
 import { MenuUi } from './menu-ui';
 import { QUEST_NAME } from './sim/quest';
 
+const PUMMEL = ABILITIES.findIndex(a => a.kind === 'interrupt');
+
 export interface HudActions {
   inv: (a: InvAction) => void;
   craft: (recipe: string, count: number) => void;
@@ -36,11 +38,13 @@ function actionFailText(ev: Extract<GameEvent, { t: 'actionfail' }>): string {
 
 type Project = (x: number, y: number, z: number) => { x: number; y: number } | null;
 
-const ICONS = ['⚔', '🔨', '🗡', '❤'];
+const ICONS = ['⚔', '🔨', '🗡', '❤', '🌀', '✊'];
 const FAIL_TEXT = {
   range: 'Out of range', cooldown: 'Not ready yet', gcd: 'Not ready yet',
-  energy: 'Not enough energy', target: 'No target',
+  energy: 'Not enough energy', target: 'No target', nocast: 'Nothing to interrupt',
 } as const;
+/** How long a freshly unlocked slot keeps glowing, and the gap between banners when one level hands over several abilities. */
+const UNLOCK_GLOW_MS = 4000, UNLOCK_BANNER_GAP_MS = 1900;
 
 function el(parent: HTMLElement, cls: string, text = ''): HTMLDivElement {
   const d = document.createElement('div');
@@ -74,17 +78,21 @@ export class Hud {
   private targetFrame: HTMLElement;
   private targetName: HTMLElement;
   private targetHp: ReturnType<typeof bar>;
-  private slots: { root: HTMLElement; sweep: HTMLElement; cdText: HTMLElement }[] = [];
+  private targetCast: ReturnType<typeof bar>;
+  private slots: { root: HTMLElement; sweep: HTMLElement; cdText: HTMLElement; lock: HTMLElement }[] = [];
   private msg: HTMLElement;
   private banner: HTMLElement;
   private deathOverlay: HTMLElement;
-  private plates = new Map<number, { root: HTMLElement; fill: HTMLElement }>();
+  private plates = new Map<number, { root: HTMLElement; fill: HTMLElement; cast: HTMLElement; castFill: HTMLElement }>();
   private floaters: Floater[] = [];
   private msgAge = 99;
   private log: HTMLElement;
   private questUi: QuestUi;
   private menuUi: MenuUi;
   private questBanner: HTMLElement;
+  private unlockBanner: HTMLElement;
+  private warn: HTMLElement;
+  private unlockQueue = 0;
   private hurt: HTMLElement;
   private invUi: InventoryUi;
   private skillsUi: SkillsUi;
@@ -101,6 +109,7 @@ export class Hud {
     this.targetFrame = el(this.root, 'frame target');
     this.targetName = el(this.targetFrame, 'name');
     this.targetHp = bar(this.targetFrame, 'enemyhp');
+    this.targetCast = bar(this.targetFrame, 'enemycast');
 
     this.xp = bar(this.root, 'xp');
 
@@ -113,13 +122,18 @@ export class Hud {
       el(root, 'aname', a.name);
       const sweep = el(root, 'sweep');
       const cdText = el(root, 'cdtext');
-      this.slots.push({ root, sweep, cdText });
+      const lock = el(root, 'lock');
+      el(lock, 'lockicon', '🔒');
+      el(lock, 'locklvl', `Lv ${a.unlockLevel}`);
+      this.slots.push({ root, sweep, cdText, lock });
     });
 
     this.msg = el(this.root, 'msg');
     this.banner = el(this.root, 'banner');
     this.deathOverlay = el(this.root, 'death');
     this.questBanner = el(this.root, 'banner questbanner');
+    this.unlockBanner = el(this.root, 'banner unlockbanner');
+    this.warn = el(this.root, 'warn');
     this.hurt = el(this.root, 'hurt');
     this.log = el(this.root, 'msglog');
     this.invUi = new InventoryUi(this.root, actions.inv);
@@ -177,7 +191,9 @@ export class Hud {
         this.note(`+${ev.amount} ${SKILLS[ev.skill].name} XP`, 'log-xp');
       } else if (ev.t === 'fail') {
         if (ev.reason === 'gcd') continue; // too noisy while mashing; the sweep already shows it
-        this.say(FAIL_TEXT[ev.reason]);
+        this.say(ev.reason === 'locked'
+          ? `${ABILITIES[ev.slot].name} unlocks at combat level ${ABILITIES[ev.slot].unlockLevel} (you are level ${s.player.combat.level})`
+          : FAIL_TEXT[ev.reason]);
       } else if (ev.t === 'loot') {
         const name = ITEMS[ev.item].name;
         this.float(`+${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`, 'loot', s.player.x, 3.0, s.player.z);
@@ -198,6 +214,15 @@ export class Hud {
       } else if (ev.t === 'levelup') {
         this.popBanner(this.banner, `LEVEL UP!  ${SKILLS[ev.skill].name} ${ev.level}`);
         this.note(`Level up! ${SKILLS[ev.skill].name} is now level ${ev.level}`, 'log-lvl');
+      } else if (ev.t === 'unlock') {
+        this.unlock(ev.slot);
+      } else if (ev.t === 'telegraph') {
+        this.telegraph(ev, s);
+      } else if (ev.t === 'interrupt') {
+        const e = s.enemies.find(x => x.id === ev.id);
+        this.float('INTERRUPTED', 'interrupt', ev.x, 3.4, ev.z);
+        this.note(`${e ? ENEMY_TYPES[e.type].name : 'Enemy'} interrupted`, 'log-xp');
+        this.warn.classList.remove('show');
       } else if (ev.t === 'kill') {
         const e = s.enemies.find(x => x.id === ev.id);
         if (e) this.note(`${ENEMY_TYPES[e.type].name} slain`, 'log-kill');
@@ -217,6 +242,39 @@ export class Hud {
         this.note('You wake at the clearing.', 'log-info');
       }
     }
+  }
+
+  /**
+   * A new ability: banner in the level-up family, a log line, and the slot glows until it has been seen for a while.
+   * One level can hand over several abilities: banners queue one after another rather than overwriting each other.
+   */
+  private unlock(slot: number) {
+    const a = ABILITIES[slot], at = this.unlockQueue++ * UNLOCK_BANNER_GAP_MS;
+    setTimeout(() => {
+      this.unlockQueue = Math.max(0, this.unlockQueue - 1);
+      this.popBanner(this.unlockBanner, `NEW ABILITY:  ${a.name}`);
+      this.unlockBanner.dataset.sub = `Press ${slot + 1}  -  ${a.desc}`;
+      this.slots[slot].root.classList.add('fresh');
+      setTimeout(() => this.slots[slot].root.classList.remove('fresh'), UNLOCK_GLOW_MS);
+    }, at);
+    this.note(`New ability unlocked: ${a.name} (press ${slot + 1})`, 'log-lvl');
+  }
+
+  /** An enemy begins a wind-up: tell the player exactly what it is and what answers it. */
+  private telegraph(ev: Extract<GameEvent, { t: 'telegraph' }>, s: GameState) {
+    const e = s.enemies.find(x => x.id === ev.id), p = s.player;
+    if (!e || Math.hypot(e.x - p.x, e.z - p.z) > 16) return;
+    const def = ENEMY_TYPES[e.type];
+    const name = ev.kind === 'heavy' ? def.heavy!.name : def.ranged!.name;
+    const canPummel = p.combat.level >= ABILITIES[PUMMEL].unlockLevel;
+    const answer = ev.kind === 'heavy'
+      ? (canPummel ? `Pummel it (${PUMMEL + 1}) or step out of the circle!` : 'Step out of the circle!')
+      : (canPummel ? `Pummel it (${PUMMEL + 1}) or break line of fire!` : 'Close in and strike it down!');
+    this.warn.textContent = `${name.toUpperCase()}  -  ${answer}`;
+    this.warn.style.animationDuration = `${ev.windup + 0.5}s`;
+    this.warn.classList.remove('show');
+    void this.warn.offsetWidth;
+    this.warn.classList.add('show');
   }
 
   /** Red screen-edge flash when the player is hit; a longer one on death. */
@@ -247,6 +305,10 @@ export class Hud {
       this.targetName.textContent = `${def.name}  Lv ${def.level}`;
       this.targetName.className = `name ${def.level > p.combat.level + 2 ? 'hard' : ''}`;
       this.setBar(this.targetHp, t.hp / t.maxHp, `${Math.ceil(t.hp)} / ${t.maxHp}`);
+      this.targetCast.fill.parentElement!.style.display = t.cast ? 'block' : 'none';
+      if (t.cast) {
+        this.setBar(this.targetCast, t.cast.t / t.cast.total, t.cast.kind === 'heavy' ? def.heavy!.name : def.ranged!.name);
+      }
     }
 
     // action bar: cooldown sweeps (GCD shows on every slot), energy and range tint
@@ -259,8 +321,11 @@ export class Hud {
       slot.sweep.style.background = frac > 0
         ? `conic-gradient(rgba(0,0,0,0.65) ${frac * 360}deg, transparent 0)` : 'none';
       slot.cdText.textContent = cd > 0.05 ? (cd >= 10 ? String(Math.ceil(cd)) : cd.toFixed(1)) : '';
-      const noEnergy = p.energy < a.cost;
-      const outOfRange = !!t && a.range > 0 && Math.hypot(t.x - p.x, t.z - p.z) > a.range;
+      const locked = p.combat.level < a.unlockLevel;
+      slot.root.classList.toggle('locked', locked);
+      slot.lock.style.display = locked ? 'flex' : 'none';
+      const noEnergy = !locked && p.energy < a.cost;
+      const outOfRange = !locked && !!t && a.range > 0 && Math.hypot(t.x - p.x, t.z - p.z) > a.range;
       slot.root.classList.toggle('noenergy', noEnergy);
       slot.root.classList.toggle('outrange', outOfRange);
       slot.root.classList.toggle('queued', p.queued === i);
@@ -279,12 +344,15 @@ export class Hud {
         const root = el(this.root, 'plate');
         const def = ENEMY_TYPES[e.type];
         el(root, 'pname', `${def.name} ${def.level}`);
-        plate = { root, fill: el(el(root, 'pbar'), 'fill') };
+        const cast = el(root, 'pcast');
+        plate = { root, fill: el(el(root, 'pbar'), 'fill'), cast, castFill: el(cast, 'fill') };
         this.plates.set(e.id, plate);
       }
       plate.root.style.display = 'block';
       plate.root.style.transform = `translate(${scr.x}px, ${scr.y}px) translate(-50%, -100%)`;
       plate.fill.style.width = `${(e.hp / e.maxHp) * 100}%`;
+      plate.cast.style.display = e.cast ? 'block' : 'none';
+      if (e.cast) plate.castFill.style.width = `${(e.cast.t / e.cast.total) * 100}%`;
       plate.root.classList.toggle('sel', e.id === s.targetId);
     }
     for (const [id, plate] of this.plates) if (!seen.has(id)) plate.root.style.display = 'none';

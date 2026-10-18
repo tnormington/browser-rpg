@@ -62,7 +62,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyI') hud.toggle('inv');
   else if (e.code === 'KeyC') hud.toggle('char');
   else if (e.code === 'KeyK') hud.toggle('skills');
-  else if (/^Digit[1-4]$/.test(e.code)) pendingAbility = Number(e.code.slice(5)) - 1;
+  else if (/^Digit[1-6]$/.test(e.code)) pendingAbility = Number(e.code.slice(5)) - 1;
 });
 addEventListener('keyup', e => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());

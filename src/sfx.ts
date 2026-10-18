@@ -40,6 +40,8 @@ export function playEvents(events: GameEvent[]) {
         if (ev.slot === 0) tone(260, 0.07, 'square', 0.05, 120);
         else if (ev.slot === 1) tone(160, 0.14, 'sawtooth', 0.07, 55);
         else if (ev.slot === 2) tone(500, 0.16, 'triangle', 0.06, 1000);
+        else if (ev.slot === 4) tone(220, 0.18, 'sawtooth', 0.06, 90);
+        else if (ev.slot === 5) { tone(900, 0.05, 'square', 0.07, 400); tone(140, 0.12, 'sawtooth', 0.07, 60, 0.03); }
         else arpeggio([392, 494, 587], 0.06, 'sine', 0.06);
         break;
       case 'hit':
@@ -48,6 +50,9 @@ export function playEvents(events: GameEvent[]) {
         else { tone(ev.crit ? 240 : 190, 0.09, 'square', 0.06, 80); if (ev.crit) tone(900, 0.12, 'triangle', 0.04, 1500, 0.02); }
         break;
       case 'kill': arpeggio([330, 262, 196], 0.07, 'triangle', 0.07); break;
+      case 'unlock': arpeggio([392, 523, 659, 784], 0.07, 'sine', 0.07); tone(1568, 0.5, 'triangle', 0.04, 1400, 0.28); break;
+      case 'telegraph': tone(110, ev.windup, 'sawtooth', 0.05, 220); break;
+      case 'interrupt': tone(1200, 0.08, 'square', 0.07, 300); break;
       case 'levelup': arpeggio([523, 659, 784, 1047], 0.09, 'triangle', 0.08); break;
       case 'quest':
         if (ev.what === 'complete') arpeggio([523, 659, 784, 1047, 784, 1047, 1319], 0.11, 'triangle', 0.09);
