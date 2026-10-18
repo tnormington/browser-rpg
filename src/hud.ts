@@ -56,6 +56,10 @@ function bar(parent: HTMLElement, cls: string) {
   return { fill, label };
 }
 
+/** Opaque HUD panels that world-space plates must not draw over. */
+const PLATE_BLOCKERS = '.frame, .tracker, .panel, .actionbar, .msglog, .menubar, .xp';
+const PLATE_HALF_W = 45, PLATE_H = 28; // generous footprint of a nameplate around its anchor
+
 interface Floater { el: HTMLElement; x: number; y: number; z: number; age: number; drift: number }
 
 export class Hud {
@@ -260,11 +264,12 @@ export class Hud {
     });
 
     // nameplates
+    const blockers = this.visibleBlockers();
     const seen = new Set<number>();
     for (const e of s.enemies) {
       const visible = e.state !== 'dead' && Math.hypot(e.x - p.x, e.z - p.z) < 28;
       const scr = visible ? this.project(e.x, ENEMY_TYPES[e.type].radius * 2 + (e.type === 'brute' ? 1.6 : 0.9), e.z) : null;
-      if (!scr) continue;
+      if (!scr || this.behindHud(blockers, scr)) continue;
       seen.add(e.id);
       let plate = this.plates.get(e.id);
       if (!plate) {
@@ -297,7 +302,7 @@ export class Hud {
     this.questUi.update(s, this.yaw());
     this.forgeUi.update(s);
     this.updateCastBar(s);
-    this.updateNodePlates(s);
+    this.updateNodePlates(s, blockers);
 
     this.msgAge += dtSeconds;
     this.msg.style.opacity = String(Math.max(0, Math.min(1, 1.6 - this.msgAge * 1.5)));
@@ -322,11 +327,12 @@ export class Hud {
   }
 
   /** Floating labels over nearby nodes: name and the level it needs (red when you are too low). */
-  private updateNodePlates(s: GameState) {
+  private updateNodePlates(s: GameState, blockers: DOMRect[]) {
     const p = s.player;
     for (const n of s.nodes) {
       const def = NODE_TYPES[n.type];
-      const scr = Math.hypot(n.x - p.x, n.z - p.z) < 16 ? this.project(n.x, n.type === 'tree' ? 5 : 2.4, n.z) : null;
+      let scr = Math.hypot(n.x - p.x, n.z - p.z) < 16 ? this.project(n.x, n.type === 'tree' ? 5 : 2.4, n.z) : null;
+      if (scr && this.behindHud(blockers, scr)) scr = null;
       let plate = this.nodePlates.get(n.id);
       if (!scr) { if (plate) plate.root.style.display = 'none'; continue; }
       if (!plate) {
@@ -342,6 +348,15 @@ export class Hud {
       plate.root.style.opacity = n.charges <= 0 ? '0.5' : '1';
       plate.root.style.transform = `translate(${scr.x}px, ${scr.y}px) translate(-50%, -100%)`;
     }
+  }
+
+  private visibleBlockers(): DOMRect[] {
+    return Array.from(this.root.querySelectorAll<HTMLElement>(PLATE_BLOCKERS)).filter(e => e.offsetParent !== null).map(e => e.getBoundingClientRect());
+  }
+
+  /** True when a plate anchored (bottom-centre) at `at` would overlap a HUD panel. */
+  private behindHud(blockers: DOMRect[], at: { x: number; y: number }): boolean {
+    return blockers.some(r => at.x + PLATE_HALF_W > r.left && at.x - PLATE_HALF_W < r.right && at.y > r.top && at.y - PLATE_H < r.bottom);
   }
 
   private setBar(b: { fill: HTMLElement; label: HTMLElement }, frac: number, text: string) {

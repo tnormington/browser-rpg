@@ -144,7 +144,7 @@ export class InventoryUi {
       const diff = [dd && `${dd > 0 ? '+' : ''}${dd} damage`, da && `${da > 0 ? '+' : ''}${da} armour`].filter(Boolean);
       if (diff.length) {
         const line = div(this.tip, 'tcmp', `If equipped: ${diff.join(', ')}`);
-        line.style.color = (dd >= 0 && da >= 0) ? '#6aff8a' : '#ff7a6a';
+        line.style.color = (dd >= 0 && da >= 0) ? '#93b58c' : '#e0604f';
       }
       div(this.tip, 'thint', 'Click to equip  ·  Right-click for more');
     } else if (worn) div(this.tip, 'thint', 'Click to unequip');

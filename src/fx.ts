@@ -84,7 +84,7 @@ interface Ring { mesh: THREE.Mesh; age: number; dur: number; from: number; to: n
 /** Expanding, fading ground rings (shockwaves, heals, level-ups). */
 export class Rings {
   private rings: Ring[] = [];
-  private geo = new THREE.TorusGeometry(1, 0.06, 6, 40).rotateX(Math.PI / 2);
+  private geo = new THREE.TorusGeometry(1, 0.06, 4, 24).rotateX(Math.PI / 2);
 
   constructor(private scene: THREE.Scene) {}
 
