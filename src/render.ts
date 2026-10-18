@@ -80,6 +80,16 @@ const GEM_HAND = 'FistR', GEM_LIFT = 0.4;
 const FURNACE_GLOW = 1.3;
 const FORGE_LIGHT = { intensity: 120, distance: 24, y: 1.2 };
 
+/** Enemy click volume: a vertical capsule as tall as the model on screen, wide enough for the widest of its body and its sim radius. A little generous on purpose. */
+const PICK_SPHERES = 4;
+const CAMERA_JUMP_FOLLOW = 0.5;
+const QUADRUPEDS = new Set(['boar', 'wolf', 'pup']);
+function pickVolume(type: string): { height: number; radius: number } {
+  const height = SLOTS[type as 'boar'].height!;
+  // beasts are longer than they are tall and have no facing-independent footprint: size them by length, people by height
+  return { height, radius: Math.max(ENEMY_TYPES[type].radius * 1.15, height * (QUADRUPEDS.has(type) ? 1 : 0.32)) };
+}
+
 export class Renderer {
   readonly renderer = new THREE.WebGLRenderer({ antialias: true });
   readonly scene = new THREE.Scene();
@@ -752,13 +762,32 @@ export class Renderer {
     return this.raycaster.intersectObjects([...this.npcParts, this.npcMarker], false).length > 0;
   }
 
-  /** Enemy id under a screen position, or null. */
-  pickEnemy(clientX: number, clientY: number): number | null {
-    this.raycaster.setFromCamera(
-      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
-    const bodies = [...this.actors.values()].filter(a => a.group.visible).flatMap(a => a.group.children);
-    const hit = this.raycaster.intersectObjects(bodies, false)[0];
-    return hit ? (hit.object.userData.enemyId as number) : null;
+  /**
+   * Enemy id under a screen position, or null. Hit volumes are sized from the model that is drawn (SLOTS height), not from
+   * the primitive the model replaced: a chain of spheres up the body, tested in screen pixels. `tolerance` is extra
+   * pixels of forgiveness around the silhouette (0 = the body itself). Several candidates resolve deterministically:
+   * nearest to the cursor (inside the body counts as 0), then nearest to the camera.
+   */
+  pickEnemy(clientX: number, clientY: number, tolerance = 0): number | null {
+    const focal = innerHeight / 2 / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const v = new THREE.Vector3();
+    let best: { id: number; miss: number; depth: number } | null = null;
+    for (const [id, a] of this.actors) {
+      if (!a.group.visible || a.dead) continue;
+      const { height, radius } = pickVolume(a.type);
+      let miss = Infinity, depth = Infinity;
+      for (let i = 0; i <= PICK_SPHERES; i++) {
+        v.set(a.group.position.x, (height * i) / PICK_SPHERES, a.group.position.z).applyMatrix4(this.camera.matrixWorldInverse);
+        if (-v.z <= this.camera.near) continue; // behind the camera
+        const k = focal / -v.z, d = Math.hypot(v.x * k + innerWidth / 2 - clientX, -v.y * k + innerHeight / 2 - clientY) - radius * k;
+        if (d < miss) miss = d;
+        depth = Math.min(depth, -v.z);
+      }
+      miss = Math.max(0, Math.round(miss)); // whole pixels: two enemies both under the cursor tie, and the nearer one wins
+      if (miss > tolerance) continue;
+      if (!best || miss < best.miss || (miss === best.miss && depth < best.depth)) best = { id, miss, depth };
+    }
+    return best ? best.id : null;
   }
 
   /** Gatherable node id under a screen position, or null. */
@@ -825,11 +854,11 @@ export class Renderer {
       this.playerModel!.rotation.x = -0.35 * Math.sin((this.playerHitT / 0.25) * Math.PI);
       this.lungeT = Math.max(0, this.lungeT - dtFx);
       this.playerModel!.position.z = 0.35 * Math.sin((this.lungeT / 0.22) * Math.PI); // a step into the blow, out and back, so the swing carries weight
-      this.player.position.set(x, 0, z);
+      this.player.position.set(x, pl.y, z); // pl.y: the sim's jump offset, presentation only
       this.player.rotation.x = pl.dead && !pa.hasDeath ? -Math.PI / 2 : 0;
       this.player.scale.setScalar(1);
     } else {
-      this.player.position.set(x, pl.dead ? 0.5 : 1, z);
+      this.player.position.set(x, (pl.dead ? 0.5 : 1) + pl.y, z);
       this.player.rotation.x = pl.dead ? -Math.PI / 2 : 0;
       this.player.scale.setScalar(1 + this.castPunch * 1.2);
     }
@@ -870,17 +899,18 @@ export class Renderer {
     }
 
     // orbit camera; y clamped above ground so it never clips through
-    const cp = Math.cos(this.pitch);
+    // it rides half of a jump: a pure translation (the view angle never changes), so the hop reads without the horizon lurching
+    const cp = Math.cos(this.pitch), lift = pl.y * CAMERA_JUMP_FOLLOW;
     this.camera.position.set(
       x + Math.sin(this.yaw) * cp * this.distance,
-      Math.max(0.5, 1.5 + Math.sin(this.pitch) * this.distance),
+      Math.max(0.5, 1.5 + lift + Math.sin(this.pitch) * this.distance),
       z + Math.cos(this.yaw) * cp * this.distance);
     this.shakeMag *= 0.88;
     if (this.shakeMag > 0.005) {
       this.camera.position.x += (Math.random() - 0.5) * this.shakeMag;
       this.camera.position.y += (Math.random() - 0.5) * this.shakeMag;
     }
-    this.camera.lookAt(x, 1.5, z);
+    this.camera.lookAt(x, 1.5 + lift, z);
     if (this.debugCam) { this.camera.position.fromArray(this.debugCam.pos); this.camera.lookAt(...(this.debugCam.at as [number, number, number])); } // dev only: bench/look.mjs close-ups
     this.forgeLight.intensity = FORGE_LIGHT.intensity * (1 + 0.07 * Math.sin(nowMs / 90) + 0.05 * Math.sin(nowMs / 37));
     this.followSun(x, z);

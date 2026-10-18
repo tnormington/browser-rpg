@@ -9,6 +9,8 @@ const CONTROLS: [string, string][] = [
   ['Drag / wheel', 'Orbit and zoom the camera'],
   ['E or click NPC', 'Talk to Warden Hale'],
   ['Tab / click enemy', 'Target an enemy (Esc clears)'],
+  ['R', 'Auto-attack on / off (the bar above the action bar is your swing timer). Strike and Cleave start it too.'],
+  ['Space', 'Jump (hold to keep hopping)'],
   ['1 - 6', 'Abilities: Strike, Crushing Blow, Serrated Throw, Second Wind, Cleave, Pummel. They unlock as you level.'],
   ['Pummel (6)', 'Interrupts an enemy wind-up. Or step out of the red circle.'],
   ['Click rock / tree', 'Mine or chop it (walks there first)'],

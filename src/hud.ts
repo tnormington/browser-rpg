@@ -80,6 +80,7 @@ export class Hud {
   private targetHp: ReturnType<typeof bar>;
   private targetCast: ReturnType<typeof bar>;
   private slots: { root: HTMLElement; sweep: HTMLElement; cdText: HTMLElement; lock: HTMLElement }[] = [];
+  private swingBar: ReturnType<typeof bar>;
   private msg: HTMLElement;
   private banner: HTMLElement;
   private deathOverlay: HTMLElement;
@@ -128,6 +129,7 @@ export class Hud {
       this.slots.push({ root, sweep, cdText, lock });
     });
 
+    this.swingBar = bar(this.root, 'swing');
     this.msg = el(this.root, 'msg');
     this.banner = el(this.root, 'banner');
     this.deathOverlay = el(this.root, 'death');
@@ -149,6 +151,9 @@ export class Hud {
   }
 
   toggleHelp() { this.menuUi.toggle(); }
+
+  /** A dialogue or the help screen has focus: game keys (jump) must not act under it. */
+  get modalOpen(): boolean { return this.menuUi.isOpen || this.questUi.isOpen; }
 
   /** Esc: closes the topmost overlay (help, dialogue). Returns true if it closed something. */
   closeOverlay(): boolean {
@@ -184,6 +189,8 @@ export class Hud {
         const cls = toPlayer ? 'dmg-in' : ev.dot ? 'dmg-dot' : ev.crit ? 'dmg-crit' : 'dmg-out';
         this.float(`${ev.amount}${ev.crit ? '!' : ''}`, cls, ev.x, toPlayer ? 2.6 : 2.4, ev.z);
         if (toPlayer) this.hurtFlash(false);
+      } else if (ev.t === 'untarget') {
+        this.say(ev.reason === 'dead' ? 'Target defeated' : 'Target evaded');
       } else if (ev.t === 'heal') {
         if (ev.amount > 0) this.float(`+${ev.amount}`, 'heal', ev.x, 2.6, ev.z);
       } else if (ev.t === 'xp') {
@@ -310,6 +317,12 @@ export class Hud {
         this.setBar(this.targetCast, t.cast.t / t.cast.total, t.cast.kind === 'heavy' ? def.heavy!.name : def.ranged!.name);
       }
     }
+
+    // swing timer: fills toward the next auto-attack; lit while armed, and full (waiting) when the target is out of reach
+    const swung = p.stats.swingInterval > 0 ? 1 - p.swing / p.stats.swingInterval : 1;
+    this.swingBar.fill.parentElement!.classList.toggle('on', p.autoAttack);
+    this.swingBar.fill.parentElement!.classList.toggle('ready', p.autoAttack && p.swing <= 0);
+    this.setBar(this.swingBar, swung, p.autoAttack ? (p.swing <= 0 ? 'AUTO-ATTACK  (waiting)' : 'AUTO-ATTACK') : 'Auto-attack off  [R]');
 
     // action bar: cooldown sweeps (GCD shows on every slot), energy and range tint
     ABILITIES.forEach((a, i) => {

@@ -49,13 +49,18 @@ if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scen
 
 // --- input -> sim Input ---
 const keys = new Set<string>();
-let pendingTab = false, pendingClear = false, pendingAbility: number | null = null;
+let pendingTab = false, pendingClear = false, pendingAttack = false, pendingJump = false, pendingAbility: number | null = null;
+/** Keys typed into a form control belong to it. */
+const typing = (e: Event) => e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
 addEventListener('keydown', e => {
+  if (typing(e)) return;
   keys.add(e.code);
   unlockAudio();
+  if (e.code === 'Space' && !hud.modalOpen) { e.preventDefault(); if (!e.repeat) pendingJump = true; return; } // latched here so a tap shorter than a tick still jumps; never scrolls or presses a focused button
   if (e.repeat) return;
   if (e.code === 'Tab') { e.preventDefault(); pendingTab = true; }
   else if (e.code === 'Escape') { if (!hud.closeOverlay()) pendingClear = true; }
+  else if (e.code === 'KeyR') pendingAttack = true;
   else if (e.code === 'KeyH') hud.toggleHelp();
   else if (e.code === 'KeyE') pendingInteract = { k: 'npc' };
   else if (e.code === 'KeyM') hud.say(toggleMute() ? 'Sound off' : 'Sound on');
@@ -73,10 +78,15 @@ let pendingEnemy: number | null = null;
 let pendingPickup: number | null = null;
 let pendingInteract: Interact | null = null;
 let dragging = false, dragMoved = 0;
+/** How far outside an enemy's silhouette a click still takes it, in screen pixels. */
+const CLICK_TOLERANCE_PX = 28;
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('mousedown', () => { dragging = true; dragMoved = 0; unlockAudio(); });
 addEventListener('mouseup', e => {
   if (dragging && e.button === 0 && dragMoved < 5) {
+    // Precedence, most specific first: ground drop, then an enemy under the cursor itself, then the NPC, ore/tree node and
+    // forge (all exact), and only then the forgiving enemy pick: a near miss takes the enemy, but never a click that was
+    // really aimed at something else. The ground (click-to-move) comes last.
     pendingPickup = view.pickDrop(e.clientX, e.clientY);
     if (pendingPickup === null) pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
     if (pendingPickup === null && pendingEnemy === null) {
@@ -84,7 +94,7 @@ addEventListener('mouseup', e => {
       if (view.pickNpc(e.clientX, e.clientY)) pendingInteract = { k: 'npc' };
       else if (node !== null) pendingInteract = { k: 'node', id: node };
       else if (view.pickForge(e.clientX, e.clientY)) pendingInteract = { k: 'forge' };
-      else pendingClick = view.pick(e.clientX, e.clientY);
+      else if ((pendingEnemy = view.pickEnemy(e.clientX, e.clientY, CLICK_TOLERANCE_PX)) === null) pendingClick = view.pick(e.clientX, e.clientY);
     }
   }
   dragging = false;
@@ -108,6 +118,8 @@ function readInput(): Input {
     clickTarget: pendingClick,
     clickEnemy: pendingEnemy,
     tab: pendingTab,
+    attack: pendingAttack,
+    jump: (pendingJump || keys.has('Space')) && !hud.modalOpen,
     clearTarget: pendingClear,
     ability: pendingAbility,
     pickup: pendingPickup,
@@ -117,7 +129,7 @@ function readInput(): Input {
     questAdvance: pendingAdvance,
   };
   pendingInteract = null; pendingCraft = null; pendingAdvance = false;
-  pendingClick = null; pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingClear = false; pendingAbility = null;
+  pendingClick = null; pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingAttack = false; pendingJump = false; pendingClear = false; pendingAbility = null;
   return input;
 }
 
