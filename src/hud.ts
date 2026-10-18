@@ -20,6 +20,7 @@ export interface HudActions {
   questAdvance: () => void;
   save: () => void;
   newGame: () => void;
+  quality: (toggle: boolean) => import('./post').Quality;
 }
 
 /** The player-facing message for a refused gather/craft. Level failures say exactly what is needed. */

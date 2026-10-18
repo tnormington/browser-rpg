@@ -3,7 +3,7 @@ import { Renderer } from './render';
 import { Hud } from './hud';
 import type { InvAction } from './sim/inventory';
 import type { Interact } from './sim';
-import { loadGame, saveGame, wipeSave } from './storage';
+import { loadGame, loadQuality, saveGame, saveQuality, wipeSave } from './storage';
 import { playEvents, toggleMute, unlockAudio } from './sfx';
 import { applyStress } from './sim/stress';
 
@@ -15,7 +15,7 @@ applyStress(stress);
 
 const loaded = stress > 1 ? { state: null, status: 'none' as const } : loadGame(); // stress worlds never touch the real save
 const state = loaded.state ?? createState();
-const view = new Renderer(document.body, state);
+const view = new Renderer(document.body, state, loadQuality());
 const pendingInv: InvAction[] = [];
 let pendingCraft: { recipe: string; count: number } | null = null;
 let pendingAdvance = false;
@@ -28,6 +28,10 @@ const hud = new Hud((x, y, z) => view.project(x, y, z), () => view.yaw, {
   inv: a => { pendingInv.push(a); saveDirty = true; },
   craft: (recipe, count) => { pendingCraft = { recipe, count }; },
   questAdvance: () => { pendingAdvance = true; },
+  quality: toggle => {
+    if (toggle) { view.setQuality(view.quality === 'high' ? 'low' : 'high'); saveQuality(view.quality); }
+    return view.quality;
+  },
   save: () => hud.note(save() ? 'Game saved.' : 'Could not save (browser storage unavailable).', 'log-info'),
   newGame: () => {
     if (!confirm('Wipe your save and start a new game?')) return;

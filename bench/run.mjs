@@ -19,6 +19,7 @@ const headed = process.argv.includes('--headed');
 const WINDOW_CAP_MS = 20000; // timing window ends at `frames` frames or this wall time, whichever is first
 const VIEW = { width: 1280, height: 720 };
 const query = opt('query', ''); // extra URL params appended to the dev-server URL
+const quality = opt('quality', 'high'); // high | low
 const tag = opt('tag', '');     // suffix for output file names, e.g. --tag noshadow
 const shots = join(root, 'bench', 'shots');
 mkdirSync(shots, { recursive: true });
@@ -48,6 +49,7 @@ async function measure(level) {
   await page.waitForFunction(() => window.__debug, null, { timeout: 180000 });
   const loadMs = Date.now() - t0;
   await page.locator('.helpok').click({ timeout: 5000 }).catch(() => {}); // dismiss the controls overlay
+  await page.evaluate(q => window.__debug.view.setQuality(q), quality);
   // warm-up: a stable run of frames (shader compile, first uploads) before measuring anything
   await page.evaluate(() => new Promise(res => { let n = 0; const f = () => (++n >= 60 ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }));
   const label = `stress-${level}x${headed ? '-headed' : ''}${tag ? '-' + tag : ''}`;
@@ -72,7 +74,7 @@ async function measure(level) {
     d.scene.traverse(o => { objects++; if (o.isMesh) meshes++; });
     const dbg = gl.getExtension('WEBGL_debug_renderer_info');
     const time = (n, fn) => { const t = performance.now(); for (let k = 0; k < n; k++) fn(); return (performance.now() - t) / n; };
-    const render = () => r.render(d.scene, d.view.camera);
+    const render = () => d.view.post.render(d.scene); // the real frame path: composer on high, plain renderer on low
     render();
     // renderer.info resets before the main pass, so shadow-pass draws are not in `calls`; count the whole frame separately.
     i.autoReset = false; i.reset(); render();
@@ -92,6 +94,15 @@ async function measure(level) {
     out.drawCpuMs = time(30, () => d.view.draw(d.sim, 0.5));       // interpolation + animation + render() CPU time
     out.renderCpuMs = time(30, render);                            // renderer.render() submit time only
     out.renderGpuMs = time(30, () => { render(); gl.finish(); });  // submit + wait for the GPU to finish
+    // Per-pass cost on `high`: GPU time with one pass disabled, minus the full-stack time (renders are noisy: treat < 0.1 ms as zero).
+    if (d.view.quality === 'high') {
+      const passes = d.view.post.composer.passes, byName = { ao: d.view.post.ao, bloom: d.view.post.bloom };
+      const gpu = () => time(30, () => { render(); gl.finish(); });
+      out.passGpuMs = { full: gpu() };
+      for (const [name, p] of Object.entries(byName)) { p.enabled = false; out.passGpuMs[`no_${name}`] = gpu(); p.enabled = true; }
+      byName.ao.enabled = byName.bloom.enabled = false; out.passGpuMs.no_ao_bloom = gpu(); byName.ao.enabled = byName.bloom.enabled = true;
+      d.view.setQuality('low'); out.passGpuMs.low = gpu(); d.view.setQuality('high');
+    }
     // Upper bound with frustum culling off: every object submitted.
     const fc = new Map();
     d.scene.traverse(o => { fc.set(o, o.frustumCulled); o.frustumCulled = false; });

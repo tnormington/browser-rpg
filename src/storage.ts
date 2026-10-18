@@ -1,9 +1,11 @@
 // localStorage wrapper around the sim's save format. Every call tolerates storage being blocked or full.
 import type { GameState } from './sim';
+import type { Quality } from './post';
 import { deserialize, serialize } from './sim/save';
 
 const KEY = 'browser-rpg.save';
 const HELP_KEY = 'browser-rpg.help-seen';
+const QUALITY_KEY = 'browser-rpg.quality';
 
 export type LoadResult = { state: GameState | null; status: 'none' | 'loaded' | 'incompatible' };
 
@@ -25,3 +27,6 @@ export function wipeSave() {
 
 export const helpSeen = () => { try { return localStorage.getItem(HELP_KEY) !== null; } catch { return true; } };
 export const markHelpSeen = () => { try { localStorage.setItem(HELP_KEY, '1'); } catch { /* ignore */ } };
+
+export const loadQuality = (): Quality => { try { return localStorage.getItem(QUALITY_KEY) === 'low' ? 'low' : 'high'; } catch { return 'high'; } };
+export const saveQuality = (q: Quality) => { try { localStorage.setItem(QUALITY_KEY, q); } catch { /* ignore */ } };

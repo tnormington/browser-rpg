@@ -5,6 +5,7 @@ import { ENEMY_TYPES } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NPC, QuestStage } from './sim/quest';
 import { Particles, Rings } from './fx';
+import { PostStack, Quality } from './post';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
 
 /**
@@ -33,6 +34,7 @@ const PALETTE = {
 } as const;
 const P = PALETTE;
 
+const GLOW_INTENSITY = 3;
 type Mat = THREE.MeshStandardMaterial;
 /** Roughness / metalness per material class. */
 const MATERIALS = {
@@ -45,7 +47,7 @@ type MatClass = keyof typeof MATERIALS;
 const material = (color: number, cls: MatClass): Mat => {
   const [roughness, metalness] = MATERIALS[cls];
   const m = new THREE.MeshStandardMaterial({ color, roughness, metalness, flatShading: true });
-  if (cls === 'glow') m.emissive.setHex(color).multiplyScalar(0.85); // self-lit: readable in any light
+  if (cls === 'glow') { m.emissive.setHex(color); m.emissiveIntensity = GLOW_INTENSITY; } // self-lit: readable in any light, and hot enough in HDR to cross the bloom threshold
   return m;
 };
 const mesh = (g: THREE.BufferGeometry, color: number, cls: MatClass, shadow: 'cast' | 'receive' | 'both' | 'none' = 'both') => {
@@ -89,13 +91,14 @@ export class Renderer {
   private lastDraw = performance.now();
   private forgeLight!: THREE.PointLight;
   private sun = new THREE.DirectionalLight(P.moon, 3);
+  post!: PostStack;
 
   // orbit camera (render-side only; sim never sees it except via input direction)
   yaw = 0;
   pitch = 0.5;
   distance = 10;
 
-  constructor(parent: HTMLElement, s: GameState) {
+  constructor(parent: HTMLElement, s: GameState, quality: Quality = 'high') {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     parent.appendChild(this.renderer.domElement);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -140,6 +143,7 @@ export class Renderer {
 
     this.curr.x = this.prev.x = s.player.x;
     this.curr.z = this.prev.z = s.player.z;
+    this.post = new PostStack(this.renderer, this.scene, this.camera, quality);
     addEventListener('resize', () => this.resize());
     this.resize();
   }
@@ -314,7 +318,11 @@ export class Renderer {
     this.renderer.setSize(innerWidth, innerHeight);
     this.camera.aspect = innerWidth / innerHeight;
     this.camera.updateProjectionMatrix();
+    this.post.setSize(innerWidth, innerHeight);
   }
+
+  get quality() { return this.post.quality; }
+  setQuality(q: Quality) { this.post.setQuality(q); }
 
   orbit(dx: number, dy: number) {
     this.yaw -= dx * 0.005;
@@ -598,7 +606,7 @@ export class Renderer {
     this.camera.lookAt(x, 1.5, z);
     this.forgeLight.intensity = FORGE_LIGHT.intensity * (1 + 0.07 * Math.sin(nowMs / 90) + 0.05 * Math.sin(nowMs / 37));
     this.followSun(x, z);
-    this.renderer.render(this.scene, this.camera);
+    this.post.render(this.scene);
   }
 
   /** Sync ground-drop meshes with sim state: bobbing gem + a light beam for good items. */
@@ -612,7 +620,7 @@ export class Renderer {
         const def = ITEMS[d.item], color = TIER_COLORS[def.tier];
         const group = new THREE.Group();
         const gem = mesh(def.slot ? new THREE.OctahedronGeometry(0.35) : new THREE.BoxGeometry(0.4, 0.4, 0.4), color, 'gem', 'cast');
-        (gem.material as Mat).emissive.setHex(color).multiplyScalar(0.5);
+        (gem.material as Mat).emissive.setHex(color).multiplyScalar(1.6);
         gem.position.y = 0.6;
         group.add(gem);
         if (def.tier >= 2) {

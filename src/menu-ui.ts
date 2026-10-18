@@ -1,5 +1,6 @@
 // First-run controls overlay (re-openable with H) and the small menu: help, save now, new game (wipes the save).
 import { el } from './dom';
+import type { Quality } from './post';
 import { helpSeen, markHelpSeen } from './storage';
 
 const CONTROLS: [string, string][] = [
@@ -20,7 +21,7 @@ const CONTROLS: [string, string][] = [
 export class MenuUi {
   private overlay: HTMLElement;
 
-  constructor(root: HTMLElement, actions: { save: () => void; newGame: () => void }) {
+  constructor(root: HTMLElement, actions: { save: () => void; newGame: () => void; quality: (toggle: boolean) => Quality }) {
     this.overlay = el(root, 'panel helpoverlay');
     el(this.overlay, 'helptitle', 'Welcome to the Clearing');
     el(this.overlay, 'helpgoal', 'Talk to Warden Hale, hunt, mine, forge a blade, and slay the Cave Brute. Your quest tracker (top left) always shows the next step and an arrow to follow.');
@@ -35,6 +36,11 @@ export class MenuUi {
     for (const [label, fn] of [['? Help (H)', () => this.toggle()], ['Save', actions.save], ['New Game', actions.newGame]] as const) {
       el(bar, 'mbtn', label).addEventListener('click', fn);
     }
+    const quality = el(bar, 'mbtn', '');
+    quality.title = 'Graphics quality: High has bloom, ambient occlusion and a colour grade; Low renders straight to the screen';
+    const showQuality = (toggle: boolean) => { quality.textContent = `Graphics: ${actions.quality(toggle) === 'high' ? 'High' : 'Low'}`; };
+    quality.addEventListener('click', () => showQuality(true));
+    showQuality(false);
 
     if (!helpSeen()) this.setOpen(true);
   }

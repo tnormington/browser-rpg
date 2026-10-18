@@ -11,6 +11,9 @@ export interface BurstOpts {
   flat?: boolean;            // spray sideways only (ground dust, rings)
 }
 
+/** Emissive FX are pushed past 1.0 so they cross the bloom threshold in the HDR buffer; they stay vivid either way. */
+export const FX_HDR = 2.5;
+
 export class Particles {
   private max = 900;
   private pos = new Float32Array(this.max * 3);
@@ -44,7 +47,7 @@ export class Particles {
       this.pos.set([x, y, z], i * 3);
       this.vel.set([Math.cos(ang) * sp, el * sp * 0.6 + (o.up ?? 0), Math.sin(ang) * sp], i * 3);
       c.setHex(palette[Math.floor(Math.random() * palette.length)]);
-      this.base.set([c.r, c.g, c.b], i * 3);
+      this.base.set([c.r * FX_HDR, c.g * FX_HDR, c.b * FX_HDR], i * 3);
       this.life[i] = this.maxLife[i] = (o.life ?? 0.7) * (0.6 + Math.random() * 0.4);
       this.grav[i] = o.gravity ?? -9;
     }
@@ -58,7 +61,7 @@ export class Particles {
       this.next = (this.next + 1) % this.max;
       this.pos.set([ax + (bx - ax) * t, ay + (by - ay) * t, az + (bz - az) * t], i * 3);
       this.vel.set([(Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6], i * 3);
-      this.base.set([c.r, c.g, c.b], i * 3);
+      this.base.set([c.r * FX_HDR, c.g * FX_HDR, c.b * FX_HDR], i * 3);
       this.life[i] = this.maxLife[i] = 0.12 + t * 0.2; // the head of the trail lingers longest: reads as motion
       this.grav[i] = 0;
     }
@@ -90,6 +93,7 @@ export class Rings {
 
   pulse(x: number, y: number, z: number, color: number, to: number, dur = 0.5, from = 0.3) {
     const mesh = new THREE.Mesh(this.geo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, toneMapped: false }));
+    (mesh.material as THREE.MeshBasicMaterial).color.multiplyScalar(FX_HDR);
     mesh.position.set(x, y, z);
     this.scene.add(mesh);
     this.rings.push({ mesh, age: 0, dur, from, to });
