@@ -34,10 +34,11 @@ export interface AnimDef {
  * leans back and sinks, how much it swells, and how hard it trembles.
  */
 export interface TellPose { arms: { L?: [number, number, number]; R?: [number, number, number] }; lean: number; sink: number; swell: number; shake: number }
-/** Keyed by the sim's cast kind. Heavy: both fists high over the head. Bolt: the casting hand thrown up and back. */
+/** Keyed by the sim's cast kind. Heavy: both fists high over the head. Bolt: the casting hand thrown up and back. Ground: both hands raised and spread, calling the mark down. */
 export const TELLS: Record<string, TellPose> = {
   heavy: { arms: { L: [0.35, 1, -0.45], R: [-0.35, 1, -0.45] }, lean: 0.3, sink: 0.12, swell: 0.12, shake: 0.03 },
   bolt: { arms: { R: [-0.3, 1, -0.5], L: [0.25, 0.3, 1] }, lean: 0.2, sink: 0.04, swell: 0.06, shake: 0.015 },
+  ground: { arms: { R: [-0.3, 1, -0.5], L: [0.3, 1, -0.5] }, lean: 0.15, sink: 0.02, swell: 0.08, shake: 0.02 },
 };
 
 const UPPER_BODY = /Abdomen|Torso|Neck|Head|Shoulder|Arm|Palm|Hand|Finger|Thumb/;

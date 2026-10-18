@@ -1,9 +1,11 @@
 // Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
+import { CAVE_MOUTH, CAVE_ROCKS, CAVE_PILLARS, CAVE_ROOMS, caveDepth, caveWallPoints, inCave } from './sim/world';
 import { ENEMY_TYPES, JUMP_VELOCITY, GRAVITY, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
-import { NPC, QuestStage } from './sim/quest';
+import { NPC, npcMarker as markerOf } from './sim/quest';
 import { Motes, Particles, Rings, Slashes } from './fx';
 import { PostStack, Quality } from './post';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
@@ -18,11 +20,11 @@ import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
 const PALETTE = {
   // terrain: drained grey-green, ash, cold slate
   grass: 0x3a4336, grassAlt: 0x465040, beyond: 0x181d17, dirt: 0x58574f, dirtAlt: 0x4a4b45,
-  slate: 0x4b525b, slateDark: 0x3a4048, boulder: 0x454b53, cave: 0x040405,
+  slate: 0x4b525b, slateDark: 0x3a4048, boulder: 0x454b53, cave: 0x040405, caveFloor: 0x2a2e36, caveFloorAlt: 0x333842, caveWall: 0x343a44,
   stone: 0x5d6169, stoneDark: 0x3d4046, anvil: 0x1b1c20,
   bark: 0x4a3b2e, pine: 0x35493a,
   // ore: the flecks are the one warm, light accent on a rock so a node reads at distance
-  ironRock: 0x6a7078, coalRock: 0x2f3036, ironFleck: 0xd9803c, coalFleck: 0x5a5d70, spent: 0x2e2f33,
+  ironRock: 0x6a7078, coalRock: 0x2f3036, ironFleck: 0xd9803c, coalFleck: 0x5a5d70, spent: 0x2e2f33, mithrilRock: 0x3b5878, mithrilGlow: 0x103a6a,
   // actors
   player: 0x7a8794, skin: 0xc4a584, bone: 0xd9ceb2, steel: 0xb8bcc4,
   boar: 0x78553f, wolf: 0x9a9a92, brute: 0x7a3030,
@@ -83,14 +85,41 @@ const GEM_HAND = 'FistR', GEM_LIFT = 0.4;
 const FURNACE_GLOW = 1.3;
 const FORGE_LIGHT = { intensity: 120, distance: 24, y: 1.2 };
 
+/**
+ * Lighting at full cave depth (caveDepth = 1). Sun, hemisphere, sky-ambient and sky all drop to a trace and the fog closes in and goes
+ * black; a cold lantern the player carries and the glow of what is in the cave (veins, braziers) are what is left.
+ */
+const CAVE_LIGHT = {
+  sun: 0.03, rim: 0.05, hemi: 0.6, env: 0.2, sky: 0,
+  fog: { color: 0x05070b, near: 3, far: 32 },
+  lantern: { color: 0x8fb0e0, intensity: 60, distance: 18, y: 4.2 },
+};
+/** Daylight values the cave lighting fades from (what the constructor sets up). */
+const DAY = { sun: 3, rim: 0.8, hemi: 0.85, env: 1, sky: 1 };
+const MITHRIL_LIGHT = { x: -27.8, y: 2.2, z: -48, intensity: 38, distance: 11 };
+const BRAZIER_LIGHT = { intensity: 90, distance: 20, y: 2.8 };
+/** Braziers that burn in the cave: the hall's big one carries a real light, the others are lit geometry only (the frame budget has room for few lights). */
+const BRAZIERS = [{ x: -16.4, z: -38, s: 0.8 }, { x: -30.8, z: -60, s: 1 }, { x: -7.2, z: -63, s: 1 }, { x: -18, z: -76.5, s: 1.7, light: true }];
+
+/** Enemy type -> the model slot that draws it: cave enemies are existing rigs (`look.model`), everyone else draws as itself. */
+const slotOf = (type: string): SlotId => (ENEMY_TYPES[type].look?.model ?? type) as SlotId;
+const lookScale = (type: string) => ENEMY_TYPES[type].look?.scale ?? 1;
+/** How far a cave enemy's own colours are pulled toward its look tint, and how much of that tint it also gives off (so it reads in the dark). */
+const TINT_MIX = 0.55, TINT_GLOW = 0.2;
+const emissiveOf = (type: string) => { const t = ENEMY_TYPES[type].look?.tint; return t === undefined ? HOSTILE_TINT : new THREE.Color(HOSTILE_TINT).add(new THREE.Color(t).multiplyScalar(TINT_GLOW)).getHex(); };
+/** The cave's standing stones and wall rock: tall, faceted, cold. */
+const PILLAR_HEIGHT = 6.5, WALL_HEIGHT = 1.9;
+/** The way in: rock heaped over the two flanks (CAVE_MOUTH), the gap between left clear. Bottom y and footprint. */
+const MOUTH_TOPS = [{ x: -21, y: 2.6, z: -27.8, w: 4.6 }, { x: -15, y: 2.6, z: -27.8, w: 4.6 }];
+
 /** Enemy click volume: a vertical capsule as tall as the model on screen, wide enough for the widest of its body and its sim radius. A little generous on purpose. */
 const PICK_SPHERES = 4;
 const CAMERA_JUMP_FOLLOW = 0.5;
 const QUADRUPEDS = new Set(['boar', 'wolf', 'pup']);
 function pickVolume(type: string): { height: number; radius: number } {
-  const height = SLOTS[type as 'boar'].height!;
+  const slot = slotOf(type), height = SLOTS[slot as 'boar'].height! * lookScale(type);
   // beasts are longer than they are tall and have no facing-independent footprint: size them by length, people by height
-  return { height, radius: Math.max(ENEMY_TYPES[type].radius * 1.15, height * (QUADRUPEDS.has(type) ? 1 : 0.32)) };
+  return { height, radius: Math.max(ENEMY_TYPES[type].radius * 1.15, height * (QUADRUPEDS.has(slot) ? 1 : 0.32)) };
 }
 
 export class Renderer {
@@ -125,6 +154,18 @@ export class Renderer {
   private forgeLight!: THREE.PointLight;
   private boundary: THREE.Mesh[] = [];
   private caveRocks: THREE.Mesh[] = [];
+  private caveFloor!: THREE.Mesh;
+  private caveWalls!: THREE.InstancedMesh;
+  private caveWallPts: { x: number; z: number; r: number; w: number }[] = [];
+  private caveFlames: { m: THREE.Mesh; phase: number }[] = [];
+  private hemi!: THREE.HemisphereLight;
+  private rim!: THREE.DirectionalLight;
+  private lantern!: THREE.PointLight;
+  private mithrilLight!: THREE.PointLight;
+  private hallLight?: THREE.PointLight;
+  private caveFogColor = new THREE.Color(CAVE_LIGHT.fog.color);
+  /** 0..1: how much of the mithril seam is still standing, so the cold light goes out with the last vein. */
+  private veinGlow = 1;
   private npcGroup!: THREE.Group;
   private npcAnim?: Animator;
   private playerAnim?: Animator;
@@ -148,7 +189,8 @@ export class Renderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.5;
     this.setupSky();
-    this.scene.add(new THREE.HemisphereLight(P.hemiSky, P.hemiGround, 0.85));
+    this.hemi = new THREE.HemisphereLight(P.hemiSky, P.hemiGround, DAY.hemi);
+    this.scene.add(this.hemi);
     this.setupRim();
     this.setupSun();
 
@@ -241,7 +283,7 @@ export class Renderer {
 
   /** Cool back-light from the side opposite the moon, no shadows: gives actors a bright edge against the dark ground. */
   private setupRim() {
-    const rim = new THREE.DirectionalLight(P.rim, 0.8);
+    const rim = this.rim = new THREE.DirectionalLight(P.rim, DAY.rim);
     rim.position.copy(SUN_OFFSET).multiplyScalar(-1).setY(14);
     this.scene.add(rim);
   }
@@ -293,17 +335,15 @@ export class Renderer {
       add(mesh(new THREE.BoxGeometry(0.8, 0.6, 0.5), P.anvil, 'metal'), f.x - 3, 0.3, f.z + 2));
     this.forgeLight = add(new THREE.PointLight(P.forgeLight, FORGE_LIGHT.intensity, FORGE_LIGHT.distance), f.x - 1, FORGE_LIGHT.y, f.z + 3.6) as THREE.PointLight;
 
-    // cave mouth: dark opening between rocks, facing +z
-    const k = LANDMARKS.caveMouth;
-    this.caveRocks.push(
-      add(mesh(new THREE.DodecahedronGeometry(3), P.slate, 'rock'), k.x - 3, 2, k.z - 2) as THREE.Mesh,
-      add(mesh(new THREE.DodecahedronGeometry(3), P.slate, 'rock'), k.x + 3, 2, k.z - 2) as THREE.Mesh,
-      add(mesh(new THREE.DodecahedronGeometry(3.4), P.slateDark, 'rock'), k.x, 3.6, k.z - 3.5) as THREE.Mesh);
-    add(mesh(new THREE.BoxGeometry(3.2, 3, 0.3), P.cave, 'dark', 'receive'), k.x, 1.5, k.z - 1.4);
+    // cave mouth: the sim's four flank colliders, rock heaped over them and across the top; the way in is the gap between
+    for (const o of CAVE_MOUTH) this.caveRocks.push(add(mesh(new THREE.DodecahedronGeometry(o.r * 1.4), P.slate, 'rock'), o.x, o.r * 0.9, o.z) as THREE.Mesh);
+    for (const t of MOUTH_TOPS) this.caveRocks.push(add(mesh(new THREE.DodecahedronGeometry(t.w / 2), P.slateDark, 'rock'), t.x, t.y + t.w * 0.2, t.z) as THREE.Mesh);
+    this.buildCave();
 
     // boundary: ring of boulders along the edge
     for (let i = -WORLD_HALF; i <= WORLD_HALF; i += 3) {
       for (const [x, z] of [[i, -WORLD_HALF], [i, WORLD_HALF], [-WORLD_HALF, i], [WORLD_HALF, i]]) {
+        if (inCave(x, z)) continue; // the throat opens through the boundary here
         this.boundary.push(add(mesh(new THREE.DodecahedronGeometry(1.6), P.boulder, 'rock'), x, 0.8, z) as THREE.Mesh);
       }
     }
@@ -315,6 +355,109 @@ export class Renderer {
     }
     // beyond the boundary: dark ground so the edge reads as the end of the world
     add(mesh(new THREE.PlaneGeometry(Math.max(400, WORLD_HALF * 4), Math.max(400, WORLD_HALF * 4)).rotateX(-Math.PI / 2), P.beyond, 'ground', 'receive'), 0, -0.05, 0);
+  }
+
+  /** Everything inside the cave that is not a rock model: floor, wall rock, standing stones, braziers and the lights they carry. */
+  private buildCave() {
+    this.caveFloor = this.facetedFloor();
+    this.scene.add(this.caveFloor);
+
+    // wall rock hangs on the sim's wall points, pushed out of the room so the walkable floor stays clear; one instanced draw
+    for (const p of caveWallPoints(2)) {
+      const room = CAVE_ROOMS.find(({ rect: r }) => Math.abs(p.x - r.x0) < 0.01 || Math.abs(p.x - r.x1) < 0.01 || Math.abs(p.z - r.z0) < 0.01 || Math.abs(p.z - r.z1) < 0.01)!.rect;
+      const cx = (room.x0 + room.x1) / 2, cz = (room.z0 + room.z1) / 2;
+      const alongX = Math.abs(p.x - cx) / (room.x1 - room.x0) > Math.abs(p.z - cz) / (room.z1 - room.z0);
+      const r = this.jitter(this.caveWallPts.length + 40);
+      this.caveWallPts.push({ x: p.x + (alongX ? Math.sign(p.x - cx) * 0.5 : 0), z: p.z + (alongX ? 0 : Math.sign(p.z - cz) * 0.5), r, w: 3.4 + r * 1.4 });
+    }
+    this.buildCaveWalls(new THREE.DodecahedronGeometry(1), material(P.caveWall, 'rock'), 2);
+
+    // standing stones: one instanced draw
+    const stones = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.75, 1.05, 1, 6), material(P.caveWall, 'rock'), CAVE_PILLARS.length);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(), pos = new THREE.Vector3();
+    CAVE_PILLARS.forEach((o, i) => {
+      const h = PILLAR_HEIGHT * (0.85 + this.jitter(i + 7) * 0.3);
+      stones.setMatrixAt(i, m.compose(pos.set(o.x, h / 2, o.z), q.setFromAxisAngle(up, i * 1.7), sc.set(o.r, h, o.r)));
+    });
+    stones.castShadow = stones.receiveShadow = true;
+    stones.matrixAutoUpdate = false;
+    this.scene.add(stones);
+
+    // braziers: a stone bowl on a pedestal and a cold arcane flame (the forge stays the one warm thing). Only the hall's carries a real light
+    const stand = mergeGeometries([new THREE.CylinderGeometry(0.3, 0.5, 0.9, 6).translate(0, 0.45, 0), new THREE.CylinderGeometry(0.62, 0.36, 0.34, 6).translate(0, 1.05, 0)])!;
+    for (const [i, b] of BRAZIERS.entries()) {
+      const g = new THREE.Group(), flame = mesh(new THREE.OctahedronGeometry(0.3).scale(1, 1.7, 1), P.arcane, 'glow', 'none');
+      flame.position.y = 1.5;
+      (flame.material as Mat).emissiveIntensity = 1;
+      g.add(mesh(stand, P.stoneDark, 'stone', 'cast'), flame);
+      g.position.set(b.x, 0, b.z);
+      g.scale.setScalar(b.s);
+      this.scene.add(g);
+      this.caveFlames.push({ m: flame, phase: i * 2.3 });
+      if (b.light) {
+        this.hallLight = new THREE.PointLight(P.arcane, BRAZIER_LIGHT.intensity, BRAZIER_LIGHT.distance);
+        this.hallLight.position.set(b.x, BRAZIER_LIGHT.y, b.z);
+        this.scene.add(this.hallLight);
+      }
+    }
+
+    // lights that follow the lantern (player, scaled by caveDepth) and the veins; both at zero outdoors, never added or removed (that would recompile every material)
+    this.lantern = new THREE.PointLight(CAVE_LIGHT.lantern.color, 0, CAVE_LIGHT.lantern.distance);
+    this.mithrilLight = new THREE.PointLight(P.arcane, 0, MITHRIL_LIGHT.distance);
+    this.mithrilLight.position.set(MITHRIL_LIGHT.x, MITHRIL_LIGHT.y, MITHRIL_LIGHT.z);
+    this.scene.add(this.lantern, this.mithrilLight);
+  }
+
+  /** (Re)build the wall rock from a geometry whose footprint is `unit` wide: the primitive first, the model once it loads. */
+  private buildCaveWalls(geometry: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], unit: number) {
+    if (this.caveWalls) { this.scene.remove(this.caveWalls); this.caveWalls.dispose(); }
+    const im = this.caveWalls = new THREE.InstancedMesh(geometry, mat, this.caveWallPts.length), shade = new THREE.Color();
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(), pos = new THREE.Vector3();
+    this.caveWallPts.forEach((p, i) => {
+      const s = p.w / unit;
+      im.setColorAt(i, shade.setScalar(THREE.MathUtils.lerp(1, 0.3, THREE.MathUtils.clamp((-p.z - 30) / 10, 0, 1)))); // the rock goes dark past the threshold, so the way in reads as a way in
+      im.setMatrixAt(i, m.compose(pos.set(p.x, -0.2, p.z), q.setFromAxisAngle(up, p.r * 40), sc.set(s, s * WALL_HEIGHT, s)));
+    });
+    im.castShadow = im.receiveShadow = true;
+    im.matrixAutoUpdate = false;
+    this.scene.add(im);
+  }
+
+  /** The cave floor: the rooms as flat tinted triangles like the outdoor ground, each room a hair above the last so overlaps do not shimmer. One draw. */
+  private facetedFloor() {
+    const a = new THREE.Color(P.caveFloor), b = new THREE.Color(P.caveFloorAlt), c = new THREE.Color();
+    const rooms = CAVE_ROOMS.map(({ rect: r }, i) => {
+      const w = r.x1 - r.x0, d = r.z1 - r.z0;
+      const g = new THREE.PlaneGeometry(w, d, Math.max(1, Math.round(w / 3)), Math.max(1, Math.round(d / 3))).rotateX(-Math.PI / 2)
+        .translate((r.x0 + r.x1) / 2, 0.02 * (i + 1), (r.z0 + r.z1) / 2).toNonIndexed();
+      const col = new Float32Array(g.attributes.position.count * 3);
+      for (let t = 0; t < col.length / 9; t++) {
+        c.copy(a).lerp(b, Math.abs(Math.sin((t + i * 977) * 12.9898) * 43758.5453) % 1);
+        for (let v = 0; v < 3; v++) c.toArray(col, t * 9 + v * 3);
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      return g;
+    });
+    const m = mesh(mergeGeometries(rooms)!, 0xffffff, 'ground', 'receive');
+    (m.material as Mat).vertexColors = true;
+    return m;
+  }
+
+  /** Daylight to cave dark by `depth` (the sim's caveDepth at the player): sun, sky, ambient and fog fade, the lantern comes up. */
+  private applyCaveLight(depth: number, x: number, z: number) {
+    const mix = THREE.MathUtils.lerp;
+    this.sun.intensity = mix(DAY.sun, CAVE_LIGHT.sun, depth);
+    this.rim.intensity = mix(DAY.rim, CAVE_LIGHT.rim, depth);
+    this.hemi.intensity = mix(DAY.hemi, CAVE_LIGHT.hemi, depth);
+    this.scene.environmentIntensity = mix(DAY.env, CAVE_LIGHT.env, depth);
+    this.scene.backgroundIntensity = mix(DAY.sky, CAVE_LIGHT.sky, depth);
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.setHex(P.horizon).lerp(this.caveFogColor, depth);
+    fog.near = mix(FOG.near, CAVE_LIGHT.fog.near, depth);
+    fog.far = mix(FOG.far, CAVE_LIGHT.fog.far, depth);
+    this.lantern.intensity = CAVE_LIGHT.lantern.intensity * depth;
+    this.lantern.position.set(x, CAVE_LIGHT.lantern.y, z);
+    this.mithrilLight.intensity = MITHRIL_LIGHT.intensity * depth * this.veinGlow;
   }
 
   /** Quest giver: robed figure with a hood and staff, and a bobbing ! / ? marker above. */
@@ -363,13 +506,13 @@ export class Renderer {
   private async populate(s: GameState) {
     const fill = (id: SlotId, apply: (p: Prepared) => void) =>
       loadSlot(id).then(apply).catch(err => console.warn(`model slot "${id}" kept as a primitive:`, err));
-    const types = new Set(s.enemies.map(e => e.type));
+    const slots = new Set(s.enemies.map(e => slotOf(e.type)));
     await Promise.all([
       fill('player', p => this.dressPlayer(p)),
       fill('warden', p => this.dressNpc(p)),
-      ...[...types].map(t => fill(t as SlotId, p => { for (const a of this.actors.values()) if (a.type === t) this.dressActor(a, p); })),
+      ...[...slots].map(t => fill(t, p => { for (const a of this.actors.values()) if (slotOf(a.type) === t) this.dressActor(a, p); })),
       Promise.all([loadSlot('tree'), loadSlot('stump')]).then(([t, st]) => this.dressTrees(t, st)).catch(err => console.warn('model slot "tree" kept as a primitive:', err)),
-      fill('ironRock', p => this.dressRocks('iron', p)),
+      fill('ironRock', p => { this.dressRocks('iron', p); this.dressRocks('mithril', p); }),
       fill('coalRock', p => this.dressRocks('coal', p)),
       fill('forge', p => this.dressForge(p)),
       fill('anvil', p => this.dressAnvil(p)),
@@ -429,8 +572,9 @@ export class Renderer {
     a.group.add(inst.root);
     a.model = inst.root;
     a.mats = inst.materials;
-    for (const m of a.mats) m.emissive.setHex(HOSTILE_TINT);
-    a.anim = new Animator(inst.root, inst.clips, SLOTS[a.type as 'boar'].anim);
+    const tint = ENEMY_TYPES[a.type].look?.tint;
+    for (const m of a.mats) { if (tint !== undefined) m.color.lerp(new THREE.Color(tint), TINT_MIX); m.emissive.setHex(a.glow); }
+    a.anim = new Animator(inst.root, inst.clips, SLOTS[slotOf(a.type) as 'boar'].anim);
   }
 
   private dressTrees(tree: Prepared, stump: Prepared) {
@@ -451,7 +595,7 @@ export class Renderer {
     }
   }
 
-  private dressRocks(type: 'iron' | 'coal', p: Prepared) {
+  private dressRocks(type: 'iron' | 'coal' | 'mithril', p: Prepared) {
     for (const v of this.nodes.values()) {
       if (v.type !== type) continue;
       const id = v.group.userData.nodeId as number, inst = spawn(p, true);
@@ -459,6 +603,7 @@ export class Renderer {
       inst.root.updateMatrix();
       this.hide(v.group.children[0]);
       v.group.add(inst.root);
+      if (type === 'mithril') for (const m of inst.materials) { m.color.setHex(P.mithrilRock); m.emissive.setHex(P.mithrilGlow); }
       v.mats.push(...inst.materials);
       v.base.push(...inst.materials.map(m => m.color.getHex()));
     }
@@ -481,19 +626,20 @@ export class Renderer {
     freeze(inst.root);
   }
 
-  /** Cave-mouth rocks sit on the sim's collider circles, scaled so the model's footprint matches the collider. */
+  /** Mouth rocks sit on the sim's collider circles (scaled so the model's footprint matches), with more heaped over them; the wall rock is rebuilt from the model. */
   private dressCave(p: Prepared) {
-    const k = LANDMARKS.caveMouth, side = SLOTS.caveRock.footprint;
-    const spots = [{ x: k.x - 3, z: k.z - 2, r: 2.2 }, { x: k.x + 3, z: k.z - 2, r: 2.2 }, { x: k.x, z: k.z - 3.5, r: 3 }];
+    const side = SLOTS.caveRock.footprint;
     this.hide(...this.caveRocks);
-    spots.forEach((o, i) => {
+    const rocks = [...CAVE_MOUTH.map(o => ({ x: o.x, y: -0.2, z: o.z, w: o.r * 2.2 })), ...MOUTH_TOPS];
+    rocks.forEach((o, i) => {
       const inst = spawn(p);
-      inst.root.position.set(o.x, -0.2, o.z);
+      inst.root.position.set(o.x, o.y, o.z);
       inst.root.rotation.y = i * 2.1;
-      inst.root.scale.setScalar((o.r * 2.2) / side);
+      inst.root.scale.setScalar(o.w / side);
       this.scene.add(inst.root);
       freeze(inst.root);
     });
+    this.buildCaveWalls(p.geometry!, p.materials.length === 1 ? p.materials[0] : p.materials, side);
   }
 
   /** The 80-odd boundary boulders become one instanced draw: a single scene object instead of one per rock. */
@@ -512,12 +658,6 @@ export class Renderer {
     im.castShadow = im.receiveShadow = true;
     im.matrixAutoUpdate = false;
     this.scene.add(im);
-  }
-
-  private markerFor(stage: QuestStage): 'offer' | 'ready' | 'wait' | null {
-    if (stage === 'offer') return 'offer';
-    if (stage === 'report1' || stage === 'report2') return 'ready';
-    return stage === 'done' ? null : 'wait';
   }
 
   private resize() {
@@ -556,12 +696,12 @@ export class Renderer {
       part(new THREE.CylinderGeometry(0.25, 0.35, 2, 5), P.bark, 'wood', 1);
       crown = part(new THREE.ConeGeometry(1.4, 3.5, 6), P.pine, 'foliage', 3.5);
     } else {
-      const coal = n.type === 'coal';
-      part(new THREE.DodecahedronGeometry(1.3), coal ? P.coalRock : P.ironRock, 'rock', 0.9);
-      // ore flecks: rust for iron, glossy black for coal
+      const coal = n.type === 'coal', mithril = n.type === 'mithril';
+      part(new THREE.DodecahedronGeometry(1.3), coal ? P.coalRock : mithril ? P.mithrilRock : P.ironRock, 'rock', 0.9);
+      // ore flecks: rust for iron, glossy black for coal, cold arcane light for mithril
       for (const [dx, dy, dz] of [[0.7, 1.2, 0.6], [-0.6, 1.0, 0.8], [0.1, 1.6, -0.5]]) {
-        const fleck = part(new THREE.OctahedronGeometry(0.28), coal ? P.coalFleck : P.ironFleck, coal ? 'coal' : 'ore', dy);
-        if (!coal) (fleck.material as Mat).emissive.setHex(P.ironFleck).multiplyScalar(0.35); // faint ember glint so a node reads at range
+        const fleck = part(new THREE.OctahedronGeometry(0.28), coal ? P.coalFleck : mithril ? P.arcane : P.ironFleck, coal ? 'coal' : mithril ? 'glow' : 'ore', dy);
+        if (!coal && !mithril) (fleck.material as Mat).emissive.setHex(P.ironFleck).multiplyScalar(0.35); // faint ember glint so a node reads at range
         fleck.position.x = dx; fleck.position.z = dz;
       }
     }
@@ -572,30 +712,35 @@ export class Renderer {
   private drawNodes(s: GameState) {
     const now = performance.now() / 1000;
     const active = s.player.action?.k === 'gather' ? s.player.action.nodeId : -1;
+    let vein = 0;
     for (const n of s.nodes) {
       const v = this.nodes.get(n.id)!;
       const depleted = n.charges <= 0;
+      if (n.type === 'mithril' && !depleted) vein++;
       if (v.crown) v.crown.visible = !depleted; // a felled tree leaves a stump
       else v.group.scale.setScalar(depleted ? 0.4 : 1);
       if (v.live) { v.live.visible = !depleted; v.stump!.visible = depleted; }
       v.mats.forEach((m, i) => { const spent = depleted && !v.crown; m.color.setHex(spent ? P.spent : v.base[i]); m.emissiveIntensity = spent ? 0 : 1; });
       v.group.rotation.z = n.id === active ? Math.sin(now * 18) * 0.05 : 0;
     }
+    this.veinGlow = vein / CAVE_ROCKS.filter(r => r.type === 'mithril').length;
   }
 
   private addActor(e: Enemy) {
     const def = ENEMY_TYPES[e.type];
-    const color = e.type === 'boar' ? P.boar : e.type === 'wolf' || e.type === 'pup' ? P.wolf : e.type === 'hexer' ? P.robe : P.brute;
+    const slot = slotOf(e.type), color = slot === 'boar' ? P.boar : slot === 'wolf' || slot === 'pup' ? P.wolf : slot === 'hexer' ? P.robe : P.brute;
     const group = new THREE.Group();
     const mat = material(color, 'hide');
     const body = new THREE.Mesh(
-      e.type === 'brute' ? new THREE.BoxGeometry(1.6, 2.2, 1.2) : new THREE.CapsuleGeometry(def.radius * 0.8, def.radius * 1.2, 2, 6).rotateX(Math.PI / 2),
+      slot === 'brute' ? new THREE.BoxGeometry(1.6, 2.2, 1.2) : new THREE.CapsuleGeometry(def.radius * 0.8, def.radius * 1.2, 2, 6).rotateX(Math.PI / 2),
       mat);
     body.castShadow = body.receiveShadow = true;
-    body.position.y = e.type === 'brute' ? 1.5 : def.radius + 0.2;
+    body.position.y = slot === 'brute' ? 1.5 : def.radius + 0.2;
     body.userData.enemyId = e.id;
     group.add(body);
-    mat.emissive.setHex(HOSTILE_TINT);
+    const glow = emissiveOf(e.type);
+    if (def.look) mat.color.lerp(new THREE.Color(def.look.tint), TINT_MIX);
+    mat.emissive.setHex(glow);
     // snout/fist so facing is readable on the placeholder body; the model carries its own face
     const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), material(P.bone, 'skin'));
     nose.castShadow = true;
@@ -611,19 +756,22 @@ export class Renderer {
     group.scale.setScalar(1);
     this.scene.add(group);
     let tele: Actor['tele'];
-    if (def.heavy) { // the ground circle a slam lands in: an outline that stays, and a fill that grows to meet it
-      const r = def.heavy.radius, tm = (o: number) => new THREE.MeshBasicMaterial({ color: P.blood, transparent: true, opacity: o, fog: false, depthWrite: false, side: THREE.DoubleSide });
-      const outline = new THREE.Mesh(new THREE.RingGeometry(r - 0.12, r, 48).rotateX(-Math.PI / 2), tm(0.85));
-      const fill = new THREE.Mesh(new THREE.CircleGeometry(r, 48).rotateX(-Math.PI / 2), tm(0.3));
-      const root = new THREE.Group();
-      root.add(outline, fill);
-      for (const m of [outline, fill]) { m.raycast = () => {}; m.renderOrder = 2; }
-      root.position.y = 0.08;
-      root.visible = false;
-      this.scene.add(root);
-      tele = { root, fill, outline };
-    }
-    this.actors.set(e.id, { group, body, nose, ring, tele, mats: [mat], type: e.type, px: e.x, pz: e.z, cx: e.x, cz: e.z, swing: 0, flash: 0, dead: false, t: e.id });
+    if (def.heavy) tele = this.makeTele(def.heavy.radius); // the ground circle a slam lands in: an outline that stays, and a fill that grows to meet it
+    this.actors.set(e.id, { group, body, nose, ring, tele, mats: [mat], type: e.type, scale: lookScale(e.type), glow, px: e.x, pz: e.z, cx: e.x, cz: e.z, swing: 0, flash: 0, dead: false, t: e.id });
+  }
+
+  /** A danger circle on the ground: an outline that pulses and a fill that grows to meet it. The radius is fixed per type. */
+  private makeTele(r: number): NonNullable<Actor['tele']> {
+    const tm = (o: number) => new THREE.MeshBasicMaterial({ color: P.blood, transparent: true, opacity: o, fog: false, depthWrite: false, side: THREE.DoubleSide });
+    const outline = new THREE.Mesh(new THREE.RingGeometry(r - 0.12, r, 48).rotateX(-Math.PI / 2), tm(0.85));
+    const fill = new THREE.Mesh(new THREE.CircleGeometry(r, 48).rotateX(-Math.PI / 2), tm(0.3));
+    const root = new THREE.Group();
+    root.add(outline, fill);
+    for (const m of [outline, fill]) { m.raycast = () => {}; m.renderOrder = 2; }
+    root.position.y = 0.08;
+    root.visible = false;
+    this.scene.add(root);
+    return { root, fill, outline };
   }
 
   /** Called once per sim tick so we can interpolate between the last two states. */
@@ -693,7 +841,7 @@ export class Renderer {
         this.particles.burst(p.x, 0.3, p.z, { color: [P.gold, P.arcaneLight, P.ember], count: 70, speed: 3, up: 8, gravity: -6, life: 1.4 });
         this.rings.pulse(p.x, 0.2, p.z, P.gold, 4, 0.9);
       } else if (ev.t === 'kill') {
-        const type = s.enemies.find(e => e.id === ev.id)!.type, big = type === 'brute';
+        const type = s.enemies.find(e => e.id === ev.id)!.type, big = slotOf(type) === 'brute';
         this.particles.burst(ev.x, 0.8, ev.z, { color: [...P.smoke, P.ember], count: big ? 70 : 32, speed: big ? 6 : 4, up: 2, life: 0.9 });
         this.rings.pulse(ev.x, 0.15, ev.z, P.ash, big ? 5 : 2.5, 0.5);
         if (big) this.shakeMag = Math.max(this.shakeMag, 0.35);
@@ -816,7 +964,7 @@ export class Renderer {
   pick(clientX: number, clientY: number): { x: number; z: number } | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
-    const hit = this.raycaster.intersectObject(this.ground)[0];
+    const hit = this.raycaster.intersectObjects([this.ground, this.caveFloor])[0];
     return hit ? { x: hit.point.x, z: hit.point.z } : null;
   }
 
@@ -830,7 +978,7 @@ export class Renderer {
     this.motes.update(dtFx);
     this.rings.update(dtFx);
     this.slashes.update(dtFx);
-    const mk = this.markerFor(s.quest.stage);
+    const mk = markerOf(s);
     this.npcMarker.visible = !!mk;
     if (mk) {
       (this.npcMarker.material as THREE.SpriteMaterial).map = this.markerTex[mk];
@@ -904,6 +1052,9 @@ export class Renderer {
     this.camera.lookAt(x, 1.5 + lift, z);
     if (this.debugCam) { this.camera.position.fromArray(this.debugCam.pos); this.camera.lookAt(...(this.debugCam.at as [number, number, number])); } // dev only: bench/look.mjs close-ups
     this.forgeLight.intensity = FORGE_LIGHT.intensity * (1 + 0.07 * Math.sin(nowMs / 90) + 0.05 * Math.sin(nowMs / 37));
+    this.applyCaveLight(caveDepth(x, z), x, z);
+    this.caveFlames.forEach(f => f.m.scale.set(1, 0.85 + 0.25 * Math.sin(nowMs / 110 + f.phase) + 0.1 * Math.sin(nowMs / 47 + f.phase), 1));
+    if (this.hallLight) this.hallLight.intensity = BRAZIER_LIGHT.intensity * (1 + 0.08 * Math.sin(nowMs / 100) + 0.05 * Math.sin(nowMs / 41));
     this.followSun(x, z);
     this.post.render(this.scene);
   }
@@ -953,7 +1104,7 @@ export class Renderer {
     g.visible = !dead || e.deadFor < 2;
     g.position.set(a.px + (a.cx - a.px) * alpha, 0, a.pz + (a.cz - a.pz) * alpha);
     // past the fog a model is invisible but still costs a skinned draw and a mixer update: skip both
-    if (an && Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) > FOG_CULL) { g.visible = false; if (a.tele) a.tele.root.visible = false; a.swing = e.swing; a.flash = e.hitFlash; return; }
+    if (an && Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) > FOG_CULL) { g.visible = false; if (a.tele) a.tele.root.visible = false; if (a.ground) a.ground.root.visible = false; a.swing = e.swing; a.flash = e.hitFlash; return; }
     g.rotation.y = e.facing;
     let lunge = 1 + e.swing * 2, shrink = Math.max(0.05, 1 - e.deadFor / 2), fall = dead;
     if (an) {
@@ -970,7 +1121,7 @@ export class Renderer {
     a.swing = e.swing; a.flash = e.hitFlash; a.dead = dead;
     g.rotation.z = fall ? Math.PI / 2 : 0;
     g.position.y = fall ? ENEMY_TYPES[e.type].radius : 0;
-    g.scale.setScalar(dead ? shrink : lunge); // shrink away when dead
+    g.scale.setScalar((dead ? shrink : lunge) * a.scale); // shrink away when dead
     // the tell: a wind-up reddens and swells the model (and leans it back), and a heavy fills its ground circle until it lands
     const wind = e.cast && !dead ? e.cast.t / e.cast.total : 0;
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / (90 - 50 * wind));
@@ -982,10 +1133,21 @@ export class Renderer {
       (a.tele.fill.material as THREE.MeshBasicMaterial).opacity = 0.2 + 0.4 * wind;
       (a.tele.outline.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * pulse;
     }
+    const gc = e.cast?.kind === 'ground' && !dead ? e.cast : null; // the mark under the player: drawn from state, so it needs no event
+    if (gc) a.ground ??= this.makeTele(gc.radius!);
+    if (a.ground) {
+      a.ground.root.visible = !!gc;
+      if (gc) {
+        a.ground.root.position.set(gc.x!, 0.08, gc.z!);
+        a.ground.fill.scale.set(wind, 1, wind);
+        (a.ground.fill.material as THREE.MeshBasicMaterial).opacity = 0.2 + 0.4 * wind;
+        (a.ground.outline.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * pulse;
+      }
+    }
     if (dead) for (const m of a.mats) m.emissive.setHex(0x000000); // a corpse takes no hostile tint and no hit flash (hitFlash stops ticking on death)
     else if (e.hitFlash > 0) for (const m of a.mats) m.emissive.setHex(P.bloodLight);
     else if (wind > 0) for (const m of a.mats) m.emissive.setRGB(0.12 + 0.38 * wind * (0.6 + 0.4 * pulse), 0.06, 0.03);
-    else for (const m of a.mats) m.emissive.setHex(HOSTILE_TINT);
+    else for (const m of a.mats) m.emissive.setHex(a.glow);
     if (e.stagger > 0 && !dead) for (const m of a.mats) m.emissive.setRGB(0.5, 0.45, 0.1); // stunned: a dull gold flash
     a.ring.scale.setScalar(wind > 0 ? 1 + 0.25 * pulse : 1);
     a.ring.visible = !dead && Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) < FOG.far;
@@ -998,6 +1160,9 @@ interface Actor {
   nose: THREE.Mesh;
   ring: THREE.Mesh;
   tele?: { root: THREE.Group; fill: THREE.Mesh; outline: THREE.Mesh };
+  /** The mark a 'ground' cast lays under the player: made on first use, at the spot the sim fixed. */
+  ground?: { root: THREE.Group; fill: THREE.Mesh; outline: THREE.Mesh };
+  scale: number; glow: number; // the look's scale, and the emissive an idle model rests at
   mats: Mat[];
   type: string;
   px: number; pz: number; cx: number; cz: number;
