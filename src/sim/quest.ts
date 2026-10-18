@@ -66,7 +66,9 @@ const hasBlade = (s: GameState) =>
 
 // ---------- transitions ----------
 
-const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete') => s.events.push({ t: 'quest', what });
+/** Which quest an event belongs to travels with it: both chains share stage 'done', so the HUD cannot work it out from state. */
+const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', second = false) =>
+  s.events.push({ t: 'quest', what, name: second ? QUEST2_NAME : QUEST_NAME });
 
 /** Kill credit. Hunt counts boars/wolves; the Brute only counts once the quest says so. */
 export function questOnKill(s: GameState, type: string) {
@@ -80,10 +82,10 @@ export function questOnKill(s: GameState, type: string) {
     questEvent(s, 'stage');
   } else if (q.second === 'delve' && DELVE_GOALS[type] && (q.kills[type] ?? 0) < DELVE_GOALS[type]) {
     q.kills[type] = (q.kills[type] ?? 0) + 1;
-    questEvent(s, 'progress'); // the stage itself ends in updateQuest, which also wants the ore
+    questEvent(s, 'progress', true); // the stage itself ends in updateQuest, which also wants the ore
   } else if (q.second === 'warden' && type === 'warden') {
     q.second = 'report';
-    questEvent(s, 'stage');
+    questEvent(s, 'stage', true);
   }
 }
 
@@ -98,11 +100,11 @@ export function advanceQuest(s: GameState) {
     q.second = 'offer';
     for (const r of REWARD) if (grantXp(s, r.skill, r.xp, NPC.x, NPC.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
     questEvent(s, 'complete');
-  } else if (q.stage === 'done' && q.second === 'offer') { q.second = 'delve'; questEvent(s, 'accept'); }
+  } else if (q.stage === 'done' && q.second === 'offer') { q.second = 'delve'; questEvent(s, 'accept', true); }
   else if (q.stage === 'done' && q.second === 'report') {
     q.second = 'cleared';
     for (const r of REWARD2) if (grantXp(s, r.skill, r.xp, NPC.x, NPC.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
-    questEvent(s, 'complete');
+    questEvent(s, 'complete', true);
   }
 }
 
@@ -112,9 +114,9 @@ export function updateQuest(s: GameState) {
   if (q.stage === 'forge' && hasBlade(s)) { q.stage = 'brute'; questEvent(s, 'stage'); }
   // the delve ends when the Ravagers are down and nine ore's worth is in hand (or already smelted); the smithing ends when the set exists
   if (q.second === 'delve' && Object.entries(DELVE_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n) && mithrilOre(s) >= MITHRIL_PLAN.ore) {
-    q.second = 'armour'; questEvent(s, 'stage');
+    q.second = 'armour'; questEvent(s, 'stage', true);
   }
-  if (q.second === 'armour' && pieces(s) === MITHRIL_SET.length) { q.second = 'warden'; questEvent(s, 'stage'); }
+  if (q.second === 'armour' && pieces(s) === MITHRIL_SET.length) { q.second = 'warden'; questEvent(s, 'stage', true); }
 }
 
 // ---------- dialogue ----------

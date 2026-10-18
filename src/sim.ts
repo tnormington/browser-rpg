@@ -100,7 +100,7 @@ export type GameEvent =
   | { t: 'levelup'; skill: SkillId; level: number }
   | { t: 'actionfail'; reason: 'level' | 'depleted' | 'full' | 'materials' | 'range'; skill: SkillId; need: number; what: string }
   | { t: 'npc' }                                        // player reached the quest giver: open dialogue
-  | { t: 'quest'; what: 'accept' | 'progress' | 'stage' | 'complete' }
+  | { t: 'quest'; what: 'accept' | 'progress' | 'stage' | 'complete'; name: string }  // name: the quest it is about (both chains sit at stage 'done' at once)
   | { t: 'forge' }                                      // player reached the forge: open the recipe list
   | { t: 'crafted'; item: string; qty: number }
   | { t: 'depleted'; id: number }

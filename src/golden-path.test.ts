@@ -745,6 +745,7 @@ const kills = (s: GameState, t: string): number => s.quest.kills[t] ?? 0;
 const stage = (s: GameState): string => s.quest.stage; // via a function so TS doesn't narrow across sim calls
 const secondStage = (s: GameState): string => s.quest.second;
 const lineTexts = (s: GameState) => questView(s).lines.map(l => l.text);
+const questNamed = (s: GameState, what: string, name: string) => hasEvent(s, e => e.t === 'quest' && e.what === what && e.name === name);
 const sawQuest = (s: GameState, what: string) => hasEvent(s, e => e.t === 'quest' && e.what === what);
 /** Click the NPC: walk over and open the dialogue. */
 function talkToNpc(s: GameState) {
@@ -1982,6 +1983,7 @@ section('HOM-15 second quest: it starts where the first ends, on the same machin
   const xp0 = s.player.combat.xp;
   tick(s, { questAdvance: true });
   assert(stage(s) === 'done' && secondStage(s) === 'offer' && sawQuest(s, 'complete') && s.player.combat.xp === xp0 + REWARD[0].xp, 'handing in the first quest completes it and puts the second on offer');
+  assert(questNamed(s, 'complete', QUEST_NAME), 'the quest event says which quest it is about: handing in the first one names the first');
   assert(JSON.stringify(questView(s).target) === 'null' && questView(s).lines[0].done, 'questView stays the first quest\'s: done, nothing to point at');
   const offer = activeQuestView(s);
   assert(offer.title === QUEST2_NAME && offer.ready && offer.target?.label === NPC.name && offer.progress === '(1/5)' && npcMarker(s) === 'offer', 'the HUD tracker now shows the second quest on offer, points at Warden Hale, and the ! marker stays up');
@@ -1994,7 +1996,7 @@ section('HOM-15 second quest: it starts where the first ends, on the same machin
   assert((s.quest.kills.ravager ?? 0) === 0 && secondStage(s) === 'offer', 'ravager and warden kills before accepting earn nothing');
   nearHale(s);
   tick(s, { questAdvance: true });
-  assert(secondStage(s) === 'delve' && sawQuest(s, 'accept') && activeQuestView(s).progress === '(2/5)', 'accepting starts the delve');
+  assert(secondStage(s) === 'delve' && questNamed(s, 'accept', QUEST2_NAME) && activeQuestView(s).progress === '(2/5)', 'accepting starts the delve, and the event names the second quest');
   tick(s, { questAdvance: true });
   assert(secondStage(s) === 'delve', 'advance is a no-op while there is no hand-in');
   questOnKill(s, 'warden');
@@ -2040,7 +2042,7 @@ section('HOM-15 second quest: it starts where the first ends, on the same machin
   nearHale(s);
   const before = REWARD2.map(r => s.player.skills[r.skill].xp);
   tick(s, { questAdvance: true });
-  assert(secondStage(s) === 'cleared' && stage(s) === 'done' && sawQuest(s, 'complete'), 'turning in completes the second quest');
+  assert(secondStage(s) === 'cleared' && stage(s) === 'done' && questNamed(s, 'complete', QUEST2_NAME), 'turning in completes the second quest, and the event names it');
   assert(REWARD2.every((r, i) => s.player.skills[r.skill].xp === before[i] + r.xp), `rewards: ${REWARD2.map(r => `${r.xp} ${r.skill}`).join(', ')}`);
   assert(REWARD2[0].xp > REWARD[0].xp * 2 && REWARD2.length >= REWARD.length, 'and it is a bigger reward than the first quest paid');
   const xp1 = s.player.combat.xp;
