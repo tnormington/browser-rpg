@@ -1,10 +1,10 @@
 // Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
-import { ENEMY_TYPES } from './sim/data';
+import { ENEMY_TYPES, JUMP_VELOCITY, GRAVITY, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NPC, QuestStage } from './sim/quest';
-import { Particles, Rings } from './fx';
+import { Particles, Rings, Slashes } from './fx';
 import { PostStack, Quality } from './post';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
 import { Animator } from './anim';
@@ -35,6 +35,8 @@ const PALETTE = {
   ash: 0xa8a49a, smoke: [0xbbbbbb, 0x888888] as number[],
 } as const;
 const P = PALETTE;
+/** Seconds a jump stays in the air (up and back down at the sim's gravity): the jump clip is stretched to this. */
+const JUMP_AIRTIME = (2 * JUMP_VELOCITY) / GRAVITY;
 
 const GLOW_INTENSITY = 3;
 type Mat = THREE.MeshStandardMaterial;
@@ -116,6 +118,7 @@ export class Renderer {
   private markerTex!: Record<'offer' | 'ready' | 'wait', THREE.Texture>;
   private particles = new Particles();
   private rings: Rings;
+  private slashes: Slashes;
   private lastDraw = performance.now();
   private forgeLight!: THREE.PointLight;
   private boundary: THREE.Mesh[] = [];
@@ -123,10 +126,7 @@ export class Renderer {
   private npcGroup!: THREE.Group;
   private npcAnim?: Animator;
   private playerAnim?: Animator;
-  private playerModel?: THREE.Object3D;
   private weaponMats: Mat[] = [];
-  private playerHitT = 0;
-  private lungeT = 0;
   private playerWasDead = false;
   /** Resolves once every model slot has either swapped in or failed (and kept its primitive). Models stream in; the first frame never waits. */
   readonly modelsReady: Promise<void>;
@@ -154,6 +154,7 @@ export class Renderer {
     this.scene.add(this.ground);
     this.buildZone();
     this.rings = new Rings(this.scene);
+    this.slashes = new Slashes(this.scene);
     this.scene.add(this.particles.points);
     this.buildNpc();
 
@@ -419,7 +420,6 @@ export class Renderer {
     this.hide(this.player);
     this.player.add(inst.root);
     this.playerAnim = new Animator(inst.root, inst.clips, SLOTS.player.anim);
-    this.playerModel = inst.root;
   }
 
   private dressNpc(p: Prepared) {
@@ -662,23 +662,33 @@ export class Renderer {
     for (const ev of events) {
       if (ev.t === 'hit') {
         if (ev.target === 'player') {
-          this.playerHitT = 0.25;
+          this.playerAnim?.react(ev.heavy ? 1.6 : 0.8);
           this.shakeMag = Math.max(this.shakeMag, ev.heavy ? 0.4 : 0.12);
           this.particles.burst(ev.x, 1.2, ev.z, { color: [P.blood, P.bloodLight], count: ev.heavy ? 30 : 12, speed: ev.heavy ? 6 : 4, life: 0.5 });
           const src = ev.src === undefined ? undefined : s.enemies.find(e => e.id === ev.src);
           if (src && ENEMY_TYPES[src.type].ranged) this.particles.trail(src.x, 1.7, src.z, ev.x, 1.3, ev.z, P.violet); // the bolt
         } else {
           this.shakeMag = Math.max(this.shakeMag, ev.crit ? 0.2 : ev.slot === 1 || ev.slot === 4 ? 0.14 : 0.04);
+          if (!ev.dot) this.actors.get(ev.target as number)?.anim?.react(ev.crit || ev.slot === 1 || ev.slot === 4 ? 1.5 : 1); // the recoil is the proof the blow landed
           this.impact(s, ev);
         }
       } else if (ev.t === 'cast') {
         this.castPunch = 0.12;
-        if (ev.slot !== 3 && this.playerAnim?.attack(ev.slot === 1 || ev.slot === 4)) this.lungeT = 0.22; // slot 3 is the heal: no swing; the cleave takes the heavy swing
+        if (ev.slot !== 3 && this.playerAnim) { // slot 3 is the heal: no swing; the cleave takes the heavy swing
+          this.playerAnim.attack(ev.slot === 1 || ev.slot === 4);
+          this.slashes.swipe(s.player.x, s.player.z, s.player.facing, ev.slot === 1 || ev.slot === 4);
+        }
         if (ev.slot === 4) { // the sweep: a wide arc of dust and light in front of the player
           const p = s.player, a = p.facing;
           this.rings.pulse(p.x + Math.sin(a) * 1.4, 0.3, p.z + Math.cos(a) * 1.4, P.arcaneLight, 3.8, 0.28, 1.2);
           for (let k = -2; k <= 2; k++) this.particles.burst(p.x + Math.sin(a + k * 0.45) * 2.2, 1.0, p.z + Math.cos(a + k * 0.45) * 2.2, { color: [P.arcaneLight, P.ash], count: 6, speed: 2.5, life: 0.35 });
         }
+      }
+      else if (ev.t === 'swing' && this.playerAnim) { this.playerAnim.swung(); this.slashes.swipe(s.player.x, s.player.z, s.player.facing); } // auto-attack: raises no 'cast', the hit follows this tick
+      else if (ev.t === 'jump') this.playerAnim?.jump(JUMP_AIRTIME);
+      else if (ev.t === 'land') {
+        this.playerAnim?.touchdown();
+        this.particles.burst(ev.x, 0.15, ev.z, { color: [P.ash], count: 8, speed: 2.2, flat: true, life: 0.35 });
       }
       else if (ev.t === 'slam') {
         this.particles.burst(ev.x, 0.3, ev.z, { color: [P.ash, P.bloodLight, P.ember], count: 40, speed: 7, up: 2, life: 0.8 });
@@ -837,6 +847,7 @@ export class Renderer {
     this.lastDraw = nowMs;
     this.particles.update(dtFx);
     this.rings.update(dtFx);
+    this.slashes.update(dtFx);
     const mk = this.markerFor(s.quest.stage);
     this.npcMarker.visible = !!mk;
     if (mk) {
@@ -849,11 +860,10 @@ export class Renderer {
       if (pl.dead !== this.playerWasDead) { if (pl.dead) pa.die(); else pa.revive(); this.playerWasDead = pl.dead; }
       pa.locomotion(pl.moving && !pl.dead, 6);
       pa.update(dtFx);
-      // no hit-reaction clip on this rig: a short backward flinch on the fit wrapper stands in
-      this.playerHitT = Math.max(0, this.playerHitT - dtFx);
-      this.playerModel!.rotation.x = -0.35 * Math.sin((this.playerHitT / 0.25) * Math.PI);
-      this.lungeT = Math.max(0, this.lungeT - dtFx);
-      this.playerModel!.position.z = 0.35 * Math.sin((this.lungeT / 0.22) * Math.PI); // a step into the blow, out and back, so the swing carries weight
+      pa.airborne(pl.airborne ? pl.vy : 0);
+      // auto-attack's swing timer is the sim's, so the wind-up can start early enough that the strike lands on the beat
+      const tgt = pl.autoAttack && !pl.dead && s.targetId !== null ? s.enemies.find(e => e.id === s.targetId) : undefined;
+      if (tgt && Math.hypot(tgt.x - pl.x, tgt.z - pl.z) <= AUTO_RANGE) pa.anticipate(pl.swing);
       this.player.position.set(x, pl.y, z); // pl.y: the sim's jump offset, presentation only
       this.player.rotation.x = pl.dead && !pa.hasDeath ? -Math.PI / 2 : 0;
       this.player.scale.setScalar(1);
@@ -969,25 +979,21 @@ export class Renderer {
       const speed = ENEMY_TYPES[a.type].speed, moving = !dead && Math.hypot(a.cx - a.px, a.cz - a.pz) > 1e-3;
       if (dead !== a.dead) { if (dead) an.die(); else an.revive(); }
       if (!dead && e.swing > a.swing) an.attack();
-      lunge = an.hasAttack ? 1 : 1 + e.swing * 2; // a real swing replaces the scale lunge
-      if (!dead && e.hitFlash > 0 && a.flash <= 0) an.react();
+      lunge = 1; // the swing is a clip or a procedural lunge on the model, never a scale pop
       an.locomotion(moving, speed);
+      an.telegraph(e.cast && !dead ? e.cast.kind : null, e.cast ? e.cast.t / e.cast.total : 0);
       an.update(dt);
-      // models with a death clip play it and then shrink away; the rest fall over as before
+      // every animated rig topples or plays its death, holds, then shrinks away
       if (an.hasDeath) { fall = false; shrink = e.deadFor < 1 ? 1 : Math.max(0.05, 2 - e.deadFor); }
-      // no walk clip (the boar pack ships only idle + jump): hop procedurally instead
-      const def = SLOTS[a.type as 'boar'].anim!;
-      if (a.model) a.model.position.y = def.move === def.idle && moving ? 0.1 * Math.abs(Math.sin(performance.now() / 70 + a.t)) : 0;
     }
     a.swing = e.swing; a.flash = e.hitFlash; a.dead = dead;
     g.rotation.z = fall ? Math.PI / 2 : 0;
     g.position.y = fall ? ENEMY_TYPES[e.type].radius : 0;
-    g.scale.setScalar(dead ? shrink : lunge); // attack lunge / shrink away when dead
+    g.scale.setScalar(dead ? shrink : lunge); // shrink away when dead
     // the tell: a wind-up reddens and swells the model (and leans it back), and a heavy fills its ground circle until it lands
     const wind = e.cast && !dead ? e.cast.t / e.cast.total : 0;
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / (90 - 50 * wind));
-    if (wind > 0) g.scale.multiplyScalar(1 + 0.12 * wind);
-    if (a.model) a.model.rotation.x = -0.3 * wind;
+    if (wind > 0 && !an) { g.scale.multiplyScalar(1 + 0.12 * wind); if (a.model) a.model.rotation.x = -0.3 * wind; } // primitives (models not yet loaded) keep the old swell
     if (a.tele) {
       a.tele.root.visible = e.cast?.kind === 'heavy' && !dead;
       a.tele.root.position.set(g.position.x, 0.08, g.position.z);
@@ -995,7 +1001,8 @@ export class Renderer {
       (a.tele.fill.material as THREE.MeshBasicMaterial).opacity = 0.2 + 0.4 * wind;
       (a.tele.outline.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * pulse;
     }
-    if (e.hitFlash > 0) for (const m of a.mats) m.emissive.setHex(P.bloodLight);
+    if (dead) for (const m of a.mats) m.emissive.setHex(0x000000); // a corpse takes no hostile tint and no hit flash (hitFlash stops ticking on death)
+    else if (e.hitFlash > 0) for (const m of a.mats) m.emissive.setHex(P.bloodLight);
     else if (wind > 0) for (const m of a.mats) m.emissive.setRGB(0.12 + 0.38 * wind * (0.6 + 0.4 * pulse), 0.06, 0.03);
     else for (const m of a.mats) m.emissive.setHex(HOSTILE_TINT);
     if (e.stagger > 0 && !dead) for (const m of a.mats) m.emissive.setRGB(0.5, 0.45, 0.1); // stunned: a dull gold flash

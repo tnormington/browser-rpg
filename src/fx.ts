@@ -110,3 +110,43 @@ export class Rings {
     });
   }
 }
+
+/** The arc a sword blow just cut: a crescent that sweeps across the player's front and fades. A small pool, reused. */
+export class Slashes {
+  private geo = new THREE.RingGeometry(0.95, 1.75, 14, 1, -Math.PI / 2 - 0.8, 1.6).rotateX(-Math.PI / 2); // arc centred on +z, lying flat
+  private pool: { root: THREE.Group; mat: THREE.MeshBasicMaterial; age: number; dur: number; from: number }[] = [];
+  private tint = new THREE.Color(0xbfd2ea).multiplyScalar(FX_HDR * 0.7);
+
+  constructor(private scene: THREE.Scene) {}
+
+  /** `heavy` swings wider and lasts longer. The arc is tilted so it reads as a diagonal cut, high on the sword side. */
+  swipe(x: number, z: number, facing: number, heavy = false) {
+    let s = this.pool.find(p => p.age >= p.dur);
+    if (!s) {
+      const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, toneMapped: false });
+      const mesh = new THREE.Mesh(this.geo, mat), root = new THREE.Group();
+      mesh.rotation.z = 0.55; // roll about the forward axis: the diagonal
+      mesh.raycast = () => {};
+      root.add(mesh);
+      this.scene.add(root);
+      s = { root, mat, age: 1, dur: 1, from: 0 };
+      this.pool.push(s);
+    }
+    s.mat.color.copy(this.tint);
+    s.age = 0; s.dur = heavy ? 0.28 : 0.2; s.from = facing + 1.1;
+    s.root.position.set(x, 1.25, z);
+    s.root.scale.setScalar(heavy ? 1.35 : 1);
+    s.root.rotation.y = s.from;
+    s.root.visible = true;
+  }
+
+  update(dt: number) {
+    for (const s of this.pool) {
+      if (s.age >= s.dur) { s.root.visible = false; continue; }
+      s.age += dt;
+      const k = Math.min(1, s.age / s.dur);
+      s.root.rotation.y = s.from - 2.2 * (1 - (1 - k) * (1 - k)); // fast out, easing off: the cut
+      s.mat.opacity = 0.6 * (1 - k) * (1 - k);
+    }
+  }
+}
