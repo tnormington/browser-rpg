@@ -33,7 +33,7 @@ export const SLOTS = {
   player: { file: 'knight', height: 2.0, look: { sat: 0.55, light: 1.9, named: { Skin: SKIN, Armor: 0x6a7684, Boots: 0x2a2622 } },
     anim: { idle: 'Idle', move: 'Run', moveSpeed: 6, attack: ['Run_swordAttack', 'swordAttackJump'], upper: ['Run_swordAttack'], death: 'Death', impact: { Run_swordAttack: 0.2, swordAttackJump: 0.6 } } },
   warden: { file: 'wizard', height: 2.1, look: { sat: 0.6, light: 1.6, named: { Skin: SKIN, Clothes: 0x4c3b66, Hat: 0x33283f, Belt: 0x3a2d22, Gold: 0xb8893a } }, anim: { idle: 'Idle', move: 'Walk' } },
-  boar: { file: 'pig', height: 1.0, look: { sat: 0.5, light: 0.95, named: { 'Material.003': 0x7a5a44, Material: 0x3a281c } },
+  boar: { file: 'pig', height: 1.0, look: { sat: 0.5, light: 0.95, named: { 'Material.003': 0x93705a, Material: 0x3a281c } },
     anim: { idle: 'Idle', move: 'Idle', attack: ['Jump'], impact: { Jump: 0.5 } } },
   wolf: { file: 'wolf', height: 1.25, yaw: -Math.PI / 2, look: { sat: 0.35, light: 0.75, named: { Wolf: 0x8c8e8a } }, anim: { idle: 'Idle', move: 'Walking', moveSpeed: 5 } },
   brute: { file: 'viking', height: 2.7, look: { sat: 0.8, light: 2.4, named: { Skin: 0x8a5a4a, Face: 0x8a5a4a, Main: 0x6a2a28, Pants: 0x3a2220 } },
@@ -105,7 +105,11 @@ async function load(id: SlotId): Promise<Prepared> {
   let materials: THREE.MeshStandardMaterial[];
   let box: THREE.Box3;
   if (skinned) {
-    for (const m of meshes) { m.material = Array.isArray(m.material) ? m.material.map(styled) : styled(m.material); }
+    for (const m of meshes) {
+      m.material = Array.isArray(m.material) ? m.material.map(styled) : styled(m.material);
+      m.geometry.computeBoundingSphere();
+      m.geometry.boundingSphere!.radius *= 1.5; // bounds come from the bind pose: pad them so an attack lunge never pops at the screen edge
+    }
     materials = [...mats.values()];
     box = new THREE.Box3().setFromObject(root, true);
   } else {
@@ -161,7 +165,6 @@ export function spawn(p: Prepared, ownMaterials = false): Instance {
     if (!m.isMesh) return;
     m.material = Array.isArray(m.material) ? m.material.map(mine) : mine(m.material);
     shadow(m);
-    m.frustumCulled = false; // bind-pose bounds do not follow the animated pose
   });
   // fit wrapper: feet on the ground, centred, scaled to the collision-derived size
   const fit = new THREE.Group();

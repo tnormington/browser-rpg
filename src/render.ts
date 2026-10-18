@@ -863,6 +863,8 @@ export class Renderer {
     const g = a.group, an = a.anim, dead = e.state === 'dead';
     g.visible = !dead || e.deadFor < 2;
     g.position.set(a.px + (a.cx - a.px) * alpha, 0, a.pz + (a.cz - a.pz) * alpha);
+    // past the fog a model is invisible but still costs a skinned draw and a mixer update: skip both
+    if (an && Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) > FOG.far + 8) { g.visible = false; a.swing = e.swing; a.flash = e.hitFlash; return; }
     g.rotation.y = e.facing;
     let lunge = 1 + e.swing * 2, shrink = Math.max(0.05, 1 - e.deadFor / 2), fall = dead;
     if (an) {
