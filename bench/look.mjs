@@ -25,6 +25,7 @@ await page.addScriptTag({ content: `
   window.wait = ms => new Promise(r => setTimeout(r, ms));
   window.look = (x, z, yaw = 0, pitch = 0.3, dist = 6) => {
     const d = window.__debug, p = d.sim.player;
+    d.view.debugCam = null;
     p.x = x; p.z = z; d.view.yaw = yaw; d.view.pitch = pitch; d.view.distance = dist; d.step(); d.step();
   };
   // free camera: cam([x,y,z], [lookX,lookY,lookZ]); cam(null) returns to the orbit camera
