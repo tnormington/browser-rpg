@@ -22,6 +22,7 @@ import {
   QUEST_NAME, RECOMMENDED_COMBAT, RECOMMENDED_COMBAT_2, REWARD, REWARD2, TALK_RANGE, activeDialogue, activeQuestView, npcMarker, questOnKill, questView,
 } from './sim/quest';
 import { appearanceOf, TIER_LOOKS } from './gear-look';
+import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
 
 let checks = 0;
@@ -1901,6 +1902,17 @@ section('HOM-15 mithril: a Mining gate above coal, a Smithing ladder, and gear a
   }
   assert(Object.entries(ITEMS).every(([id, d]) => d.tier < TIER_COLORS.length && (!d.slot || (appearanceOf(id).rung >= 1 && appearanceOf(id).tint > 0))), 'every equippable item has an appearance and a rarity colour');
   assert(Object.entries(ITEMS).filter(([, d]) => d.slot).every(([id, d]) => d.tier < 3 || appearanceOf(id).glow !== 0), 'every rare-or-better piece glows: the better the gear, the better it looks');
+  // the emissive budget (glow.ts): epic glow is cold, restrained, and under the bloom threshold, so it can never blow out to white or beat the forge
+  assert(EMISSIVE_CAP < BLOOM_THRESHOLD, 'a lit emitter peaks under the bloom threshold');
+  const warm = (hex: number) => ((hex >> 16) & 255) > ((hex & 255)) + 8;
+  for (const [id, d] of Object.entries(ITEMS)) {
+    if (!d.slot || d.tier < 3) continue;
+    const l = appearanceOf(id);
+    assert(l.glowI * linearPeak(l.glow) <= EMISSIVE_CAP * 0.75, `${d.name}: tier-${d.tier} glow stays well under the cap`);
+    if (id !== 'forged_blade') assert(!warm(l.glow), `${d.name}: warm emissive belongs to fire alone, an epic glow is cold`);
+  }
+  assert(cappedIntensity(0x6ad8ff, 3) * linearPeak(0x6ad8ff) <= EMISSIVE_CAP + 1e-9 && cappedIntensity(0x6ad8ff, 0.5) === 0.5, 'cappedIntensity clamps down to the cap and leaves quieter values alone');
+  assert(minLightDistance(260, 0.05) < minLightDistance(260, 1) && minLightDistance(0, 1) === 0, 'a brighter surface needs more room from a point light');
 
   // what is made is not dropped, and what is made is best
   const dropped = new Set(Object.values(DROP_TABLES).flatMap(t => t.entries.map(e => e.id)));

@@ -11,6 +11,7 @@ import { PostStack, Quality } from './post';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
 import { Animator } from './anim';
 import { PlayerGear } from './gear';
+import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
 
 /**
@@ -41,20 +42,22 @@ const P = PALETTE;
 /** Seconds a jump stays in the air (up and back down at the sim's gravity): the jump clip is stretched to this. */
 const JUMP_AIRTIME = (2 * JUMP_VELOCITY) / GRAVITY;
 
-const GLOW_INTENSITY = 3;
 type Mat = THREE.MeshStandardMaterial;
 /** Roughness / metalness per material class. */
 const MATERIALS = {
   ground: [0.95, 0], dirt: [0.98, 0], foliage: [0.85, 0], wood: [0.8, 0], rock: [0.9, 0], stone: [0.85, 0],
   metal: [0.4, 0.9], ore: [0.55, 0.6], coal: [0.3, 0.1], cloth: [0.9, 0], skin: [0.6, 0], hide: [0.92, 0],
-  gem: [0.3, 0.2], glow: [0.6, 0], dark: [1, 0],
+  gem: [0.3, 0.2], glow: [0.6, 0], beacon: [0.6, 0], dark: [1, 0],
 } as const;
 type MatClass = keyof typeof MATERIALS;
+const EMITTER_DIFFUSE = 0.15;
 
 const material = (color: number, cls: MatClass): Mat => {
   const [roughness, metalness] = MATERIALS[cls];
   const m = new THREE.MeshStandardMaterial({ color, roughness, metalness, flatShading: true });
-  if (cls === 'glow') { m.emissive.setHex(color); m.emissiveIntensity = GLOW_INTENSITY; } // self-lit: readable in any light, and hot enough in HDR to cross the bloom threshold
+  // glow: a lit emitter, self-lit and capped under the bloom threshold (glow.ts). beacon: a thin marker meant to cross it and bloom.
+  if (cls === 'glow' || cls === 'beacon') { m.emissive.setHex(color); m.emissiveIntensity = cls === 'beacon' ? BEACON_INTENSITY : cappedIntensity(color, BEACON_INTENSITY); }
+  if (cls === 'glow') m.color.multiplyScalar(EMITTER_DIFFUSE); // an emitter shows its own light, not the room's: a light parked beside it would otherwise wash it to white
   return m;
 };
 const mesh = (g: THREE.BufferGeometry, color: number, cls: MatClass, shadow: 'cast' | 'receive' | 'both' | 'none' = 'both') => {
@@ -97,7 +100,8 @@ const CAVE_LIGHT = {
 /** Daylight values the cave lighting fades from (what the constructor sets up). */
 const DAY = { sun: 3, rim: 0.8, hemi: 0.85, env: 1, sky: 1 };
 const MITHRIL_LIGHT = { x: -27.8, y: 2.2, z: -48, intensity: 38, distance: 11 };
-const BRAZIER_LIGHT = { intensity: 90, distance: 20, y: 2.8 };
+/** Held above the flame (the 1.7x brazier's flame tops out near y 3.4): a light inside or beside a prop bloomed the prop to white. See glow.ts minLightDistance. */
+const BRAZIER_LIGHT = { intensity: 260, distance: 24, y: 5.8 };
 /** Braziers that burn in the cave: the hall's big one carries a real light, the others are lit geometry only (the frame budget has room for few lights). */
 const BRAZIERS = [{ x: -16.4, z: -38, s: 0.8 }, { x: -30.8, z: -60, s: 1 }, { x: -7.2, z: -63, s: 1 }, { x: -18, z: -76.5, s: 1.7, light: true }];
 
@@ -222,16 +226,16 @@ export class Renderer {
     this.weapon.position.set(0.6, 0.3, 0.7);
     this.player.add(this.weapon);
 
-    this.selection = mesh(new THREE.TorusGeometry(1, 0.07, 4, 24).rotateX(Math.PI / 2), P.blood, 'glow', 'none');
+    this.selection = mesh(new THREE.TorusGeometry(1, 0.07, 4, 24).rotateX(Math.PI / 2), P.blood, 'beacon', 'none');
     this.selection.visible = false;
     this.scene.add(this.selection);
-    this.levelRing = mesh(new THREE.TorusGeometry(1, 0.1, 4, 28).rotateX(Math.PI / 2), P.gold, 'glow', 'none');
+    this.levelRing = mesh(new THREE.TorusGeometry(1, 0.1, 4, 28).rotateX(Math.PI / 2), P.gold, 'beacon', 'none');
     this.levelRing.visible = false;
     this.scene.add(this.levelRing);
     for (const e of s.enemies) this.addActor(e);
     for (const n of s.nodes) this.addNode(n);
 
-    this.marker = mesh(new THREE.TorusGeometry(0.5, 0.08, 4, 16).rotateX(Math.PI / 2), P.gold, 'glow', 'none');
+    this.marker = mesh(new THREE.TorusGeometry(0.5, 0.08, 4, 16).rotateX(Math.PI / 2), P.gold, 'beacon', 'none');
     this.marker.visible = false;
     this.scene.add(this.marker);
 
@@ -407,7 +411,7 @@ export class Renderer {
     for (const [i, b] of BRAZIERS.entries()) {
       const g = new THREE.Group(), flame = mesh(new THREE.OctahedronGeometry(0.3).scale(1, 1.7, 1), P.arcane, 'glow', 'none');
       flame.position.y = 1.5;
-      (flame.material as Mat).emissiveIntensity = 1;
+      (flame.material as Mat).emissiveIntensity = 0.8;
       g.add(mesh(stand, P.stoneDark, 'stone', 'cast'), flame);
       g.position.set(b.x, 0, b.z);
       g.scale.setScalar(b.s);
@@ -739,7 +743,7 @@ export class Renderer {
       part(new THREE.DodecahedronGeometry(1.3), coal ? P.coalRock : mithril ? P.mithrilRock : P.ironRock, 'rock', 0.9);
       // ore flecks: rust for iron, glossy black for coal, cold arcane light for mithril
       for (const [dx, dy, dz] of [[0.7, 1.2, 0.6], [-0.6, 1.0, 0.8], [0.1, 1.6, -0.5]]) {
-        const fleck = part(new THREE.OctahedronGeometry(0.28), coal ? P.coalFleck : mithril ? P.arcane : P.ironFleck, coal ? 'coal' : mithril ? 'glow' : 'ore', dy);
+        const fleck = part(new THREE.OctahedronGeometry(0.28), coal ? P.coalFleck : mithril ? P.arcane : P.ironFleck, coal ? 'coal' : mithril ? 'beacon' : 'ore', dy);
         if (!coal && !mithril) (fleck.material as Mat).emissive.setHex(P.ironFleck).multiplyScalar(0.35); // faint ember glint so a node reads at range
         fleck.position.x = dx; fleck.position.z = dz;
       }

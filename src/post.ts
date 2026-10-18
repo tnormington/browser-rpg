@@ -9,6 +9,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import type { Pass } from 'three/examples/jsm/postprocessing/Pass.js';
+import { BLOOM_THRESHOLD } from './glow';
 
 export type Quality = 'high' | 'low';
 
@@ -16,7 +17,7 @@ export type Quality = 'high' | 'low';
 export const POST = {
   msaa: 4,
   ao: { radius: 1.2, distanceExponent: 1.5, thickness: 1.5, scale: 1.3, samples: 16, intensity: 0.95 },
-  bloom: { strength: 0.25, radius: 0.25, threshold: 1.5, knee: 1.5 },
+  bloom: { strength: 0.25, radius: 0.25, threshold: BLOOM_THRESHOLD, knee: 1.5 },
   grade: { crush: 0.015, shadowTint: [0.93, 0.99, 1.08], highlightTint: [1.06, 1.0, 0.93], tintAmount: 0.6, contrast: 1.08, vignette: 0.38, vignetteStart: 0.45 },
 };
 

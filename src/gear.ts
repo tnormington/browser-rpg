@@ -8,8 +8,10 @@
 //   legs   -> the split-off leg mesh recoloured, plus generated greaves (rung 2+) and knee cops (rung 3+)
 // Bare slots show skin. Looks come from gear-look.ts, keyed by item id with a tier fallback.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Equipment } from './sim/items';
 import { Appearance, appearanceOf } from './gear-look';
+import { cappedIntensity } from './glow';
 import { Instance, Prepared, spawn } from './models';
 import type { Motes } from './fx';
 
@@ -18,6 +20,26 @@ const GRIP = 0x2a1d14;
 const UP = new THREE.Vector3(0, 1, 0);
 /** Helmet and pauldron pieces are authored in rig units; these are the offsets from their bone (rig units) that seat them. Tuned by eye. */
 const HELM_LIFT = 0.55, SHOULDER_LIFT = 0.3;
+
+/** A faceted spike that curves: `segs` tapering four-sided frusta stacked along an arc. Base at the origin, heading `start` radians off +Y towards +X, turning `bend` more along its length. */
+function curvedSpike(r: number, len: number, start: number, bend: number, segs = 3) {
+  const parts: THREE.BufferGeometry[] = [], l = len / segs, p = new THREE.Vector3();
+  for (let i = 0; i < segs; i++) {
+    const a = start + bend * (i + 0.5) / segs;
+    const g = new THREE.CylinderGeometry(Math.max(0.002, r * (1 - (i + 1) / segs)), r * (1 - i / segs), l * 1.08, 4).translate(0, l / 2, 0);
+    parts.push(g.rotateZ(-a).translate(p.x, p.y, p.z));
+    p.x += Math.sin(a) * l; p.y += Math.cos(a) * l;
+  }
+  return mergeGeometries(parts)!;
+}
+
+/** A swept-back crest fin in profile (x forward, y up, `h` tall, `len` front to back), `thick` wide, centred on the skull's midline. */
+function crestFin(h: number, len: number, thick: number) {
+  const s = new THREE.Shape();
+  s.moveTo(0.4 * len, 0); s.lineTo(0.2 * len, 0.55 * h); s.lineTo(-0.15 * len, h); s.lineTo(-0.6 * len, 0.7 * h); s.lineTo(-0.85 * len, 0.1 * h); s.lineTo(-0.6 * len, 0);
+  const g = new THREE.ExtrudeGeometry(s, { depth: thick, bevelEnabled: false });
+  return g.rotateY(-Math.PI / 2).translate(thick / 2, 0, 0);
+}
 
 interface Mounted { id: string | null; group: THREE.Object3D | null; materials: THREE.Material[] }
 const empty = (): Mounted => ({ id: null, group: null, materials: [] });
@@ -80,14 +102,22 @@ export class PlayerGear {
     return m;
   }
 
-  /** Per-piece material: `trim` parts carry the cold glow, the main tint carries the metal response. */
+  /** Per-piece material: `trim` is the darker secondary colour, the main tint carries the metal response. Neither glows: only inlays and the blade do, so plate is never lit all over. */
   private material(ap: Appearance, trim = false): THREE.MeshStandardMaterial {
     const m = new THREE.MeshStandardMaterial({
       color: trim ? ap.trim : ap.tint, metalness: trim ? Math.min(ap.metal, 0.6) : ap.metal, roughness: trim ? Math.min(1, ap.rough + 0.15) : ap.rough, flatShading: true,
     });
-    if (trim && ap.glow) { m.emissive.setHex(ap.glow); m.emissiveIntensity = ap.glowI; }
     return m;
   }
+
+  /** A glowing inlay (vein, seam): the one place the tier's cold emissive lives on generated geometry, capped under the bloom threshold. */
+  private inlay(ap: Appearance): THREE.MeshStandardMaterial {
+    const m = new THREE.MeshStandardMaterial({ color: ap.trim, metalness: 0.3, roughness: 0.4, flatShading: true, side: THREE.DoubleSide });
+    m.emissive.setHex(ap.glow || 0); m.emissiveIntensity = ap.glow ? cappedIntensity(ap.glow, ap.glowI * 1.8) : 0;
+    return m;
+  }
+
+  private double(m: THREE.MeshStandardMaterial) { const d = m.clone(); d.side = THREE.DoubleSide; return d; }
 
   /** Recolour a glb piece's materials by name: `main` names take the tint, `trim` names the trim (and the glow). */
   private restyle(mats: THREE.Material[], ap: Appearance, main: string[], trim: string[], blade = false) {
@@ -99,7 +129,7 @@ export class PlayerGear {
       mat.color.setHex(isMain ? ap.tint : ap.trim);
       mat.metalness = isMain ? ap.metal : Math.min(ap.metal, 0.6);
       mat.roughness = isMain ? ap.rough : Math.min(1, ap.rough + 0.15);
-      if (ap.glow && (isTrim || blade)) { mat.emissive.setHex(ap.glow); mat.emissiveIntensity = isTrim ? ap.glowI : ap.glowI * 0.4; }
+      if (ap.glow && blade && (isTrim || isMain)) { mat.emissive.setHex(ap.glow); mat.emissiveIntensity = cappedIntensity(ap.glow, isTrim ? ap.glowI : ap.glowI * 0.4); }
       mat.needsUpdate = true;
     }
   }
@@ -151,11 +181,24 @@ export class PlayerGear {
       this.restyle(helm.materials, ap, ['Grey'], ['DarkGrey']);
       mats.push(...helm.materials);
       g.add(helm.root);
-      if (ap.rung >= 3) { // a crest fin along the skull: the silhouette cue from behind
-        const h = ap.rung >= 4 ? 0.34 : 0.22;
-        this.part(new THREE.BoxGeometry(0.05, h, 0.5), trim, w, [0, 0.27 + h / 2 - 0.05, -0.02]);
+      if (ap.rung >= 3) { // a swept crest along the skull: the silhouette cue from behind
+        const h = ap.rung >= 4 ? 0.5 : 0.28;
+        this.part(crestFin(h, 0.62, ap.rung >= 4 ? 0.07 : 0.05), trim, w, [0, 0.24, -0.02]);
+        const vein = this.inlay(ap);
+        mats.push(vein);
+        this.part(new THREE.BoxGeometry(ap.rung >= 4 ? 0.1 : 0.08, h * 0.7, 0.04), vein, w, [0, 0.24 + h * 0.55, -0.2 * h / 0.5], [0.55, 0, 0]); // vein up the crest's back edge, standing proud of the fin
+        if (ap.rung >= 4) {
+          // aventail: a flared plate over the nape, with a glowing seam down it: the read from behind at play distance
+          const back = new THREE.CylinderGeometry(0.34, 0.46, 0.3, 6, 1, true, Math.PI / 2, Math.PI);
+          const plate = this.double(trim);
+          mats.push(plate);
+          this.part(back, plate, w, [0, -0.24, 0]);
+          this.part(new THREE.BoxGeometry(0.06, 0.28, 0.04), vein, w, [0, -0.24, -0.45]);
+          this.part(new THREE.CylinderGeometry(0.455, 0.465, 0.03, 6, 1, true, Math.PI / 2, Math.PI), vein, w, [0, -0.38, 0]); // hem line
+          // horns: three-piece curved spikes that sweep out and back up
+          for (const s of [-1, 1]) this.part(curvedSpike(0.075, 0.55, 1.1, -0.9), trim, w, [s * 0.26, 0.14, 0], [0, 0, 0]).scale.x = s;
+        }
       }
-      if (ap.rung >= 4) for (const s of [-1, 1]) this.part(new THREE.ConeGeometry(0.06, 0.34, 4), trim, w, [s * 0.3, 0.3, 0], [0, 0, -s * 0.5]);
     }
     g.add(w);
     this.mount('Head', g, this.at('Head').add(new THREE.Vector3(0, HELM_LIFT, 0)));
@@ -173,9 +216,12 @@ export class PlayerGear {
     const mats: THREE.Material[] = [...pads.materials];
     g.add(pads.root);
     if (ap.rung >= 3) { // spikes on the shoulders: horizontal read at gathering distance
-      const trim = this.material(ap, true), h = ap.rung >= 4 ? 0.3 : 0.18;
-      mats.push(trim);
-      for (const s of [-1, 1]) this.part(new THREE.ConeGeometry(0.06, h, 4), trim, w, [s * 0.4, 0.07 + h / 2, 0]);
+      const trim = this.material(ap, true), vein = this.inlay(ap), h = ap.rung >= 4 ? 0.3 : 0.18;
+      mats.push(trim, vein);
+      for (const s of [-1, 1]) {
+        this.part(curvedSpike(0.07, h * 1.7, 0.5, 0.5), trim, w, [s * 0.34, 0.08, 0]).scale.x = s;
+        this.part(new THREE.OctahedronGeometry(0.075), vein, w, [s * 0.34, 0.08, 0]); // a lit collar where the spike meets the plate
+      }
     }
     g.add(w);
     this.mount('Torso', g, this.at('Torso').add(new THREE.Vector3(0, SHOULDER_LIFT, 0)));
