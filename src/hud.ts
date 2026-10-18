@@ -7,6 +7,7 @@ import { InvAction } from './sim/inventory';
 import { SKILLS } from './sim/skills';
 import { NODE_TYPES } from './sim/gathering';
 import { recipeById } from './sim/crafting';
+import { clearLine } from './sight';
 import { InventoryUi } from './inventory-ui';
 import { SkillsUi } from './skills-ui';
 import { ForgeUi } from './forge-ui';
@@ -352,7 +353,7 @@ export class Hud {
     const cand: { e: Enemy; scr: { x: number; y: number }; d: number }[] = [];
     for (const e of s.enemies) {
       const d = Math.hypot(e.x - p.x, e.z - p.z);
-      const scr = e.state !== 'dead' && d < 28 ? this.project(e.x, ENEMY_TYPES[e.type].radius * 2 + (e.type === 'brute' ? 1.6 : 0.9), e.z) : null;
+      const scr = e.state !== 'dead' && d < 28 && clearLine(p, e) ? this.project(e.x, ENEMY_TYPES[e.type].radius * 2 + (e.type === 'brute' ? 1.6 : 0.9), e.z) : null;
       if (scr && !this.behindHud(blockers, scr)) cand.push({ e, scr, d });
     }
     // the target first, then nearest: a plate that would print over one already placed (a pack) is lifted above it, never overprinted
@@ -429,7 +430,7 @@ export class Hud {
     const cand: { n: ResourceNode; scr: { x: number; y: number }; d: number }[] = [];
     for (const n of s.nodes) {
       const d = Math.hypot(n.x - p.x, n.z - p.z);
-      const scr = d < 16 ? this.project(n.x, n.type === 'tree' ? 5 : 2.4, n.z) : null;
+      const scr = d < 16 && clearLine(p, n) ? this.project(n.x, n.type === 'tree' ? 5 : 2.4, n.z) : null;
       if (scr && !this.behindHud(blockers, scr)) cand.push({ n, scr, d });
     }
     cand.sort((a, b) => a.d - b.d);
