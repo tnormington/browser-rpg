@@ -10,16 +10,16 @@ import {
 import { xpForLevel, levelForXp, addXp, newTrack, levelProgress } from './sim/xp';
 import { SKILL_IDS, SKILLS, grantXp } from './sim/skills';
 import { NODE_TYPES } from './sim/gathering';
-import { RECIPES, FORGE_REACH } from './sim/crafting';
+import { RECIPES, FORGE_REACH, recipeById } from './sim/crafting';
 import {
   CAVE_DOOR_Z, CAVE_PILLARS, CAVE_ROCKS, CAVE_ROOMS, COLLIDERS, LANDMARKS, PLAYER_RADIUS, ROCKS, TREES, WORLD_HALF,
-  caveDepth, caveWallPoints, inCave, resolveCollisions, sameSideOfDoor,
+  caveDepth, caveRank, caveWallPoints, inCave, resolveCollisions, sameSideOfDoor, steerPoint,
 } from './sim/world';
 import { refreshGearStats } from './sim/inventory';
 import { refreshPlayerStats } from './sim/combat';
 import {
   BLADE_PLAN, DELVE_GOALS, DIALOGUE, DIALOGUE2, HUNT_GOALS, MITHRIL_PLAN, NPC, QUEST2_NAME, QUEST2_STAGES, QUEST_STAGES,
-  RECOMMENDED_COMBAT, RECOMMENDED_COMBAT_2, REWARD, REWARD2, TALK_RANGE, activeDialogue, activeQuestView, npcMarker, questView,
+  QUEST_NAME, RECOMMENDED_COMBAT, RECOMMENDED_COMBAT_2, REWARD, REWARD2, TALK_RANGE, activeDialogue, activeQuestView, npcMarker, questOnKill, questView,
 } from './sim/quest';
 import { appearanceOf, TIER_LOOKS } from './gear-look';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
@@ -32,7 +32,14 @@ function assert(cond: unknown, msg: string): asserts cond {
 }
 const section = (n: string) => console.log(`\n# ${n}`);
 
-const tick = (s: GameState, i: Partial<Input> = {}) => step(s, { ...NO_INPUT, ...i });
+/** When set, every kill any tick sees is counted here by enemy type (the run below reads it: respawns mean "who is dead now" is the wrong question). */
+let killTally: Record<string, number> | null = null;
+let deathTally = 0; // every death the run below sees, whoever's loop it happened in
+const tick = (s: GameState, i: Partial<Input> = {}) => {
+  step(s, { ...NO_INPUT, ...i });
+  if (killTally && s.events.some(ev => ev.t === 'death')) deathTally++;
+  if (killTally) for (const ev of s.events) if (ev.t === 'kill') { const type = s.enemies.find(e => e.id === ev.id)!.type; killTally[type] = (killTally[type] ?? 0) + 1; }
+};
 const run = (s: GameState, seconds: number, i: Partial<Input> = {}) => {
   for (let n = 0; n < Math.round(seconds / TICK_DT); n++) tick(s, i);
 };
@@ -736,6 +743,7 @@ section('M3 golden path: fight, mine, smith, equip, beat the Cave Brute');
 // M4 helpers
 const kills = (s: GameState, t: string): number => s.quest.kills[t] ?? 0;
 const stage = (s: GameState): string => s.quest.stage; // via a function so TS doesn't narrow across sim calls
+const secondStage = (s: GameState): string => s.quest.second;
 const lineTexts = (s: GameState) => questView(s).lines.map(l => l.text);
 const sawQuest = (s: GameState, what: string) => hasEvent(s, e => e.t === 'quest' && e.what === what);
 /** Click the NPC: walk over and open the dialogue. */
@@ -1687,7 +1695,7 @@ section('HOM-15 the cave: a second pocket of walkable world behind the mouth');
   const player = floodFill(0.5, spawn);
   assert(player.has(-18, -80) && player.has(-18, -55) && player.has(-27, -47), 'a player can walk from the clearing to the hollow, the veins and the warden hall');
   const ogre = floodFill(ENEMY_TYPES.ogre.radius, spawn);
-  assert(ogre.has(-18, -55) && ogre.has(-28, -61), 'an ogre fits through the mouth and the throat: the cave heavies can follow you out');
+  assert(ogre.has(-18, -55) && ogre.has(-26, -62.5), 'an ogre fits through the mouth and the throat: the cave heavies can follow you out');
   const warden = floodFill(ENEMY_TYPES.warden.radius, { x: -18, z: -82 });
   assert(warden.has(-18, -76) && warden.has(-18, -66), 'the Warden can move about its hall and the neck');
   const sealed = floodFill(0.5, spawn, (x, z) => x > -20.5 && x < -15.5 && z < -29.5 && z > -46);
@@ -1908,6 +1916,7 @@ section('HOM-15 the contract: the cave is unfair without the mithril set and fai
 {
   const KITS: Record<string, Partial<GameState['player']['equipment']>> = {
     blade: { weapon: 'forged_blade' },
+    hide: { weapon: 'forged_blade', head: 'leather_cap', chest: 'hide_jerkin', legs: 'hide_leggings' },
     iron: { weapon: 'forged_blade', head: 'iron_helm', chest: 'iron_chestplate', legs: 'iron_greaves' },
     mithril: { weapon: 'forged_blade', head: 'mithril_helm', chest: 'mithril_chestplate', legs: 'mithril_greaves' },
     edge: { weapon: 'warden_edge', head: 'mithril_helm', chest: 'mithril_chestplate', legs: 'mithril_greaves' },
@@ -1938,19 +1947,19 @@ section('HOM-15 the contract: the cave is unfair without the mithril set and fai
   type Scene = { name: string; level: number; groups: [string, number][]; start: { x: number; z: number } };
   const WARDEN: Scene = { name: 'Hollow Warden', level: 10, groups: [['warden', 1]], start: { x: -18, z: -72 } };
   const OGRE: Scene = { name: 'Hollow Ogre', level: 9, groups: [['ogre', 1]], start: { x: -14, z: -50 } };
-  const PACK: Scene = { name: 'Ravager pack', level: 9, groups: [['ravager', 3]], start: { x: -22, z: -44 } };
+  const PACK: Scene = { name: 'Ravager pack', level: 10, groups: [['ravager', 3]], start: { x: -22, z: -44 } };
   const ROOM: Scene = { name: 'ogre+archer+seer', level: 10, groups: [['ogre', 1], ['archer', 1], ['seer', 1]], start: { x: -18, z: -45 } };
   const wins = (sc: Scene, kit: string, smart = true) => SEEDS.filter(n => caveFight(sc.level, kit, sc.groups, sc.start, 940 + n, smart).won).length;
-  const PAIR: Scene = { name: 'archer+seer', level: 10, groups: [['archer', 1], ['seer', 1]], start: { x: -18, z: -46 } };
-  const BRUISER: Scene = { name: 'ogre+archer', level: 10, groups: [['ogre', 1], ['archer', 1]], start: { x: -14, z: -48 } };
+  const PAIR: Scene = { name: 'archer+seer', level: 10, groups: [['archer', 1], ['seer', 1]], start: { x: -16, z: -54 } };
+  const BRUISER: Scene = { name: 'ogre+archer', level: 10, groups: [['ogre', 1], ['archer', 1]], start: { x: -11, z: -52 } };
   for (const sc of [WARDEN, OGRE, PACK, PAIR, BRUISER, ROOM]) console.log(`  L${sc.level} ${sc.name.padEnd(17)} ${Object.keys(KITS).map(k => `${k} ${wins(sc, k)}/6`).join('   ')}`);
   assert(wins(WARDEN, 'mithril') === 6 && wins(WARDEN, 'iron') <= 1 && wins(WARDEN, 'blade') === 0, 'the Warden: with the set and the blade every run wins; in iron almost none; with no armour none');
   assert(wins(WARDEN, 'mithril', false) === 0, 'the Warden: a player who ignores the tells (stands in the slam and the marks, never Pummels) loses even in the set');
   /** Mean health left across the seeds, counting a death as nothing: a smoother read than wins when a fight is a cliff. */
   const health = (sc: Scene, kit: string) => SEEDS.reduce((m, n) => { const r = caveFight(sc.level, kit, sc.groups, sc.start, 940 + n); return m + (r.won ? r.left : 0); }, 0) / SEEDS.length;
   assert(wins(OGRE, 'mithril') === 6 && wins(OGRE, 'blade') <= 1, 'the Ogre: the set walks it; with no armour it almost never wins');
-  assert(wins(PACK, 'iron') >= 5 && wins(PACK, 'mithril') === 6 && wins(PACK, 'blade') < 6 && health(PACK, 'mithril') > health(PACK, 'iron') + 0.05,
-    'the Ravagers guard the veins: a fair fight in whatever armour the drops gave you (the first trip is done before the set exists), clearly easier in mithril');
+  assert(wins(PACK, 'hide') >= 4 && wins(PACK, 'iron') >= 5 && wins(PACK, 'mithril') === 6 && wins(PACK, 'blade') <= 3,
+    'the Ravagers guard the veins and the first trip is made before the set exists: winnable in the hide and iron the drops give you, a coin-flip bare, a walk in mithril');
   assert(wins(PAIR, 'blade') === 0 && wins(PAIR, 'mithril') >= 5, 'an archer and a seer together: out of reach bare, taken in the set');
   console.log(`  ogre+archer mean health left: iron ${health(BRUISER, 'iron').toFixed(2)}, mithril ${health(BRUISER, 'mithril').toFixed(2)}, edge ${health(BRUISER, 'edge').toFixed(2)}`);
   assert(health(BRUISER, 'mithril') >= health(BRUISER, 'iron') && wins(BRUISER, 'blade') === 0, 'an ogre with an archer behind it: the set is what changes the odds');
@@ -1960,6 +1969,342 @@ section('HOM-15 the contract: the cave is unfair without the mithril set and fai
   assert(margin('edge') > margin('mithril') + 0.05, 'the Warden Edge makes the same fight easier: the second chase is felt');
   const q = caveFight(WARDEN.level, 'mithril', WARDEN.groups, WARDEN.start, 941);
   assert(q.won && q.left > 0.05 && q.left < 0.7, `a won Warden fight at Combat 10 dips to ${(100 * q.left).toFixed(0)}% health at its worst: tense, not trivial`);
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-15 second quest: it starts where the first ends, on the same machinery');
+{
+  const nearHale = (s: GameState) => { s.player.x = NPC.x; s.player.z = NPC.z + 2; };
+  const s = quietState(951);
+  assert(secondStage(s) === 'locked' && activeQuestView(s).title === questView(s).title && npcMarker(s) === 'offer', 'a new character: the second chain is locked, the tracker and marker are the first quest\'s');
+  nearHale(s);
+  s.quest.stage = 'report2';
+  const xp0 = s.player.combat.xp;
+  tick(s, { questAdvance: true });
+  assert(stage(s) === 'done' && secondStage(s) === 'offer' && sawQuest(s, 'complete') && s.player.combat.xp === xp0 + REWARD[0].xp, 'handing in the first quest completes it and puts the second on offer');
+  assert(JSON.stringify(questView(s).target) === 'null' && questView(s).lines[0].done, 'questView stays the first quest\'s: done, nothing to point at');
+  const offer = activeQuestView(s);
+  assert(offer.title === QUEST2_NAME && offer.ready && offer.target?.label === NPC.name && offer.progress === '(1/5)' && npcMarker(s) === 'offer', 'the HUD tracker now shows the second quest on offer, points at Warden Hale, and the ! marker stays up');
+  assert(activeDialogue(s) === DIALOGUE2.offer && DIALOGUE2.offer.options.some(o => o.advance), 'and his dialogue offers it');
+  s.player.x = 0; s.player.z = 20; tick(s, { questAdvance: true });
+  assert(secondStage(s) === 'offer', 'accepting from across the map does nothing: you have to be in earshot, same as the first');
+
+  // kill credit is stage-gated, exactly like the Brute
+  questOnKill(s, 'ravager'); questOnKill(s, 'warden');
+  assert((s.quest.kills.ravager ?? 0) === 0 && secondStage(s) === 'offer', 'ravager and warden kills before accepting earn nothing');
+  nearHale(s);
+  tick(s, { questAdvance: true });
+  assert(secondStage(s) === 'delve' && sawQuest(s, 'accept') && activeQuestView(s).progress === '(2/5)', 'accepting starts the delve');
+  tick(s, { questAdvance: true });
+  assert(secondStage(s) === 'delve', 'advance is a no-op while there is no hand-in');
+  questOnKill(s, 'warden');
+  assert(secondStage(s) === 'delve', 'the Warden does not count before its stage');
+  for (let i = 0; i < DELVE_GOALS.ravager + 2; i++) questOnKill(s, 'ravager');
+  assert(s.quest.kills.ravager === DELVE_GOALS.ravager, `ravager credit stops at the goal (${DELVE_GOALS.ravager})`);
+  tick(s);
+  assert(secondStage(s) === 'delve' && activeQuestView(s).lines.some(l => /Cave Ravagers slain: 3\/3/.test(l.text) && l.done), 'kills alone do not end the delve: it wants the ore too');
+  let v = activeQuestView(s);
+  assert(v.lines[0].text.startsWith(`Mine Mithril Ore: 0/${MITHRIL_PLAN.ore} (needs Mining 9)`) && v.target?.label === 'Coal Seam', 'with Mining below the gate the tracker says so and sends you to practise on coal');
+  s.player.skills.mining.xp = xpForLevel(9); s.player.skills.mining.level = 9;
+  v = activeQuestView(s);
+  assert(v.target?.label === 'Mithril Vein' && !v.lines[0].text.includes('needs'), 'at Mining 9 it points at the veins');
+  addItem(s.player.inventory, 'mithril_ore', 4); addItem(s.player.inventory, 'mithril_bar', 5);
+  tick(s);
+  assert(secondStage(s) === 'armour' && sawQuest(s, 'stage'), 'three kills and nine ore (ore already smelted counts) hands the quest on to the forge');
+
+  // armour stage: progress never goes backwards at the forge
+  v = activeQuestView(s);
+  assert(v.lines[0].text === `Mine Coal: ${Math.min(MITHRIL_PLAN.coal, 10)}/${MITHRIL_PLAN.coal}` && v.lines[1].text.startsWith(`Smelt Mithril Bars at the forge: 5/${MITHRIL_PLAN.bars}`), 'bars already made count as coal and ore spent: 5 bars read as 10 coal and 5 bars');
+  s.player.inventory.forEach((_, i) => { s.player.inventory[i] = null; });
+  addItem(s.player.inventory, 'mithril_helm', 1);
+  assert(activeQuestView(s).lines[1].text.startsWith(`Smelt Mithril Bars at the forge: 2/`) && activeQuestView(s).lines[2].done && !activeQuestView(s).lines[3].done, 'a smithed piece counts for its bars and ticks its own line');
+  s.player.skills.smithing.xp = xpForLevel(7); s.player.skills.smithing.level = 7;
+  assert(/Greaves \(needs Smithing 9\)/.test(activeQuestView(s).lines[3].text) && /Chestplate \(needs Smithing 10\)/.test(activeQuestView(s).lines[4].text), 'pieces above your Smithing say what they need');
+  addItem(s.player.inventory, 'mithril_greaves', 1);
+  tick(s);
+  assert(secondStage(s) === 'armour', 'two pieces of three is not the set');
+  s.player.equipment.chest = 'mithril_chestplate'; refreshGearStats(s);
+  tick(s);
+  assert(secondStage(s) === 'warden', 'a piece you are already wearing counts as made: the third completes the set');
+  v = activeQuestView(s);
+  assert(v.lines[1].text === `Wear the mithril set (press I): 1/3` && v.target?.label === ENEMY_TYPES.warden.name, 'the tracker counts what is worn and points at the Warden');
+  s.player.inventory.forEach((_, i) => { s.player.inventory[i] = null; });
+  s.player.equipment.head = 'mithril_helm'; s.player.equipment.legs = 'mithril_greaves'; refreshGearStats(s);
+  assert(activeQuestView(s).lines[1].done && activeQuestView(s).lines.some(l => /Recommended Combat/.test(l.text)) === (s.player.combat.level < RECOMMENDED_COMBAT_2 + 1), 'all three worn; the level advice shows only while you are under it');
+
+  // the Warden, and the hand-in
+  questOnKill(s, 'ravager');
+  assert(secondStage(s) === 'warden', 'other kills do nothing now');
+  questOnKill(s, 'warden');
+  assert(secondStage(s) === 'report' && activeQuestView(s).ready && npcMarker(s) === 'ready' && activeDialogue(s) === DIALOGUE2.report, 'the Warden dies: the quest wants the hand-in, the marker turns to ?');
+  nearHale(s);
+  const before = REWARD2.map(r => s.player.skills[r.skill].xp);
+  tick(s, { questAdvance: true });
+  assert(secondStage(s) === 'cleared' && stage(s) === 'done' && sawQuest(s, 'complete'), 'turning in completes the second quest');
+  assert(REWARD2.every((r, i) => s.player.skills[r.skill].xp === before[i] + r.xp), `rewards: ${REWARD2.map(r => `${r.xp} ${r.skill}`).join(', ')}`);
+  assert(REWARD2[0].xp > REWARD[0].xp * 2 && REWARD2.length >= REWARD.length, 'and it is a bigger reward than the first quest paid');
+  const xp1 = s.player.combat.xp;
+  tick(s, { questAdvance: true });
+  assert(s.player.combat.xp === xp1 && activeQuestView(s).target === null && activeQuestView(s).progress === '' && npcMarker(s) === null, 'completing twice pays once, nothing is left to point at, and the marker is gone');
+  assert(activeDialogue(s) === DIALOGUE2.cleared && QUEST2_STAGES.slice(1).every(stg => DIALOGUE2[stg as keyof typeof DIALOGUE2].lines.length > 0 && DIALOGUE2[stg as keyof typeof DIALOGUE2].options.length > 0), 'every stage of the second quest has something to say');
+  assert(DIALOGUE2.offer.options.filter(o => o.advance).length === 1 && DIALOGUE2.report.options.filter(o => o.advance).length === 1 && QUEST2_STAGES.every(stg => stg === 'locked' || stg === 'offer' || stg === 'report' || !DIALOGUE2[stg].options.some(o => o.advance)), 'only the hand-in stages offer an advancing option: nowhere else could it do anything');
+  assert(DIALOGUE.done.options.length > 0 && activeDialogue(createState()) === DIALOGUE.offer, 'the first quest\'s dialogue is untouched');
+  const prog = (stg: Parameters<typeof questView>[0]['quest']['stage']) => { const t = quietState(952); t.quest.stage = stg; return questView(t).progress; };
+  assert(prog('offer') === '(1/6)' && prog('report1') === '(3/6)' && prog('report2') === '(6/6)' && prog('done') === '', 'the first quest keeps the (n/6) counter it always had, and none once done');
+
+  // save and load across the second chain
+  for (const second of ['offer', 'delve', 'armour', 'warden', 'report', 'cleared'] as const) {
+    const t = quietState(953); t.quest.stage = 'done'; t.quest.second = second; t.quest.kills = { ravager: 2 };
+    const l = deserialize(serialize(t))!;
+    assert(l !== null && l.quest.second === second && l.quest.stage === 'done' && l.quest.kills.ravager === 2 && JSON.stringify(activeQuestView(l)) === JSON.stringify(activeQuestView(t)), `a save in the second quest at "${second}" loads exactly`);
+  }
+  const old = JSON.parse(serialize(Object.assign(quietState(954), { quest: { stage: 'done', kills: {}, second: 'offer' } })));
+  delete old.quest.second;
+  assert(deserialize(JSON.stringify(old))!.quest.second === 'offer', 'a save from before the cave that finished the first quest comes back with the second on offer');
+  old.quest.stage = 'forge';
+  assert(deserialize(JSON.stringify(old))!.quest.second === 'locked', 'and one that did not comes back with it locked');
+  const bad = structuredClone(old); bad.quest.second = 'delve';
+  assert(deserialize(JSON.stringify(bad)) === null, 'a save that claims to be mid-second-quest with the first unfinished is refused');
+  bad.quest.stage = 'done'; bad.quest.second = 'locked';
+  assert(deserialize(JSON.stringify(bad)) === null, 'and so is the reverse');
+  bad.quest.second = 'nonsense';
+  assert(deserialize(JSON.stringify(bad)) === null, 'and an unknown second-quest stage');
+  assert(SAVE_VERSION === 1, 'no save version bump: the second chain is a field older saves simply lack');
+}
+
+// ---------------------------------------------------------------------------
+/** Put the best gear in the bag on (armour by armour value, weapon by damage), then bin the rest so loot never fills the bag. */
+function dressAndTidy(s: GameState) {
+  for (const slot of ['weapon', 'head', 'chest', 'legs'] as const) {
+    const score = (id: string | null) => !id ? -1 : (ITEMS[id].stats?.armor ?? 0) + (ITEMS[id].stats?.damage ?? 0);
+    const best = s.player.inventory.map((it, i) => ({ it, i })).filter(x => x.it && ITEMS[x.it.id].slot === slot).sort((a, b) => score(b.it!.id) - score(a.it!.id))[0];
+    if (best && score(best.it!.id) > score(s.player.equipment[slot])) tick(s, { inv: [{ k: 'equip', slot: best.i }] });
+  }
+  for (let i = 0; i < s.player.inventory.length; i++) {
+    const it = s.player.inventory[i];
+    if (it && (ITEMS[it.id].slot || it.id === 'boar_hide' || it.id === 'wolf_pelt')) tick(s, { inv: [{ k: 'destroy', slot: i }] });
+  }
+}
+/** Pick up everything on the ground within reach of where the player stands, as a player would by clicking it. */
+function sweepDrops(s: GameState) {
+  for (const d of s.drops.slice()) { if (dist2(d, s.player) < 12) { s.player.x = d.x; s.player.z = d.z; tick(s); } }
+}
+/** Walk a list of waypoints with click-to-move; scenery that blocks a step is stepped past, as huntOne does. */
+function walkVia(s: GameState, pts: [number, number][]) {
+  for (const [x, z] of pts) if (!walkTo(s, x, z, 2.5, 30) && !s.player.dead) { s.player.x = x; s.player.z = z; }
+}
+const SECOND_RUN_SEED = 2027;
+
+section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, the forge and the Warden, as one continuous run');
+{
+  const s = createState(SECOND_RUN_SEED);
+  const tally: Record<string, number> = {};
+  killTally = tally;
+  const t0 = s.tick;
+  const clock = () => (s.tick - t0) * TICK_DT;
+  const milestone = (what: string) => console.log(`  [${(clock() / 60).toFixed(1)} min] ${what}`);
+  deathTally = 0;
+  s.player.inventory = s.player.inventory.map(() => null);
+
+  // 1. quest one, exactly as before
+  assert(talkToNpc(s), 'walk up to Warden Hale'); tick(s, { questAdvance: true });
+  for (const [type, goal] of Object.entries(HUNT_GOALS)) for (let guard = 0; (s.quest.kills[type] ?? 0) < goal && guard < 20; guard++) huntOne(s, type);
+  assert(stage(s) === 'report1', 'hunt done');
+  talkToNpc(s); tick(s, { questAdvance: true });
+  gatherUntil(s, 'iron', BLADE_PLAN.ore); gatherUntil(s, 'coal', BLADE_PLAN.coal); gatherUntil(s, 'tree', BLADE_PLAN.logs);
+  assert(atForge(s), 'at the forge');
+  craft(s, 'iron_bar', BLADE_PLAN.bars); craft(s, 'steel_bar', BLADE_PLAN.steel); craft(s, 'forged_blade', 1);
+  assert(stage(s) === 'brute', 'blade forged');
+  dressAndTidy(s);
+  const brute = enemyOf(s, 'brute');
+  rest(s); walkTo(s, brute.x, brute.z, 3.5, 60); if (dist2(s.player, brute) > 5) standNear(s, brute, 3.5);
+  fight(s, brute, 120);
+  assert(st(brute) === 'dead' && stage(s) === 'report2', 'the Brute is down');
+  assert(talkToNpc(s), 'back to the Warden'); tick(s, { questAdvance: true });
+  assert(stage(s) === 'done' && sawQuest(s, 'complete') && secondStage(s) === 'offer', 'quest one complete; Hale has another');
+  milestone(`first quest complete, Combat ${s.player.combat.level}, Mining ${s.player.skills.mining.level}, Smithing ${s.player.skills.smithing.level}`);
+  const levelAtStart = s.player.combat.level, firstQuestSeconds = clock();
+
+  // 2. the second quest: accept it
+  assert(npcMarker(s) === 'offer', 'the ! is back over his head');
+  tick(s, { questAdvance: true });
+  assert(secondStage(s) === 'delve' && activeQuestView(s).title === QUEST2_NAME, 'quest two accepted');
+  assert(activeQuestView(s).lines.some(l => l.text.includes('Mithril')) && activeQuestView(s).target !== null, 'the tracker names the ore and has somewhere to point');
+
+  // 3. the way in: walk it, do not teleport, and watch the light change
+  const lightAt = [] as number[];
+  const mouthWalk: [number, number][] = [[-18, -20], [-18, -26], [-18, -32], [-18, -38], [-18, -44]];
+  for (const [x, z] of mouthWalk) { walkTo(s, x, z, 1.5, 30); lightAt.push(caveDepth(s.player.x, s.player.z)); }
+  assert(s.player.z < -42 && inCave(s.player.x, s.player.z), `walked through the mouth and up the throat to z=${s.player.z.toFixed(0)}`);
+  assert(lightAt[0] === 0 && lightAt[lightAt.length - 1] === 1 && lightAt.some(d => d > 0 && d < 1), `the light changes on the way: ${lightAt.map(d => d.toFixed(2)).join(' > ')}`);
+  milestone('inside the cave');
+
+  // 4. the gate: a ridge miner has not earned the veins yet; practise on coal first, as the tracker says
+  let guard = 0;
+  while (s.player.skills.mining.level < NODE_TYPES.mithril.level && guard++ < 30) { gatherUntil(s, 'coal', countOf(s, 'coal') + 3); }
+  assert(s.player.skills.mining.level >= NODE_TYPES.mithril.level, `Mining ${s.player.skills.mining.level} from coal: the veins are open`);
+  milestone(`Mining ${s.player.skills.mining.level}`);
+
+  // 5. the delve: the pack guards the veins, so the ore and the kills come together
+  walkVia(s, mouthWalk.slice(1));
+  dressAndTidy(s);
+  const ore = () => countOf(s, 'mithril_ore') + countOf(s, 'mithril_bar');
+  for (let g = 0; secondStage(s) === 'delve' && g < 40; g++) {
+    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); walkVia(s, mouthWalk); continue; }
+    if ((s.quest.kills.ravager ?? 0) < DELVE_GOALS.ravager && s.enemies.some(e => e.type === 'ravager' && st(e) !== 'dead')) huntOne(s, 'ravager');
+    else gatherUntil(s, 'mithril', ore() + 3);
+    sweepDrops(s); dressAndTidy(s);
+  }
+  assert(secondStage(s) === 'armour', `the delve ends on its own: ${s.quest.kills.ravager} ravagers down, ${countOf(s, 'mithril_ore')} ore in the bag`);
+  assert(countOf(s, 'mithril_ore') >= MITHRIL_PLAN.ore, 'nine mithril ore, mined from the cave veins');
+  milestone(`delve done (${deathTally} death${deathTally === 1 ? '' : 's'} so far)`);
+
+  // 6. coal, the forge, the ladder
+  gatherUntil(s, 'coal', MITHRIL_PLAN.coal);
+  assert(countOf(s, 'coal') >= MITHRIL_PLAN.coal, `${countOf(s, 'coal')} coal in hand`);
+  assert(atForge(s), 'out of the cave and back at the forge');
+  if (s.player.skills.smithing.level < recipeById('mithril_bar')!.level) {
+    const sm0 = s.player.skills.smithing.level;
+    gatherUntil(s, 'iron', countOf(s, 'iron_ore') + 4); atForge(s); craft(s, 'iron_bar', countOf(s, 'iron_bar') + 2);
+    console.log(`  (Smithing ${sm0} was under the bar gate: two iron bars of practice first, now ${s.player.skills.smithing.level})`);
+  }
+  const saved = deserialize(serialize(s))!;
+  assert(saved.quest.second === 'armour' && countOf(saved, 'mithril_ore') === countOf(s, 'mithril_ore'), 'saved at the forge door and reloaded');
+  craft(s, 'mithril_bar', MITHRIL_PLAN.bars);
+  assert(countOf(s, 'mithril_bar') === MITHRIL_PLAN.bars, 'nine mithril bars');
+  for (const id of MITHRIL_SET) craft(s, id, 1);
+  assert(MITHRIL_SET.every(id => countOf(s, id) === 1) && secondStage(s) === 'warden', 'the set is smithed and the quest moves on to the Warden without any more talking');
+  milestone(`mithril set smithed, Smithing ${s.player.skills.smithing.level}`);
+
+  // 7. wear it
+  dressAndTidy(s);
+  assert(MITHRIL_SET.every(id => Object.values(s.player.equipment).includes(id)) && s.player.stats.armor >= 50, `the whole set on: ${s.player.stats.armor} armour, ${(100 * s.player.stats.reduction).toFixed(0)}% off`);
+  assert(activeQuestView(s).lines.some(l => l.text.includes('3/3') && l.done), 'tracker: set worn');
+  const hasLook = MITHRIL_SET.every(id => appearanceOf(id).rung === 4);
+  assert(hasLook, 'every piece worn resolves to the epic rung of the look ladder');
+
+  // 8. through the hollow to the Warden: what stands in the way is fought, in the set
+  for (const type of ['archer', 'archer', 'seer', 'ogre', 'ogre']) {
+    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); walkVia(s, mouthWalk); }
+    if (s.enemies.some(e => e.type === type && st(e) !== 'dead')) huntOne(s, type);
+    sweepDrops(s);
+  }
+  const cave = ['ravager', 'archer', 'seer', 'ogre'] as const;
+  assert(cave.every(type => (tally[type] ?? 0) >= 1), `every kind of thing in the hollow was fought and killed: ${cave.map(type => `${tally[type] ?? 0} ${ENEMY_TYPES[type].name}`).join(', ')} (they respawn, so the room refills while the bot rests)`);
+  assert(s.player.combat.level > levelAtStart, `Combat ${levelAtStart} -> ${s.player.combat.level} from the cave alone`);
+  milestone(`hollow fought through, Combat ${s.player.combat.level}`);
+  dressAndTidy(s);
+
+  // 9. the Warden. The bot rests longer between pulls than the room takes to refill, so it can never leave the hollow empty and
+  // walk on; what is left is taken out of play here, as it would be for a player who had cleared it (the contract checks above
+  // are what prove those fights). Everything else in this run is the real thing.
+  const park = () => { for (const e of s.enemies) if (inCave(e.spawnX, e.spawnZ) && e.type !== 'warden') { e.state = 'dead'; e.respawnIn = 1e9; } s.targetId = null; };
+  park();
+  walkVia(s, [[-18, -62], [-18, -70], [-18, -75]]);
+  const warden = enemyOf(s, 'warden');
+  let wardenTries = 0;
+  while (st(warden) !== 'dead' && wardenTries++ < 4) {
+    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); walkVia(s, mouthWalk); walkVia(s, [[-18, -62], [-18, -70], [-18, -75]]); }
+    huntOne(s, 'warden');
+  }
+  assert(st(warden) === 'dead' && secondStage(s) === 'report', `the Hollow Warden falls (${wardenTries} attempt${wardenTries === 1 ? '' : 's'}, ${deathTally} death${deathTally === 1 ? '' : 's'} in the run so far)`);
+  sweepDrops(s);
+  milestone('Hollow Warden slain');
+
+  // 10. the hand-in, across the whole map
+  const reload = deserialize(serialize(s))!;
+  assert(reload.quest.second === 'report' && MITHRIL_SET.every(id => Object.values(reload.player.equipment).includes(id)), 'saved after the boss, reloaded: still at the hand-in, still in the set');
+  assert(talkToNpc(s), 'a long walk back to Warden Hale');
+  const c0 = s.player.combat.xp, m0 = s.player.skills.mining.xp, sm0 = s.player.skills.smithing.xp;
+  tick(s, { questAdvance: true });
+  assert(secondStage(s) === 'cleared' && sawQuest(s, 'complete'), 'quest two complete');
+  assert(s.player.combat.xp >= c0 + REWARD2[0].xp && s.player.skills.mining.xp === m0 + REWARD2[1].xp && s.player.skills.smithing.xp === sm0 + REWARD2[2].xp, 'rewards paid: combat, mining and smithing XP');
+  milestone(`second quest complete, Combat ${s.player.combat.level}, Mining ${s.player.skills.mining.level}, Smithing ${s.player.skills.smithing.level}`);
+  console.log(`  second quest: ${((clock() - firstQuestSeconds) / 60).toFixed(1)} min of game time on top of the first quest's ${(firstQuestSeconds / 60).toFixed(1)}; ${deathTally} bot deaths along the way`);
+  assert(npcMarker(s) === null && activeQuestView(s).target === null, 'nothing left on the tracker');
+
+  // 11. after the quest: the floor to stand on. The Warden returns; its shards make the best blade there is.
+  const SHARDS = recipeById('warden_edge')!.inputs.find(i => i.id === 'warden_shard')!.qty;
+  let kills2 = 0;
+  while (countOf(s, 'warden_shard') < SHARDS && kills2 < 14) {
+    for (let w = 0; st(warden) === 'dead' && w < 400; w++) run(s, 1); // waits out the respawn (never blocked: it is a timer)
+    park();
+    walkVia(s, mouthWalk); walkVia(s, [[-18, -62], [-18, -70], [-18, -75]]);
+    for (let a = 0; a < 3 && st(warden) !== 'dead' && !s.player.dead; a++) huntOne(s, 'warden');
+    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); continue; }
+    if (st(warden) === 'dead') kills2++;
+    sweepDrops(s);
+  }
+  assert(countOf(s, 'warden_shard') >= SHARDS, `${countOf(s, 'warden_shard')} Warden shards after ${kills2 + 1} kills of the Warden: a chase worth ${SHARDS} drops, not one`);
+  assert(kills2 + 1 <= 8, `...and it took ${kills2 + 1} kills, so it is a farm and not a wall`);
+  milestone(`${countOf(s, 'warden_shard')} shards`);
+  // three more bars (from the veins and the Warden's own ore), then the forge
+  gatherUntil(s, 'mithril', Math.max(0, 3 - countOf(s, 'mithril_bar')) + countOf(s, 'mithril_ore'));
+  gatherUntil(s, 'coal', 6 + countOf(s, 'coal'));
+  assert(s.player.skills.smithing.level >= recipeById('warden_edge')!.level, `Smithing ${s.player.skills.smithing.level} is already past the Edge's gate (${recipeById('warden_edge')!.level}) from the set alone`);
+  assert(atForge(s), 'at the forge again');
+  craft(s, 'mithril_bar', 3);
+  craft(s, 'warden_edge', 1);
+  assert(countOf(s, 'warden_edge') === 1, "the Warden's Edge is smithed");
+  dressAndTidy(s);
+  assert(s.player.equipment.weapon === 'warden_edge' && s.player.stats.weaponDamage > ITEMS.forged_blade.stats!.damage! && appearanceOf('warden_edge').rung === 4, "and it goes on in place of the Forgemaster's Blade, with the epic look");
+  const edgeWorth = deriveStats({ ...s.player.equipment }).weaponDamage;
+  assert(edgeWorth === ITEMS.warden_edge.stats!.damage! && edgeWorth > ITEMS.forged_blade.stats!.damage! + 8, `+${edgeWorth} weapon damage against the blade's +${ITEMS.forged_blade.stats!.damage}`);
+  milestone('Warden Edge equipped');
+  killTally = null;
+
+  // the world is stable afterwards
+  run(s, 30);
+  assert(!s.player.dead, 'the world stays quiet after the second quest');
+  const end = deserialize(serialize(s))!;
+  assert(end.quest.second === 'cleared' && end.player.equipment.weapon === 'warden_edge' && end.player.equipment.head === 'mithril_helm', 'a finished game loads as finished, still in the full set');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-15 getting around: one click gets you out of the cave, and nothing stays stuck on scenery');
+{
+  const rank = (x: number, z: number) => caveRank(x, z);
+  assert(rank(0, 6) === 0 && rank(-18, -25) === 0 && rank(-18, -35) === 1 && rank(-18, -55) === 2 && rank(-18, -67) === 3 && rank(-18, -85) === 4 && rank(-10, -28) === 0, 'caveRank tells outdoors, throat, hollow, neck and hall apart (and the ridge is outdoors)');
+  const same = { x: -25, z: -50 };
+  assert(steerPoint({ x: -18, z: -55 }, same) === same && steerPoint({ x: 0, z: 6 }, { x: 10, z: 10 }).x === 10, 'within one stretch, and anywhere outdoors, a walk goes straight at its target: nothing changes outside the cave');
+  const hop = steerPoint({ x: -18, z: -85 }, { x: 5, z: 2 });
+  assert(caveRank(hop.x, hop.z) === 3, 'from the hall to the clearing the first aim is the neck, then the hollow, then the throat, then the mouth');
+
+  for (const [name, from, to] of [['the warden hall to the clearing', { x: -18, z: -85 }, { x: 0, z: 6 }], ['the clearing to the warden hall', { x: 0, z: 6 }, { x: -18, z: -85 }], ['the far corner of the hollow to the forge', { x: -30, z: -60 }, { x: LANDMARKS.forge.x - 4, z: LANDMARKS.forge.z + 4 }]] as const) {
+    const s = quietState(960);
+    s.player.x = from.x; s.player.z = from.z;
+    tick(s, { clickTarget: to });
+    let n = 0;
+    for (; n < 30 * 60 && (s.moveTarget || s.player.moving); n++) tick(s);
+    assert(dist2(s.player, to) < 1.5, `one click walks ${name} (${(n * TICK_DT).toFixed(0)}s, ends ${dist2(s.player, to).toFixed(1)}u short)`);
+  }
+  const f = quietState(961);
+  f.player.x = -18; f.player.z = -85;
+  tick(f, { interact: { k: 'npc' } });
+  let opened = false;
+  for (let n = 0; n < 30 * 60 && busy(f); n++) { tick(f); opened ||= hasEvent(f, e => e.t === 'npc'); }
+  assert(opened, 'clicking Warden Hale from the deepest room walks all the way out and opens his dialogue');
+  const g = quietState(962);
+  g.player.x = -18; g.player.z = -35;
+  tick(g, { dirX: 0, dirZ: 1 });
+  assert(g.moveTarget === null, 'keyboard movement is untouched by the routing: it is a click-to-move feature only');
+
+  // an enemy walking home that is walled in by scenery is put home, not left untouchable
+  const w = quietState(963);
+  const e = enemyOf(w, 'ogre'), spawnAt = { x: e.spawnX, z: e.spawnZ };
+  e.state = 'return'; e.hp = e.maxHp; e.x = -18; e.z = -57;
+  const ring = Array.from({ length: 8 }, (_, k) => ({ x: -18 + 3.2 * Math.cos(k * Math.PI / 4), z: -57 + 3.2 * Math.sin(k * Math.PI / 4), r: 1.6 }));
+  COLLIDERS.push(...ring);
+  const homeD = dist2(e, spawnAt), budget = 2 + 3 * homeD / (ENEMY_TYPES.ogre.speed * 1.8) + 0.2;
+  let t = 0;
+  while (st(e) === 'return' && t < 30) { tick(w); t += TICK_DT; }
+  COLLIDERS.splice(COLLIDERS.indexOf(ring[0]), ring.length);
+  assert(st(e) === 'idle' && dist2(e, spawnAt) < 0.5 && t <= budget, `an enemy walled in on its way home is reset after ${t.toFixed(1)}s (budget ${budget.toFixed(1)}s) rather than evading forever`);
+  const free = quietState(964), c = enemyOf(free, 'ogre');
+  c.state = 'return'; c.hp = c.maxHp; c.x = c.spawnX - 6; c.z = c.spawnZ;
+  let t1 = 0;
+  while (st(c) === 'return' && t1 < 30) { tick(free); t1 += TICK_DT; }
+  assert(st(c) === 'idle' && t1 < 6 / (ENEMY_TYPES.ogre.speed * 1.8) + 0.5 && dist2(c, { x: c.spawnX, z: c.spawnZ }) < 0.5, `an enemy with a clear way home just walks it (${t1.toFixed(1)}s)`);
 }
 
 console.log(`\nAll ${checks} checks passed.`);

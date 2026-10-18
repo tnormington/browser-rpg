@@ -46,7 +46,7 @@ export const DELVE_GOALS: Record<string, number> = { ravager: 3 };
 export const MITHRIL_PLAN = { ore: 9, coal: 18, bars: 9 };
 export const RECOMMENDED_COMBAT_2 = 8;
 export const REWARD2: { skill: SkillId; xp: number }[] = [
-  { skill: 'combat', xp: 1500 }, { skill: 'mining', xp: 500 }, { skill: 'smithing', xp: 700 },
+  { skill: 'combat', xp: 1000 }, { skill: 'mining', xp: 500 }, { skill: 'smithing', xp: 700 },
 ];
 
 export const nearNpc = (s: GameState) => Math.hypot(s.player.x - NPC.x, s.player.z - NPC.z) <= TALK_RANGE;

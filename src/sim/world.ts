@@ -35,7 +35,7 @@ const CAVE_RECTS = CAVE_ROOMS.map(r => r.rect);
 
 /** Standing stone in the cave: cover, and something to circle. */
 export const CAVE_PILLARS: Obstacle[] = [
-  { x: -18, z: -50, r: 1.4 }, { x: -27, z: -57, r: 1.4 }, { x: -9, z: -55, r: 1.4 }, { x: -11, z: -61, r: 1.2 },
+  { x: -14.5, z: -50, r: 1.4 }, { x: -27, z: -57, r: 1.4 }, { x: -9, z: -55, r: 1.4 },
   { x: -24, z: -76, r: 1.6 }, { x: -12, z: -76, r: 1.6 }, { x: -24, z: -86, r: 1.6 }, { x: -12, z: -86, r: 1.6 },
 ];
 
@@ -68,11 +68,11 @@ export const ROCKS: RockSpot[] = [
 
 /**
  * Ore inside the cave. Kept apart from ROCKS (the ridge outside, hand-placed clear of the Brute) and listed after TREES when the
- * nodes are built, so no existing node id moves and old saves still line up. The first three veins sit in the hollow's south-west
- * corner, in reach of the Ravager pack that guards them; the coal is on the far side.
+ * nodes are built, so no existing node id moves and old saves still line up. The first three veins make a seam along the hollow's
+ * south-west wall, in reach of the Ravager pack that guards them and of nothing else; the coal is on the far side.
  */
 export const CAVE_ROCKS: RockSpot[] = [
-  { type: 'mithril', x: -29.2, z: -45.5, r: 1.2 }, { type: 'mithril', x: -29.4, z: -49.5, r: 1.2 }, { type: 'mithril', x: -29, z: -53.5, r: 1.2 },
+  { type: 'mithril', x: -29.2, z: -45.5, r: 1.2 }, { type: 'mithril', x: -29.2, z: -47.9, r: 1.2 }, { type: 'mithril', x: -29.2, z: -50.3, r: 1.2 },
   { type: 'coal', x: -8, z: -45.5, r: 1.2 }, { type: 'coal', x: -8.2, z: -49.5, r: 1.2 },
 ];
 
@@ -113,6 +113,29 @@ export function caveDepth(x: number, z: number): number {
 }
 
 /**
+ * Click-to-move has no pathfinding, and a straight line from deep in the cave to the clearing runs into rock. The rooms sit
+ * along one axis, so a walk that has to change room is steered through the junctions instead: `caveRank` says which stretch a
+ * point is in (0 outdoors, 1 throat, 2 hollow, 3 neck, 4 hall) and `steerPoint` says where to head right now.
+ */
+export function caveRank(x: number, z: number): number {
+  if (!inCave(x, z) || z > -27) return 0;
+  const [throat, hollow, neck, hall] = CAVE_RECTS;
+  return inRect(hall, x, z) ? 4 : inRect(hollow, x, z) ? 2 : inRect(neck, x, z) ? 3 : inRect(throat, x, z) ? 1 : 0;
+}
+// Each waypoint sits inside the next stretch (not on the line between two), so crossing it changes the rank.
+const WAY_IN = [{ x: -18, z: -34 }, { x: -18, z: -46 }, { x: -18, z: -67 }, { x: -18, z: -74 }];
+const MOUTH_APPROACH = { x: -18, z: -22 };
+const WAY_OUT = [MOUTH_APPROACH, { x: -18, z: -38 }, { x: -18, z: -60 }, { x: -18, z: -67 }];
+/** The point to walk towards on the way to `to`: `to` itself unless a wall is in between, then the next junction on the route. */
+export function steerPoint(from: { x: number; z: number }, to: { x: number; z: number }): { x: number; z: number } {
+  const a = caveRank(from.x, from.z), b = caveRank(to.x, to.z);
+  if (a === b) return to;
+  // the way in is a gap in the rocks: line up on it outdoors first, or the walk meets the rock beside it
+  if (a === 0 && from.z > -24 && Math.abs(from.x - MOUTH_APPROACH.x) > 1) return MOUTH_APPROACH;
+  return b > a ? WAY_IN[a] : WAY_OUT[a - 1];
+}
+
+/**
  * The line the cave's wall runs along at the mouth. Two creatures can only single each other out (Tab, forgiving click) when
  * they are on the same side of it or standing close: a ridge miner is not offered the Hexer behind forty units of rock.
  */
@@ -139,24 +162,29 @@ export function caveWallPoints(step = 3): { x: number; z: number }[] {
 }
 
 /**
- * Push a circle of the given radius out of the world edge and all obstacles (mutates p). A rock set close to a wall can shove
- * a body into it, so when anything moved the body the walls get the last word: nothing ever ends up off the floor.
+ * Push a circle of the given radius out of the world edge and all obstacles (mutates p). Rocks set side by side, or close to a
+ * wall, can shove a body into the next one, so anything that moved it gets another pass, with the walls getting the last word:
+ * nothing ever ends up off the floor, and a body between two rocks settles instead of being nudged every tick.
  */
 export function resolveCollisions(p: { x: number; z: number }, radius = PLAYER_RADIUS) {
   const c = clampToWorld(p, radius);
   p.x = c.x; p.z = c.z;
-  let pushed = false;
-  for (const o of COLLIDERS) {
-    const ox = p.x - o.x, oz = p.z - o.z;
-    const d = Math.hypot(ox, oz), min = o.r + radius;
-    if (d < min) {
-      const nx = d > 1e-6 ? ox / d : 1, nz = d > 1e-6 ? oz / d : 0;
-      p.x = o.x + nx * min;
-      p.z = o.z + nz * min;
-      pushed = true;
+  for (let pass = 0; pass < 3; pass++) {
+    let pushed = false;
+    for (const o of COLLIDERS) {
+      const ox = p.x - o.x, oz = p.z - o.z;
+      const d = Math.hypot(ox, oz), min = o.r + radius;
+      if (d < min) {
+        const nx = d > 1e-6 ? ox / d : 1, nz = d > 1e-6 ? oz / d : 0;
+        p.x = o.x + nx * min;
+        p.z = o.z + nz * min;
+        pushed = true;
+      }
     }
+    if (!pushed) return;
+    const w = clampToWorld(p, radius);
+    p.x = w.x; p.z = w.z;
   }
-  if (pushed) { const w = clampToWorld(p, radius); p.x = w.x; p.z = w.z; }
 }
 
 /** Dev-only: resize the zone (see sim/stress.ts). Importers see the new value through the live binding. */

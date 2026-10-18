@@ -87,7 +87,7 @@ export const DROP_TABLES: Record<string, DropTable> = {
     { id: 'mithril_ore', qty: [1, 2], weight: 20 }, { id: 'iron_chestplate' }, { id: 'steel_sword', weight: 3 },
   ] },
   warden: { rolls: 2, nothing: 48, entries: [
-    { id: 'mithril_ore', qty: [2, 4], weight: 30 }, { id: 'warden_shard', qty: [1, 2], weight: 36 }, { id: 'iron_chestplate', weight: 10 },
+    { id: 'mithril_ore', qty: [2, 4], weight: 30 }, { id: 'warden_shard', qty: [1, 2], weight: 50 }, { id: 'iron_chestplate', weight: 10 },
   ] },
 };
 

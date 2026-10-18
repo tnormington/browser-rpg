@@ -10,7 +10,7 @@ import { ResourceNode, createNodes, updateNodes } from './sim/gathering';
 import { beginCraft } from './sim/crafting';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
-import { PLAYER_RADIUS, clampToWorld, resolveCollisions } from './sim/world';
+import { PLAYER_RADIUS, clampToWorld, resolveCollisions, steerPoint } from './sim/world';
 import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
 import {
   acquireFront, clearTarget, pressAbility, refreshPlayerStats, setTarget, tabTarget, toggleAutoAttack,
@@ -46,6 +46,7 @@ export interface Enemy {
   cast: { kind: 'heavy' | 'bolt' | 'ground'; t: number; total: number; x?: number; z?: number; radius?: number } | null;
   stagger: number;   // seconds left stunned after an interrupt: it does nothing
   heavyCd: number;   // seconds until the heavy attack may start again
+  evadeFor: number;  // seconds spent walking home after giving up a chase: a walk that goes nowhere (rock in the way) ends in a reset
   hazardCd: number;  // seconds until the ground hazard may be marked again
 }
 
@@ -169,7 +170,7 @@ export function createState(seed = 1): GameState {
       id: i + 1, type: sp.type, x: sp.x, z: sp.z, facing: 0, spawnX: sp.x, spawnZ: sp.z,
       hp: ENEMY_TYPES[sp.type].hp, maxHp: ENEMY_TYPES[sp.type].hp, state: 'idle',
       attackCd: 0, respawnIn: 0, deadFor: 0, hitFlash: 0, swing: 0, bleed: null, cast: null, stagger: 0,
-      heavyCd: ENEMY_TYPES[sp.type].heavy?.first ?? 0, hazardCd: ENEMY_TYPES[sp.type].hazard?.first ?? 0,
+      heavyCd: ENEMY_TYPES[sp.type].heavy?.first ?? 0, hazardCd: ENEMY_TYPES[sp.type].hazard?.first ?? 0, evadeFor: 0,
     })),
     drops: [],
     nextDropId: 1,
@@ -228,11 +229,13 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   if (dx !== 0 || dz !== 0) {
     s.moveTarget = null; // keyboard cancels click-to-move
   } else if (s.moveTarget) {
-    const tx = s.moveTarget.x - p.x, tz = s.moveTarget.z - p.z;
+    // a walk that has to change room in the cave is aimed at the next junction; moveTarget itself is untouched
+    const aim = steerPoint(p, s.moveTarget), via = aim !== s.moveTarget;
+    const tx = aim.x - p.x, tz = aim.z - p.z;
     const d = Math.hypot(tx, tz);
-    if (d < ARRIVE_DIST) {
+    if (!via && d < ARRIVE_DIST) {
       s.moveTarget = null;
-    } else {
+    } else if (d > 1e-6) {
       // don't overshoot the target within a single tick
       const k = Math.min(1, d / (MOVE_SPEED * dt)) / d;
       dx = tx * k; dz = tz * k;

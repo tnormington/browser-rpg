@@ -331,6 +331,7 @@ export function updatePlayerDeath(s: GameState, dt: number) {
 
 function startReturn(e: Enemy) {
   e.state = 'return';
+  e.evadeFor = 0;
   e.hp = e.maxHp; // evade: resets fully
   e.bleed = null;
   e.cast = null;
@@ -475,6 +476,11 @@ export function updateEnemies(s: GameState, dt: number) {
       }
     } else if (e.state === 'return') {
       stepToward(e, e.spawnX, e.spawnZ, def.speed * 1.8, dt, 0);
+      e.evadeFor += dt;
+      // walking home takes dist / speed; a walk that takes three times that is stuck behind scenery, and an evading enemy
+      // cannot be targeted, so it is put home rather than left untouchable
+      const home = dist(e, { x: e.spawnX, z: e.spawnZ });
+      if (home >= 0.3 && e.evadeFor > 2 + 3 * home / (def.speed * 1.8)) { e.x = e.spawnX; e.z = e.spawnZ; }
       if (dist(e, { x: e.spawnX, z: e.spawnZ }) < 0.3) e.state = 'idle';
     }
   }
