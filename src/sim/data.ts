@@ -1,5 +1,7 @@
 // All combat numbers live here so tuning is one file.
 
+export const TICK_RATE = 30;          // fixed simulation steps per second
+export const TICK_DT = 1 / TICK_RATE;
 export const GCD = 1.5;               // seconds, shared by every ability
 export const QUEUE_WINDOW = 0.4;      // a press this close to GCD end is queued, not rejected
 export const CRIT_CHANCE = 0.1;
@@ -10,7 +12,24 @@ export const RESPAWN_DELAY = 4;       // seconds dead before waking at the clear
 export const OOC_DELAY = 5;           // seconds without combat before health regen
 export const OOC_REGEN_FRAC = 0.03;   // of max hp per second
 export const TAB_RANGE = 30;
+export const ACQUIRE_RANGE = 20;      // "attack with no target" / forgiving click: nearest hostile in front within this
+export const ACQUIRE_BEHIND_RANGE = 6; // ...and failing that, anything this close even behind you (the wolf biting your back)
+export const FRONT_HALF_ARC = 70;     // degrees either side of facing that count as "in front" (a generous 140-degree cone)
+// Jump: expression, not traversal. ~1.4u high for ~0.73s, in the air at the same speed you ran at (no change to reach).
+export const JUMP_VELOCITY = 8;
+export const GRAVITY = 22;
 export const PLAYER_SPAWN = { x: 0, z: 6 };
+
+// Auto-attack: a WoW-style melee swing on its own timer, off the GCD and free of energy. Rhythm, not power:
+// the abilities were re-tuned down by what the swings add, and weapon speed changes the beat, not the damage per second.
+export const AUTO_RANGE = 3;          // melee reach, same as Strike
+export const AUTO_BASE = 4;           // damage at power 1, before weapon and speed
+export const AUTO_WEAPON_SHARE = 0.15; // share of the weapon's flat damage a swing carries (abilities carry all of it)
+export const BARE_SWING = 2.4;        // seconds between swings with no weapon; weapons override via ItemStats.speed
+/** `slot` on an auto-attack's 'hit' event: -1 is damage to the player, -2 is a swing. Never an index into ABILITIES. */
+export const AUTO_SLOT = -2;
+export const RECAP_WINDOW = 10;       // seconds of incoming damage the death recap remembers
+export const RECAP_MAX = 6;
 
 // Player stats per combat level.
 export const maxHpForLevel = (level: number) => 100 + 15 * (level - 1);
@@ -33,15 +52,15 @@ export interface AbilityDef {
 
 export const ABILITIES: AbilityDef[] = [
   { name: 'Strike', desc: 'Cheap, reliable melee hit. Your GCD filler.',
-    kind: 'strike', unlockLevel: 1, damage: 10, cost: 10, cooldown: 0, range: 3 },
+    kind: 'strike', unlockLevel: 1, damage: 8, cost: 10, cooldown: 0, range: 3 },
   { name: 'Crushing Blow', desc: 'Heavy melee hit. Save energy for it.',
-    kind: 'strike', unlockLevel: 3, damage: 26, cost: 30, cooldown: 6, range: 3 },
+    kind: 'strike', unlockLevel: 3, damage: 20, cost: 30, cooldown: 6, range: 3 },
   { name: 'Serrated Throw', desc: 'Ranged opener that makes the target bleed.',
-    kind: 'dot', unlockLevel: 2, damage: 4, dotDamage: 4, dotTicks: 6, cost: 20, cooldown: 9, range: 9 },
+    kind: 'dot', unlockLevel: 2, damage: 3, dotDamage: 4, dotTicks: 6, cost: 20, cooldown: 9, range: 9 },
   { name: 'Second Wind', desc: 'Heal yourself. Long cooldown: pick your moment.',
     kind: 'heal', unlockLevel: 4, damage: 45, cost: 25, cooldown: 20, range: 0 },
   { name: 'Cleave', desc: 'Sweep a wide arc: hits every enemy in front of you, not just your target.',
-    kind: 'cleave', unlockLevel: 5, damage: 12, cost: 25, cooldown: 8, range: 3.5, arc: 140 },
+    kind: 'cleave', unlockLevel: 5, damage: 10, cost: 25, cooldown: 8, range: 3.5, arc: 140 },
   { name: 'Pummel', desc: 'Off the global cooldown. Stops an enemy wind-up dead and staggers it. Useless when nothing is winding up.',
     kind: 'interrupt', unlockLevel: 4, damage: 0, cost: 10, cooldown: 10, range: 3.5, offGcd: true },
 ];

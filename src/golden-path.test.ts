@@ -3,7 +3,10 @@
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState, Enemy } from './sim';
 import { addItem, countItem, INVENTORY_SIZE } from './sim/inventory';
 import { ITEMS, DROP_TABLES, deriveStats, emptyEquipment } from './sim/items';
-import { ABILITIES, ENEMY_TYPES, GCD, RESPAWN_DELAY } from './sim/data';
+import {
+  ABILITIES, ENEMY_TYPES, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
+  GRAVITY, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW,
+} from './sim/data';
 import { xpForLevel, levelForXp, addXp, newTrack, levelProgress } from './sim/xp';
 import { SKILL_IDS, SKILLS, grantXp } from './sim/skills';
 import { NODE_TYPES } from './sim/gathering';
@@ -123,16 +126,21 @@ section('Targeting');
   const s = createState();
   const near = enemyOf(s, 'boar', 1), mid = enemyOf(s, 'boar', 2);
   s.player.x = near.x + 4; s.player.z = near.z;
+  s.player.facing = -Math.PI / 2; // looking at the nearest boar (-x)
   tick(s, { tab: true });
   assert(s.targetId !== null, 'Tab selects an enemy');
   const first = s.targetId;
-  const sorted = s.enemies.slice().sort((a, b) =>
-    Math.hypot(a.x - s.player.x, a.z - s.player.z) - Math.hypot(b.x - s.player.x, b.z - s.player.z));
-  assert(first === sorted[0].id, 'first Tab picks the nearest enemy');
+  // the documented order, built here independently of the sim: in front (nearest first), then behind (nearest first)
+  const dp = (e: Enemy) => Math.hypot(e.x - s.player.x, e.z - s.player.z);
+  const front = (e: Enemy) => Math.abs(Math.atan2(Math.sin(Math.atan2(e.x - s.player.x, e.z - s.player.z) - s.player.facing), Math.cos(Math.atan2(e.x - s.player.x, e.z - s.player.z) - s.player.facing))) <= 70 * Math.PI / 180;
+  const inReach = s.enemies.filter(e => dp(e) <= 30).sort((a, b) => dp(a) - dp(b));
+  const sorted = [...inReach.filter(front), ...inReach.filter(e => !front(e))];
+  assert(first === sorted[0].id && sorted[0] === near, 'first Tab picks the nearest enemy (in front)');
   tick(s, { tab: true });
-  assert(s.targetId === sorted[1].id, 'second Tab picks the next-nearest');
-  const inRange = sorted.filter(e => Math.hypot(e.x - s.player.x, e.z - s.player.z) <= 30).length;
-  for (let i = 0; i < inRange - 1; i++) tick(s, { tab: true });
+  assert(s.targetId === sorted[1].id, 'second Tab picks the next one in the order');
+  for (let i = 0; i < inReach.length - 2; i++) tick(s, { tab: true });
+  assert(s.targetId === sorted[inReach.length - 1].id, 'Tab walks the whole list');
+  tick(s, { tab: true });
   assert(s.targetId === sorted[0].id, 'Tab wraps around');
   tick(s, { clearTarget: true });
   assert(s.targetId === null, 'Escape clears the target');
@@ -1174,6 +1182,469 @@ section('Phase 3: ranged attacker and pack aggro');
   s3.player.x = pups[0].x + 5; s3.player.z = pups[0].z; // inside aggro (7) of one pup
   run(s3, 0.2);
   assert(pups.every(p => st(p) === 'chase') && st(boar) === 'idle', `a pack wakes together (${pups.length} pups) and nothing else does`);
+}
+
+// ---------------------------------------------------------------------------
+// HOM-16 helpers: a parked, never-hitting boar one reach away, so a swing timer can be read with nothing else moving.
+function arena(seed: number, level = 1) {
+  const s = quietState(seed);
+  if (level > 1) atLevel(s, level);
+  const b = enemyOf(s, 'boar');
+  b.state = 'idle'; b.respawnIn = 0; b.hp = b.maxHp = 1e6; b.x = b.spawnX = 0; b.z = b.spawnZ = 0; b.attackCd = 1e9;
+  s.player.x = 0; s.player.z = 2.5; s.player.facing = Math.PI; // facing the boar
+  tick(s, { clickEnemy: b.id });
+  return { s, b };
+}
+/** Run and return the tick numbers (relative to the first tick of the run) on which a swing left the player's hand. */
+function swingTicks(s: GameState, seconds: number, i: Partial<Input> | ((n: number) => Partial<Input>) = {}) {
+  const out: number[] = [];
+  for (let n = 0; n < Math.round(seconds / TICK_DT); n++) {
+    tick(s, typeof i === 'function' ? i(n) : i);
+    if (hasEvent(s, e => e.t === 'swing')) out.push(n);
+  }
+  return out;
+}
+const placeAt = (e: Enemy, x: number, z: number) => { e.state = 'idle'; e.respawnIn = 0; e.hp = e.maxHp; e.x = e.spawnX = x; e.z = e.spawnZ = z; e.attackCd = 1e9; };
+
+// ---------------------------------------------------------------------------
+section('HOM-16 auto-attack: swings on a timer, off the GCD, free of energy');
+{
+  // the weapon is where the rhythm lives
+  assert(deriveStats(emptyEquipment()).swingInterval === BARE_SWING, `bare-handed you swing every ${BARE_SWING}s`);
+  const gear = (id: string) => { const e = emptyEquipment(); e.weapon = id; return deriveStats(e); };
+  assert(gear('forged_blade').swingInterval === ITEMS.forged_blade.stats!.speed && gear('forged_blade').swingInterval < gear('iron_sword').swingInterval, "the Forgemaster's Blade swings quicker than an Iron Sword");
+  assert(Object.values(ITEMS).filter(i => i.slot === 'weapon').every(i => i.stats!.speed! >= 1.5 && i.stats!.speed! <= 3), 'every weapon declares a swing speed between 1.5s and 3s');
+
+  // arming: the attack key with a target. It needs no prior combat: arming is the declaration of intent.
+  const { s, b } = arena(101);
+  assert(!s.player.autoAttack && !s.player.inCombat, 'auto-attack starts off, out of combat');
+  tick(s, { attack: true });
+  assert(s.player.autoAttack && hasEvent(s, e => e.t === 'auto' && e.on), 'the attack key arms auto-attack and says so (auto event)');
+  assert(hasEvent(s, e => e.t === 'swing' && e.target === b.id), 'with the swing timer ready the first swing lands at once');
+  const hit = s.events.find(e => e.t === 'hit' && e.target === b.id);
+  assert(hit !== undefined && hit.t === 'hit' && hit.slot === AUTO_SLOT && hit.amount > 0, 'a swing is a hit event with slot AUTO_SLOT, never an ability slot');
+  assert(s.player.swing > BARE_SWING - 0.1 && s.player.swing <= BARE_SWING, 'the swing timer restarts at the weapon interval (HUD swing bar reads player.swing)');
+
+  // on its interval, with no ability pressed and no energy spent
+  s.player.energy = 10;
+  const swings = swingTicks(s, 10);
+  const gaps = swings.slice(1).map((t, k) => t - swings[k]);
+  assert(swings.length >= 3 && gaps.every(g => Math.abs(g * TICK_DT - BARE_SWING) <= TICK_DT + 1e-9), `swings land every ${BARE_SWING}s (${swings.length} in 10s, gaps ${gaps.join('/')} ticks)`);
+  assert(Math.abs(s.player.energy - Math.min(100, 10 + ENERGY_REGEN * 10)) < 0.01, 'swinging costs no energy: it only regenerated');
+  assert(s.player.gcd === 0 && !hasEvent(s, e => e.t === 'cast'), 'and never touches the GCD or raises a cast event');
+}
+{
+  // independent of the GCD: a Strike mid-timer neither delays nor brings forward the next swing, and a swing lands inside a GCD
+  const { s } = arena(102);
+  tick(s, { attack: true });
+  const t0 = s.tick;
+  let swingAt: number[] = [], gcdAtSwing: number[] = [];
+  for (let n = 0; n < 5 * 30; n++) {
+    tick(s, { ability: n === 30 ? SLOT.strike : null }); // one Strike a second in: the GCD runs 1.0s to 2.5s, the swing lands at 2.4s
+    if (hasEvent(s, e => e.t === 'swing')) { swingAt.push(s.tick - t0); gcdAtSwing.push(s.player.gcd); }
+  }
+  assert(swingAt.length >= 2 && Math.abs(swingAt[0] * TICK_DT - BARE_SWING) <= 2 * TICK_DT, `Strike did not move the swing timer (next swing at ${(swingAt[0] * TICK_DT).toFixed(2)}s)`);
+  assert(gcdAtSwing[0] > 0, `the swing landed inside the global cooldown (gcd left ${gcdAtSwing[0].toFixed(2)}s)`);
+}
+{
+  // a melee ability on a target starts the swings; a ranged opener, a heal and an interrupt do not
+  const { s } = arena(103, 5);
+  tick(s, { ability: SLOT.strike });
+  assert(s.player.autoAttack && hasEvent(s, e => e.t === 'auto' && e.on), 'a Strike on a target starts auto-attack');
+  const c = arena(104, 5);
+  c.s.player.z = 8; c.s.player.facing = Math.PI;
+  tick(c.s, { ability: SLOT.throw });
+  assert(!c.s.player.autoAttack, 'Serrated Throw (the ranged opener) does not start melee swings');
+  tick(c.s, { ability: SLOT.wind });
+  assert(!c.s.player.autoAttack, 'Second Wind does not either');
+  const d = arena(105, 5);
+  d.b.cast = { kind: 'heavy', t: 0, total: 5 };
+  tick(d.s, { ability: SLOT.pummel });
+  assert(hasEvent(d.s, e => e.t === 'interrupt') && !d.s.player.autoAttack, 'nor does Pummel');
+}
+{
+  // toggling off stops it; toggling cannot be used to reset the timer
+  const { s } = arena(106);
+  tick(s, { attack: true });
+  run(s, 1);
+  tick(s, { attack: true });
+  assert(!s.player.autoAttack && hasEvent(s, e => e.t === 'auto' && !e.on), 'the attack key again disarms it (auto event, on: false)');
+  assert(swingTicks(s, 6).length === 0, 'disarmed: no swings');
+  const t = s.player.swing;
+  tick(s, { attack: true }); // timer long since expired: the swing is ready
+  assert(hasEvent(s, e => e.t === 'swing'), 'a ready timer swings the moment it is armed');
+  tick(s, { attack: true }); tick(s, { attack: true }); // off, on: the timer must not reset
+  assert(!hasEvent(s, e => e.t === 'swing') && s.player.swing > 0 && t === 0, 'toggling off and on does not refresh the timer (no swing-spam exploit)');
+}
+{
+  // moving does not stop it; out of reach it waits and swings the instant the target is in reach
+  const { s, b } = arena(107);
+  b.attackCd = 1e9;
+  tick(s, { attack: true });
+  const swings = swingTicks(s, 7.2, n => ({ dirX: Math.floor(n / 6) % 2 === 0 ? 0.5 : -0.5, dirZ: 0 })); // shuffles sideways, staying inside reach
+  const movingSwings = swings.length;
+  assert(movingSwings >= 3 && Math.hypot(b.x - s.player.x, b.z - s.player.z) <= 3, `moving does not stop auto-attack (${movingSwings} swings while shuffling in reach)`);
+  const h = arena(108);
+  tick(h.s, { attack: true }); // swing 1
+  h.s.player.x = 0; h.s.player.z = 2.5;
+  h.s.targetId = h.b.id;
+  h.b.state = 'idle'; h.b.x = 0; h.b.z = -6; // 8.5u: out of reach, and keep it parked
+  h.s.player.z = 2.5;
+  const before = h.b.hp;
+  const none = swingTicks(h.s, 6, () => { h.b.state = 'idle'; h.b.x = 0; h.b.z = -6; return {}; });
+  assert(none.length === 0 && h.b.hp === before && h.s.player.swing === 0 && h.s.player.autoAttack, 'out of reach: armed, timer waiting at zero, nothing lands');
+  h.b.x = 0; h.b.z = 0;
+  tick(h.s);
+  assert(hasEvent(h.s, e => e.t === 'swing'), 'the swing lands on the first tick the target is back in reach');
+}
+{
+  // it ends when there is nothing to hit, and does not carry on to the next thing you Tab to
+  const { s, b } = arena(109);
+  const other = enemyOf(s, 'boar', 1);
+  placeAt(other, 0, -1); // within reach, alongside
+  tick(s, { attack: true });
+  b.hp = 1;
+  tick(s, { attack: true }); tick(s, { attack: true }); // off, on again: swing not ready, but armed
+  assert(s.player.autoAttack, 'armed again');
+  run(s, 3);
+  assert(st(b) === 'dead' && !s.player.autoAttack, 'the target dies: auto-attack disarms by itself');
+  const e0 = other.hp;
+  tick(s, { tab: true }); // lands on the other boar
+  assert(s.targetId === other.id && swingTicks(s, 5).length === 0 && other.hp === e0, 'tabbing to the next enemy does not carry the swings over: press attack again');
+  tick(s, { attack: true });
+  assert(hasEvent(s, e => e.t === 'swing' && e.target === other.id), 'the attack key then starts on the new target');
+  // death stops it too
+  s.player.hp = 1;
+  other.attackCd = 0; other.state = 'chase';
+  run(s, 3);
+  assert(s.player.dead && !s.player.autoAttack && swingTicks(s, 3).length === 0, 'dying disarms auto-attack and a dead player does not swing');
+}
+{
+  // speed is rhythm, not power: same damage per second at any speed
+  const dpsAt = (interval: number) => {
+    const { s, b } = arena(110);
+    s.player.stats.swingInterval = interval; s.player.stats.weaponDamage = 20; // 20 flat weapon damage; a custom speed
+    tick(s, { attack: true });
+    const hp0 = b.hp;
+    run(s, 120);
+    return (hp0 - b.hp) / 120;
+  };
+  const slow = dpsAt(3.2), fast = dpsAt(1.6);
+  assert(Math.abs(fast / slow - 1) < 0.12, `a 1.6s weapon and a 3.2s weapon deal the same damage per second (${fast.toFixed(2)} vs ${slow.toFixed(2)})`);
+  const { s } = arena(111);
+  s.player.stats.swingInterval = 1.6; s.player.swing = 2.4;
+  tick(s);
+  assert(s.player.swing <= 1.6, 'swapping to a quicker weapon takes effect at once (the timer is clamped)');
+}
+{
+  // the retune: abilities came down by what the swings add. Total damage per second against a parked target, kit used by priority
+  // (Crushing Blow, then Serrated Throw, then Strike), compared with the figures measured before auto-attack existed.
+  const BEFORE: [string, number, string | null, number][] = [['level 1, bare', 1, null, 6.93], ['level 3, bare', 3, null, 11.30], ['level 5, iron sword', 5, 'iron_sword', 16.77], ['level 6, Forgemaster\'s Blade', 6, 'forged_blade', 29.65]];
+  // measured against an effectively endless target (hp topped up each tick) so the sum of damage is exact
+  const measure = (level: number, weapon: string | null) => {
+    const { s, b } = arena(5, level);
+    if (weapon) { addItem(s.player.inventory, weapon, 1); tick(s, { inv: [{ k: 'equip', slot: 0 }] }); }
+    const p = s.player; let dealt = 0;
+    const ready = (slot: number) => p.combat.level >= ABILITIES[slot].unlockLevel && p.cd[slot] === 0 && p.energy >= ABILITIES[slot].cost;
+    for (let n = 0; n < 90 / TICK_DT; n++) {
+      b.state = 'chase'; b.attackCd = 1e9; b.hp = 1e8; b.x = 0; b.z = 0; p.x = 0; p.z = 2.5; p.outOfCombat = 0;
+      const ab = p.gcd > 0.05 ? null : ready(SLOT.crushing) ? SLOT.crushing : ready(SLOT.throw) && !b.bleed ? SLOT.throw : ready(SLOT.strike) ? SLOT.strike : null;
+      tick(s, { ability: ab });
+      dealt += 1e8 - b.hp;
+    }
+    return dealt / 90;
+  };
+  for (const [name, level, weapon, before] of BEFORE) {
+    const now = measure(level, weapon);
+    assert(now >= before * 0.9 && now <= before * 1.1, `${name}: ${now.toFixed(1)} damage/s with auto-attack vs ${before.toFixed(1)} before (${(now / before * 100).toFixed(0)}%), within 10%`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-16 targeting: Tab prefers what is in front, keeps its order, and never silently drops you');
+{
+  const mk = (seed: number) => {
+    const s = quietState(seed);
+    const [A, B, C] = s.enemies.filter(e => e.type === 'boar'), D = enemyOf(s, 'wolf');
+    s.player.x = 0; s.player.z = 0; s.player.facing = 0; // looking down +z
+    placeAt(A, 0, 12); placeAt(B, 2, 18); placeAt(C, -3, 24); placeAt(D, 0, -11); // D is the nearest, but behind
+    return { s, A, B, C, D };
+  };
+  const { s, A, B, C, D } = mk(301);
+  tick(s, { tab: true });
+  assert(s.targetId === A.id, 'Tab picks the enemy in front over a nearer one behind');
+  tick(s, { tab: true }); assert(s.targetId === B.id, 'then the next one in front');
+  tick(s, { tab: true }); assert(s.targetId === C.id, '...and the next');
+  tick(s, { tab: true }); assert(s.targetId === D.id, 'the ones behind come after everything in front');
+  tick(s, { tab: true }); assert(s.targetId === A.id, 'and it wraps to the nearest in front');
+
+  // stable: walk and turn mid-cycle, and the list does not reshuffle under the presses
+  s.player.x = 0; s.player.z = 20; s.player.facing = 0; // now C is the only one in front and A is behind; a fresh sort would jump to C
+  tick(s, { tab: true });
+  assert(s.targetId === B.id, 'moving mid-cycle does not reshuffle: the next press still walks the list it started');
+  B.state = 'dead'; B.respawnIn = 1e9;
+  s.targetId = A.id; // as if the player stepped back to A
+  tick(s, { tab: true });
+  assert(s.targetId === C.id, 'an enemy that died mid-cycle is skipped');
+  s.targetId = null;
+  tick(s, { tab: true });
+  assert(s.targetId !== null && s.tab !== null && s.tab.order[s.tab.at] === s.targetId, 'with no target held a press starts a fresh cycle');
+
+  // clicking a corpse, or Tab with nothing to cycle to, leaves the held target alone
+  const m = mk(302);
+  tick(m.s, { clickEnemy: m.A.id });
+  m.B.state = 'dead'; m.B.respawnIn = 1e9;
+  tick(m.s, { clickEnemy: m.B.id });
+  assert(m.s.targetId === m.A.id, 'clicking a corpse does not drop the target you hold');
+  m.C.state = 'return'; tick(m.s, { clickEnemy: m.C.id });
+  assert(m.s.targetId === m.A.id, 'nor does clicking an enemy that is walking home');
+  m.s.player.x = 29; m.s.player.z = 29; // everything is now out of Tab range
+  tick(m.s, { tab: true });
+  assert(m.s.targetId === m.A.id, 'Tab with nothing in range keeps the target instead of clearing it');
+  tick(m.s, { clearTarget: true });
+  assert(m.s.targetId === null && !hasEvent(m.s, e => e.t === 'untarget'), 'Escape clears it and raises no untarget event: the player did that on purpose');
+}
+{
+  // an involuntary loss says why
+  const { s, b } = arena(303, 3);
+  tick(s, { ability: SLOT.strike });
+  b.hp = 1; b.attackCd = 1e9;
+  s.player.gcd = 0;
+  tick(s, { ability: SLOT.strike });
+  const u = s.events.find(e => e.t === 'untarget');
+  assert(st(b) === 'dead' && s.targetId === null && u !== undefined && u.t === 'untarget' && u.id === b.id && u.reason === 'dead', 'the target dies: an untarget event names it and says "dead"');
+  const e2 = createState(304);
+  const w = enemyOf(e2, 'wolf');
+  e2.targetId = w.id; w.state = 'chase'; w.x = w.spawnX + 26; w.z = w.spawnZ; e2.player.x = w.x; e2.player.z = w.z;
+  tick(e2);
+  const ev = e2.events.find(e => e.t === 'untarget');
+  assert(st(w) === 'return' && e2.targetId === null && ev !== undefined && ev.t === 'untarget' && ev.id === w.id && ev.reason === 'evade', 'a leashed enemy resets and the target loss says "evade"');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-16 acquire: the nearest hostile in front, for a forgiving click and an attack key with no target');
+{
+  const mk = (seed: number) => {
+    const s = quietState(seed);
+    const [A, B] = s.enemies.filter(e => e.type === 'boar'), D = enemyOf(s, 'wolf');
+    s.player.x = 0; s.player.z = 0; s.player.facing = 0;
+    placeAt(A, 0, 10); placeAt(B, 6, 14); placeAt(D, 0, -4); // D is nearest and behind, but inside the "something is biting your back" radius
+    return { s, A, B, D };
+  };
+  const { s, A, B, D } = mk(311);
+  tick(s, { acquire: true });
+  assert(s.targetId === A.id, 'acquire picks the nearest hostile in front, not the nearer one behind');
+  s.targetId = D.id; tick(s, { acquire: true });
+  assert(s.targetId === A.id, 'acquire is an explicit retarget: it overrides a held target');
+  A.state = 'dead'; A.respawnIn = 1e9; B.state = 'dead'; B.respawnIn = 1e9;
+  s.targetId = null; tick(s, { acquire: true });
+  assert(s.targetId === D.id, 'with nothing in front it falls back to what is close behind you');
+  placeAt(D, 0, -ACQUIRE_BEHIND_RANGE - 3); s.targetId = null; D.state = 'idle';
+  tick(s, { acquire: true });
+  assert(s.targetId === null && hasEvent(s, e => e.t === 'fail' && e.reason === 'target'), 'nothing in front and nothing close: no target, and a "target" fail says so');
+  placeAt(A, 0, ACQUIRE_RANGE + 4);
+  tick(s, { acquire: true });
+  assert(s.targetId === null, `an enemy in front but past ${ACQUIRE_RANGE}u is too far to guess at`);
+  // a cone, not a line: just inside / outside the edge of the front arc
+  const edge = (deg: number) => { placeAt(A, 10 * Math.sin(deg * Math.PI / 180), 10 * Math.cos(deg * Math.PI / 180)); s.targetId = null; tick(s, { acquire: true }); return s.targetId === A.id; };
+  assert(edge(FRONT_HALF_ARC - 5) && !edge(FRONT_HALF_ARC + 15) && edge(-(FRONT_HALF_ARC - 5)), `the front is a ${FRONT_HALF_ARC * 2}-degree cone either side of facing`);
+}
+{
+  // the attack key with no target does the whole job: acquire, then swing
+  const s = quietState(312);
+  const A = enemyOf(s, 'boar');
+  s.player.x = 0; s.player.z = 0; s.player.facing = 0;
+  placeAt(A, 0, 2.5);
+  assert(s.targetId === null, 'nothing targeted');
+  tick(s, { attack: true });
+  assert(s.targetId === A.id && s.player.autoAttack && hasEvent(s, e => e.t === 'swing' && e.target === A.id), 'the attack key with no target acquires the enemy in front and starts swinging');
+  const t = quietState(313);
+  tick(t, { attack: true });
+  assert(!t.player.autoAttack && hasEvent(t, e => e.t === 'fail' && e.reason === 'target'), 'with nothing to acquire it does not arm, and says why');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-16 jump: leaves the ground, lands, and changes nothing about reach or danger');
+{
+  const s = quietState(401);
+  const p = s.player;
+  assert(p.y === 0 && p.vy === 0 && !p.airborne, 'a new player stands on the ground (y 0, not airborne)');
+  tick(s, { jump: true });
+  assert(p.y > 0 && p.airborne && hasEvent(s, e => e.t === 'jump'), 'a jump request leaves the ground the same tick (jump event, airborne, y > 0)');
+  let peak = p.y, air = 1, landed = false, landEvents = 0, flagTracksY = true;
+  while (air < 120 && !landed) {
+    tick(s); air++;
+    peak = Math.max(peak, p.y);
+    if (hasEvent(s, e => e.t === 'land')) { landed = true; landEvents++; }
+    if (!landed) flagTracksY &&= p.airborne && p.y > 0;
+  }
+  assert(flagTracksY, 'the airborne flag is true on every tick between takeoff and landing');
+  assert(landed && p.y === 0 && p.vy === 0 && !p.airborne && landEvents === 1, `lands: y 0, vy 0, not airborne, one land event (${air} ticks, ${(air * TICK_DT).toFixed(2)}s in the air)`);
+  assert(air * TICK_DT > 0.5 && air * TICK_DT < 1.0, 'the hop lasts between half a second and a second');
+  assert(peak > 1.0 && peak < 1.7 && Math.abs(peak - JUMP_VELOCITY ** 2 / (2 * GRAVITY)) < 0.25, `peak height ${peak.toFixed(2)}u matches v^2/2g (${(JUMP_VELOCITY ** 2 / (2 * GRAVITY)).toFixed(2)}u)`);
+
+  // one jump per takeoff; a held key hops again on landing; a jump in the air does nothing
+  const h = quietState(402);
+  const jumpTicks: number[] = [];
+  for (let n = 0; n < 5 * 30; n++) { tick(h, { jump: true }); if (hasEvent(h, e => e.t === 'jump')) jumpTicks.push(n); }
+  const gaps = jumpTicks.slice(1).map((t, i) => t - jumpTicks[i]);
+  assert(jumpTicks.length >= 4 && gaps.every(g => g >= 20), `no double jump: holding the key hops again only after landing (${jumpTicks.length} hops, gaps ${gaps.join('/')} ticks)`);
+
+  // deterministic: same inputs, same arc, to the bit
+  const arc = (seed: number) => { const g = quietState(seed); const ys: number[] = []; for (let n = 0; n < 60; n++) { tick(g, { jump: n === 3 || n === 40 }); ys.push(g.player.y); } return JSON.stringify(ys); };
+  assert(arc(403) === arc(403), 'the arc is deterministic');
+}
+{
+  // expression, not traversal: with or without jumping, the player ends up in exactly the same place, collisions and all
+  const route = (spam: boolean) => {
+    const g = quietState(404);
+    g.player.x = -7; g.player.z = 10; // a tree at (-12, 10): walk into it, then slide round and off to the world edge
+    const trace: string[] = [];
+    for (let n = 0; n < 6 * 30; n++) {
+      tick(g, { dirX: n < 90 ? -1 : 0.4, dirZ: n < 90 ? 0 : -1, jump: spam });
+      trace.push(`${g.player.x.toFixed(6)},${g.player.z.toFixed(6)}`);
+    }
+    tick(g, { clickTarget: { x: 25, z: -25 }, jump: spam });
+    for (let n = 0; n < 8 * 30; n++) { tick(g, { jump: spam }); trace.push(`${g.player.x.toFixed(6)},${g.player.z.toFixed(6)}`); }
+    return trace.join(';');
+  };
+  assert(route(false) === route(true), 'every x/z of a long walk (tree collision, click-to-move) is identical whether or not the player jumps the whole way');
+}
+{
+  // it does not dodge: the slam telegraph, the heavy hit and ordinary swings all land on an airborne player
+  const mk = (seed: number) => {
+    const s = quietState(seed);
+    atLevel(s, 5);
+    const b = enemyOf(s, 'brute');
+    b.state = 'idle'; b.respawnIn = 0; b.hp = b.maxHp; b.x = b.spawnX = 0; b.z = b.spawnZ = 0;
+    s.player.x = 0; s.player.z = 2.5;
+    tick(s, { clickEnemy: b.id });
+    return { s, b };
+  };
+  const def = ENEMY_TYPES.brute.heavy!;
+  const slams: { dmg: number; air: boolean }[] = [];
+  for (let seed = 405; seed < 413; seed++) { // a hop lasts ~0.7s: different seeds put the slam at different points of it
+    const { s, b } = mk(seed);
+    for (let i = 0; i < 400 && !b.cast; i++) tick(s, { jump: true });
+    s.player.hp = s.player.maxHp;
+    let got: { dmg: number; air: boolean } | null = null;
+    for (let i = 0; i < 90 && !got; i++) {
+      tick(s, { jump: i % 3 !== seed % 3 || i < seed % 7 });
+      for (const ev of s.events) if (ev.t === 'hit' && ev.target === 'player' && ev.heavy) got = { dmg: ev.amount, air: s.player.airborne };
+    }
+    if (got) slams.push(got);
+  }
+  const full = Math.round(def.damage * (1 - deriveStats(emptyEquipment()).reduction));
+  assert(slams.length === 8 && slams.every(x => x && x.dmg === full), `a player who is hopping through the whole wind-up takes the full Crushing Slam every time (${slams.map(x => x?.dmg).join('/')})`);
+  assert(slams.some(x => x && x.air), 'and in at least one of those the slam landed while the player was in the air');
+  const m = mk(406);
+  const before = m.s.player.hp;
+  let melee = 0;
+  for (let i = 0; i < 150; i++) { tick(m.s, { jump: true }); for (const ev of m.s.events) if (ev.t === 'hit' && ev.target === 'player') melee++; }
+  assert(melee >= 2 && m.s.player.hp < before, 'ordinary enemy swings hit a player who keeps jumping');
+  // the player's own kit works in the air
+  const a = arena(407);
+  tick(a.s, { jump: true });
+  const hp0 = a.b.hp;
+  tick(a.s, { ability: SLOT.strike });
+  assert(a.s.player.airborne && a.b.hp < hp0, 'abilities (and auto-attack) work mid-jump: range is measured on the ground plane');
+}
+{
+  // saved and restored sanely, and a death mid-air lands you
+  const s = quietState(408);
+  s.player.x = 4.5; s.player.z = -3.5;
+  tick(s, { jump: true }); run(s, 0.2);
+  assert(s.player.airborne && s.player.y > 0.5, 'airborne at save time');
+  const l = deserialize(serialize(s))!;
+  assert(l !== null && l.player.y === 0 && l.player.vy === 0 && !l.player.airborne && Math.abs(l.player.x - s.player.x) < 1e-9 && Math.abs(l.player.z - s.player.z) < 1e-9, 'a mid-air save reloads standing on the ground, at the same x/z');
+  tick(l); assert(l.player.y === 0 && !hasEvent(l, e => e.t === 'land'), 'and does not raise a phantom landing');
+
+  const d = createState(409);
+  for (const e of d.enemies) { e.state = 'dead'; e.respawnIn = 1e9; }
+  const w = enemyOf(d, 'wolf');
+  placeAt(w, 0, 0); w.state = 'chase'; w.attackCd = 0;
+  d.player.x = 1; d.player.z = 0; d.player.hp = 1;
+  tick(d, { jump: true });
+  assert(d.player.dead && d.player.y === 0 && d.player.vy === 0 && !d.player.airborne, 'killed in the air: dead on the ground, state clean');
+  tick(d, { jump: true });
+  assert(d.player.y === 0 && !hasEvent(d, e => e.t === 'jump'), 'a dead player cannot jump');
+
+  // hopping breaks a gather, as moving does
+  const g = quietState(410);
+  const node = g.nodes.find(n => n.type === 'iron')!;
+  tick(g, { interact: { k: 'node', id: node.id } });
+  for (let n = 0; n < 2000 && g.interact; n++) tick(g);
+  run(g, 0.5);
+  assert(g.player.action !== null, 'gathering');
+  tick(g, { jump: true });
+  assert(g.player.action === null, 'jumping cancels a gather in progress');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-16 combat state, queueing into cooldowns, and the death recap');
+{
+  const s = quietState(501);
+  const w = enemyOf(s, 'wolf');
+  placeAt(w, 0, 0); w.attackCd = 1e9;
+  s.player.x = 6; s.player.z = 0; // inside aggro (8), not yet noticed
+  s.player.hp = 50;
+  run(s, 0.1);
+  assert(st(w) === 'chase' && s.player.inCombat, 'something hostile chasing you puts you in combat');
+  const hp0 = s.player.hp;
+  run(s, 9);
+  assert(s.player.inCombat && s.player.hp === hp0, 'no health regeneration while hunted, even with no damage taken for longer than the combat timer');
+  w.state = 'dead'; w.respawnIn = 1e9;
+  s.player.outOfCombat = 0;
+  let left = false;
+  for (let n = 0; n < (OOC_DELAY + 2) * 30; n++) { tick(s); left ||= hasEvent(s, e => e.t === 'combat' && !e.on); }
+  assert(left && !s.player.inCombat && s.player.hp > hp0, 'a combat event fires when the player leaves combat, and health then comes back');
+  const i = quietState(502);
+  placeAt(enemyOf(i, 'boar'), 0, 0);
+  i.player.x = 0; i.player.z = 2.5; tick(i, { clickEnemy: enemyOf(i, 'boar').id });
+  let entered = false;
+  for (let n = 0; n < 5; n++) { tick(i, n === 0 ? { ability: SLOT.strike } : {}); entered ||= hasEvent(i, e => e.t === 'combat' && e.on); }
+  assert(entered && i.player.inCombat, 'a combat event fires when the player enters combat');
+}
+{
+  // the spell queue reaches into an ability's own cooldown, not just the GCD
+  const { s } = arena(503, 5);
+  tick(s, { ability: SLOT.crushing });
+  run(s, ABILITIES[SLOT.crushing].cooldown - 0.5);
+  s.player.energy = s.player.maxEnergy;
+  tick(s, { ability: SLOT.crushing });
+  assert(hasEvent(s, e => e.t === 'fail' && e.reason === 'cooldown') && s.player.queued === null, 'a press well before the cooldown ends still fails (cooldown)');
+  run(s, 0.2);
+  s.player.energy = s.player.maxEnergy;
+  assert(s.player.cd[SLOT.crushing] > 0 && s.player.cd[SLOT.crushing] <= QUEUE_WINDOW, 'inside the queue window now');
+  tick(s, { ability: SLOT.crushing });
+  assert(s.player.queued === SLOT.crushing && !hasEvent(s, e => e.t === 'fail'), 'a press just before its own cooldown ends is queued, not refused');
+  let fired = false;
+  for (let n = 0; n < 20 && !fired; n++) { tick(s); fired = hasEvent(s, e => e.t === 'cast' && e.slot === SLOT.crushing); }
+  assert(fired && s.player.queued === null && s.player.cd[SLOT.crushing] > ABILITIES[SLOT.crushing].cooldown - 0.5, 'and fires the moment the cooldown is up');
+  const q = arena(504, 5);
+  tick(q.s, { ability: SLOT.pummel });
+  assert(hasEvent(q.s, e => e.t === 'fail' && e.reason === 'nocast'), 'sanity: Pummel with nothing to interrupt still fails and costs nothing');
+}
+{
+  // why you died
+  const s = quietState(505);
+  atLevel(s, 1);
+  const b = enemyOf(s, 'brute');
+  b.state = 'idle'; b.respawnIn = 0; b.hp = b.maxHp; b.x = b.spawnX = 0; b.z = b.spawnZ = 0;
+  s.player.x = 0; s.player.z = 2.5;
+  for (let i = 0; i < 400 && !b.cast; i++) tick(s);
+  s.player.hp = 30; // the slam is 60
+  let death: Extract<GameState['events'][number], { t: 'death' }> | undefined;
+  for (let i = 0; i < 90 && !death; i++) { tick(s); death = s.events.find((e): e is Extract<typeof e, { t: 'death' }> => e.t === 'death'); }
+  assert(death !== undefined && death.killer === 'Cave Brute: Crushing Slam', `the death event names what killed you (${death?.killer})`);
+  const last = death!.recap[death!.recap.length - 1];
+  assert(death!.recap.length >= 1 && last.heavy && last.what === 'Crushing Slam' && last.amount === 60 && last.ago < 0.1, 'the recap ends with the killing blow, its size and that it was the heavy attack');
+  assert(death!.recap.every((h, k, a) => h.ago >= 0 && h.ago <= RECAP_WINDOW + 0.1 && (k === 0 || a[k - 1].ago >= h.ago)), 'the recap lists the last few hits, oldest first, inside the recap window');
+  const swing = death!.recap.find(h => h.what === 'Melee');
+  assert(swing === undefined || (swing.src === 'brute' && !swing.heavy), 'ordinary swings are labelled Melee');
+  run(s, RESPAWN_DELAY + 0.5);
+  tick(s, { ability: SLOT.strike });
+  assert(s.player.recap.length === 0, 'the recap starts fresh in the next life');
 }
 
 console.log(`\nAll ${checks} checks passed.`);

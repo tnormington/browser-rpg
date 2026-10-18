@@ -1,10 +1,12 @@
 // Item data, drop tables and the single derived-stat function. Pure data + math: no DOM/Three.
+import { BARE_SWING } from './data';
 
 export type EquipSlot = 'weapon' | 'head' | 'chest' | 'legs';
 export const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'head', 'chest', 'legs'];
 
 export interface ItemStats {
   damage?: number; // weapon: flat damage added to every direct hit (before level power)
+  speed?: number;  // weapon: seconds between auto-attack swings (default BARE_SWING); sets the rhythm, not the damage per second
   armor?: number;  // armour: contributes to incoming damage reduction
 }
 
@@ -28,10 +30,10 @@ export const ITEMS: Record<string, ItemDef> = {
   iron_bar: { name: 'Iron Bar', stack: 50, dropWeight: 0, tier: 0, desc: 'Smelted at the forge.' },
   steel_bar: { name: 'Steel Bar', stack: 50, dropWeight: 0, tier: 0, desc: 'Iron hardened with coal.' },
   // weapons
-  rusty_blade: { name: 'Rusty Blade', slot: 'weapon', stats: { damage: 2 }, stack: 1, dropWeight: 10, tier: 1, desc: 'Better than bare hands.' },
-  iron_sword: { name: 'Iron Sword', slot: 'weapon', stats: { damage: 5 }, stack: 1, dropWeight: 6, tier: 2, desc: 'A reliable soldier\'s sword.' },
-  steel_sword: { name: 'Steel Sword', slot: 'weapon', stats: { damage: 9 }, stack: 1, dropWeight: 3, tier: 3, desc: 'Keen, balanced, rare.' },
-  forged_blade: { name: "Forgemaster's Blade", slot: 'weapon', stats: { damage: 18 }, stack: 1, dropWeight: 0, tier: 3, desc: 'Steel you smelted and shaped yourself. Better than anything the enemies carry.' },
+  rusty_blade: { name: 'Rusty Blade', slot: 'weapon', stats: { damage: 2, speed: 2.2 }, stack: 1, dropWeight: 10, tier: 1, desc: 'Better than bare hands.' },
+  iron_sword: { name: 'Iron Sword', slot: 'weapon', stats: { damage: 5, speed: 2.4 }, stack: 1, dropWeight: 6, tier: 2, desc: 'A reliable soldier\'s sword.' },
+  steel_sword: { name: 'Steel Sword', slot: 'weapon', stats: { damage: 9, speed: 2.2 }, stack: 1, dropWeight: 3, tier: 3, desc: 'Keen, balanced, rare.' },
+  forged_blade: { name: "Forgemaster's Blade", slot: 'weapon', stats: { damage: 18, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 3, desc: 'Steel you smelted and shaped yourself. Better than anything the enemies carry.' },
   // armour
   leather_cap: { name: 'Leather Cap', slot: 'head', stats: { armor: 2 }, stack: 1, dropWeight: 10, tier: 1, desc: 'Stitched hide.' },
   hide_jerkin: { name: 'Hide Jerkin', slot: 'chest', stats: { armor: 4 }, stack: 1, dropWeight: 8, tier: 1, desc: 'Stitched hide.' },
@@ -69,6 +71,7 @@ export interface DerivedStats {
   weaponDamage: number; // flat, added to direct-hit base damage
   armor: number;
   reduction: number;    // fraction of incoming damage removed, 0..MAX_REDUCTION
+  swingInterval: number; // seconds between auto-attack swings: the weapon's speed, or BARE_SWING bare-handed
 }
 
 export const ARMOR_K = 40;        // reduction = armor / (armor + ARMOR_K)
@@ -82,21 +85,23 @@ export const emptyEquipment = (): Equipment => ({ weapon: null, head: null, ches
  * ITEMS entry equipped in the weapon slot.
  */
 export function deriveStats(equipment: Equipment): DerivedStats {
-  let weaponDamage = 0, armor = 0;
+  let weaponDamage = 0, armor = 0, swingInterval = BARE_SWING;
   for (const slot of EQUIP_SLOTS) {
     const id = equipment[slot];
     const st = id ? ITEMS[id]?.stats : undefined;
     if (!st) continue;
     weaponDamage += st.damage ?? 0;
     armor += st.armor ?? 0;
+    if (st.speed) swingInterval = st.speed;
   }
-  return { weaponDamage, armor, reduction: Math.min(MAX_REDUCTION, armor / (armor + ARMOR_K)) };
+  return { weaponDamage, armor, reduction: Math.min(MAX_REDUCTION, armor / (armor + ARMOR_K)), swingInterval };
 }
 
 /** Human-readable stat lines for tooltips. */
 export function describeStats(def: ItemDef): string[] {
   const out: string[] = [];
   if (def.stats?.damage) out.push(`+${def.stats.damage} weapon damage`);
+  if (def.stats?.speed) out.push(`${def.stats.speed.toFixed(1)}s swing`);
   if (def.stats?.armor) out.push(`+${def.stats.armor} armour`);
   return out;
 }

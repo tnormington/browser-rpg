@@ -11,9 +11,9 @@ import { beginCraft } from './sim/crafting';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
 import { PLAYER_RADIUS, clampToWorld, resolveCollisions } from './sim/world';
-import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN } from './sim/data';
+import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
 import {
-  clearTarget, pressAbility, refreshPlayerStats, setTarget, tabTarget,
+  acquireFront, clearTarget, pressAbility, refreshPlayerStats, setTarget, tabTarget, toggleAutoAttack,
   updateEnemies, updatePlayerCombat, updatePlayerDeath,
 } from './sim/combat';
 
@@ -23,8 +23,7 @@ export type { ResourceNode } from './sim/gathering';
 export type { Action, Interact } from './sim/actions';
 export type { QuestState } from './sim/quest';
 
-export const TICK_RATE = 30;
-export const TICK_DT = 1 / TICK_RATE;
+export { TICK_RATE, TICK_DT };
 const MOVE_SPEED = 6;
 const ARRIVE_DIST = 0.15;
 
@@ -49,8 +48,18 @@ export interface Enemy {
   heavyCd: number;   // seconds until the heavy attack may start again
 }
 
+/** One incoming hit remembered for the death recap. `at` is game seconds (tick * TICK_DT). */
+export interface RecapEntry { src: string; what: string; amount: number; heavy: boolean; at: number }
+
 export interface Player {
   x: number; z: number; facing: number; moving: boolean;
+  /** Height above the (flat) ground, world units. 0 on the ground. Presentation only: no rule reads it. */
+  y: number; vy: number;
+  airborne: boolean;       // y > 0 after this tick's integration: what the renderer reads
+  autoAttack: boolean;     // armed: swings at the target whenever the swing timer is up and the target is in reach
+  swing: number;           // seconds until the next swing may land; counts down to 0 and waits there for the target to be in reach. Interval is stats.swingInterval
+  inCombat: boolean;       // recent damage either way, or something hostile is chasing you
+  recap: RecapEntry[];     // the last few hits taken, newest last: why you died
   hp: number; maxHp: number;
   energy: number; maxEnergy: number;
   gcd: number;
@@ -78,6 +87,12 @@ export type GameEvent =
   | { t: 'interrupt'; id: number; x: number; z: number }  // a Pummel landed on a wind-up
   | { t: 'slam'; id: number; x: number; z: number; radius: number }  // a heavy attack resolved (hit or miss: the ground shakes either way)
   | { t: 'cast'; slot: number }
+  | { t: 'swing'; target: number; x: number; z: number }   // an auto-attack swing left the player's hand (a 'hit' with slot AUTO_SLOT follows on the same tick)
+  | { t: 'auto'; on: boolean }                              // auto-attack armed / disarmed: the HUD button and swing bar follow this
+  | { t: 'untarget'; id: number; reason: 'dead' | 'evade' } // the target was taken from you, and why (the player's own Esc / retarget raise nothing)
+  | { t: 'combat'; on: boolean }                            // the player entered / left combat
+  | { t: 'jump' }                                           // left the ground
+  | { t: 'land'; x: number; z: number }                     // back on the ground
   | { t: 'kill'; id: number; x: number; z: number }
   | { t: 'xp'; skill: SkillId; amount: number; x: number; z: number }
   | { t: 'levelup'; skill: SkillId; level: number }
@@ -91,7 +106,7 @@ export type GameEvent =
   | { t: 'drop'; id: number; item: string; x: number; z: number }
   | { t: 'loot'; item: string; qty: number }
   | { t: 'invfull' }
-  | { t: 'death' }
+  | { t: 'death'; killer: string; recap: { src: string; what: string; amount: number; heavy: boolean; ago: number }[] } // killer: "Cave Brute: Crushing Slam"; recap: last hits, oldest first, `ago` seconds before death
   | { t: 'respawn' };
 
 export interface GameState {
@@ -100,6 +115,8 @@ export interface GameState {
   player: Player;
   moveTarget: { x: number; z: number } | null;
   targetId: number | null;
+  /** The Tab cycle in progress: the order frozen when it began and the index last handed out. Valid only while targetId is order[at]. Transient: not saved. */
+  tab: { order: number[]; at: number } | null;
   enemies: Enemy[];
   drops: GroundDrop[];
   nextDropId: number;
@@ -118,6 +135,10 @@ export interface Input {
   tab: boolean;
   clearTarget: boolean;
   ability: number | null;                       // ability slot pressed this tick
+  // Optional so a caller that predates them still compiles; NO_INPUT carries them all as false.
+  attack?: boolean;                             // the attack key this tick: with no target, acquire the nearest hostile in front; then toggle auto-attack
+  acquire?: boolean;                            // forgiving click: target the nearest hostile in front of the player (always, even with a target held)
+  jump?: boolean;                               // jump if on the ground (held = bunny-hop on landing)
   pickup: number | null;                        // ground-drop id clicked this tick: walk to it
   inv: InvAction[];                             // inventory/equipment actions this tick
   interact: Interact | null;                    // node or forge clicked this tick: walk there and use it
@@ -125,7 +146,7 @@ export interface Input {
   questAdvance: boolean;                        // the advancing dialogue option was chosen this tick
 }
 
-export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, pickup: null, inv: [], interact: null, craft: null, questAdvance: false };
+export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, pickup: null, inv: [], interact: null, craft: null, questAdvance: false };
 
 export function createState(seed = 1): GameState {
   const skills = newSkills();
@@ -134,6 +155,7 @@ export function createState(seed = 1): GameState {
     rng: seed,
     player: {
       x: PLAYER_SPAWN.x, z: PLAYER_SPAWN.z, facing: Math.PI, moving: false,
+      y: 0, vy: 0, airborne: false, autoAttack: false, swing: 0, inCombat: false, recap: [],
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
       gcd: 0, cd: ABILITIES.map(() => 0), unlocked: 1, queued: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
@@ -141,6 +163,7 @@ export function createState(seed = 1): GameState {
     },
     moveTarget: null,
     targetId: null,
+    tab: null,
     enemies: SPAWNS.map((sp, i): Enemy => ({
       id: i + 1, type: sp.type, x: sp.x, z: sp.z, facing: 0, spawnX: sp.x, spawnZ: sp.z,
       hp: ENEMY_TYPES[sp.type].hp, maxHp: ENEMY_TYPES[sp.type].hp, state: 'idle',
@@ -184,6 +207,8 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     if (input.questAdvance) advanceQuest(s);
     if (input.craft) beginCraft(s, input.craft.recipe, input.craft.count);
     if (input.tab) tabTarget(s);
+    if (input.acquire) acquireFront(s);
+    if (input.attack) toggleAutoAttack(s);
     movePlayer(s, input, dt);
     updateInteract(s);
     updateAction(s, dt);
@@ -223,6 +248,28 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   const moved = Math.hypot(p.x - px, p.z - pz);
   p.moving = moved > 1e-4;
   if (len > 1e-4) p.facing = Math.atan2(dx, dz);
+  stepVertical(s, input.jump === true, dt);
   // click-to-move blocked by an obstacle: give up instead of pushing forever
   if (s.moveTarget && len > 1e-4 && moved < len * MOVE_SPEED * dt * 0.1) s.moveTarget = null;
+}
+
+/**
+ * The jump. Vertical position and velocity only: the world is flat, nothing reads `y`, and horizontal movement above is
+ * untouched by it, so a jump changes where the player is drawn and nothing about where they can go or what can hit them.
+ * Gravity is semi-implicit Euler on the fixed step, so the arc is the same every run.
+ */
+function stepVertical(s: GameState, wantsJump: boolean, dt: number) {
+  const p = s.player;
+  if (wantsJump && p.y === 0 && p.vy === 0) {
+    p.vy = JUMP_VELOCITY;
+    p.action = null; // like moving, hopping breaks the concentration of a gather or craft
+    s.events.push({ t: 'jump' });
+  }
+  if (p.y === 0 && p.vy === 0) { p.airborne = false; return; }
+  p.vy -= GRAVITY * dt;
+  p.y += p.vy * dt;
+  if (p.y <= 0) {
+    p.y = 0; p.vy = 0; p.airborne = false;
+    s.events.push({ t: 'land', x: p.x, z: p.z });
+  } else p.airborne = true;
 }
