@@ -1,6 +1,6 @@
 // HUD: DOM overlay. Reads GameState and sim events; never mutates sim state.
 import { GameState, GameEvent, ResourceNode } from './sim';
-import { ABILITIES, ENEMY_TYPES, GCD } from './sim/data';
+import { ABILITIES, ENEMY_TYPES, GCD, castName } from './sim/data';
 import { levelProgress } from './sim/xp';
 import { ITEMS } from './sim/items';
 import { InvAction } from './sim/inventory';
@@ -12,7 +12,6 @@ import { SkillsUi } from './skills-ui';
 import { ForgeUi } from './forge-ui';
 import { QuestUi } from './quest-ui';
 import { MenuUi } from './menu-ui';
-import { QUEST_NAME } from './sim/quest';
 
 const PUMMEL = ABILITIES.findIndex(a => a.kind === 'interrupt');
 
@@ -236,11 +235,11 @@ export class Hud {
       } else if (ev.t === 'npc') {
         this.questUi.setOpen(true, s);
       } else if (ev.t === 'quest') {
-        if (ev.what === 'accept') this.note(`Quest accepted: ${QUEST_NAME}`, 'log-quest');
+        if (ev.what === 'accept') this.note(`Quest accepted: ${ev.name}`, 'log-quest');
         else if (ev.what === 'stage') this.note('Quest updated: see the tracker', 'log-quest');
         else if (ev.what === 'complete') {
           this.popBanner(this.questBanner, 'QUEST COMPLETE');
-          this.note(`Quest complete: ${QUEST_NAME}`, 'log-quest');
+          this.note(`Quest complete: ${ev.name}`, 'log-quest');
         }
       } else if (ev.t === 'death') {
         this.note('You have died.', 'log-bad');
@@ -272,9 +271,11 @@ export class Hud {
     const e = s.enemies.find(x => x.id === ev.id), p = s.player;
     if (!e || Math.hypot(e.x - p.x, e.z - p.z) > 16) return;
     const def = ENEMY_TYPES[e.type];
-    const name = ev.kind === 'heavy' ? def.heavy!.name : def.ranged!.name;
+    const name = castName(def, ev.kind);
     const canPummel = p.combat.level >= ABILITIES[PUMMEL].unlockLevel;
-    const answer = ev.kind === 'heavy'
+    const answer = ev.kind === 'ground'
+      ? (canPummel ? `Pummel it (${PUMMEL + 1}), or keep moving: it lands where you stood.` : 'Keep moving: it lands where you stood.')
+      : ev.kind === 'heavy'
       ? (canPummel ? `Pummel it (${PUMMEL + 1}) or step out of the circle!` : 'Step out of the circle!')
       : (canPummel ? `Pummel it (${PUMMEL + 1}) or break line of fire!` : 'Close in and strike it down!');
     this.warn.textContent = `${name.toUpperCase()}  -  ${answer}`;
@@ -314,7 +315,7 @@ export class Hud {
       this.setBar(this.targetHp, t.hp / t.maxHp, `${Math.ceil(t.hp)} / ${t.maxHp}`);
       this.targetCast.fill.parentElement!.style.display = t.cast ? 'block' : 'none';
       if (t.cast) {
-        this.setBar(this.targetCast, t.cast.t / t.cast.total, t.cast.kind === 'heavy' ? def.heavy!.name : def.ranged!.name);
+        this.setBar(this.targetCast, t.cast.t / t.cast.total, castName(def, t.cast.kind));
       }
     }
 

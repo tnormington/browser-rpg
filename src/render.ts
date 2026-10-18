@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
-import { CAVE_MOUTH, CAVE_ROCKS, CAVE_PILLARS, CAVE_ROOMS, caveDepth, caveWallPoints, inCave } from './sim/world';
+import { CAVE_MOUTH, CAVE_ROCKS, CAVE_PILLARS, CAVE_ROOMS, caveDepth, caveWallPoints, clampToWorld, inCave } from './sim/world';
 import { ENEMY_TYPES, JUMP_VELOCITY, GRAVITY, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NPC, npcMarker as markerOf } from './sim/quest';
@@ -115,6 +115,14 @@ const MOUTH_TOPS = [{ x: -21, y: 2.6, z: -27.8, w: 4.6 }, { x: -15, y: 2.6, z: -
 /** Enemy click volume: a vertical capsule as tall as the model on screen, wide enough for the widest of its body and its sim radius. A little generous on purpose. */
 const PICK_SPHERES = 4;
 const CAMERA_JUMP_FOLLOW = 0.5;
+/**
+ * In the cave the orbit camera is pulled in along its own ray until it is on the floor (the walls are rectangle edges in the sim, so there is nothing
+ * to raycast) and short of the first rock (wall boulder, standing stone, mouth rock) the ray would pass through; never closer to the player than
+ * this fraction of the orbit. A rock the player is itself standing in (the throat and neck are only 5 wide and the boulders poke into them) is
+ * ignored, so the camera may be no nearer such a boulder than the player is; the floor test is what keeps it out of the wall behind.
+ */
+const CAMERA_FLOOR_MARGIN = 0.3, CAMERA_ROCK_MARGIN = 0.2, CAMERA_MIN_PULL = 0.25, CAMERA_ROCK_FILL = 0.38; // a faceted boulder fills about this fraction of its width from the centre
+
 const QUADRUPEDS = new Set(['boar', 'wolf', 'pup']);
 function pickVolume(type: string): { height: number; radius: number } {
   const slot = slotOf(type), height = SLOTS[slot as 'boar'].height! * lookScale(type);
@@ -667,6 +675,26 @@ export class Renderer {
     this.post.setSize(innerWidth, innerHeight);
   }
 
+  /** Every rock the cave camera must not clip, as discs on the floor plan. Built once the wall boulders exist. */
+  private cameraRocks: { x: number; z: number; r: number }[] = [];
+  private pullCameraInside(fx: number, fy: number, fz: number) {
+    if (!this.cameraRocks.length) {
+      this.cameraRocks = [...this.caveWallPts.map(p => ({ x: p.x, z: p.z, r: p.w * CAMERA_ROCK_FILL })), ...CAVE_PILLARS, ...CAVE_MOUTH.map(o => ({ x: o.x, z: o.z, r: o.r * 1.1 }))];
+    }
+    const c = this.camera.position, dx = c.x - fx, dz = c.z - fz, len2 = dx * dx + dz * dz;
+    const onFloor = (k: number) => { const p = { x: fx + dx * k, z: fz + dz * k }, o = clampToWorld(p, CAMERA_FLOOR_MARGIN); return o.x === p.x && o.z === p.z; };
+    let k = 1;
+    while (k > CAMERA_MIN_PULL && !onFloor(k)) k -= 0.05;
+    for (const o of this.cameraRocks) {
+      const r = o.r + CAMERA_ROCK_MARGIN, ox = o.x - fx, oz = o.z - fz;
+      if (ox * ox + oz * oz < r * r) continue; // the player is standing in this one
+      const tc = (ox * dx + oz * dz) / len2, miss2 = (ox - dx * tc) ** 2 + (oz - dz * tc) ** 2; // tc: closest approach along the ray, 0..1
+      if (tc > 0 && miss2 < r * r) k = Math.min(k, tc - Math.sqrt((r * r - miss2) / len2));
+    }
+    k = Math.max(k, CAMERA_MIN_PULL);
+    c.set(fx + dx * k, fy + (c.y - fy) * k, fz + dz * k);
+  }
+
   get quality() { return this.post.quality; }
   setQuality(q: Quality) { this.post.setQuality(q); }
 
@@ -1044,6 +1072,7 @@ export class Renderer {
       x + Math.sin(this.yaw) * cp * this.distance,
       Math.max(0.5, 1.5 + lift + Math.sin(this.pitch) * this.distance),
       z + Math.cos(this.yaw) * cp * this.distance);
+    if (inCave(x, z)) this.pullCameraInside(x, 1.5 + lift, z);
     this.shakeMag *= 0.88;
     if (this.shakeMag > 0.005) {
       this.camera.position.x += (Math.random() - 0.5) * this.shakeMag;

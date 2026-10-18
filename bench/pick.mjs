@@ -49,7 +49,8 @@ window.measure = (id) => {
 };` });
 
 // type, distance from the player in world units (the camera is 10 behind the player, so the enemy is 10 + dist from the lens), pitch
-const CASES = [['boar', 6, 0.5], ['boar', 14, 0.5], ['wolf', 8, 0.5], ['wolf', 18, 0.35], ['pup', 8, 0.5], ['pup', 14, 0.5], ['hexer', 11, 0.5], ['hexer', 18, 0.35], ['brute', 5, 0.5], ['brute', 12, 0.5], ['brute', 20, 0.35]];
+const CASES = [['boar', 6, 0.5], ['boar', 14, 0.5], ['wolf', 8, 0.5], ['wolf', 18, 0.35], ['pup', 8, 0.5], ['pup', 14, 0.5], ['hexer', 11, 0.5], ['hexer', 18, 0.35], ['brute', 5, 0.5], ['brute', 12, 0.5], ['brute', 20, 0.35],
+  ['ravager', 6, 0.5], ['ravager', 14, 0.5], ['ogre', 6, 0.5], ['ogre', 14, 0.5], ['archer', 8, 0.5], ['archer', 16, 0.35], ['seer', 8, 0.5], ['seer', 16, 0.35], ['warden', 6, 0.5], ['warden', 14, 0.5], ['warden', 20, 0.35]];
 const rows = [];
 for (const [type, dist, pitch] of CASES) {
   const id = await page.evaluate(([t, d, p]) => window.setup(t, d, p), [type, dist, pitch]);

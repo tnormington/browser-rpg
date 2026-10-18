@@ -1,7 +1,7 @@
 // Quest tracker (objective, live progress, arrow to the next place to go) and the NPC dialogue panel. Reads GameState only;
 // the one thing it can do is ask the sim to advance the quest.
 import type { GameState } from './sim';
-import { DIALOGUE, NPC, QUEST_STAGES, QuestStage, TALK_RANGE, questView } from './sim/quest';
+import { Dialogue, NPC, TALK_RANGE, activeDialogue, activeQuestView } from './sim/quest';
 import { el } from './dom';
 
 export class QuestUi {
@@ -16,7 +16,7 @@ export class QuestUi {
   private opts: HTMLElement;
   private open = false;
   private reply: string | null = null; // showing an answer instead of the stage's lines
-  private openStage: QuestStage = 'offer';
+  private dialogue: Dialogue | null = null; // fixed when the panel opens, so a stage change mid-talk cannot swap the text
   private sig = '';
   private trackerSig = '';
   private replyCloses = false; // the reply followed an accepted quest step: Okay ends the conversation
@@ -44,15 +44,15 @@ export class QuestUi {
     this.reply = null;
     this.sig = '';
     this.panel.style.display = on ? 'block' : 'none';
-    if (on && s) this.openStage = s.quest.stage;
+    if (on && s) this.dialogue = activeDialogue(s);
   }
 
   update(s: GameState, yaw: number) {
-    const v = questView(s), p = s.player;
-    const trackerSig = JSON.stringify([v.title, v.lines, v.stageNo]);
+    const v = activeQuestView(s), p = s.player;
+    const trackerSig = JSON.stringify([v.title, v.lines, v.progress]);
     if (trackerSig !== this.trackerSig) { // rebuild only when the text changes
       this.trackerSig = trackerSig;
-      this.title.textContent = `${v.title}  ${v.stageNo >= QUEST_STAGES.length ? '' : `(${v.stageNo}/${QUEST_STAGES.length - 1})`}`;
+      this.title.textContent = `${v.title}  ${v.progress}`;
       this.lines.textContent = '';
       for (const l of v.lines) el(this.lines, `qline${l.done ? ' done' : ''}`, `${l.done ? '✔' : '•'} ${l.text}`);
     }
@@ -75,10 +75,11 @@ export class QuestUi {
   }
 
   private renderDialogue() {
-    const sig = `${this.openStage}|${this.reply}`;
+    const d = this.dialogue;
+    if (!d) return;
+    const sig = `${d.lines[0]}|${this.reply}`;
     if (sig === this.sig) return;
     this.sig = sig;
-    const d = DIALOGUE[this.openStage];
     this.text.textContent = '';
     this.opts.textContent = '';
     if (this.reply) {

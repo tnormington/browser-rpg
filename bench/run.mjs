@@ -4,6 +4,7 @@
 //   npm run bench -- --levels 1,5       choose levels
 //   npm run shot                        one screenshot at 1x, no timing sweep
 //   --headed  visible window     --frames N  timing window (default 300)     --skip-build
+//   --at x,z,yaw   stand there before measuring, e.g. the cave's hollow: --at -20,-55,-0.8 --tag cave   (the player cannot die while it runs)
 import { build, preview } from 'vite';
 import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -20,6 +21,7 @@ const WINDOW_CAP_MS = 20000; // timing window ends at `frames` frames or this wa
 const VIEW = { width: 1280, height: 720 };
 const query = opt('query', ''); // extra URL params appended to the dev-server URL
 const quality = opt('quality', 'high'); // high | low
+const at = opt('at', '')?.split(',').map(Number); // x,z,yaw
 const tag = opt('tag', '');     // suffix for output file names, e.g. --tag noshadow
 const shots = join(root, 'bench', 'shots');
 mkdirSync(shots, { recursive: true });
@@ -51,6 +53,10 @@ async function measure(level) {
   await page.evaluate(() => window.__debug.view.modelsReady); // models stream in: wait for every slot to settle before measuring
   await page.locator('.helpok').click({ timeout: 5000 }).catch(() => {}); // dismiss the controls overlay
   await page.evaluate(q => window.__debug.view.setQuality(q), quality);
+  if (at) await page.evaluate(([x, z, yaw]) => {
+    const d = window.__debug, p = d.sim.player;
+    p.hp = p.maxHp = 99999; p.x = x; p.z = z; d.view.yaw = yaw; d.view.pitch = 0.45; d.view.distance = 9; d.step(); d.step();
+  }, at);
   // warm-up: a stable run of frames (shader compile, first uploads) before measuring anything
   await page.evaluate(() => new Promise(res => { let n = 0; const f = () => (++n >= 60 ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }));
   const label = `stress-${level}x${headed ? '-headed' : ''}${tag ? '-' + tag : ''}`;
