@@ -142,6 +142,7 @@ export class Hud {
   private talentsUi: TalentsUi;
   private forgeUi: ForgeUi;
   private rangeUi: ForgeUi;
+  private alembicUi: ForgeUi;
   private shopUi: ShopUi;
   private flightUi: FlightUi;
   private mapUi: MapUi;
@@ -213,11 +214,12 @@ export class Hud {
     const craft = (r: string, n: number) => { this.acting = true; actions.craft(r, n); };
     this.forgeUi = new ForgeUi(this.root, 'forge', 'Forge', craft);
     this.rangeUi = new ForgeUi(this.root, 'range', 'Cooking Range', craft);
+    this.alembicUi = new ForgeUi(this.root, 'alembic', 'Alembic', craft);
     this.castBar = bar(this.root, 'castbar');
     this.questUi = new QuestUi(this.root, actions.questAdvance);
     this.bookUi = new SpellbookUi(this.root, () => this.bar, a => this.keyForAbility(a), a => this.assign(this.bar.indexOf(a), null));
     this.menuUi = new MenuUi(this.root, actions);
-    this.windows = [this.mapUi, this.menuUi, this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi,
+    this.windows = [this.mapUi, this.menuUi, this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi, this.alembicUi,
       this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char];
     this.renderBar();
   }
@@ -375,8 +377,8 @@ export class Hud {
         const name = `${ITEMS[ev.item].name}`;
         this.float(ev.sold ? `+${ev.gold} gold` : `-${ev.gold} gold`, 'loot', s.player.x, 3.0, s.player.z);
         this.note(ev.sold ? `Sold ${name} for ${ev.gold} gold` : `Bought ${name} for ${ev.gold} gold`, 'log-loot');
-      } else if (ev.t === 'forge' || ev.t === 'range') {
-        (ev.t === 'forge' ? this.forgeUi : this.rangeUi).setOpen(true);
+      } else if (ev.t === 'forge' || ev.t === 'range' || ev.t === 'alembic') {
+        ({ forge: this.forgeUi, range: this.rangeUi, alembic: this.alembicUi })[ev.t].setOpen(true);
       } else if (ev.t === 'crafted') {
         const text = `${SKILLS[ev.skill].made} ${ev.qty > 1 ? ev.qty + 'x ' : ''}${ITEMS[ev.item].name}`;
         this.float(text, 'loot', s.player.x, 3.0, s.player.z);
@@ -633,6 +635,7 @@ export class Hud {
     this.questUi.update(s, this.yaw());
     this.forgeUi.update(s);
     this.rangeUi.update(s);
+    this.alembicUi.update(s);
     this.shopUi.update(s);
     this.flightUi.update(s);
     this.mapUi.update(s);

@@ -219,7 +219,7 @@ export class WorldView {
 
     // scenery: the region's obstacles that stand in this slab (a slab of a north-south region is cut in z, so z counts too)
     const long = isLong(main), inSlab = (o: { x: number; z: number }) => o.x >= rect.x0 && o.x < rect.x1 && (!long || (o.z >= rect.z0 && o.z < rect.z1));
-    this.scenery(r.obstacles.filter(inSlab), r.herbs?.filter(inSlab) ?? [], rect, r, add);
+    this.scenery(r.obstacles.filter(inSlab), rect, r, add);
 
     // the edge of the world: a wall of boulders where the floor ends and nothing else begins
     this.boundary(floors, rect, r, add);
@@ -264,7 +264,7 @@ export class WorldView {
   }
 
   /** Obstacles by what they are, merged into one draw per material; the road's waymarks ride with the slab they stand in. */
-  private scenery(obs: Obstacle[], herbs: NonNullable<Region['herbs']>, rect: Rect, r: Region, add: (o: THREE.Object3D) => void) {
+  private scenery(obs: Obstacle[], rect: Rect, r: Region, add: (o: THREE.Object3D) => void) {
     const bag = newBag();
     obs.forEach((o, i) => {
       const h = hash(o.x * 3.1 + o.z * 7.7), ry = h * Math.PI * 2;
@@ -292,7 +292,6 @@ export class WorldView {
         }
       }
     });
-    herbs.forEach((hb, i) => placeProp(bag, hb.kind === 'fen' ? 'herbPatchFen' : 'herbPatchThorn', hb.x, hb.z, hash(i * 3 + hb.x) * Math.PI * 2, 1));
     if (r.road) this.waymarks(bag, rect, mainRect(r), r.road.axis, r.id === 'greywater' ? 100 : 0);
     if (r.id === 'dunmere') this.fenDressing(bag, rect, r);
     if (r.id === 'thornwick') this.woodDressing(bag, rect, r);

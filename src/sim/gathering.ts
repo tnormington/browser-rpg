@@ -6,6 +6,7 @@ import { SkillId, grantXp } from './skills';
 import { masteryTime, masteryYield } from './mastery';
 import { addItem, hasRoom } from './inventory';
 import { FISH } from './fish';
+import { HERBS } from './herbs';
 
 export interface NodeDef {
   name: string;
@@ -30,6 +31,8 @@ export const NODE_TYPES: Record<string, NodeDef> = {
   tree: { name: 'Tree', skill: 'woodcutting', level: 1, item: 'logs', time: 3, xp: 25, charges: 2, respawn: 20 },
   // fishing spots, one per fish (fish.ts): five catches of four seconds, back after twenty. Only the first three have water placed (world.ts)
   ...Object.fromEntries(FISH.map((f): [string, NodeDef] => [f.id, { name: `${f.name} Shoal`, skill: 'fishing', level: f.level, item: f.id, time: 4, xp: f.xp, charges: 5, respawn: 20 }])),
+  // herb patches, one per herb (herbs.ts): three gathers of three seconds, back after 25, like the ore
+  ...Object.fromEntries(HERBS.map((h): [string, NodeDef] => [h.id, { name: `${h.name} Patch`, skill: 'herbalism', level: h.level, item: h.id, time: 3, xp: h.xp, charges: 3, respawn: 25 }])),
 };
 
 export interface ResourceNode {

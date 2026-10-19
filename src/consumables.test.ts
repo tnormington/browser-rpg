@@ -96,7 +96,7 @@ section('HOM-48 cooking: a recipe names its station');
   stand(s, LANDMARKS.forge);
   tick(s, { craft: { recipe: cookedId(FISH[0]), count: 3 } });
   assert(failOf(s)?.reason === 'range' && failOf(s)?.station === 'cooking range' && s.player.action === null, 'at the forge you cannot cook: the range is where it is done');
-  assert(!nearStation(s, 'range') && !nearStation(s, 'alembic') && nearStation(s, 'forge') && STATIONS.alembic === undefined, 'near a station means near that station; an unbuilt one is never near');
+  assert(!nearStation(s, 'range') && !nearStation(s, 'alembic') && nearStation(s, 'forge') && STATIONS.rack === undefined && !nearStation(s, 'rack'), 'near a station means near that station; an unbuilt one is never near');
   stand(s, LANDMARKS.range, 2);
   tick(s, { craft: { recipe: cookedId(FISH[0]), count: 3 } });
   run(s, 12);

@@ -1,4 +1,4 @@
-// Crafting at a station (the forge, the cooking range): recipes, requirements, timed crafting. Pure sim.
+// Crafting at a station (the forge, the cooking range, the alembic): recipes, requirements, timed crafting. Pure sim.
 import type { GameState } from '../sim';
 import type { Action } from './actions';
 import { LANDMARKS, Pt } from './world';
@@ -7,8 +7,9 @@ import { ITEMS } from './items';
 import { masteryTime, masteryYield } from './mastery';
 import { addItem, countItem, hasRoom, removeItem } from './inventory';
 import { FISH, SEA_SALT, cookedId, pieId } from './fish';
+import { HERBS, VIAL } from './herbs';
 
-/** Where a recipe is made. Only the forge and the range are built; the rest are named by the bible (2.2) for the skills still to come. */
+/** Where a recipe is made. The forge, the range and the alembic are built; the rest are named by the bible (2.2) for the skills still to come. */
 export type Station = 'forge' | 'range' | 'alembic' | 'rack' | 'circle';
 
 export interface Recipe {
@@ -81,6 +82,9 @@ export const RECIPES: Recipe[] = [
     { id: pieId(f), name: `${f.name} Pie`, skill: 'cooking', station: 'range', level: f.level + 2, time: 6, xp: Math.round(f.cookXp * 1.5 / 5) * 5,
       inputs: [{ id: f.id, qty: 2 }, { id: SEA_SALT, qty: 1 }], output: { id: pieId(f), qty: 1 } },
   ]),
+  // the alembic: an herb and an empty vial make its potion. Alchemy asks the herb's own level
+  ...HERBS.map((h): Recipe => ({ id: h.potion.id, name: h.potion.name, skill: 'alchemy', station: 'alembic', level: h.level, time: 4, xp: h.potion.xp,
+    inputs: [{ id: h.id, qty: 1 }, { id: VIAL, qty: 1 }], output: { id: h.potion.id, qty: 1 } })),
 ];
 
 export const FORGE_REACH = 6; // centre-to-centre; the hut is 2.6 radius
@@ -91,6 +95,7 @@ export const MAX_BATCH = 99;
 export const STATIONS: Partial<Record<Station, { at: Pt; name: string }>> = {
   forge: { at: LANDMARKS.forge, name: 'forge' },
   range: { at: LANDMARKS.range, name: 'cooking range' },
+  alembic: { at: LANDMARKS.alembic, name: 'alembic' },
 };
 export const stationOf = (r: Recipe): Station => r.station ?? 'forge';
 

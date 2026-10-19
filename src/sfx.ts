@@ -294,11 +294,12 @@ export function playEvents(events: GameEvent[]) {
       case 'loot': play('loot', [SOUNDS.loot]); break;
       case 'crafted':
         if (ev.skill === 'cooking') { play('cook', [SOUNDS.cookDone]); break; }
+        if (ev.skill === 'alchemy') { play('loot', [SOUNDS.loot]); break; } // no free bubbling yet: a brew is the loot chime, not a smith's clang
         play('smith', [SOUNDS.smith1, { ...SOUNDS.smith2, delay: SMITH_STEP }, { ...SOUNDS.smith1, delay: SMITH_STEP * 2 }]);
         break;
       case 'forge': play('smith', [SOUNDS.forge]); break;
       case 'step': play('step', [ev.surface === 'cave' ? SOUNDS.stepCave : SOUNDS.stepGrass]); break;
-      case 'gather': if (ev.skill !== 'fishing') play('gather', [ev.skill === 'mining' ? SOUNDS.mine : SOUNDS.chop]); break; // no free splash yet: a shoal is quiet
+      case 'gather': if (ev.skill === 'mining' || ev.skill === 'woodcutting') play('gather', [ev.skill === 'mining' ? SOUNDS.mine : SOUNDS.chop]); break; // no free splash yet: a shoal is quiet, and so is a patch of herb
       case 'death':
         play('stinger', [SOUNDS.death], { steal: true, noGap: true });
         duck();

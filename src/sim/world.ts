@@ -37,6 +37,8 @@ export interface RockSpot extends Obstacle { type: 'copper' | 'tin' | 'iron' | '
 
 /** A gathering spot you stand beside and cannot stand on: a shoal in the water. Unlike a rock it is not a collider. `type` is a NODE_TYPES key. */
 export interface NodeSpot extends Obstacle { type: string }
+const HERB_RADIUS = 1;
+export interface HerbSpot { kind: 'fen' | 'thorn'; type: string; x: number; z: number }
 
 export interface Region {
   id: string;
@@ -74,8 +76,8 @@ export interface Region {
   road?: { axis: 'x' | 'z'; at: number };
   /** Withering Ground: standing in one of these hurts (sim/hazards.ts), and the renderer draws each with the telegraph circle of a boss's ground mark. World coordinates. */
   hazards?: { x: number; z: number; r: number }[];
-  /** Herb patches: drawn props with no collider and (until herbalism arrives) no use. `kind` picks the family. */
-  herbs?: { kind: 'fen' | 'thorn'; x: number; z: number }[];
+  /** Herb patches: gathering nodes (after the region's `spots`) with no collider. `kind` picks the look, `type` the herb (a NODE_TYPES row, herbs.ts). */
+  herbs?: HerbSpot[];
   gates?: Gate[];
 }
 
@@ -270,23 +272,23 @@ const dunmereSpawns = worldSpawns(DUNMERE, DUNMERE_SPAWNS);
  * Withering Ground: nineteen stained patches of fen, none within ten of the road, none on a camp. Standing in one drains health a second
  * (sim/hazards.ts); the renderer draws each as the ground circle of a boss's mark. Every third has a fenbloom growing at its rim.
  */
-function witheringPatches(spawns: Pt[]): { hazards: { x: number; z: number; r: number }[]; herbs: { kind: 'fen'; x: number; z: number }[] } {
-  const hazards: { x: number; z: number; r: number }[] = [], herbs: { kind: 'fen'; x: number; z: number }[] = [];
+function witheringPatches(spawns: Pt[]): { hazards: { x: number; z: number; r: number }[]; herbs: HerbSpot[] } {
+  const hazards: { x: number; z: number; r: number }[] = [], herbs: HerbSpot[] = [];
   for (let i = 0; i < 19; i++) {
     const lz = -400 + i * 44 + (hash(i * 5 + 1) - 0.5) * 16, r = 5 + hash(i * 3 + 2) * 3.5, off = 24 + hash(i * 7 + 3) * 28;
     const spot = [1, -1].map(side => at(DUNMERE, (i % 2 ? 1 : -1) * side * off, lz)).find(c => spawns.every(sp => Math.hypot(sp.x - c.x, sp.z - c.z) > r + 12));
     if (!spot) continue;
     hazards.push({ ...spot, r });
-    if (i % 3 === 0) herbs.push({ kind: 'fen', x: spot.x + r * 0.9, z: spot.z + r * 0.3 });
+    if (i % 3 === 0) herbs.push({ kind: 'fen', type: 'fenbloom', x: spot.x + r * 0.9, z: spot.z + r * 0.3 });
   }
   return { hazards, herbs };
 }
 /** Fenbloom along the verges, in threes: a walker sees one cluster from the last. */
-function fenHerbs(hazards: { x: number; z: number; r: number }[]): { kind: 'fen'; x: number; z: number }[] {
-  const out: { kind: 'fen'; x: number; z: number }[] = [];
+function fenHerbs(hazards: { x: number; z: number; r: number }[]): HerbSpot[] {
+  const out: HerbSpot[] = [];
   for (let j = 0; j < 12; j++) for (let k = 0; k < 3; k++) {
     const c = at(DUNMERE, (j % 2 ? 1 : -1) * (13 + hash(j * 3 + 1) * 5 + k * 1.8), -390 + j * 68 + k * 2.2 + hash(j + k) * 6);
-    if (!hazards.some(h => Math.hypot(h.x - c.x, h.z - c.z) < h.r + 1)) out.push({ kind: 'fen', ...c });
+    if (!hazards.some(h => Math.hypot(h.x - c.x, h.z - c.z) < h.r + 1)) out.push({ kind: 'fen', type: 'fenbloom', ...c });
   }
   return out;
 }
@@ -334,9 +336,9 @@ function thornwood(): Obstacle[] {
   return out;
 }
 const THORNWOODS = thornwood();
-/** The garden by the alembic, and thorn herb wherever the wood thins. */
-const THORN_HERBS = [[22, -30], [25, -26], [28, -32], [24, -22], [20, -24], [29, -20], [-52, 8], [-44, 20], [40, 50], [52, 18], [-20, 44], [8, 36], [30, 24], [-62, 36]]
-  .map(([lx, lz]) => ({ kind: 'thorn' as const, ...at(THORNWICK, lx, lz) }));
+/** The garden by the alembic (Marrowleaf, the first six: the one herb a new gatherer can pick), and Thornmint wherever the wood thins. */
+const THORN_HERBS: HerbSpot[] = [[22, -30], [25, -26], [28, -32], [24, -22], [20, -24], [29, -20], [-52, 8], [-44, 20], [40, 50], [52, 18], [-20, 44], [8, 36], [30, 24], [-62, 36]]
+  .map(([lx, lz], i) => ({ kind: 'thorn' as const, type: i < 6 ? 'marrowleaf' : 'thornmint', ...at(THORNWICK, lx, lz) }));
 /** The east gate, onto the road to the Barrowdowns: refuses everyone for now, since nothing is built behind it. */
 const THORN_GATE: Gate = {
   id: 'barrowdowns', axis: 'x', at: THORNWICK.x + 63, span: [THORNWICK.z - 3, THORNWICK.z + 3], from: -1, combat: 22, keeper: 'Gatewarden Hobb', post: { x: THORNWICK.x + 60.6, z: THORNWICK.z - 4 },
@@ -497,7 +499,7 @@ export const REGIONS: Region[] = [
   },
   {
     // Thornwick and the Thornwood. The town is safe ground: no spawns, no aggro. The thornoaks have no woodcutting rung yet (Woodcutting has one tree),
-    // so they are scenery that stops you; the herb patches are props until herbalism. The Rotroot's mouth and the Barrowdowns road are later cards.
+    // so they are scenery that stops you; the herb patches are Herbalism nodes. The Rotroot's mouth and the Barrowdowns road are later cards.
     id: 'thornwick', name: 'Thornwick', cave: false, zone: 'thornwick',
     footprint: [{ x0: THORNWICK.x - 70, x1: THORNWICK.x + 70, z0: THORNWICK.z - 70, z1: THORNWICK.z + 70 }],
     obstacles: [
@@ -638,9 +640,9 @@ export const inSafeZone = (x: number, z: number) => SAFE_ZONES.some(c => Math.hy
  */
 export const SIGHT_BLOCKERS: Obstacle[] = [...REGIONS.flatMap(r => r.tall), ...REGIONS.flatMap(r => r.trees)];
 
-/** The gatherable spots in node-id order: region by region, each region's rocks, then its trees, then its fishing spots. Ids are positions in this list. */
+/** The gatherable spots in node-id order: region by region, each region's rocks, then its trees, then its fishing spots, then its herb patches. Ids are positions in this list. */
 export const nodeSpots = (): (RockSpot | NodeSpot)[] =>
-  REGIONS.flatMap(r => [...r.rocks, ...r.trees.map(t => ({ ...t, type: 'tree' as const })), ...(r.spots ?? [])]);
+  REGIONS.flatMap(r => [...r.rocks, ...r.trees.map(t => ({ ...t, type: 'tree' as const })), ...(r.spots ?? []), ...(r.herbs ?? []).map(h => ({ type: h.type, x: h.x, z: h.z, r: HERB_RADIUS }))]);
 
 /** Every region's floor in one list (the same rect objects, so a resized clearing shows here). */
 export const FOOTPRINT: Rect[] = REGIONS.flatMap(r => r.footprint);

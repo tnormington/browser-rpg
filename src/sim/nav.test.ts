@@ -4,7 +4,7 @@ import {
   TOWNS, Pt, clampToWorld, collidersAt, collidersIn, inCave, inSafeZone, regionAt, regionById, setWorldHalf, addScenery,
 } from './world';
 import { route, segmentClear, gridStats, setGridBudget, evictGrids } from './path';
-import { createNodes } from './gathering';
+import { NODE_TYPES, createNodes } from './gathering';
 import { SPAWNS } from './data';
 import { nextRandom } from './rng';
 
@@ -31,8 +31,9 @@ assert(REGIONS.every(r => r.connections.every(c => {
 assert(regionAt(0, 0)?.id === 'clearing' && regionAt(-18, -55)?.id === 'hollow' && regionAt(-18, -85)?.id === 'hall' && regionAt(436, 8)?.id === 'greywater' && regionAt(906, 8)?.id === 'saltmarrow' && regionAt(100, 200) === null, 'regionAt names the region a point is in, and null off the map');
 const nodes = createNodes();
 const WAYSIDE_N = regionById('wayside').rocks.length + regionById('wayside').trees.length;
-assert(nodes.length === 42 + WAYSIDE_N && nodes.slice(0, 7).every(n => n.type === 'iron' || n.type === 'coal') && nodes.slice(7, 19).every(n => n.type === 'tree') && nodes.slice(19, 24).every(n => n.type === 'mithril' || n.type === 'coal') && nodes.slice(24, 29).every(n => n.type === 'adamant') && nodes.slice(29, 36).every(n => ['silverfin', 'brine_trout', 'saltpike'].includes(n.type)) && nodes.slice(36, 42).every(n => n.type === 'copper' || n.type === 'tin'),
-  'node ids are as they were (7 ridge ores, 12 trees, 5 cave veins), with Saltmarrow\'s five adamant veins and its seven fishing spots after them, then the six copper and tin rocks, then the road\'s waysides last of all');
+const HERB_N = (regionById('dunmere').herbs?.length ?? 0) + (regionById('thornwick').herbs?.length ?? 0);
+assert(HERB_N > 0 && nodes.length === 42 + WAYSIDE_N + HERB_N && nodes.slice(42 + WAYSIDE_N).every(n => NODE_TYPES[n.type].skill === 'herbalism') && nodes.slice(0, 7).every(n => n.type === 'iron' || n.type === 'coal') && nodes.slice(7, 19).every(n => n.type === 'tree') && nodes.slice(19, 24).every(n => n.type === 'mithril' || n.type === 'coal') && nodes.slice(24, 29).every(n => n.type === 'adamant') && nodes.slice(29, 36).every(n => ['silverfin', 'brine_trout', 'saltpike'].includes(n.type)) && nodes.slice(36, 42).every(n => n.type === 'copper' || n.type === 'tin'),
+  'node ids are as they were (7 ridge ores, 12 trees, 5 cave veins), with Saltmarrow\'s five adamant veins and its seven fishing spots after them, then the six copper and tin rocks, then the road\'s waysides, then the herb patches of the Fens and the Thornwood last of all');
 assert(nodes[0].x === -10 && nodes[0].z === -25.5 && nodes[7].x === -12 && nodes[7].z === 10 && nodes[19].x === -29.2 && nodes[19].z === -45.5 && nodes[23].x === -8.2, 'and the same node sits at each old id');
 assert(ROCKS.length === 13 && ROCKS.filter(r => r.type === 'iron' || r.type === 'coal').length === 7 && CAVE_ROCKS.length === 5 && TREES.length === 12, 'the flat lists the renderer reads hold what they always did for Hale');
 const SCENERY = REGIONS.reduce((n, r) => n + r.obstacles.length + r.trees.length + r.rocks.length, 0);

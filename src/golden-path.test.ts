@@ -594,7 +594,7 @@ function grindCombat(s: GameState, level: number) {
 section('M3 skills: parallel tracks on the RuneScape curve');
 {
   const s = createState(1);
-  assert(SKILL_IDS.length === 6 && ['combat', 'mining', 'woodcutting', 'smithing', 'fishing', 'cooking'].every(k => SKILLS[k as never]), 'skills: Combat, Mining, Woodcutting, Smithing, Fishing, Cooking');
+  assert(SKILL_IDS.length === 8 && ['combat', 'mining', 'woodcutting', 'smithing', 'fishing', 'cooking', 'herbalism', 'alchemy'].every(k => SKILLS[k as never]), 'skills: Combat, Mining, Woodcutting, Smithing, Fishing, Cooking, Herbalism, Alchemy');
   assert(SKILL_IDS.every(k => s.player.skills[k].level === 1 && s.player.skills[k].xp === 0), 'every skill starts at level 1, 0 xp');
   assert(s.player.skills.combat === s.player.combat, 'combat skill is the same track combat code reads');
   grantXp(s, 'mining', 100, 0, 0);
@@ -1827,8 +1827,9 @@ section('HOM-15 the cave stays out of the first quest');
   assert(NODE_TYPES.mithril && ROCKS.every(r => r.type !== 'mithril') && RIDGE.length === 7 && ROCKS.length === 13 && ROCKS.slice(0, 7).every(r => RIDGE.includes(r)), 'the ridge outside is unchanged: seven iron and coal rocks, no mithril, and copper and tin only after them');
   const s = createState(902);
   const way = REGIONS.find(r => r.id === 'wayside')!, W = way.rocks.length + way.trees.length; // HOM-57: the road's waysides come after everything, the Seams included
-  assert(W >= 24 && s.nodes.slice(-W).every(n => n.x > GREYWATER.x - 400 && n.x < GREYWATER.x + 400), 'the road\'s waysides are the last nodes of all');
-  const kinds = s.nodes.map(n => n.type).slice(0, -W);
+  const herbN = REGIONS.reduce((n, r) => n + (r.herbs?.length ?? 0), 0); // HOM-65: the herb patches of the Fens and the Thornwood come after the waysides
+  assert(W >= 24 && s.nodes.slice(-W - herbN, -herbN).every(n => n.x > GREYWATER.x - 400 && n.x < GREYWATER.x + 400), 'the road\'s waysides are the last nodes of all but the herb patches');
+  const kinds = s.nodes.map(n => n.type).slice(0, -W - herbN);
   assert(kinds.slice(0, RIDGE.length + TREES.length).join() === [...RIDGE.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(RIDGE.length + TREES.length).every(t => t === 'mithril' || t === 'coal' || t === 'adamant' || t === 'copper' || t === 'tin' || NODE_TYPES[t].skill === 'fishing') && kinds.slice(-6).every(t => t === 'copper' || t === 'tin'), // HOM-46: Saltmarrow's adamant is added after the cave's, so it too leaves every older id alone; HOM-48: and its fishing spots after that; HOM-56: and copper and tin last of all
     'cave nodes are added after every existing node, so old node ids (and saves) keep meaning the same rock');
   const caveFolk = SPAWNS.filter(sp => inCave(sp.x, sp.z));
@@ -3514,7 +3515,8 @@ section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each w
   const file = JSON.parse(serialize(old));
   file.nodes = file.nodes.filter((n: { id: number }) => n.id <= 36); // a save from before copper and tin: the world had 36 nodes
   const back = deserialize(JSON.stringify(file));
-  assert(back !== null && back.nodes.length === 42 + REGIONS.find(r => r.id === 'wayside')!.rocks.length + REGIONS.find(r => r.id === 'wayside')!.trees.length && back.nodes[0].charges === 1 && back.nodes.slice(36).every(n => n.charges === NODE_TYPES[n.type].charges), 'an old save still loads: its nodes keep their ids and state, and the six new ones stand full');
+  const herbN = REGIONS.reduce((n, r) => n + (r.herbs?.length ?? 0), 0);
+  assert(back !== null && back.nodes.length === 42 + REGIONS.find(r => r.id === 'wayside')!.rocks.length + REGIONS.find(r => r.id === 'wayside')!.trees.length + herbN && back.nodes[0].charges === 1 && back.nodes.slice(36).every(n => n.charges === NODE_TYPES[n.type].charges), 'an old save still loads: its nodes keep their ids and state, and the six new ones stand full');
   assert(back !== null && back.player.skills.mining.level === 17 && back.player.skills.smithing.level === 19 && back.player.equipment.chest === 'mithril_chestplate' && back.player.equipment.weapon === 'warden_edge', 'a Mining 17, Smithing 19 character keeps both levels and the gear they wear: only the gates moved above them');
 }
 

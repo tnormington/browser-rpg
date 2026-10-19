@@ -134,6 +134,7 @@ export type GameEvent =
   | { t: 'quest'; what: 'accept' | 'progress' | 'stage' | 'complete'; name: string }  // name: the quest it is about (both chains sit at stage 'done' at once)
   | { t: 'forge' }                                      // player reached the forge: open the recipe list
   | { t: 'range' }                                      // ...or the cooking range
+  | { t: 'alembic' }                                    // ...or Thornwick's alembic
   | { t: 'crafted'; item: string; qty: number; skill: SkillId }
   | { t: 'use'; item: string }                          // an item was eaten or drunk (one is gone from the bag)
   | { t: 'eatbreak' }                                   // a hit spoiled the meal being eaten

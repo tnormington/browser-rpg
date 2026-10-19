@@ -4,6 +4,7 @@
 import type { GameState } from '../sim';
 import { LANDMARKS } from './world';
 import { ITEMS } from './items';
+import { VIAL } from './herbs';
 import { addItem, hasRoom, refreshGearStats } from './inventory';
 import { ABILITIES } from './data';
 import { damagedGear, repairCost } from './durability';
@@ -22,8 +23,8 @@ export const SHOP_STOCK = ['rusty_blade', 'leather_cap', 'hide_jerkin', 'hide_le
 /** Saltmarrow's stock is the tier above Hale's (the bible: a town sells the previous tier's dropped gear), and again never anything a recipe consumes, bar the pie's pinch of sea salt. */
 export const HARBOUR_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword', 'sea_salt'] as const;
 
-/** Thornwick's is Saltmarrow's stock without the salt: no tier of dropped gear exists above steel yet, and vials arrive with alchemy. */
-export const THORN_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword'] as const;
+/** Thornwick's is Saltmarrow's stock without the salt, and with the vial every potion is poured into: no tier of dropped gear exists above steel yet. */
+export const THORN_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword', VIAL] as const;
 
 export interface Vendor { id: string; name: string; x: number; z: number; r: number; stock: readonly string[] }
 /** Merchants buy and sell; the trainer has no stock and teaches whatever ABILITIES names her in `trainer.vendor`. */

@@ -2,7 +2,7 @@
 // Transient state (aggro, cooldowns, current action, moveTarget, target) is deliberately not saved: a loaded game
 // resumes calm. Anything unrecognised or malformed makes deserialize return null, and the caller starts a new game.
 import { GameState, createState } from '../sim';
-import { SKILL_IDS } from './skills';
+import { SKILL_IDS, SkillId } from './skills';
 import { levelForXp } from './xp';
 import { INVENTORY_SIZE, refreshGearStats } from './inventory';
 import { EQUIP_SLOTS, ITEMS } from './items';
@@ -18,6 +18,8 @@ import { landingSpot, masterById } from './flight';
 export const SAVE_VERSION = 1;
 /** Nothing is further than this from the origin: the world is a few thousand units across at most (Saltmarrow ends near x = 970). */
 const WORLD_LIMIT = 10000;
+/** Skills added after the first save format: a save without them starts them at 0 xp. */
+const LATE_SKILLS: SkillId[] = ['fishing', 'cooking', 'herbalism', 'alchemy'];
 
 interface SaveFile {
   version: number;
@@ -97,7 +99,7 @@ export function deserialize(raw: string): GameState | null {
     if (!isObj(fp)) return null;
     for (const id of SKILL_IDS) {
       const raw = (fp.xp as Record<string, unknown>)[id];
-      const xp = raw === undefined && (id === 'fishing' || id === 'cooking') ? 0 : num(raw, 0, 1e10, `xp.${id}`); // saves from before the two skills have none
+      const xp = raw === undefined && LATE_SKILLS.includes(id) ? 0 : num(raw, 0, 1e10, `xp.${id}`); // saves from before these skills have none
       p.skills[id].xp = xp;
       p.skills[id].level = levelForXp(xp);
     }

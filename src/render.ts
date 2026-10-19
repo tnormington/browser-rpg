@@ -196,6 +196,7 @@ export class Renderer {
   private nodes = new Map<number, NodeView>();
   private forgeParts: THREE.Object3D[] = [];
   private rangeParts: THREE.Object3D[] = [];
+  private alembicPick!: THREE.Mesh;
   private npcParts: THREE.Object3D[] = [];
   private vendorParts: THREE.Object3D[] = [];
   private flightParts: THREE.Mesh[] = [];
@@ -458,6 +459,12 @@ export class Renderer {
       add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.8, 5).rotateZ(Math.PI / 2), P.bark, 'wood'), r.x - 0.1, 1.6, r.z + 0.1),
       add(mesh(new THREE.SphereGeometry(0.3, 7, 4, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2).rotateX(Math.PI), P.anvil, 'metal'), r.x - 0.1, 1.3, r.z + 0.1),
       add(mesh(new THREE.ConeGeometry(0.55, 0.5, 4).rotateY(Math.PI / 4), P.stoneDark, 'stone'), r.x + 0.5, 2.4, r.z - 0.2));
+    // Thornwick's alembic is drawn with the town (world-view.ts, merged): this unseen box over the bench is what a click lands on. Its front faces the square
+    const alembic = LANDMARKS.alembic;
+    this.alembicPick = new THREE.Mesh(new THREE.BoxGeometry(2.6, 3, 1.4), new THREE.MeshBasicMaterial({ visible: false }));
+    this.alembicPick.position.set(alembic.x, 1.5, alembic.z);
+    this.alembicPick.rotation.y = Math.atan2(LANDMARKS.thornSquare.x - alembic.x, LANDMARKS.thornSquare.z - alembic.z) - Math.PI / 2;
+    this.scene.add(this.alembicPick);
     this.forgeLight = add(new THREE.PointLight(P.forgeLight, FORGE_LIGHT.intensity, FORGE_LIGHT.distance), f.x - 1, FORGE_LIGHT.y, f.z + 3.6) as THREE.PointLight;
 
     // cave mouth: the sim's four flank colliders, rock heaped over them and across the top; the way in is the gap between
@@ -919,7 +926,14 @@ export class Renderer {
       mats.push(m.material as Mat);
       return m;
     };
-    if (NODE_TYPES[n.type].skill === 'fishing') {
+    if (NODE_TYPES[n.type].skill === 'herbalism') {
+      // a patch of herb (props.ts): its materials join the node's, so a picked one greys out and shrinks like a spent rock. The invisible disc is the click target: a tuft is small
+      const patch = this.buildProp(n.type === 'fenbloom' ? 'herbPatchFen' : 'herbPatchThorn');
+      for (const m of patch.children as THREE.Mesh[]) { mats.push(m.material as Mat); }
+      const target = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.9, 8), new THREE.MeshBasicMaterial({ visible: false }));
+      target.position.y = 0.45;
+      group.add(patch, target);
+    } else if (NODE_TYPES[n.type].skill === 'fishing') {
       // a shoal: a pale ripple on the water and the fins breaking it. Flat, so the click is the ring and not the sea behind it
       part(new THREE.TorusGeometry(0.9, 0.07, 6, 20).rotateX(Math.PI / 2), FISH_RIPPLE, 'beacon', 0.06);
       part(new THREE.CylinderGeometry(0.9, 0.9, 0.04, 16), P.slateDark, 'dark', 0.02);
@@ -1220,6 +1234,13 @@ export class Renderer {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
     return this.raycaster.intersectObjects(this.rangeParts, false).length > 0;
+  }
+
+  /** True when the click lands on the alembic in Thornwick. */
+  pickAlembic(clientX: number, clientY: number): boolean {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    return this.raycaster.intersectObject(this.alembicPick, false).length > 0;
   }
 
   /** Ground-drop id under a screen position, or null. Drops are generous to click. */

@@ -1,6 +1,7 @@
 // Item data, drop tables and the single derived-stat function. Pure data + math: no DOM/Three.
 import { BARE_SWING } from './data';
 import { FISH, SEA_SALT, cookedId, pieId } from './fish';
+import { HERBS, POTION_PREMIUM, VIAL, VIAL_VALUE } from './herbs';
 
 export type EquipSlot = 'weapon' | 'head' | 'chest' | 'legs';
 export const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'head', 'chest', 'legs'];
@@ -44,6 +45,15 @@ const fishItems = (): Record<string, ItemDef> => Object.fromEntries(FISH.flatMap
   ] as [string, ItemDef][];
 }));
 
+/** Each herb's raw and potion rows, and the vial (herbs.ts has the numbers). */
+const herbItems = (): Record<string, ItemDef> => ({
+  [VIAL]: { name: 'Empty Vial', stack: 50, dropWeight: 0, tier: 0, value: VIAL_VALUE, desc: 'Thornwick\'s provisioner sells them. A potion is poured into one at the alembic.' },
+  ...Object.fromEntries(HERBS.flatMap(h => [
+    [h.id, { name: h.name, stack: 50, dropWeight: 0, tier: 0, value: h.value, desc: 'Picked from a patch. Brew it with a vial at the alembic in Thornwick.' }],
+    [h.potion.id, { name: h.potion.name, stack: 20, dropWeight: 0, tier: 1, value: h.value + POTION_PREMIUM, desc: `Brewed from ${h.name}. Its effect is still to come.` }],
+  ] as [string, ItemDef][])),
+});
+
 export const ITEMS: Record<string, ItemDef> = {
   // materials (M3 smithing uses iron_ore + coal; they come from mining nodes, not drops)
   boar_hide: { name: 'Boar Hide', stack: 50, dropWeight: 40, tier: 0, value: 2, desc: 'Coarse hide. Crafting material.' },
@@ -64,6 +74,7 @@ export const ITEMS: Record<string, ItemDef> = {
   adamant_bar: { name: 'Adamant Bar', stack: 50, dropWeight: 0, tier: 0, value: 55, desc: 'Dense and sea-dark. Armour and a blade are smithed from it.' },
   [SEA_SALT]: { name: 'Sea Salt', stack: 50, dropWeight: 0, tier: 0, value: 2, desc: 'Coarse grey salt from the Saltmarrow pans. A pie wants a pinch.' },
   ...fishItems(),
+  ...herbItems(),
   // weapons
   // the bronze set (HOM-56): the first armour and blade a new character can smith, a step above hide and below the iron the enemies drop
   bronze_sword: { name: 'Bronze Sword', slot: 'weapon', stats: { damage: 3, speed: 2.3 }, stack: 1, dropWeight: 0, tier: 1, value: 20, desc: 'Cast at the forge from your first bars. Better than a rusty blade, not yet iron.' },

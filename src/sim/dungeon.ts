@@ -22,7 +22,7 @@ export function holdDoor(s: GameState, from: { x: number; z: number }): boolean 
   p.x = from.x; p.z = from.z;
   if (s.tick - (lastSaid.get(s) ?? -SAY_EVERY) >= SAY_EVERY) {
     lastSaid.set(s, s.tick);
-    s.events.push({ t: 'gate', dungeon: into.id, blurb: into.gate!.blurb });
+    s.events.push({ t: 'door', dungeon: into.id, blurb: into.gate!.blurb });
   }
   return true;
 }
