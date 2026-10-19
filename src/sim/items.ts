@@ -171,16 +171,18 @@ export const MAX_REDUCTION = 0.75;
 
 export type Equipment = Record<EquipSlot, string | null>;
 export const emptyEquipment = (): Equipment => ({ weapon: null, head: null, chest: null, legs: null });
+/** Durability points left, by item id. Absent means whole (MAX_DURABILITY): only a piece that has been worn down has an entry, so an old save needs none. */
+export type Durability = Record<string, number>;
 
 /**
  * THE derived-stat calculation. Combat reads only this; M3's smithed weapon is just another
- * ITEMS entry equipped in the weapon slot.
+ * ITEMS entry equipped in the weapon slot. A broken piece (`durability` at 0) is worn but gives nothing.
  */
-export function deriveStats(equipment: Equipment): DerivedStats {
+export function deriveStats(equipment: Equipment, durability: Durability = {}): DerivedStats {
   let weaponDamage = 0, armor = 0, swingInterval = BARE_SWING;
   for (const slot of EQUIP_SLOTS) {
     const id = equipment[slot];
-    const st = id ? ITEMS[id]?.stats : undefined;
+    const st = id && durability[id] !== 0 ? ITEMS[id]?.stats : undefined;
     if (!st) continue;
     weaponDamage += st.damage ?? 0;
     armor += st.armor ?? 0;

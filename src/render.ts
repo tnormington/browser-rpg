@@ -17,7 +17,7 @@ import { Animator } from './anim';
 import { PlayerGear } from './gear';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
-import { WorldView, flightMasterFigure, Kit } from './world-view';
+import { WorldView, flightMasterFigure, headstones, Kit } from './world-view';
 import { WorldMap, mapPosition } from './world-map';
 import { landingSpot } from './sim/flight';
 
@@ -261,6 +261,7 @@ export class Renderer {
     this.kit = { mesh: (g, c, cls, sh) => mesh(g, c, cls as MatClass, sh), P };
     this.world = new WorldView(this.scene, this.kit);
     this.scene.add(flightMasterFigure(this.kit, LANDMARKS.flightHale, { x: 0, z: 6 }, this.flightParts)); // faces the spawn, like the other two
+    this.scene.add(headstones(this.kit, REGIONS.find(r => r.id === 'clearing')!.obstacles.filter(o => o.kind === 'grave'))); // Hale's graveyard
     this.rings = new Rings(this.scene);
     this.slashes = new Slashes(this.scene);
     this.scene.add(this.particles.points, this.motes.points);

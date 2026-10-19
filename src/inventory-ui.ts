@@ -1,7 +1,8 @@
 // Inventory + character panels (DOM). Reads GameState; changes go out as sim InvActions only.
 import type { GameState } from './sim';
 import { ABILITIES } from './sim/data';
-import { powerForLevel } from './sim/data';
+import { MAX_DURABILITY, powerForLevel } from './sim/data';
+import { durabilityOf, isBroken } from './sim/durability';
 import { INVENTORY_SIZE, InvAction, ItemStack } from './sim/inventory';
 import { EQUIP_SLOTS, EquipSlot, ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { reductionOf, swingInterval } from './sim/combat';
@@ -62,7 +63,7 @@ export class InventoryUi {
   update(s: GameState) {
     const p = s.player;
     // rebuild only when something changed so drag-and-drop and hover stay stable
-    const sig = JSON.stringify([p.inventory, p.equipment, p.combat.level, p.talents]);
+    const sig = JSON.stringify([p.inventory, p.equipment, p.durability, p.combat.level, p.talents]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.hideTip();
@@ -109,6 +110,7 @@ export class InventoryUi {
       const id = s.player.equipment[slot];
       if (!id) { div(cell, 'icon ghost', SLOT_ICON[slot]); continue; }
       this.fillCell(cell, id, 1);
+      if (isBroken(s.player, id)) cell.style.opacity = '0.45'; // worn but giving nothing
       cell.addEventListener('click', () => this.send({ k: 'unequip', slot }));
       this.hover(cell, id, s, true);
     }
@@ -150,6 +152,10 @@ export class InventoryUi {
     div(this.tip, 'tname', def.name).style.color = hex(TIER_COLORS[def.tier]);
     if (def.slot) div(this.tip, 'tslot', SLOT_LABEL[def.slot]);
     for (const line of describeStats(def)) div(this.tip, 'tstat', line);
+    if (def.slot && durabilityOf(s.player, id) < MAX_DURABILITY) {
+      const left = durabilityOf(s.player, id);
+      div(this.tip, 'tcmp', left > 0 ? `Worn down: ${left}% durability` : 'Broken: gives nothing until a merchant repairs it').style.color = '#e0604f';
+    }
     div(this.tip, 'tdesc', def.desc);
     div(this.tip, 'tval', `Sells for ${def.value} gold`);
     if (def.slot && !worn) {

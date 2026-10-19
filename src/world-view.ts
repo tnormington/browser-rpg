@@ -36,6 +36,17 @@ function place(g: THREE.BufferGeometry, x: number, y: number, z: number, rotY = 
   return out;
 }
 
+/** A headstone: an upright slab, leaning a little, with a round top. */
+function headstone(o: Obstacle, ry: number, i: number): THREE.BufferGeometry[] {
+  const lean = (hash(i + 5) - 0.5) * 0.25;
+  return [place(new THREE.BoxGeometry(0.8, 1.2, 0.22).rotateZ(lean), o.x, 0.6, o.z, ry), place(new THREE.CylinderGeometry(0.4, 0.4, 0.22, 8).rotateX(Math.PI / 2).rotateZ(lean), o.x - lean * 0.6, 1.2, o.z, ry)];
+}
+
+/** The graveyard's stones as one draw. Saltmarrow's are drawn with its slabs; Hale's clearing is render.ts's own, so it asks for them here. */
+export function headstones(kit: Kit, obs: Obstacle[]): THREE.Mesh {
+  return kit.mesh(mergeGeometries(obs.flatMap((o, i) => headstone(o, hash(o.x * 3.1 + o.z * 7.7) * Math.PI * 2, i)))!, kit.P.slate, 'rock');
+}
+
 interface Tile { kind: 'slab' | 'quay' | 'town'; region: Region; rect: Rect; group: THREE.Group | null; ground: THREE.Mesh[]; picks: { npc: THREE.Mesh[]; vendor: THREE.Mesh[]; flight: THREE.Mesh[]; trainer: THREE.Mesh[] } }
 
 const inside = (r: Rect, x: number, z: number, e = 0.01) => x > r.x0 + e && x < r.x1 - e && z > r.z0 + e && z < r.z1 - e;
@@ -165,6 +176,7 @@ export class WorldView {
           parts.wood.push(place(new THREE.ConeGeometry(o.r * 0.78, o.r * 3.1, 6).rotateX(Math.PI / 2), o.x, o.r * 0.55, o.z, ry, 1, 0.6, 1), place(new THREE.CylinderGeometry(0.1, 0.14, 3.4, 5), o.x, 2.3, o.z, ry));
           return;
         }
+        case 'grave': parts.rock.push(...headstone(o, ry, i)); return;
         default: { // a rock: a faceted lump a little wider than the circle the sim collides with
           const s = o.r * (1.15 + hash(i + 3) * 0.3);
           parts.rock.push(place(new THREE.DodecahedronGeometry(1), o.x, s * 0.5, o.z, ry, s, s * (0.7 + hash(i + 9) * 0.35), s));

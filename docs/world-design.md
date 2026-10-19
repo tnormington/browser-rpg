@@ -156,7 +156,7 @@ Cook raw fish into **food** at the cooking range. Cooking level equals the fish'
 **What cooking feeds: survival, and what you stand to lose when you die.**
 - **Food** is eaten in or out of combat. It is a 5-second heal over time (not instant), **breaks if you are hit**, and shares one **20 s cooldown** with every other food. It is a second self-heal that costs a bag slot, not a rotation button: Second Wind (45 x power, 20 s) is about 105 HP at level 20; a Saltpike is 25 % of 385 = 96 HP on the same clock. A player with both roughly doubles their sustain, which is what the numbers in section 3 assume.
 - **Well Fed** (meals only; eaten out of combat): +10 % max health for 20 minutes. **It is lost on death.** It is the stake the death rule (below) puts a price on.
-- **Death in a world this size has to cost something.** Today a death is free and you wake at the clearing. With a world, that stops working (you would wake 3 minutes from where you died). Wave 2 changes it: you **wake at the nearest town (by world-map distance from where you died) whose flight master you have found**, healed, and pay a **repair toll of 3 % of the value of what you are wearing** (a mithril set and Warden's Edge: 820 value, 25 gold; a full stormiron set at level 30: ~70 gold). If you cannot pay, you pay what you have; death never takes items and never takes more gold than you carry. Well Fed and every potion buff are cleared. This is a judgement about feel I cannot test; the toll is deliberately small so it nags rather than punishes. Tune `TOLL_FRAC` (0.03) before anything else if it reads as too kind or too harsh.
+- **Death has to cost something you feel, and it costs two things, not a fee** (HOM-58; the board: "Dying should damage durability of gear, and require a run back from the graveyard"). (1) **Durability.** Every worn piece loses 25 of its 100 points (`DEATH_WEAR` of `MAX_DURABILITY`). At 0 a piece stays on and gives nothing until it is mended; nothing is ever destroyed. Ordinary combat wears nothing: dying is the price, and a maintenance tax on every fight would nag rather than stake. Wear is kept per item, so taking a broken piece off and putting it on again mends nothing. A merchant (Brannoch, Tam Brine) mends everything you carry for `REPAIR_FRAC` (a quarter) of each piece's value, scaled by how worn it is: a mithril set and Warden's Edge (820 value) is about 205 gold from broken and about 51 for one death, against a 175-gold flight. If you cannot pay for every piece, the ones you can are mended, worn pieces first. (2) **The run back.** You wake, healed, at the **graveyard** of the nearest town (by distance from the graveyard) whose flight master you have found, and walk back to where you fell. Hale's is in the clearing's north-west corner, (-20, 26); Saltmarrow's is at the road's end by the west gate, 62 west of the square's centre. Each is a 6-unit safe circle ringed with headstones, and each is 25+ units from the town's wake point, so it is never the town square. The run is about 30 to 50 paces from the clearing's boars, about 110 from the Warden's hall and about 100 from the Barnacle Ogre. Well Fed and every potion buff are cleared. **The gold toll is retired**: death takes no gold and no item. The death overlay and the log name the gear that wore down and the length of the run. Saves: durability is stored by item id, and a save from before it loads every piece whole.
 
 #### Herbalism (Thornwick) — gathering, no tool
 
@@ -585,10 +585,10 @@ A cosmetic chase for a player who already has everything.
 | Ability trainers (120 + 200 + 350 + 500 + 750) | 1,920 |
 | Flights (about 8 at ~190) | 1,500 |
 | Potions and vials | ~600 |
-| Repair tolls (~10 deaths at ~40) | ~400 |
+| Repairs (~10 deaths at ~50) | ~500 |
 | **Total** | **~5,400** |
 
-That is **above** the income, deliberately: **a player cannot buy everything by 30**. They choose between the two top abilities, flights, and the mount, and the ones who walk have the gold. The gap is the gold sink the economy lacked. The cheapest thing to cut if it reads as grim is the repair toll; the cheapest to raise if it reads as slack is the trainer price.
+That is **above** the income, deliberately: **a player cannot buy everything by 30**. They choose between the two top abilities, flights, and the mount, and the ones who walk have the gold. The gap is the gold sink the economy lacked. The cheapest thing to cut if it reads as grim is the repair bill (`REPAIR_FRAC`); the cheapest to raise if it reads as slack is the trainer price.
 
 ---
 
@@ -596,7 +596,7 @@ That is **above** the income, deliberately: **a player cannot buy everything by 
 
 ### 8.1 What each wave builds
 
-**Wave 2: the second town and travel.** The regions refactor (parallel). Hale's east gate. Greywater Road (all 4 trash + the Toll Captain + Old Grey). Saltmarrow town and Strand (shore crab, drowned sailor, tide hag, Barnacle Ogre, Gutterhook). **Fishing, cooking** and the `station` field. **Food** (not potions yet), Well Fed. Flight masters at Hale and Saltmarrow (175). The **world-map mesh** and ride. Safe zones. Death at the nearest found town and the repair toll. The XP-parity rule. Q3 The Salt Road. Whirlwind and the trainer. **Adamant** ore, bars and set (Mining 17, equip combat 14), tier 5. Named pieces: Greywolf Hauberk and Gutterhook's Cap.
+**Wave 2: the second town and travel.** The regions refactor (parallel). Hale's east gate. Greywater Road (all 4 trash + the Toll Captain + Old Grey). Saltmarrow town and Strand (shore crab, drowned sailor, tide hag, Barnacle Ogre, Gutterhook). **Fishing, cooking** and the `station` field. **Food** (not potions yet), Well Fed. Flight masters at Hale and Saltmarrow (175). The **world-map mesh** and ride. Safe zones. Death at the nearest found town's graveyard, with gear durability and repair (HOM-58; this replaced the gold repair toll). The XP-parity rule. Q3 The Salt Road. Whirlwind and the trainer. **Adamant** ore, bars and set (Mining 17, equip combat 14), tier 5. Named pieces: Greywolf Hauberk and Gutterhook's Cap.
 
 **Wave 3: the climb to 30 and the mount** (large: ship as 3a and 3b).
 - **3a (to combat ~24):** Grotto, Dunmere Fens, Thornwick with **herbalism, alchemy**, potions, the Rotroot. Rupture, Guard (+ the `guard` kind and potion buffs). Talent tiers 3 and 4 and their cap. Stormiron. Q4 and Q5. Named pieces from Marrow, Mother Mire, Elder Thornback, the Rotroot Mother.
@@ -615,7 +615,7 @@ Ten, each small, each named so it is not a surprise:
 5. **Equipment extensions**: `hands` / `feet` slots, `req` on items, slot enchants (wave 4).
 6. **Ability extras**: `weaponMult`, trainers and a learned-abilities list, the `guard` kind.
 7. **The XP-parity multiplier** (one line).
-8. **Safe zones** and **respawn at the nearest found town** with the toll.
+8. **Safe zones** and **respawn at the nearest found town's graveyard** with gear durability and repair (HOM-58; first built as a 3 % gold toll).
 9. **Pity counters** for named drops.
 10. **Recipe `station`** (a field and `nearStation`).
 

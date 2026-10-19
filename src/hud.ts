@@ -38,6 +38,7 @@ export interface HudActions {
   fly: (to: string) => void;
   map: MapView;
   learn: (slot: number) => void;
+  repair: () => void;
   questAdvance: () => void;
   save: () => void;
   newGame: () => void;
@@ -154,7 +155,7 @@ export class Hud {
   /** A gather/craft is running (or was just requested): a hit while true is what broke it. */
   private acting = false;
   /** What the last death cost, for the overlay while the player waits. */
-  private toll = 0;
+  private cost = ''; // what the last death cost: the worn-down gear and the walk back, shown under the death overlay and in the log
   private nodePlates = new Map<number, { root: HTMLElement; sub: HTMLElement }>();
 
   constructor(private project: Project, private yaw: () => number, actions: HudActions) {
@@ -206,7 +207,7 @@ export class Hud {
     this.invUi = new InventoryUi(this.root, actions.inv, actions.sell);
     this.skillsUi = new SkillsUi(this.root);
     this.talentsUi = new TalentsUi(this.root, { learn: actions.talent, reset: actions.talentReset });
-    this.shopUi = new ShopUi(this.root, actions.buy, actions.learn);
+    this.shopUi = new ShopUi(this.root, actions.buy, actions.learn, actions.repair);
     this.flightUi = new FlightUi(this.root, actions.fly);
     this.mapUi = new MapUi(this.root, actions.map);
     const craft = (r: string, n: number) => { this.acting = true; actions.craft(r, n); };
@@ -433,11 +434,14 @@ export class Hud {
           this.note(`Quest complete: ${ev.name}`, 'log-quest');
         }
       } else if (ev.t === 'death') {
-        this.note(ev.toll > 0 ? `You have died. The repair toll is ${ev.toll} gold.` : 'You have died.', 'log-bad');
+        const gear = ev.wear.map(w => `${ITEMS[w.item].name} ${w.now > 0 ? `${w.now}%` : 'broken'}`).join(', ');
+        this.cost = `${gear ? `Gear worn down: ${gear}.` : 'You wore no gear, so none was worn down.'} The run back is about ${Math.round(ev.run)} paces.`;
+        this.note(`You have died. ${this.cost}`, 'log-bad');
         this.hurtFlash(true);
-        this.toll = ev.toll;
       } else if (ev.t === 'respawn') {
-        this.note(`You wake in ${ev.town}.`, 'log-info');
+        this.note(`You wake at ${ev.town}'s graveyard. Walk back to where you fell; repair your gear at a merchant.`, 'log-info');
+      } else if (ev.t === 'repair') {
+        this.note(`Repaired ${ev.pieces} ${ev.pieces === 1 ? 'piece' : 'pieces'} of gear for ${ev.gold} gold.`, 'log-info');
       }
     }
   }
@@ -633,7 +637,7 @@ export class Hud {
     this.msg.style.opacity = String(Math.max(0, Math.min(1, 1.6 - this.msgAge * 1.5)));
 
     this.deathOverlay.style.display = p.dead ? 'flex' : 'none';
-    if (p.dead) this.deathOverlay.textContent = `You died.  Waking in ${nearestTown(p.x, p.z, s.found).name} in ${Math.ceil(p.respawnIn)}...${this.toll > 0 ? `  (repair toll: ${this.toll} gold)` : ''}`;
+    if (p.dead) this.deathOverlay.textContent = `You died.  Waking at ${nearestTown(p.x, p.z, s.found).name}'s graveyard in ${Math.ceil(p.respawnIn)}...  ${this.cost}`;
   }
 
   /** Progress bar for the current gather/craft. */

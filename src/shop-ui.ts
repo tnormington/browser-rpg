@@ -5,6 +5,7 @@ import { SHOP_REACH, Vendor, buyPrice, taughtBy, vendorById, VENDORS } from './s
 import { ABILITIES } from './sim/data';
 import { ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { hasRoom } from './sim/inventory';
+import { damagedGear, durabilityOf, repairCost } from './sim/durability';
 import { el } from './dom';
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
@@ -19,7 +20,7 @@ export class ShopUi {
   private open = false;
   private sig = '';
 
-  constructor(root: HTMLElement, private buy: (item: string, qty: number) => void, private learn: (slot: number) => void) {
+  constructor(root: HTMLElement, private buy: (item: string, qty: number) => void, private learn: (slot: number) => void, private repair: () => void) {
     this.panel = el(root, 'panel shoppanel');
     const title = this.titleEl = el(this.panel, 'ptitle');
     const close = el(title, 'pclose', '✕');
@@ -41,12 +42,24 @@ export class ShopUi {
     this.sig = '';
   }
 
+  /** Mending worn-down gear: one button for all of it, with the pieces and the price. A piece too dear for your gold is skipped, the rest are mended. */
+  private repairRow(p: GameState['player'], near: boolean) {
+    const damaged = damagedGear(p), cost = damaged.reduce((sum, id) => sum + repairCost(p, id), 0);
+    const can = near && damaged.some(id => p.gold >= repairCost(p, id));
+    const row = el(this.list, `recipe${can ? '' : ' locked'}`);
+    const head = el(row, 'rhead');
+    el(head, 'rname', 'Repair gear');
+    el(head, `rreq${!damaged.length || p.gold >= cost ? '' : ' bad'}`, damaged.length ? `${cost} gold` : 'nothing to mend');
+    for (const id of damaged) el(row, 'rstat', `${ITEMS[id].name}: ${durabilityOf(p, id) > 0 ? `${durabilityOf(p, id)}%` : 'broken'}, ${repairCost(p, id)} gold`);
+    if (damaged.length) el(el(row, 'rbtns'), `rbtn${can ? '' : ' off'}`, 'Repair').addEventListener('click', () => this.repair());
+  }
+
   update(s: GameState) {
     const p = s.player;
     // a little slack beyond selling reach so the panel does not flicker at the edge
     if (this.open && (p.dead || Math.hypot(p.x - this.vendor.x, p.z - this.vendor.z) > SHOP_REACH + 1.5)) this.setOpen(false);
     if (!this.open) return;
-    const sig = JSON.stringify([p.gold, p.inventory.map(st => st && st.id + st.qty), p.learned, p.combat.level, Math.hypot(p.x - this.vendor.x, p.z - this.vendor.z) <= SHOP_REACH]);
+    const sig = JSON.stringify([p.gold, p.inventory.map(st => st && st.id + st.qty), p.equipment, p.durability, p.learned, p.combat.level, Math.hypot(p.x - this.vendor.x, p.z - this.vendor.z) <= SHOP_REACH]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.goldEl.textContent = `Your gold: ${p.gold}`;
@@ -64,6 +77,7 @@ export class ShopUi {
       if (known) continue;
       el(el(row, 'rbtns'), `rbtn${can ? '' : ' off'}`, 'Learn').addEventListener('click', () => this.learn(slot));
     }
+    if (this.vendor.stock.length) this.repairRow(p, near);
     for (const id of this.vendor.stock) {
       const def = ITEMS[id], price = buyPrice(id);
       const can = p.gold >= price && hasRoom(p.inventory, id) && near;

@@ -5,6 +5,8 @@ import { EXECUTE_BONUS } from './talents';
 import { grantXp } from './skills';
 import { breakFood, clearBuffs, maxHpOf } from './consumables';
 import { ITEMS, EQUIP_SLOTS } from './items';
+import { wearWornGear } from './durability';
+import { refreshGearStats } from './inventory';
 import { rollDrops } from './loot';
 import { questOnKill, questReached } from './quest';
 import { nextRandom } from './rng';
@@ -13,7 +15,7 @@ import { clearLine } from './sight';
 import { isFlying } from './flight';
 import {
   ABILITIES, ENEMY_TYPES, GCD, QUEUE_WINDOW, CRIT_CHANCE, CRIT_MULT, ENERGY_MAX, ENERGY_REGEN,
-  RESPAWN_DELAY, OOC_DELAY, OOC_REGEN_FRAC, TAB_RANGE, TOLL_FRAC, powerForLevel,
+  RESPAWN_DELAY, OOC_DELAY, OOC_REGEN_FRAC, TAB_RANGE, powerForLevel,
   STAGGER_TIME, STAGGER_HEAVY_KEEP, ACQUIRE_RANGE, ACQUIRE_BEHIND_RANGE, FRONT_HALF_ARC, aggroRadius,
   AUTO_RANGE, AUTO_BASE, AUTO_WEAPON_SHARE, AUTO_SLOT, BARE_SWING, RECAP_WINDOW, RECAP_MAX, TICK_DT, SIM_WAKE_RANGE, xpParity,
 } from './data';
@@ -338,12 +340,6 @@ function announceUnlocks(s: GameState) {
   p.unlocked = p.combat.level;
 }
 
-/** The repair toll for a death: a share of what you are wearing, and never more gold than you carry. It takes gold only, never an item. */
-export function repairToll(p: Player): number {
-  const worn = EQUIP_SLOTS.reduce((sum, slot) => sum + (p.equipment[slot] ? ITEMS[p.equipment[slot]!].value : 0), 0);
-  return Math.min(p.gold, Math.round(worn * TOLL_FRAC));
-}
-
 function killPlayer(s: GameState) {
   const p = s.player;
   const now = s.tick * TICK_DT, last = p.recap[p.recap.length - 1];
@@ -353,8 +349,9 @@ function killPlayer(s: GameState) {
   setInCombat(s, false);
   p.y = 0; p.vy = 0; p.airborne = false;
   p.hp = 0;
-  const toll = repairToll(p);
-  p.gold -= toll;
+  const wear = wearWornGear(p); // the cost of dying: the gear gets worse (the walk back is the other half; gold is never taken)
+  refreshGearStats(s);
+  const grave = nearestTown(p.x, p.z, s.found);
   clearBuffs(s);
   p.dead = true;
   p.action = null;
@@ -363,7 +360,7 @@ function killPlayer(s: GameState) {
   p.queued = null;
   s.targetId = null;
   s.moveTarget = null;
-  s.events.push({ t: 'death', killer: last ? `${ENEMY_TYPES[last.src].name}: ${last.what}` : '', toll, recap });
+  s.events.push({ t: 'death', killer: last ? `${ENEMY_TYPES[last.src].name}: ${last.what}` : '', wear, grave: grave.name, run: dist(p, grave.grave), recap });
 }
 
 export function updatePlayerDeath(s: GameState, dt: number) {
@@ -371,8 +368,8 @@ export function updatePlayerDeath(s: GameState, dt: number) {
   p.respawnIn -= dt;
   if (p.respawnIn > 0) return;
   p.dead = false;
-  const town = nearestTown(p.x, p.z, s.found); // only towns whose flight master has been found
-  p.x = town.wake.x; p.z = town.wake.z; p.facing = Math.PI; p.moving = false;
+  const town = nearestTown(p.x, p.z, s.found); // only towns whose flight master has been found: you wake at its graveyard and walk back
+  p.x = town.grave.x; p.z = town.grave.z; p.facing = Math.PI; p.moving = false;
   refreshPlayerStats(s, true);
   p.energy = p.maxEnergy;
   p.cd.fill(0);

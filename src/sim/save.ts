@@ -8,7 +8,7 @@ import { INVENTORY_SIZE, refreshGearStats } from './inventory';
 import { EQUIP_SLOTS, ITEMS } from './items';
 import { refreshPlayerStats } from './combat';
 import { BUFFS } from './consumables';
-import { ABILITIES, PLAYER_SPAWN } from './data';
+import { ABILITIES, MAX_DURABILITY, PLAYER_SPAWN } from './data';
 import { QUEST2_STAGES, QUEST3_STAGES, QUEST_STAGES, Quest2Stage, Quest3Stage, QuestStage } from './quest';
 import { legalTalents, refreshTalents, talentById } from './talents';
 import { nearestTown, resolveCollisions } from './world';
@@ -30,6 +30,7 @@ interface SaveFile {
     xp: Record<string, number>;
     inventory: ({ id: string; qty: number } | null)[];
     equipment: Record<string, string | null>;
+    durability?: Record<string, number>; // points left on worn-down gear, by item id; absent in saves from before durability: everything loads whole
     talents?: Record<string, number>; // absent in saves from before the trees: nobody had spent a point
     learned?: string[];               // trainer abilities bought; absent in saves from before the trainer
     gold?: number;                    // absent in saves from before the economy: nobody had any
@@ -44,8 +45,8 @@ interface SaveFile {
 
 export function serialize(s: GameState): string {
   const p = s.player;
-  // saving while dead stores the respawn: you wake in the nearest found town, healed (the toll is already paid); saving mid-ride stores the landing (the fare is already paid)
-  const at = p.dead ? nearestTown(p.x, p.z, s.found).wake : p.action?.k === 'flight' ? landingSpot(p.action.to) : p;
+  // saving while dead stores the respawn: you wake at the nearest found town's graveyard, healed (the gear is already worn down); saving mid-ride stores the landing (the fare is already paid)
+  const at = p.dead ? nearestTown(p.x, p.z, s.found).grave : p.action?.k === 'flight' ? landingSpot(p.action.to) : p;
   const file: SaveFile = {
     version: SAVE_VERSION,
     savedAt: Date.now(),
@@ -58,6 +59,7 @@ export function serialize(s: GameState): string {
       xp: Object.fromEntries(SKILL_IDS.map(id => [id, p.skills[id].xp])),
       inventory: p.inventory.map(st => st && { id: st.id, qty: st.qty }),
       equipment: { ...p.equipment },
+      durability: { ...p.durability },
       talents: { ...p.talents },
       gold: p.gold,
       buffs: p.buffs.map(b => ({ id: b.id, left: b.left })),
@@ -111,6 +113,13 @@ export function deserialize(raw: string): GameState | null {
       if (id === null || id === undefined) continue;
       if (typeof id !== 'string' || ITEMS[id]?.slot !== slot) throw new Error('bad equipment');
       p.equipment[slot] = id;
+    }
+    if (fp.durability !== undefined) {
+      if (!isObj(fp.durability)) return null;
+      for (const [id, n] of Object.entries(fp.durability)) {
+        if (!ITEMS[id]?.slot) throw new Error('bad durability');
+        p.durability[id] = num(n, 0, MAX_DURABILITY, `durability.${id}`);
+      }
     }
     // talents: validated against the level, so a hand-edited save cannot buy a tier it never paid for
     if (fp.talents !== undefined) {

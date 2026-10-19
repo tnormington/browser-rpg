@@ -1,11 +1,12 @@
 // The merchants (Hale's, and the chandler on Saltmarrow's quay): each buys any item for its `value` and sells a short list of gear at a markup. Pure sim.
-// Gold has one source (selling) and one sink (this stock). The stock is dropped-tier gear and never a crafting input, so
+// Gold has one source (selling) and three sinks (this stock, the trainer, and mending worn gear: the cost of dying). The stock is dropped-tier gear and never a crafting input, so
 // buy -> smith -> sell cannot make gold however high the smith's yield climbs (see the no-arbitrage test).
 import type { GameState } from '../sim';
 import { LANDMARKS } from './world';
 import { ITEMS } from './items';
-import { addItem, hasRoom } from './inventory';
+import { addItem, hasRoom, refreshGearStats } from './inventory';
 import { ABILITIES } from './data';
+import { damagedGear, repairCost } from './durability';
 
 export const VENDOR = { name: 'Brannoch the Peddler', x: LANDMARKS.vendor.x, z: LANDMARKS.vendor.z, r: LANDMARKS.vendor.r };
 export const HARBOUR_VENDOR = { name: 'Tam Brine, Chandler', x: LANDMARKS.harbourVendor.x, z: LANDMARKS.harbourVendor.z, r: LANDMARKS.harbourVendor.r };
@@ -27,7 +28,7 @@ export const VENDORS: Vendor[] = [{ id: 'hale', ...VENDOR, stock: SHOP_STOCK }, 
 export const taughtBy = (vendor: string) => ABILITIES.flatMap((a, slot) => a.trainer?.vendor === vendor ? [slot] : []);
 export const vendorById = (id: string) => VENDORS.find(v => v.id === id);
 
-export type ShopAction = { k: 'sell'; slot: number; qty: number } | { k: 'buy'; item: string; qty: number } | { k: 'learn'; slot: number };
+export type ShopAction = { k: 'sell'; slot: number; qty: number } | { k: 'buy'; item: string; qty: number } | { k: 'learn'; slot: number } | { k: 'repair' };
 
 export const buyPrice = (id: string) => ITEMS[id].value * BUY_MARKUP;
 const reachOf = (s: GameState, v: Vendor) => Math.hypot(s.player.x - v.x, s.player.z - v.z);
@@ -45,6 +46,7 @@ export function applyShopAction(s: GameState, act: ShopAction) {
   const p = s.player;
   if (p.dead) return;
   if (act.k === 'learn') return learnAbility(s, act.slot);
+  if (act.k === 'repair') return repairGear(s);
   if (!Number.isInteger(act.qty) || act.qty < 1) return;
   if (act.k === 'sell') {
     const st = Number.isInteger(act.slot) ? p.inventory[act.slot] : null;
@@ -67,6 +69,23 @@ export function applyShopAction(s: GameState, act: ShopAction) {
   addItem(p.inventory, act.item, act.qty);
   p.gold -= cost;
   s.events.push({ t: 'trade', sold: false, item: act.item, qty: act.qty, gold: cost });
+}
+
+/** Mend every worn-down piece you carry (worn first, then the bag) at a merchant, each in full while the gold lasts: a piece you cannot afford is left as it is. */
+function repairGear(s: GameState) {
+  const p = s.player, damaged = damagedGear(p);
+  if (!damaged.length) return;
+  if (!nearVendor(s)) return fail(s, 'range', 'repairs');
+  let gold = 0, pieces = 0;
+  for (const id of damaged) {
+    const cost = repairCost(p, id);
+    if (p.gold < cost) continue;
+    p.gold -= cost; gold += cost; pieces++;
+    delete p.durability[id]; // whole again: no entry
+  }
+  if (!pieces) return fail(s, 'gold', 'repairs');
+  refreshGearStats(s);
+  s.events.push({ t: 'repair', gold, pieces });
 }
 
 /** Buy an ability from its trainer: needs the level, the gold and the trainer in reach, and is paid for once. */

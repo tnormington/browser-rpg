@@ -1,7 +1,7 @@
 // Navigation tests: the region model and the routing layer over it (sim/world.ts, sim/path.ts). Plain Node, no DOM.
 import {
   COLLIDERS, FOOTPRINT, REGIONS, SAFE_ZONES, PLAYER_RADIUS, ROCKS, CAVE_ROCKS, TREES, GREYWATER, SALTMARROW, LANDMARKS,
-  Pt, clampToWorld, collidersAt, collidersIn, inCave, inSafeZone, regionAt, setWorldHalf, addScenery,
+  TOWNS, Pt, clampToWorld, collidersAt, collidersIn, inCave, inSafeZone, regionAt, setWorldHalf, addScenery,
 } from './world';
 import { route, segmentClear, gridStats, setGridBudget, evictGrids } from './path';
 import { createNodes } from './gathering';
@@ -53,7 +53,9 @@ console.log('\n# Hale\'s east gate, the road and Saltmarrow');
 
 console.log('\n# safe zones');
 {
-  assert(SAFE_ZONES.length === 2 && inSafeZone(20, -8) && inSafeZone(SALTMARROW.x - 25, SALTMARROW.z) && !inSafeZone(0, 0) && !inSafeZone(0, -20) && !inSafeZone(GREYWATER.x, GREYWATER.z), 'Hale (the forge yard) and Saltmarrow (its square) have safe ground; the middle of the clearing, the road and the Hollow do not');
+  assert(SAFE_ZONES.length === 4 && inSafeZone(20, -8) && inSafeZone(SALTMARROW.x - 25, SALTMARROW.z) && !inSafeZone(0, 0) && !inSafeZone(0, -20) && !inSafeZone(GREYWATER.x, GREYWATER.z), 'Hale (the forge yard) and Saltmarrow (its square) have safe ground, and so does each graveyard; the middle of the clearing, the road and the Hollow do not');
+  assert(TOWNS.every(t => inSafeZone(t.grave.x, t.grave.z) && Math.hypot(t.grave.x - t.wake.x, t.grave.z - t.wake.z) > 25), 'every graveyard is safe ground to wake on and more than 25 units from where the town wakes you or lands a flight');
+  assert(TOWNS.every(t => inFootprint(regionAt(t.grave.x, t.grave.z)!.footprint, t.grave) && collidersAt(t.grave.x, t.grave.z).every(o => Math.hypot(o.x - t.grave.x, o.z - t.grave.z) > o.r + PLAYER_RADIUS)), 'and each is on walkable ground with nothing standing on it');
   const zone = (r: string) => REGIONS.find(x => x.id === r)!.safe![0];
   assert(zone('saltmarrow').r === 35, "Saltmarrow's is 35 across, as the bible asks (Hale's are small: its enemies stand in the square itself)");
   assert(SPAWNS.every(sp => !inSafeZone(sp.x, sp.z)), 'no enemy is placed inside a safe square');

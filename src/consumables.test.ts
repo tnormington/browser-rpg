@@ -1,15 +1,16 @@
 // HOM-48: fishing, cooking at a station, food and Well Fed, and what a death costs. Run with `npm run verify` (after the golden path).
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState } from './sim';
 import { addItem, countItem } from './sim/inventory';
-import { ITEMS } from './sim/items';
+import { EQUIP_SLOTS, ITEMS } from './sim/items';
+import { refreshGearStats } from './sim/inventory';
+import { repairCost, wearWornGear } from './sim/durability';
 import { grantXp } from './sim/skills';
 import { NODE_TYPES } from './sim/gathering';
 import { RECIPES, STATIONS, nearStation, recipeById, stationOf } from './sim/crafting';
 import { FISH, cookedId, pieId } from './sim/fish';
 import { FOOD_COOLDOWN, FOOD_TIME, BUFFS, bestFoodSlot } from './sim/consumables';
 import { LANDMARKS, SALTMARROW, TOWNS, nearestTown } from './sim/world';
-import { TOLL_FRAC, RESPAWN_DELAY } from './sim/data';
-import { repairToll } from './sim/combat';
+import { BARE_SWING, DEATH_WEAR, MAX_DURABILITY, REPAIR_FRAC, RESPAWN_DELAY } from './sim/data';
 import { HARBOUR_STOCK, buyPrice } from './sim/shop';
 import { deserialize, serialize } from './sim/save';
 
@@ -211,20 +212,34 @@ section('HOM-48 Well Fed: meals only, out of combat, +10% max health, lost on de
 }
 
 // ---------------------------------------------------------------------------
-section('HOM-48 death costs something: wake in the nearest town, poorer, with no buffs');
+section('HOM-58 death costs something: wake at a graveyard, run back, gear worn down, no buffs');
 {
-  assert(TOLL_FRAC === 0.03, 'the toll is one constant, three percent');
+  assert(DEATH_WEAR === 25 && MAX_DURABILITY === 100 && REPAIR_FRAC === 0.25, 'the cost of dying is three constants: 25 points a death, of 100, mended at a quarter of the piece\'s value');
   const a = quiet(4841);
   a.player.equipment.weapon = 'warden_edge'; a.player.equipment.head = 'mithril_helm'; a.player.equipment.chest = 'mithril_chestplate'; a.player.equipment.legs = 'mithril_greaves';
+  refreshGearStats(a);
+  const whole = { ...a.player.stats };
+  assert(wearWornGear(a.player).length === 4 && EQUIP_SLOTS.every(sl => a.player.durability[a.player.equipment[sl]!] === 75), 'a death takes 25 points off every worn piece');
+  a.player.durability.warden_edge = 0;
+  refreshGearStats(a);
+  assert(a.player.stats.weaponDamage === 0 && a.player.stats.armor === whole.armor && a.player.equipment.weapon === 'warden_edge', 'a broken piece stays on and gives nothing: not its damage, and not its swing speed');
+  assert(a.player.stats.swingInterval === BARE_SWING, 'a broken weapon swings like bare hands');
+  assert(wearWornGear(a.player).find(w => w.item === 'warden_edge')!.now === 0, 'durability never goes below zero');
+  assert(repairCost(a.player, 'warden_edge') === 100 && repairCost(a.player, 'mithril_helm') === Math.ceil(90 * 0.25 * 0.5), 'mending a broken Warden\'s Edge costs a quarter of its 400; half-worn mithril helm half of that');
+  a.player.x = LANDMARKS.vendor.x; a.player.z = LANDMARKS.vendor.z + 1; a.player.gold = 0;
+  tick(a, { shop: [{ k: 'repair' }] });
+  assert(failOf(a)?.reason === 'gold' && a.player.durability.warden_edge === 0, 'with no gold nothing is mended');
+  a.player.gold = 105;
+  tick(a, { shop: [{ k: 'repair' }] });
+  assert(a.player.durability.warden_edge === undefined && a.player.gold === 5 && !!a.player.durability.mithril_helm, 'with 105 gold the worn pieces are mended in order while the gold lasts: the blade, then the helm is too dear');
   a.player.gold = 1000;
-  assert(repairToll(a.player) === Math.round((400 + 90 + 190 + 140) * 0.03) && repairToll(a.player) === 25, 'a mithril set and Warden\'s Edge (820 value) costs 25 gold');
-  a.player.gold = 10;
-  assert(repairToll(a.player) === 10, 'it never takes more gold than you carry');
-  a.player.gold = 0;
-  assert(repairToll(a.player) === 0, 'nor gold you do not have');
+  tick(a, { shop: [{ k: 'repair' }] });
+  assert(Object.keys(a.player.durability).length === 0 && a.player.stats.weaponDamage === whole.weaponDamage && sawEvent(a, 'repair'), 'and the rest on a full purse: everything whole, stats back');
+  addItem(a.player.inventory, 'iron_helm', 1); a.player.x = 0; a.player.z = -12; a.player.durability.iron_helm = 10;
+  tick(a, { shop: [{ k: 'repair' }] });
+  assert(failOf(a)?.reason === 'range' && a.player.durability.iron_helm === 10, 'a merchant has to be in reach');
   a.player.equipment = { weapon: null, head: null, chest: null, legs: null };
-  a.player.gold = 500;
-  assert(repairToll(a.player) === 0, 'and nothing worn costs nothing');
+  assert(wearWornGear(a.player).length === 0, 'and wearing nothing, nothing is worn');
 
   const at = (s: GameState, type: string) => {
     const e = s.enemies.find(x => x.type === type)!;
@@ -251,26 +266,42 @@ section('HOM-48 death costs something: wake in the nearest town, poorer, with no
   const strand = dieNear(4842, 'shore_crab', dress);
   assert(strand.died !== undefined, 'a crab on the Strand can kill a player on one hit point');
   const { s } = strand;
-  assert(strand.died!.toll === Math.round((400 + 190) * 0.03) && s.player.gold === 200 - strand.died!.toll, `the toll (${strand.died!.toll}) is paid in gold`);
+  assert(strand.died!.wear.length === 2 && strand.died!.wear.every(w => w.was === 100 && w.now === 75) && s.player.durability.warden_edge === 75 && s.player.durability.mithril_chestplate === 75, 'the event and the player both say the two worn pieces went from 100 to 75');
+  assert(s.player.gold === 200, 'and no gold is taken: the toll is retired');
+  assert(strand.died!.grave === 'Saltmarrow' && strand.died!.run > 30 && Math.abs(strand.died!.run - Math.hypot(s.player.x - TOWNS[1].grave.x, s.player.z - TOWNS[1].grave.z)) < 1e-6,'it names the graveyard and how far the run back is');
   assert(s.player.buffs.length === 0 && s.player.food === null && sawEvent(s, 'buff'), 'Well Fed is lost on death');
   assert(s.player.equipment.weapon === 'warden_edge' && s.player.equipment.chest === 'mithril_chestplate' && countItem(s.player.inventory, 'iron_ore') === 7, 'and not one item');
+  const fell = { x: s.player.x, z: s.player.z };
   run(s, RESPAWN_DELAY + 0.5);
-  const wake = TOWNS.find(t => t.id === 'saltmarrow')!.wake;
-  assert(!s.player.dead && Math.hypot(s.player.x - wake.x, s.player.z - wake.z) < 3, 'dying on the Strand, you wake in Saltmarrow, not 900 units away');
+  const wake = TOWNS.find(t => t.id === 'saltmarrow')!.grave;
+  assert(!s.player.dead && Math.hypot(s.player.x - wake.x, s.player.z - wake.z) < 3, 'dying on the Strand, you wake at Saltmarrow\'s graveyard, not 900 units away');
+  assert(Math.hypot(fell.x - wake.x, fell.z - wake.z) > 30 && Math.hypot(wake.x - TOWNS[1].wake.x, wake.z - TOWNS[1].wake.z) > 25, 'and not in the town square: the run back is a real walk');
   assert(s.player.hp === s.player.maxHp && s.player.maxHp === 100, 'healed, at the plain max health');
 
   const hale = dieNear(4843, 'boar', dress);
   run(hale.s, RESPAWN_DELAY + 0.5);
-  assert(hale.died !== undefined && Math.hypot(hale.s.player.x - TOWNS[0].wake.x, hale.s.player.z - TOWNS[0].wake.z) < 3, 'dying in Hale wakes you in Hale');
+  assert(hale.died !== undefined && Math.hypot(hale.s.player.x - TOWNS[0].grave.x, hale.s.player.z - TOWNS[0].grave.z) < 3, 'dying in Hale wakes you at Hale\'s graveyard');
+  assert(hale.died!.run > 15, `and the boar by the smithy is ${Math.round(hale.died!.run)} paces from it: a walk, not a step`);
 
   const broke = dieNear(4844, 'boar', s2 => { s2.player.equipment.weapon = 'warden_edge'; s2.player.gold = 3; });
-  assert(broke.died!.toll === 3 && broke.s.player.gold === 0, 'with three gold the toll is three gold');
+  assert(broke.s.player.gold === 3 && broke.s.player.durability.warden_edge === 75, 'with three gold you keep three gold, and the blade is still worn down');
 
   const save = dieNear(4845, 'shore_crab', dress);
   const reload = deserialize(serialize(save.s))!;
-  assert(Math.hypot(reload.player.x - wake.x, reload.player.z - wake.z) < 3 && reload.player.gold === save.s.player.gold, 'saving while dead stores the wake in town, the toll already paid: reloading does not dodge it');
+  assert(Math.hypot(reload.player.x - wake.x, reload.player.z - wake.z) < 3 && reload.player.durability.warden_edge === 75, 'saving while dead stores the graveyard and the worn gear: reloading does not dodge either');
+  const older = JSON.parse(serialize(save.s)); delete older.player.durability;
+  const loaded = deserialize(JSON.stringify(older))!;
+  assert(loaded !== null && Object.keys(loaded.player.durability).length === 0 && loaded.player.stats.weaponDamage === ITEMS.warden_edge.stats!.damage, 'a save from before durability loads with every piece whole');
+  older.player.durability = { warden_edge: 0 };
+  assert(deserialize(JSON.stringify(older))!.player.stats.weaponDamage === 0, 'a broken blade is still broken after a reload');
+  older.player.durability = { warden_edge: 500 };
+  assert(deserialize(JSON.stringify(older)) === null, 'a save with durability above the maximum is refused');
+  older.player.durability = { not_an_item: 5 };
+  assert(deserialize(JSON.stringify(older)) === null, 'and so is one naming a piece that does not exist');
 
-  assert(nearestTown(SALTMARROW.x - 60, SALTMARROW.z).id === 'saltmarrow' && nearestTown(10, 0).id === 'hale' && nearestTown(440, 8).id === 'hale' && nearestTown(480, 8).id === 'saltmarrow', 'the nearest town is by distance: the middle of the road splits at its halfway');
+  // the graveyards sit out past each town: the nearest is by distance from the graveyard (the middle of the road splits at its halfway)
+  const mid = (TOWNS[0].grave.x + TOWNS[1].grave.x) / 2;
+  assert(nearestTown(SALTMARROW.x - 60, SALTMARROW.z).id === 'saltmarrow' && nearestTown(10, 0).id === 'hale' && nearestTown(mid - 30, 8).id === 'hale' && nearestTown(mid + 30, 8).id === 'saltmarrow', 'the nearest graveyard is by distance: the middle of the road splits at its halfway');
   assert(nearestTown(SALTMARROW.x, SALTMARROW.z, ['hale']).id === 'hale' && nearestTown(0, 0, []).id === 'hale', 'only towns whose flight master is found count (W2.3), and with none found it is the nearest outright');
 }
 

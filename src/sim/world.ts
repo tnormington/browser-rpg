@@ -10,7 +10,7 @@
 export const PLAYER_RADIUS = 0.5;
 
 /** What an obstacle is, for whatever draws it: the sim only ever reads the circle. Absent means a rock (or, in the clearing, whatever it always was). */
-export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person';
+export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave';
 export interface Obstacle { x: number; z: number; r: number; kind?: PropKind }
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 export interface Pt { x: number; z: number }
@@ -167,6 +167,17 @@ const saltLandmarks = {
 };
 
 /**
+ * The graveyards (the bible, on the cost of dying): where a death wakes you. Hale's is in the clearing's north-west corner, Saltmarrow's at the end of the road
+ * beside the west gate, each out past its town's own ground so the walk back is the cost. A small safe circle keeps whatever stands near
+ * from taking you the moment you wake. The headstones are obstacles (a ring round the spot, never on it).
+ */
+const graveHale: Pt = { x: -20, z: 26 }, graveSalt: Pt = at(SALTMARROW, -62, 12);
+const GRAVE_SAFE_R = 6;
+const headstones = (c: Pt): Obstacle[] => [[2.6, 0.4], [3.4, 1.9], [2.8, 3.5], [3.2, 5.1], [2.7, 6.0]]
+  .map(([d, a]) => ({ x: c.x + Math.cos(a) * d, z: c.z + Math.sin(a) * d, r: 0.5, kind: 'grave' as const }));
+const HALE_HEADSTONES = headstones(graveHale), SALT_HEADSTONES = headstones(graveSalt);
+
+/**
  * Saltmarrow's fishing, by the bible (2.2): silverfin off the quay, brine trout in the shallows past its end, saltpike in the wreck pools on the
  * Strand. The shoals sit in the water a pace off the edge, so the player stands on the quay or the shore to fish. Local coordinates.
  */
@@ -202,7 +213,7 @@ export const REGIONS: Region[] = [
     // The outdoor square. Its half-side is live (setWorldHalf), so this rect is mutated in place.
     id: 'clearing', name: 'The Clearing', cave: false, zone: 'hale', cell: 0.25,
     footprint: [{ x0: -30, x1: 30, z0: -30, z1: 30 }],
-    obstacles: [FORGE_BUILDING, { x: 5, z: 2, r: 0.7 }, { x: -5, z: 3, r: 0.7 }, clearingLandmarks.flightHale], // forge building, quest giver, the merchant, the flight master
+    obstacles: [FORGE_BUILDING, { x: 5, z: 2, r: 0.7 }, { x: -5, z: 3, r: 0.7 }, clearingLandmarks.flightHale, ...HALE_HEADSTONES], // forge building, quest giver, the merchant, the flight master, the graveyard's stones
     tall: [FORGE_BUILDING], // the one outdoor thing big enough to hide behind
     trees: [
       { x: -12, z: 10, r: 1 }, { x: -20, z: 4, r: 1 }, { x: -8, z: 20, r: 1 },
@@ -215,7 +226,7 @@ export const REGIONS: Region[] = [
     connections: [{ to: 'ridge', at: { x: -18, z: -22 } }, { to: 'greywater', at: HALE_GATE }],
     // Hale's safe ground is the smithy's yard, not the whole square: Hale's own enemies live in the clearing (the nearest boar is 8 from the forge)
     // and its golden-path fights are fought on the middle of it, so a town-sized circle here would be a different game. Saltmarrow's is the real thing.
-    safe: [{ x: 20, z: -8, r: 4 }],
+    safe: [{ x: 20, z: -8, r: 4 }, { ...graveHale, r: GRAVE_SAFE_R }],
   },
   {
     // The throat runs north from the mouth.
@@ -274,13 +285,13 @@ export const REGIONS: Region[] = [
       { x0: SALTMARROW.x - 70, x1: SALTMARROW.x + 30, z0: SALTMARROW.z - 70, z1: SALTMARROW.z + 70 },
       { x0: SALTMARROW.x + 16, x1: SALTMARROW.x + 62, z0: SALTMARROW.z - 3, z1: SALTMARROW.z + 3 },
     ],
-    obstacles: [SALT_INN, ...SALT_HOUSES, ...SALT_PROPS, { ...saltLandmarks.harbourmaster, kind: 'person' }, { ...saltLandmarks.harbourVendor, kind: 'person' }, { ...saltLandmarks.flightSalt, kind: 'person' }, { ...saltLandmarks.trainer, kind: 'person' }],
+    obstacles: [SALT_INN, ...SALT_HOUSES, ...SALT_PROPS, { ...saltLandmarks.harbourmaster, kind: 'person' }, { ...saltLandmarks.harbourVendor, kind: 'person' }, { ...saltLandmarks.flightSalt, kind: 'person' }, { ...saltLandmarks.trainer, kind: 'person' }, ...SALT_HEADSTONES],
     tall: [SALT_INN, ...SALT_HOUSES, SALT_PROPS[4]], trees: [],
     rocks: [-14, -8, -2, 4, 10].map((lx, i) => ({ type: 'adamant' as const, ...at(SALTMARROW, lx, i % 2 ? -66 : -64), r: 1.2 })),
     spots: SALT_SPOTS,
     landmarks: saltLandmarks,
     connections: [{ to: 'greywater', at: at(GREYWATER, 405, 0) }],
-    safe: [{ ...saltLandmarks.square, r: 35 }],
+    safe: [{ ...saltLandmarks.square, r: 35 }, { ...graveSalt, r: GRAVE_SAFE_R }],
     spawns: worldSpawns(SALTMARROW, STRAND_SPAWNS),
   },
 ];
@@ -288,18 +299,19 @@ export const REGIONS: Region[] = [
 for (const r of REGIONS) if (r.cave) r.tall.push(...r.obstacles);
 
 /**
- * Where you wake when you die: the town nearest the place you fell (by straight distance, the world being flat), at the spot in it
- * you wake. Hale's is where a new game starts. `found` is the hook for flight masters (W2.3): pass the ids of the towns whose master you have
- * found and only those count; it defaults to every town, which is all there is until they exist.
+ * Where you wake when you die: the town whose graveyard is nearest the place you fell (by straight distance, the world being flat), at the
+ * graveyard, which is out past the town's edge: you walk back. `wake` is where a new game starts (Hale's) and where a flight lands you.
+ * `found` is the hook for flight masters (W2.3): pass the ids of the towns whose master you have found and only those count; it defaults
+ * to every town.
  */
-export const TOWNS: { id: string; name: string; wake: Pt; map: Pt }[] = [
-  { id: 'hale', name: 'Hale', wake: { x: 0, z: 6 }, map: { x: 0, z: 0 } }, // where a new game starts (PLAYER_SPAWN in data.ts reads this)
-  { id: 'saltmarrow', name: 'Saltmarrow', wake: at(SALTMARROW, -25, -4), map: { x: 900, z: 0 } },
+export const TOWNS: { id: string; name: string; wake: Pt; grave: Pt; map: Pt }[] = [
+  { id: 'hale', name: 'Hale', wake: { x: 0, z: 6 }, grave: graveHale, map: { x: 0, z: 0 } }, // where a new game starts (PLAYER_SPAWN in data.ts reads this)
+  { id: 'saltmarrow', name: 'Saltmarrow', wake: at(SALTMARROW, -25, -4), grave: graveSalt, map: { x: 900, z: 0 } },
 ]; // `map`: the world-map position (design 1.2), used for the map screen and for flight prices only: walking never reads it
 export function nearestTown(x: number, z: number, found: readonly string[] = TOWNS.map(t => t.id)) {
   const open = TOWNS.filter(t => found.includes(t.id));
   return (open.length ? open : TOWNS).reduce((best, t) =>
-    Math.hypot(x - t.wake.x, z - t.wake.z) < Math.hypot(x - best.wake.x, z - best.wake.z) ? t : best);
+    Math.hypot(x - t.grave.x, z - t.grave.z) < Math.hypot(x - best.grave.x, z - best.grave.z) ? t : best);
 }
 
 export const regionById = (id: string): Region => REGIONS.find(r => r.id === id)!;

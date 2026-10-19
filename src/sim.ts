@@ -2,7 +2,7 @@
 // Rules live in src/sim/*; this file owns state shape and the fixed-step driver.
 
 import { XpTrack } from './sim/xp';
-import { DerivedStats, Equipment, deriveStats, emptyEquipment } from './sim/items';
+import { DerivedStats, Durability, Equipment, deriveStats, emptyEquipment } from './sim/items';
 import { Inventory, InvAction, applyInvAction, newInventory } from './sim/inventory';
 import { GroundDrop, updateDrops } from './sim/loot';
 import { SkillId, Skills, newSkills } from './sim/skills';
@@ -87,7 +87,8 @@ export interface Player {
   inventory: Inventory;
   gold: number;            // currency: sold for, spent at the merchant. Not a bag item, so it never takes a slot
   equipment: Equipment;
-  stats: DerivedStats;     // always deriveStats(equipment); combat reads this, never the items
+  durability: Durability;  // points left on worn-down gear, by item id (sim/durability.ts); absent = whole
+  stats: DerivedStats;     // always deriveStats(equipment, durability); combat reads this, never the items
   talents: Talents;        // ranks bought, by talent id
   talentFx: TalentEffects; // always deriveTalents(talents); combat reads this, never the ranks
   /** A meal being eaten: heals `rate` a second for `left` more seconds, and a hit ends it. `pending` is healing not yet reported as one number. */
@@ -138,8 +139,9 @@ export type GameEvent =
   | { t: 'shop'; vendor: string }                       // player reached a merchant: open their shop
   | { t: 'learn'; slot: number; gold: number }               // an ability was bought from a trainer
   | { t: 'trade'; sold: boolean; item: string; qty: number; gold: number } // a sale (gold earned) or a purchase (gold spent) went through
-  | { t: 'death'; killer: string; toll: number; recap: { src: string; what: string; amount: number; heavy: boolean; ago: number }[] } // killer: "Cave Brute: Crushing Slam"; toll: gold the repair cost, already paid; recap: last hits, oldest first, `ago` seconds before death
-  | { t: 'respawn'; town: string }                      // woke in this town
+  | { t: 'death'; killer: string; wear: { item: string; was: number; now: number }[]; grave: string; run: number; recap: { src: string; what: string; amount: number; heavy: boolean; ago: number }[] } // killer: "Cave Brute: Crushing Slam"; wear: every worn piece and its durability before and after; grave: the graveyard you wake at (its town's name); run: the straight-line walk from there back to where you fell; recap: last hits, oldest first, `ago` seconds before death
+  | { t: 'respawn'; town: string }                      // woke at this town's graveyard
+  | { t: 'repair'; gold: number; pieces: number }       // a vendor mended this many pieces of gear for this much gold
   | { t: 'flightmaster'; town: string }                 // player reached a flight master (a town id): open the destinations
   | { t: 'discover'; town: string }                     // a flight master was found for the first time (a town name)
   | { t: 'flight'; phase: 'start' | 'land'; from: string; to: string; price: number }; // a ride began (price paid) or ended; town ids
@@ -202,7 +204,7 @@ export function createState(seed = 1): GameState {
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
       gcd: 0, cd: ABILITIES.map(() => 0), learned: [], unlocked: 1, queued: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
-      skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), stats: deriveStats(emptyEquipment()),
+      skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), durability: {}, stats: deriveStats(emptyEquipment()),
       talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [],
     },
     moveTarget: null,

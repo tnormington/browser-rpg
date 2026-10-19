@@ -44,6 +44,7 @@ const hud = new Hud((x, y, z) => view.showingMap ? null : view.project(x, y, z),
   sell: (slot, qty) => { pendingShop.push({ k: 'sell', slot, qty }); saveDirty = true; },
   buy: (item, qty) => { pendingShop.push({ k: 'buy', item, qty }); saveDirty = true; },
   learn: slot => { pendingShop.push({ k: 'learn', slot }); saveDirty = true; },
+  repair: () => { pendingShop.push({ k: 'repair' }); saveDirty = true; },
   craft: (recipe, count) => { pendingCraft = { recipe, count }; },
   questAdvance: () => { pendingAdvance = true; },
   quality: toggle => {

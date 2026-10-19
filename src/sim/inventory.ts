@@ -77,7 +77,7 @@ function moveSlot(inv: Inventory, from: number, to: number) {
 }
 
 export function refreshGearStats(s: GameState) {
-  Object.assign(s.player.stats, deriveStats(s.player.equipment));
+  Object.assign(s.player.stats, deriveStats(s.player.equipment, s.player.durability));
 }
 
 export function applyInvAction(s: GameState, act: InvAction) {

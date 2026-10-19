@@ -14,10 +14,11 @@ import { MAX_BONUS, MAX_SPEEDUP, mastery } from './sim/mastery';
 import { RECIPES, FORGE_REACH, recipeById } from './sim/crafting';
 import {
   CAVE_DOOR_Z, CAVE_PILLARS, CAVE_ROCKS, CAVE_ROOMS, COLLIDERS, LANDMARKS, PLAYER_RADIUS, ROCKS, TREES, WORLD_HALF,
-  GREYWATER, REGIONS, SALTMARROW, caveDepth, caveWallPoints, clampToWorld, inCave, regionAt, resolveCollisions, sameSideOfDoor,
+  GREYWATER, REGIONS, SALTMARROW, TOWNS, caveDepth, caveWallPoints, clampToWorld, inCave, regionAt, resolveCollisions, sameSideOfDoor,
 } from './sim/world';
 import { route } from './sim/path';
 import { refreshGearStats } from './sim/inventory';
+import { damagedGear, repairCost } from './sim/durability';
 import { refreshPlayerStats } from './sim/combat';
 import {
   BLADE_PLAN, DELVE_GOALS, DIALOGUE, DIALOGUE2, HUNT_GOALS, MITHRIL_PLAN, NPC, QUEST2_NAME, QUEST2_STAGES, QUEST_STAGES,
@@ -341,7 +342,7 @@ section('Tougher tier kills a fresh player; death and resurrection');
   assert(s.player.dead, 'still dead during the delay');
   run(s, 1);
   assert(!s.player.dead && s.player.hp === s.player.maxHp, 'respawns with full health after the delay');
-  assert(Math.hypot(s.player.x, s.player.z - 6) < 0.1, 'respawns at the clearing');
+  assert(Math.hypot(s.player.x - TOWNS[0].grave.x, s.player.z - TOWNS[0].grave.z) < 0.1, 'respawns at Hale\'s graveyard, not in the town');
   assert(st(brute) === 'return' || st(brute) === 'idle', 'brute resets when the player dies');
   assert(s.player.combat.xp === 0, 'death costs no XP (setback, not a wall)');
 }
@@ -527,7 +528,7 @@ function quietState(seed: number) {
 /** Bot self-defence: if anything has aggroed, fight it before carrying on. Waits out a death. */
 function defend(s: GameState) {
   for (let guard = 0; guard < 20; guard++) {
-    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); continue; }
+    if (s.player.dead) { wake(s); continue; }
     const e = s.enemies.find(x => st(x) === 'chase');
     if (!e) return;
     s.player.energy = s.player.maxEnergy; s.player.cd.fill(0);
@@ -541,7 +542,7 @@ function grindCombat(s: GameState, level: number) {
     const pool = s.enemies.filter(e => e.type === (s.player.combat.level >= 3 ? 'wolf' : 'boar') && st(e) !== 'dead');
     if (!pool.length) { run(s, 2); continue; }
     const e = pool[0];
-    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); continue; }
+    if (s.player.dead) { wake(s); continue; }
     if (s.player.hp < s.player.maxHp * 0.7) run(s, 10); // rest between pulls
     s.player.energy = s.player.maxEnergy; s.player.cd.fill(0);
     standNear(s, e, 2.5);
@@ -710,6 +711,7 @@ section('M3 golden path: fight, mine, smith, equip, beat the Cave Brute');
   const combatSecs = grindCombat(s, 5);
   assert(s.player.combat.level >= 5, `ground out combat level ${s.player.combat.level} on boars/wolves (${combatSecs.toFixed(0)}s game time)`);
   const combatLevel = s.player.combat.level;
+  const atLevel = structuredClone(s); // the counterfactual below is this player, the moment level 5 was reached: dying now means a walk from the graveyard (HOM-58), and the bot's extra kills on the way would otherwise level it past the point
   s.player.inventory.fill(null); // keep the bag clean: only the crafted weapon matters below
 
   // 3. the RuneScape loop, timed from the first swing to the blade in hand
@@ -735,7 +737,7 @@ section('M3 golden path: fight, mine, smith, equip, beat the Cave Brute');
   assert(pathSecs >= 120 && pathSecs <= 480, 'path takes a few minutes of play (2 to 8 min)');
 
   // 4. equip it; counterfactual at the same level without it
-  const noBlade = structuredClone(s);
+  const noBlade = atLevel;
   noBlade.player.inventory.fill(null);
   s.player.hp = s.player.maxHp; s.player.energy = s.player.maxEnergy; s.player.cd.fill(0); s.player.outOfCombat = 99;
   tick(s, { inv: [{ k: 'equip', slot: s.player.inventory.findIndex(x => x?.id === 'forged_blade') }] });
@@ -785,7 +787,7 @@ function rest(s: GameState) {
 /** Hunt one living enemy of `type`: walk to it, fight it, recover. */
 function huntOne(s: GameState, type: string) {
   for (let guard = 0; guard < 6; guard++) {
-    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); continue; }
+    if (s.player.dead) { wake(s); continue; }
     const e = s.enemies.filter(x => x.type === type && st(x) !== 'dead').sort((a, b) => dist2(a, s.player) - dist2(b, s.player))[0];
     if (!e) { run(s, 2); continue; }
     rest(s);
@@ -899,7 +901,7 @@ section('M4 save / load');
   const d = createState(4);
   d.player.dead = true; d.player.hp = 0; d.player.x = 25; d.player.z = 25;
   const dl = deserialize(serialize(d))!;
-  assert(!dl.player.dead && dl.player.hp === dl.player.maxHp && dl.player.z === 6, 'a save made while dead wakes you at the clearing');
+  assert(!dl.player.dead && dl.player.hp === dl.player.maxHp && dl.player.z === TOWNS[0].grave.z, 'a save made while dead wakes you at the graveyard');
   const chase = createState(4);
   const ce = enemyOf(chase, 'boar'); ce.state = 'chase'; ce.hp = 5; ce.x += 3;
   const cl = deserialize(serialize(chase))!;
@@ -2134,6 +2136,18 @@ function sweepDrops(s: GameState) {
 function walkVia(s: GameState, pts: [number, number][]) {
   for (const [x, z] of pts) if (!walkTo(s, x, z, 2.5, 30) && !s.player.dead) { s.player.x = x; s.player.z = z; }
 }
+/**
+ * Wait out a death the way a player does (HOM-58): wake at the graveyard, and if the gear is worn down walk to the merchant and mend it, so a bot that
+ * dies twenty times is not fighting in broken mithril. The bot never sells drops, so the gold is handed over: it is what a player would have earned.
+ */
+function wake(s: GameState) {
+  run(s, RESPAWN_DELAY + 0.5);
+  const need = damagedGear(s.player).reduce((sum, id) => sum + repairCost(s.player, id), 0);
+  if (!need || s.player.dead) return;
+  s.player.gold += need;
+  walkVia(s, [[LANDMARKS.vendor.x, LANDMARKS.vendor.z + 2]]);
+  tick(s, { shop: [{ k: 'repair' }] });
+}
 const SECOND_RUN_SEED = 2027;
 
 section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, the forge and the Warden, as one continuous run');
@@ -2191,7 +2205,7 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
   dressAndTidy(s);
   const ore = () => countOf(s, 'mithril_ore') + countOf(s, 'mithril_bar');
   for (let g = 0; secondStage(s) === 'delve' && g < 40; g++) {
-    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); walkVia(s, mouthWalk); continue; }
+    if (s.player.dead) { wake(s); walkVia(s, mouthWalk); continue; }
     if ((s.quest.kills.ravager ?? 0) < DELVE_GOALS.ravager && s.enemies.some(e => e.type === 'ravager' && st(e) !== 'dead')) huntOne(s, 'ravager');
     else gatherUntil(s, 'mithril', ore() + 3);
     sweepDrops(s); dressAndTidy(s);
@@ -2226,7 +2240,7 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
 
   // 8. through the hollow to the Warden: what stands in the way is fought, in the set
   for (const type of ['archer', 'archer', 'seer', 'ogre', 'ogre']) {
-    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); walkVia(s, mouthWalk); }
+    if (s.player.dead) { wake(s); walkVia(s, mouthWalk); }
     if (s.enemies.some(e => e.type === type && st(e) !== 'dead')) huntOne(s, type);
     sweepDrops(s);
   }
@@ -2245,7 +2259,7 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
   const warden = enemyOf(s, 'warden');
   let wardenTries = 0;
   while (st(warden) !== 'dead' && wardenTries++ < 4) {
-    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); walkVia(s, mouthWalk); walkVia(s, [[-18, -62], [-18, -70], [-18, -75]]); }
+    if (s.player.dead) { wake(s); walkVia(s, mouthWalk); walkVia(s, [[-18, -62], [-18, -70], [-18, -75]]); }
     huntOne(s, 'warden');
   }
   assert(st(warden) === 'dead' && secondStage(s) === 'report', `the Hollow Warden falls (${wardenTries} attempt${wardenTries === 1 ? '' : 's'}, ${deathTally} death${deathTally === 1 ? '' : 's'} in the run so far)`);
@@ -2272,7 +2286,7 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
     park();
     walkVia(s, mouthWalk); walkVia(s, [[-18, -62], [-18, -70], [-18, -75]]);
     for (let a = 0; a < 3 && st(warden) !== 'dead' && !s.player.dead; a++) huntOne(s, 'warden');
-    if (s.player.dead) { run(s, RESPAWN_DELAY + 0.5); continue; }
+    if (s.player.dead) { wake(s); continue; }
     if (st(warden) === 'dead') kills2++;
     sweepDrops(s);
   }
