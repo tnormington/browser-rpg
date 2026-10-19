@@ -37,6 +37,7 @@ export interface HudActions {
 function actionFailText(ev: Extract<GameEvent, { t: 'actionfail' }>): string {
   switch (ev.reason) {
     case 'level': return `You need ${SKILLS[ev.skill!].name} level ${ev.need} to ${SKILLS[ev.skill!].verb} ${ev.what}`; // a level failure always names its skill
+    case 'req': return `You need Combat level ${ev.need} to wear ${ev.what}`;
     case 'depleted': return `${ev.what} is depleted: it will return shortly`;
     case 'full': return 'Inventory full';
     case 'materials': return `Missing materials for ${ev.what}`;

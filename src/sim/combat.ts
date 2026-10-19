@@ -6,13 +6,13 @@ import { grantXp } from './skills';
 import { rollDrops } from './loot';
 import { questOnKill, questReached } from './quest';
 import { nextRandom } from './rng';
-import { resolveCollisions, sameSideOfDoor } from './world';
+import { inSafeZone, resolveCollisions, sameSideOfDoor } from './world';
 import { clearLine } from './sight';
 import {
   ABILITIES, ENEMY_TYPES, GCD, QUEUE_WINDOW, CRIT_CHANCE, CRIT_MULT, ENERGY_MAX, ENERGY_REGEN,
   RESPAWN_DELAY, OOC_DELAY, OOC_REGEN_FRAC, TAB_RANGE, PLAYER_SPAWN, maxHpForLevel, powerForLevel,
   STAGGER_TIME, STAGGER_HEAVY_KEEP, ACQUIRE_RANGE, ACQUIRE_BEHIND_RANGE, FRONT_HALF_ARC, aggroRadius,
-  AUTO_RANGE, AUTO_BASE, AUTO_WEAPON_SHARE, AUTO_SLOT, BARE_SWING, RECAP_WINDOW, RECAP_MAX, TICK_DT,
+  AUTO_RANGE, AUTO_BASE, AUTO_WEAPON_SHARE, AUTO_SLOT, BARE_SWING, RECAP_WINDOW, RECAP_MAX, TICK_DT, SIM_WAKE_RANGE, xpParity,
 } from './data';
 
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -208,7 +208,8 @@ function killEnemy(s: GameState, e: Enemy) {
   s.events.push({ t: 'kill', id: e.id, x: e.x, z: e.z });
   rollDrops(s, e.type, e.x, e.z);
   questOnKill(s, e.type);
-  if (grantXp(s, 'combat', def.xp, e.x, e.z) > 0) refreshPlayerStats(s, true); // levelling restores health: a punchy reward
+  const xp = Math.max(1, Math.round(def.xp * xpParity(def.level, s.player.combat.level))); // the rate at the level the player is when it dies
+  if (grantXp(s, 'combat', xp, e.x, e.z) > 0) refreshPlayerStats(s, true); // levelling restores health: a punchy reward
 }
 
 // ---------- abilities ----------
@@ -363,6 +364,9 @@ export function updatePlayerDeath(s: GameState, dt: number) {
   s.events.push({ t: 'respawn' });
 }
 
+/** An enemy that has come into a town square from outside it (its post is never inside one): the town turns it back. */
+const strayedIntoTown = (e: Enemy) => inSafeZone(e.x, e.z) && !inSafeZone(e.spawnX, e.spawnZ);
+
 function startReturn(e: Enemy) {
   e.state = 'return';
   e.evadeFor = 0;
@@ -496,9 +500,11 @@ export function updateEnemies(s: GameState, dt: number) {
     const dp = dist(e, p);
 
     if (e.state === 'idle') {
-      if (!p.dead && dp <= aggroRadius(def, p.combat.level) && clearLine(e, p)) aggro(s, e);
+      if (dp > SIM_WAKE_RANGE) continue; // far from the player and at rest: there is nothing for it to do
+      // no aggro in a town: not for a player standing in the square, and not from an enemy that has strayed into it
+      if (!p.dead && dp <= aggroRadius(def, p.combat.level) && !inSafeZone(p.x, p.z) && !strayedIntoTown(e) && clearLine(e, p)) aggro(s, e);
     } else if (e.state === 'chase') {
-      if (p.dead || dist(e, { x: e.spawnX, z: e.spawnZ }) > def.leash) {
+      if (p.dead || dist(e, { x: e.spawnX, z: e.spawnZ }) > def.leash || strayedIntoTown(e)) { // a chase that reaches a town gives up, like one that outruns its leash
         startReturn(e);
         dropTarget(s, e.id, 'evade');
       } else if (e.stagger > 0) {

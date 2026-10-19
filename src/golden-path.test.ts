@@ -1733,7 +1733,9 @@ section('HOM-15 the cave: a second pocket of walkable world behind the mouth');
     resolveCollisions(q, r);
     const inOutdoors = Math.abs(p.x) <= WORLD_HALF - r + 1e-6 && Math.abs(p.z) <= WORLD_HALF - r + 1e-6;
     const inRoom = CAVE_ROOMS.some(({ rect }) => p.x >= rect.x0 - 1e-6 && p.x <= rect.x1 + 1e-6 && p.z >= rect.z0 - 1e-6 && p.z <= rect.z1 + 1e-6);
-    if (!inOutdoors && !inRoom) leaks++;
+    // HOM-46: the east gate is a deliberate hole in the clearing's wall, and beyond it is the road's floor (x from 36): a body shoved in from the east comes to rest there
+    const inGate = (p.x >= 28 + r - 1e-6 && p.x <= 44 - r + 1e-6 && p.z >= 5 + r - 1e-6 && p.z <= 11 - r + 1e-6) || (p.x >= 36 + r - 1e-6 && p.z >= -52 + r - 1e-6 && p.z <= 68 - r + 1e-6);
+    if (!inOutdoors && !inRoom && !inGate) leaks++;
     // deep in the cave a player-sized body settles. (A heavy wedged between a rock and a wall, or the overlapping rocks of the old ridge and mouth, can be nudged again.)
     if (r <= 0.65 && inRoom && p.z < CAVE_DOOR_Z - 2) unstable = Math.max(unstable, Math.hypot(q.x - p.x, q.z - p.z));
   }
@@ -1760,7 +1762,7 @@ section('HOM-15 the cave stays out of the first quest');
   assert(NODE_TYPES.mithril && ROCKS.every(r => r.type !== 'mithril') && ROCKS.length === 7, 'the ridge outside is unchanged: seven iron and coal rocks, no mithril');
   const s = createState(902);
   const kinds = s.nodes.map(n => n.type);
-  assert(kinds.slice(0, ROCKS.length + TREES.length).join() === [...ROCKS.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(ROCKS.length + TREES.length).every(t => t === 'mithril' || t === 'coal'),
+  assert(kinds.slice(0, ROCKS.length + TREES.length).join() === [...ROCKS.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(ROCKS.length + TREES.length).every(t => t === 'mithril' || t === 'coal' || t === 'adamant'), // HOM-46: Saltmarrow's adamant is added after the cave's, so it too leaves every older id alone
     'cave nodes are added after every existing node, so old node ids (and saves) keep meaning the same rock');
   const caveFolk = SPAWNS.filter(sp => inCave(sp.x, sp.z));
   const ridge = [...ROCKS, ...TREES, LANDMARKS.npc];
@@ -1851,9 +1853,9 @@ section('HOM-15 enemy mechanic: the ground mark punishes standing still');
   }
   assert(castName(ENEMY_TYPES.ogre, 'heavy') === 'Boulder Slam' && castName(seer, 'ground') === 'Withering Ground' && castName(seer, 'bolt') === 'Hex Bolt' && castName(ENEMY_TYPES.boar, 'ground') === 'Wild Boar',
     'castName gives the right name for every kind of wind-up and never throws, for any enemy');
-  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'seer,warden', 'only the Seer and the Warden mark the ground');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'seer,tide_hag,warden', 'only the Seer, the Warden and (HOM-46) the Tide Hag mark the ground');
   assert(Object.values(ENEMY_TYPES).every(d => !d.look || ['wolf', 'hexer', 'brute', 'boar', 'pup'].includes(d.look.model)), 'every cave look reuses a model that is already loaded: no new art');
-  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 5, 'all five cave enemies say how to draw themselves, and nothing older does');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 15 && ['boar', 'wolf', 'brute', 'pup', 'hexer'].every(k => !ENEMY_TYPES[k].look), 'the five cave enemies and (HOM-46) the ten of the road and the Strand say how to draw themselves, and the original five rigs do not');
 }
 
 // ---------------------------------------------------------------------------

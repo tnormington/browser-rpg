@@ -21,6 +21,7 @@ export const NODE_TYPES: Record<string, NodeDef> = {
   iron: { name: 'Iron Rock', skill: 'mining', level: 1, item: 'iron_ore', time: 3.5, xp: 35, charges: 3, respawn: 25 },
   coal: { name: 'Coal Seam', skill: 'mining', level: 4, item: 'coal', time: 4.5, xp: 50, charges: 3, respawn: 30 },
   mithril: { name: 'Mithril Vein', skill: 'mining', level: 9, item: 'mithril_ore', time: 5, xp: 80, charges: 3, respawn: 45 },
+  adamant: { name: 'Adamant Vein', skill: 'mining', level: 17, item: 'adamant_ore', time: 5.5, xp: 170, charges: 3, respawn: 45 },
   tree: { name: 'Tree', skill: 'woodcutting', level: 1, item: 'logs', time: 3, xp: 25, charges: 2, respawn: 20 },
 };
 

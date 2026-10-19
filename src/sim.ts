@@ -12,7 +12,7 @@ import { beginCraft } from './sim/crafting';
 import { ShopAction, applyShopAction } from './sim/shop';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
-import { PLAYER_RADIUS, clampToWorld, inCave, resolveCollisions } from './sim/world';
+import { PLAYER_RADIUS, clampToWorld, inCave, regionAt, resolveCollisions } from './sim/world';
 import { Pt, route } from './sim/path';
 import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
 import {
@@ -36,6 +36,7 @@ export type EnemyState = 'idle' | 'chase' | 'return' | 'dead';
 export interface Enemy {
   id: number;
   type: string;
+  region: string;   // the region it stands in (by its spawn): which part of the world it belongs to, for whatever draws or counts per region
   x: number; z: number; facing: number;
   spawnX: number; spawnZ: number;
   hp: number; maxHp: number;
@@ -113,7 +114,7 @@ export type GameEvent =
   | { t: 'kill'; id: number; x: number; z: number }
   | { t: 'xp'; skill: SkillId; amount: number; x: number; z: number }
   | { t: 'levelup'; skill: SkillId; level: number }
-  | { t: 'actionfail'; reason: 'level' | 'depleted' | 'full' | 'materials' | 'range' | 'gold'; skill?: SkillId; need: number; what: string } // skill: absent for a failed trade
+  | { t: 'actionfail'; reason: 'level' | 'req' | 'depleted' | 'full' | 'materials' | 'range' | 'gold'; skill?: SkillId; need: number; what: string } // skill: absent for a failed trade
   | { t: 'npc' }                                        // player reached the quest giver: open dialogue
   | { t: 'quest'; what: 'accept' | 'progress' | 'stage' | 'complete'; name: string }  // name: the quest it is about (both chains sit at stage 'done' at once)
   | { t: 'forge' }                                      // player reached the forge: open the recipe list
@@ -188,7 +189,7 @@ export function createState(seed = 1): GameState {
     targetId: null,
     tab: null,
     enemies: SPAWNS.map((sp, i): Enemy => ({
-      id: i + 1, type: sp.type, x: sp.x, z: sp.z, facing: 0, spawnX: sp.x, spawnZ: sp.z,
+      id: i + 1, type: sp.type, region: regionAt(sp.x, sp.z)?.id ?? '', x: sp.x, z: sp.z, facing: 0, spawnX: sp.x, spawnZ: sp.z,
       hp: ENEMY_TYPES[sp.type].hp, maxHp: ENEMY_TYPES[sp.type].hp, state: 'idle',
       attackCd: 0, respawnIn: 0, deadFor: 0, hitFlash: 0, swing: 0, bleed: null, cast: null, stagger: 0,
       heavyCd: ENEMY_TYPES[sp.type].heavy?.first ?? 0, hazardCd: ENEMY_TYPES[sp.type].hazard?.first ?? 0, evadeFor: 0,

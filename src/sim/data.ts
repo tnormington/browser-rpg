@@ -1,4 +1,5 @@
 // All combat numbers live here so tuning is one file.
+import { REGIONS } from './world';
 
 export const TICK_RATE = 30;          // fixed simulation steps per second
 export const TICK_DT = 1 / TICK_RATE;
@@ -119,6 +120,18 @@ export interface EnemyDef {
   look?: { model: string; scale: number; tint: number };
 }
 
+/**
+ * XP parity (docs/world-design.md 3.1 rule 2): a kill pays its base XP times this, +5 % per level the enemy is above you, to +25 %, and
+ * -5 % per level below, to a 10 % floor. It is what stops the Hollow Warden being the best farm in the game for ever: ground you have
+ * outgrown pays less. (The bible's prose says -15 % a level below; its formula, which is what is built, says 5 %.)
+ */
+export const XP_PARITY = { step: 0.05, min: 0.1, max: 1.25 };
+export const xpParity = (enemyLevel: number, playerLevel: number) =>
+  Math.max(XP_PARITY.min, Math.min(XP_PARITY.max, 1 + XP_PARITY.step * (enemyLevel - playerLevel)));
+
+/** Idle enemies this far from the player are not looked at: nothing can wake them (the widest notice radius is 12), so the tick skips them. */
+export const SIM_WAKE_RANGE = 60;
+
 /** How far this enemy notices a player of that combat level from: its own radius, less what the player has outgrown. */
 export function aggroRadius(def: EnemyDef, playerLevel: number): number {
   const shrink = AGGRO_PER_LEVEL * Math.max(0, playerLevel - def.level);
@@ -172,8 +185,54 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     heavy: { name: 'Seismic Crush', windup: 1.8, every: 8, first: 4, damage: 135, radius: 6.5 },
     hazard: { name: 'Falling Rock', windup: 1.6, every: 6, first: 5, damage: 80, radius: 3.2, range: 14 },
     look: { model: 'brute', scale: 1.5, tint: 0x5a6a9a } },
+
+  // The Greywater Road (levels 10 to 13) and the Strand (14 to 17), from docs/world-design.md section 3.4: HP, hit, swing, heavy and XP are the
+  // bible's columns as written (hit and heavy are raw: armour takes them down). Rigs are the five that exist, scaled and tinted as the cave's are.
+  // Respawns follow its rule: trash 30 to 45 s, an elite 120 s, a rare 30 minutes.
+  marsh_hog: { name: 'Marsh Hog', level: 10, hp: 415, damage: 35, attackInterval: 2.0, speed: 5.2,
+    aggroRadius: 8, leash: 25, attackRange: 2.2, radius: 0.78, xp: 30, respawn: 35,
+    look: { model: 'boar', scale: 1.3, tint: 0x5a6a48 } },
+  road_wolf: { name: 'Greywater Wolf', level: 11, hp: 470, damage: 33, attackInterval: 1.8, speed: 5.0,
+    aggroRadius: 9, leash: 25, attackRange: 1.9, radius: 0.6, xp: 31, respawn: 35, pack: 7,
+    look: { model: 'wolf', scale: 1.0, tint: 0x6a6e78 } },
+  footpad: { name: 'Footpad', level: 12, hp: 530, damage: 46, attackInterval: 2.4, speed: 4.4,
+    aggroRadius: 10, leash: 24, attackRange: 11, radius: 0.6, xp: 32, respawn: 40,
+    ranged: { name: 'Knife Throw', range: 11, keepAway: 4, windup: 0.8 },
+    look: { model: 'hexer', scale: 1.0, tint: 0x6a5a40 } },
+  toll_captain: { name: 'Toll Captain', level: 13, hp: 1785, damage: 54, attackInterval: 2.2, speed: 4.0,
+    aggroRadius: 10, leash: 22, attackRange: 2.8, radius: 1.25, xp: 99, respawn: 120,
+    heavy: { name: 'Cudgel Slam', windup: 1.7, every: 9, first: 3, damage: 195, radius: 5 },
+    look: { model: 'brute', scale: 1.15, tint: 0x6a4a30 } },
+  old_grey: { name: 'Old Grey', level: 12, hp: 2120, damage: 40, attackInterval: 1.6, speed: 5.4,
+    aggroRadius: 10, leash: 25, attackRange: 2.2, radius: 0.85, xp: 192, respawn: 1800,
+    heavy: { name: 'Rending Lunge', windup: 1.6, every: 8, first: 3, damage: 180, radius: 4 },
+    look: { model: 'wolf', scale: 1.4, tint: 0xe0e0e8 } },
+  shore_crab: { name: 'Shore Crab', level: 14, hp: 665, damage: 34, attackInterval: 1.6, speed: 5.0,
+    aggroRadius: 8, leash: 22, attackRange: 1.7, radius: 0.5, xp: 34, respawn: 35,
+    look: { model: 'boar', scale: 0.8, tint: 0xb8603a } },
+  drowned_sailor: { name: 'Drowned Sailor', level: 15, hp: 745, damage: 59, attackInterval: 2.6, speed: 4.4,
+    aggroRadius: 10, leash: 24, attackRange: 12, radius: 0.6, xp: 35, respawn: 40,
+    ranged: { name: 'Harpoon', range: 12, keepAway: 5, windup: 0.9 },
+    look: { model: 'hexer', scale: 1.0, tint: 0x3a6a6a } },
+  tide_hag: { name: 'Tide Hag', level: 16, hp: 840, damage: 71, attackInterval: 3.0, speed: 4.2,
+    aggroRadius: 11, leash: 14, attackRange: 12, radius: 0.7, xp: 36, respawn: 45,
+    ranged: { name: 'Brine Bolt', range: 12, keepAway: 5, windup: 0.9 },
+    hazard: { name: 'Undertow', windup: 1.3, every: 5, first: 2, damage: 120, radius: 3, range: 14 },
+    look: { model: 'hexer', scale: 1.15, tint: 0x3a7a5a } },
+  barnacle_ogre: { name: 'Barnacle Ogre', level: 17, hp: 2790, damage: 71, attackInterval: 2.4, speed: 3.9,
+    aggroRadius: 10, leash: 20, attackRange: 2.9, radius: 1.3, xp: 111, respawn: 120,
+    heavy: { name: 'Anchor Slam', windup: 1.7, every: 9, first: 3, damage: 250, radius: 5.5 },
+    look: { model: 'brute', scale: 1.15, tint: 0x4a6a6a } },
+  gutterhook: { name: 'Gutterhook', level: 16, hp: 3365, damage: 55, attackInterval: 1.8, speed: 5.0,
+    aggroRadius: 10, leash: 22, attackRange: 2.6, radius: 0.95, xp: 216, respawn: 1800,
+    heavy: { name: 'Gutter Claw', windup: 1.6, every: 8, first: 3, damage: 235, radius: 4.5 },
+    look: { model: 'boar', scale: 1.6, tint: 0x5a4a6a } },
 };
 
+/**
+ * Where enemies stand. Hale's own come first and keep their ids (a save matches by id and type); every other region's follow in region
+ * order, from the region's own `spawns` (world.ts), so new ground only ever adds ids at the end.
+ */
 export const SPAWNS: { type: string; x: number; z: number }[] = [
   { type: 'boar', x: -15, z: -3 }, { type: 'boar', x: 16, z: 3 }, { type: 'boar', x: 12, z: -10 },
   { type: 'wolf', x: -8, z: -14 }, { type: 'wolf', x: 14, z: -15 }, { type: 'wolf', x: -22, z: 12 },
@@ -189,4 +248,5 @@ export const SPAWNS: { type: string; x: number; z: number }[] = [
   { type: 'seer', x: -14, z: -61 },
   { type: 'ogre', x: -8, z: -58 }, { type: 'ogre', x: -26, z: -62.5 },
   { type: 'warden', x: -18, z: -82 },
+  ...REGIONS.flatMap(r => r.spawns ?? []),
 ];

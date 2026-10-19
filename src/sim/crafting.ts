@@ -39,6 +39,19 @@ export const RECIPES: Recipe[] = [
   // the reason to keep killing the Warden after the quest: shards drop at random, three make the best weapon in the game
   { id: 'warden_edge', name: "Warden's Edge", skill: 'smithing', level: 11, time: 12, xp: 450,
     inputs: [{ id: 'mithril_bar', qty: 3 }, { id: 'warden_shard', qty: 3 }], output: { id: 'warden_edge', qty: 1 } },
+  // The Strand's ladder (docs/world-design.md 3.3): adamant ore (Mining 17) and three coal to a bar, then the set and the blade. Craft XP is
+  // the bible's rule, 0.6 x the XP from the recipe's level to the next, to the nearest 5. The blade takes plain logs: the bible's ash is a tree
+  // that does not exist yet (W2.2).
+  { id: 'adamant_bar', name: 'Adamant Bar', skill: 'smithing', level: 14, time: 6, xp: 180,
+    inputs: [{ id: 'adamant_ore', qty: 1 }, { id: 'coal', qty: 3 }], output: { id: 'adamant_bar', qty: 1 } },
+  { id: 'adamant_helm', name: 'Adamant Helm', skill: 'smithing', level: 15, time: 8, xp: 200,
+    inputs: [{ id: 'adamant_bar', qty: 2 }], output: { id: 'adamant_helm', qty: 1 } },
+  { id: 'adamant_blade', name: 'Adamant Blade', skill: 'smithing', level: 16, time: 13, xp: 220,
+    inputs: [{ id: 'adamant_bar', qty: 3 }, { id: 'logs', qty: 1 }], output: { id: 'adamant_blade', qty: 1 } },
+  { id: 'adamant_greaves', name: 'Adamant Greaves', skill: 'smithing', level: 17, time: 9, xp: 245,
+    inputs: [{ id: 'adamant_bar', qty: 3 }], output: { id: 'adamant_greaves', qty: 1 } },
+  { id: 'adamant_chestplate', name: 'Adamant Chestplate', skill: 'smithing', level: 19, time: 11, xp: 300,
+    inputs: [{ id: 'adamant_bar', qty: 4 }], output: { id: 'adamant_chestplate', qty: 1 } },
 ];
 
 export const FORGE_REACH = 6; // centre-to-centre; the hut is 2.6 radius

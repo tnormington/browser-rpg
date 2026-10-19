@@ -103,6 +103,8 @@ export function applyInvAction(s: GameState, act: InvAction) {
   // equip: swap with whatever is worn in that slot
   const slot = ITEMS[st.id].slot;
   if (!slot) return;
+  const need = ITEMS[st.id].req?.combat;
+  if (need && p.combat.level < need) return void s.events.push({ t: 'actionfail', reason: 'req', skill: 'combat', need, what: ITEMS[st.id].name });
   const worn = p.equipment[slot];
   p.equipment[slot] = st.id;
   inv[act.slot] = worn ? { id: worn, qty: 1 } : null;
