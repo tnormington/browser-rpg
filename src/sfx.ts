@@ -53,6 +53,9 @@ const slamVol = (radius: number) => Math.min(1, 0.5 + radius / 12);
 const AMBIENCE: Record<string, { file: string; vol: number }> = {
   greywater: { file: 'road-ambience', vol: 0.35 },
   saltmarrow: { file: 'coast-ambience', vol: 0.4 },
+  // stand-ins until the fens and the wood have beds of their own: the road's wind, a little lower
+  dunmere: { file: 'road-ambience', vol: 0.3 },
+  thornwick: { file: 'road-ambience', vol: 0.25 },
 };
 const AMBIENCE_FADE = 1.5;   // seconds to cross between beds
 

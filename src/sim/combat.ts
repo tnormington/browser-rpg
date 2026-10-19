@@ -360,7 +360,8 @@ function killPlayer(s: GameState) {
   p.queued = null;
   s.targetId = null;
   s.moveTarget = null;
-  s.events.push({ t: 'death', killer: last ? `${ENEMY_TYPES[last.src].name}: ${last.what}` : '', wear, grave: grave.name, run: dist(p, grave.grave), recap });
+  // the ground is a killer too (hazards.ts): its recap source is no enemy type, so the killer is just what it did
+  s.events.push({ t: 'death', killer: last ? (ENEMY_TYPES[last.src] ? `${ENEMY_TYPES[last.src].name}: ${last.what}` : last.what) : '', wear, grave: grave.name, run: dist(p, grave.grave), recap });
 }
 
 export function updatePlayerDeath(s: GameState, dt: number) {
@@ -401,7 +402,8 @@ function aggro(s: GameState, e: Enemy) {
   if (def.pack) for (const o of s.enemies) if (o !== e && o.type === e.type && o.state === 'idle' && dist(o, e) <= def.pack && clearLine(o, e)) aggro(s, o);
 }
 
-function hurtPlayer(s: GameState, e: Enemy, amount: number, what: string, heavy = false) {
+/** Damage to the player from `src` (an enemy type, or the ground's own id; `srcId` is the enemy's id when there is one): the one place a hit lands, so the recap and the events agree. */
+export function harmPlayer(s: GameState, src: string, srcId: number | undefined, amount: number, what: string, heavy = false) {
   const p = s.player;
   if (isFlying(p)) return; // on a flight nothing can touch you
   p.hp = Math.max(0, p.hp - amount);
@@ -409,10 +411,11 @@ function hurtPlayer(s: GameState, e: Enemy, amount: number, what: string, heavy 
   p.action = null; // getting hit breaks concentration
   breakFood(s);
   const now = s.tick * TICK_DT;
-  p.recap = [...p.recap.filter(h => now - h.at <= RECAP_WINDOW), { src: e.type, what, amount, heavy, at: now }].slice(-RECAP_MAX);
-  s.events.push({ t: 'hit', target: 'player', x: p.x, z: p.z, amount, crit: false, slot: -1, dot: false, heavy, src: e.id, species: e.type });
+  p.recap = [...p.recap.filter(h => now - h.at <= RECAP_WINDOW), { src, what, amount, heavy, at: now }].slice(-RECAP_MAX);
+  s.events.push({ t: 'hit', target: 'player', x: p.x, z: p.z, amount, crit: false, slot: -1, dot: false, heavy, src: srcId, species: src });
   if (p.hp <= 0) killPlayer(s);
 }
+const hurtPlayer = (s: GameState, e: Enemy, amount: number, what: string, heavy = false) => harmPlayer(s, e.type, e.id, amount, what, heavy);
 
 /** Begin a wind-up: the enemy plants its feet and the clock the player reads starts. */
 function startCast(s: GameState, e: Enemy, kind: 'heavy' | 'bolt', windup: number) {

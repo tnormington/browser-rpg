@@ -10,10 +10,28 @@
 export const PLAYER_RADIUS = 0.5;
 
 /** What an obstacle is, for whatever draws it: the sim only ever reads the circle. Absent means a rock (or, in the clearing, whatever it always was). */
-export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave';
+export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic';
 export interface Obstacle { x: number; z: number; r: number; kind?: PropKind }
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 export interface Pt { x: number; z: number }
+
+/** A hard gate (design 1.3): a line across an opening that turns back a player below `combat` with `keeper`'s words. The player stands on side `from` of it (-1: the lower coordinate). */
+export interface Gate {
+  id: string;
+  axis: 'x' | 'z';
+  /** The line's coordinate on `axis`, and the stretch of the other axis the opening covers. */
+  at: number;
+  span: [number, number];
+  from: -1 | 1;
+  combat: number;
+  keeper: string;
+  /** Where the keeper stands: a person you cannot walk through, beside the opening. */
+  post: Pt;
+  /** What the keeper says to a player under `combat`. */
+  refuse: string;
+  /** Set when nothing lies behind the gate yet: even a player who has the level is told this and kept back. */
+  closed?: string;
+}
 // Ore rocks (gatherable, see sim/gathering.ts).
 export interface RockSpot extends Obstacle { type: 'copper' | 'tin' | 'iron' | 'coal' | 'mithril' | 'adamant' }
 
@@ -50,6 +68,13 @@ export interface Region {
   safe?: { x: number; z: number; r: number }[];
   /** Where this region's enemies stand (world coordinates). Hale's older ones live in data.ts, which keeps their ids. */
   spawns?: { type: string; x: number; z: number }[];
+  /** The line the road runs along, if there is one: down x = `at` when axis is 'z' (a road running north to south), along z = `at` when it is 'x'. Drawing only. */
+  road?: { axis: 'x' | 'z'; at: number };
+  /** Withering Ground: standing in one of these hurts (sim/hazards.ts), and the renderer draws each with the telegraph circle of a boss's ground mark. World coordinates. */
+  hazards?: { x: number; z: number; r: number }[];
+  /** Herb patches: drawn props with no collider and (until herbalism arrives) no use. `kind` picks the family. */
+  herbs?: { kind: 'fen' | 'thorn'; x: number; z: number }[];
+  gates?: Gate[];
 }
 
 /** Cell size of a zone's routing grid unless its regions ask for finer. */
@@ -79,7 +104,9 @@ const HALE_GATE: Pt = { x: 29, z: 8 };
 /** Where each new region's own frame sits in the world. Local coordinates (the design bible's) are offsets from these. */
 export const GREYWATER = { x: 436, z: 8 };   // 800 x 120, road along its z = 0; local x -400 is the Hale gate (world 36), +400 the Saltmarrow one
 export const SALTMARROW = { x: 906, z: 8 };  // 140 x 140; the town is its west half, the Strand its south and east, the sea beyond x = +30
-const at = (o: Pt, lx: number, lz: number) => ({ x: o.x + lx, z: o.z + lz });
+export const DUNMERE = { x: 875, z: 524 };   // 140 wide, 848 long (z 100 to 948), the road down its x = 0; a 6-unit corridor north, through Saltmarrow's south edge, is the gate
+export const THORNWICK = { x: 875, z: 1008 }; // 140 x 140; the town is its north-west, the Thornwood its south and east; the road comes in at the middle of its north edge
+const at =(o: Pt, lx: number, lz: number) => ({ x: o.x + lx, z: o.z + lz });
 const hash = (n: number) => Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1; // deterministic scatter: no rng state touched
 
 /** Greywater Road's camps, by the bible's layout table (section 3.4). Local coordinates. */
@@ -115,13 +142,13 @@ const worldSpawns = (o: Pt, list: readonly (readonly [string, number, number])[]
  * The road's verges: boulders and dead trees along both sides, none within 11 of a camp and none in the strip the road runs
  * down (so a click along it is a straight line), nor near the gates. Deterministic, so ids and saves are stable.
  */
-function verge(o: Pt, spawns: Pt[], extra: Obstacle[]): { obstacles: Obstacle[]; tall: Obstacle[] } {
+function verge(o: Pt, spawns: Pt[], extra: Obstacle[], run: { axis: 'x' | 'z'; reach: number; near: number; far: number } = { axis: 'x', reach: 380, near: 12, far: 38 }): { obstacles: Obstacle[]; tall: Obstacle[] } {
   const obstacles: Obstacle[] = [...extra], tall: Obstacle[] = extra.filter(e => e.r >= 1.8);
-  for (let k = 0; k < 150; k++) {
-    const lx = -380 + k * 5.3 + (hash(k * 3 + 1) - 0.5) * 4;
-    if (lx > 380 || hash(k * 17 + 5) < 0.35) continue;
-    const lz = (hash(k * 7 + 2) < 0.5 ? -1 : 1) * (12 + hash(k * 11 + 3) * 38);
-    const tree = hash(k * 5 + 4) < 0.4, r = tree ? 0.9 : 1.2 + hash(k * 13 + 6) * 1.2, c = at(o, lx, lz);
+  for (let k = 0; k < Math.ceil(run.reach * 2 / 5.3); k++) {
+    const lx = -run.reach + k * 5.3 + (hash(k * 3 + 1) - 0.5) * 4;
+    if (lx > run.reach || hash(k * 17 + 5) < 0.35) continue;
+    const lz = (hash(k * 7 + 2) < 0.5 ? -1 : 1) * (run.near + hash(k * 11 + 3) * run.far);
+    const tree = hash(k * 5 + 4) < 0.4, r = tree ? 0.9 : 1.2 + hash(k * 13 + 6) * 1.2, c = run.axis === 'x' ? at(o, lx, lz) : at(o, lz, lx);
     if (spawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 11) || extra.some(e => Math.hypot(e.x - c.x, e.z - c.z) < e.r + r + 2)) continue;
     const ob: Obstacle = { x: c.x, z: c.z, r, kind: tree ? 'tree' : 'rock' };
     obstacles.push(ob);
@@ -201,6 +228,108 @@ function waysides(): { rocks: RockSpot[]; trees: Obstacle[] } {
   });
   return { rocks, trees };
 }
+
+/**
+ * Dunmere Fens (bible 3.4): a quarter-hour of road south, the first ground where standing still hurts. The road is x = 0 (local), every camp sits
+ * 22 or more off it so a walker is never pulled in, and the levels climb north to south: stalker pairs and the first witches at 17 and 18, trolls at
+ * 20, the Bogfather holding the road's last stretch, Mother Mire in the south-west corner. Local coordinates: z runs from the Saltmarrow gate (-424)
+ * to Thornwick (+424).
+ */
+const DUNMERE_SPAWNS = [
+  ['fen_stalker', -24, -372], ['fen_stalker', -22.4, -370.8],
+  ['fen_stalker', 26, -304], ['fen_stalker', 27.6, -302.8],
+  ['bog_witch', 32, -250],
+  ['fen_stalker', -28, -226], ['fen_stalker', -26.4, -224.8],
+  ['bog_witch', -34, -160],
+  ['fen_stalker', 24, -124], ['fen_stalker', 25.6, -122.8],
+  ['bog_witch', 30, -66],
+  ['mire_troll', -30, -20], ['mire_troll', 28, 34],
+  ['fen_stalker', -26, 84], ['fen_stalker', -24.4, 85.2],
+  ['bog_witch', 36, 126], ['bog_witch', -38, 170],
+  ['mire_troll', 30, 214], ['mire_troll', -28, 256],
+  ['bog_witch', -34, 302],
+  ['bogfather', 22, 340],
+  ['mother_mire', -56, 392],
+] as const;
+const dunmereSpawns = worldSpawns(DUNMERE, DUNMERE_SPAWNS);
+
+/**
+ * Withering Ground: nineteen stained patches of fen, none within ten of the road, none on a camp. Standing in one drains health a second
+ * (sim/hazards.ts); the renderer draws each as the ground circle of a boss's mark. Every third has a fenbloom growing at its rim.
+ */
+function witheringPatches(spawns: Pt[]): { hazards: { x: number; z: number; r: number }[]; herbs: { kind: 'fen'; x: number; z: number }[] } {
+  const hazards: { x: number; z: number; r: number }[] = [], herbs: { kind: 'fen'; x: number; z: number }[] = [];
+  for (let i = 0; i < 19; i++) {
+    const lz = -400 + i * 44 + (hash(i * 5 + 1) - 0.5) * 16, r = 5 + hash(i * 3 + 2) * 3.5, off = 24 + hash(i * 7 + 3) * 28;
+    const spot = [1, -1].map(side => at(DUNMERE, (i % 2 ? 1 : -1) * side * off, lz)).find(c => spawns.every(sp => Math.hypot(sp.x - c.x, sp.z - c.z) > r + 12));
+    if (!spot) continue;
+    hazards.push({ ...spot, r });
+    if (i % 3 === 0) herbs.push({ kind: 'fen', x: spot.x + r * 0.9, z: spot.z + r * 0.3 });
+  }
+  return { hazards, herbs };
+}
+/** Fenbloom along the verges, in threes: a walker sees one cluster from the last. */
+function fenHerbs(hazards: { x: number; z: number; r: number }[]): { kind: 'fen'; x: number; z: number }[] {
+  const out: { kind: 'fen'; x: number; z: number }[] = [];
+  for (let j = 0; j < 12; j++) for (let k = 0; k < 3; k++) {
+    const c = at(DUNMERE, (j % 2 ? 1 : -1) * (13 + hash(j * 3 + 1) * 5 + k * 1.8), -390 + j * 68 + k * 2.2 + hash(j + k) * 6);
+    if (!hazards.some(h => Math.hypot(h.x - c.x, h.z - c.z) < h.r + 1)) out.push({ kind: 'fen', ...c });
+  }
+  return out;
+}
+const withering = witheringPatches(dunmereSpawns);
+const fen = verge(DUNMERE, dunmereSpawns, [], { axis: 'z', reach: 410, near: 14, far: 46 });
+
+/** The gate in the corridor south of Saltmarrow (the strip x 872 to 878 of Dunmere's footprint): the line the keeper holds. */
+const SALT_GATE: Gate = {
+  id: 'dunmere', axis: 'z', at: 90, span: [DUNMERE.x - 3, DUNMERE.x + 3], from: -1, combat: 16, keeper: 'Marshwarden Quill', post: { x: DUNMERE.x - 2, z: 87.6 },
+  refuse: 'Halt. The Dunmere Fens eat anyone who goes in under combat level 16. Hunt the Strand a while, then come back.',
+};
+
+/** Thornwick (bible 2.1): the town is the north-west, a safe circle of 35 about the square; the Thornwood fills the rest. Local coordinates. */
+const THORN_SPAWNS = [
+  ['thornback', -56, 28], ['thornback', -48, 40], ['thornback', -58, 50],
+  ['blight_stag', 50, -40], ['blight_stag', 56, -26], ['blight_stag', 44, 30],
+  ['rotwood_cultist', -30, 60], ['rotwood_cultist', 20, 58], ['rotwood_cultist', 58, 40], ['rotwood_cultist', 46, -6],
+  ['thorn_warden', 4, 62],
+  ['elder_thornback', -62, 62],
+] as const;
+const thornSpawns = worldSpawns(THORNWICK, THORN_SPAWNS);
+const THORN_HOUSES: Obstacle[] = [[-30, -34], [30, -38], [-36, -4], [32, 6], [-12, 14]].map(([lx, lz]) => ({ ...at(THORNWICK, lx, lz), r: 3.1, kind: 'house' as const }));
+const thornLandmarks = {
+  thornSquare: at(THORNWICK, 0, -18),
+  thornReeve: { ...at(THORNWICK, -8, -24), r: 0.7 },
+  thornVendor: { ...at(THORNWICK, -16, -12), r: 0.7 },
+  /** The flight master, just inside the town from the north road. */
+  flightThorn: { ...at(THORNWICK, 10, -52), r: 0.7 },
+  /** The alchemist's bench: a station, for the card that teaches alchemy. */
+  alembic: at(THORNWICK, 14, -8),
+};
+const THORN_ALEMBIC: Obstacle = { ...thornLandmarks.alembic, r: 1.3, kind: 'alembic' };
+const graveThorn: Pt = at(THORNWICK, -44, -50);
+const THORN_HEADSTONES = headstones(graveThorn);
+/** The Thornwood: thornoaks wherever there is room, which is most places outside the town. Deterministic, 5 apart, clear of camps, the gate and the town's own ground. */
+function thornwood(): Obstacle[] {
+  const out: Obstacle[] = [], sq = thornLandmarks.thornSquare;
+  for (let k = 0; k < 400 && out.length < 70; k++) {
+    const c = at(THORNWICK, (hash(k * 3 + 1) - 0.5) * 132, (hash(k * 5 + 2) - 0.5) * 132);
+    if (Math.hypot(c.x - sq.x, c.z - sq.z) < 41 || Math.hypot(c.x - graveThorn.x, c.z - graveThorn.z) < 12 || Math.abs(c.x - THORNWICK.x) < 7 && c.z < THORNWICK.z - 20) continue;
+    if (thornSpawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 9) || Math.hypot(c.x - (THORNWICK.x + 63), c.z - THORNWICK.z) < 12) continue;
+    if (out.some(o => Math.hypot(o.x - c.x, o.z - c.z) < 6)) continue;
+    out.push({ ...c, r: 1.3, kind: 'thornoak' });
+  }
+  return out;
+}
+const THORNWOODS = thornwood();
+/** The garden by the alembic, and thorn herb wherever the wood thins. */
+const THORN_HERBS = [[22, -30], [25, -26], [28, -32], [24, -22], [20, -24], [29, -20], [-52, 8], [-44, 20], [40, 50], [52, 18], [-20, 44], [8, 36], [30, 24], [-62, 36]]
+  .map(([lx, lz]) => ({ kind: 'thorn' as const, ...at(THORNWICK, lx, lz) }));
+/** The east gate, onto the road to the Barrowdowns: refuses everyone for now, since nothing is built behind it. */
+const THORN_GATE: Gate = {
+  id: 'barrowdowns', axis: 'x', at: THORNWICK.x + 63, span: [THORNWICK.z - 3, THORNWICK.z + 3], from: -1, combat: 22, keeper: 'Gatewarden Hobb', post: { x: THORNWICK.x + 60.6, z: THORNWICK.z - 4 },
+  refuse: 'The barrow road is for those of combat level 22 and over. Come back when you are one of them.',
+  closed: 'The road to the Barrowdowns is shut. Nobody who went up it has come back to say why.',
+};
 
 /**
  * The world. Order matters: node ids follow region order (each region's rocks, then its trees), so new ground goes last and every
@@ -289,6 +418,7 @@ export const REGIONS: Region[] = [
     ],
     obstacles: road.obstacles, tall: road.tall, trees: [], rocks: [],
     landmarks: { gate: { x: 30, z: 8 }, toll: at(GREYWATER, 60, 0) },
+    road: { axis: 'x', at: GREYWATER.z },
     connections: [{ to: 'clearing', at: HALE_GATE }, { to: 'saltmarrow', at: at(GREYWATER, 405, 0) }, { to: 'wayside', at: at(GREYWATER, -350, 0) }],
     spawns: roadSpawns,
   },
@@ -305,7 +435,7 @@ export const REGIONS: Region[] = [
     rocks: [-14, -8, -2, 4, 10].map((lx, i) => ({ type: 'adamant' as const, ...at(SALTMARROW, lx, i % 2 ? -66 : -64), r: 1.2 })),
     spots: SALT_SPOTS,
     landmarks: saltLandmarks,
-    connections: [{ to: 'greywater', at: at(GREYWATER, 405, 0) }],
+    connections: [{ to: 'greywater', at: at(GREYWATER, 405, 0) }, { to: 'dunmere', at: { x: DUNMERE.x, z: 76 } }],
     safe: [{ ...saltLandmarks.square, r: 35 }, { ...graveSalt, r: GRAVE_SAFE_R }],
     spawns: worldSpawns(SALTMARROW, STRAND_SPAWNS),
   },
@@ -335,6 +465,41 @@ export const REGIONS: Region[] = [
     landmarks: {},
     connections: [{ to: 'greywater', at: at(GREYWATER, -350, 0) }],
   },
+  {
+    // Dunmere Fens: the road south from Saltmarrow to Thornwick. Its main floor is 140 x 848 and the road runs down its middle; a 6-unit corridor
+    // north through Saltmarrow's south edge is the hard gate (combat 16). Its south end overlaps Thornwick across the whole width: soft.
+    id: 'dunmere', name: 'Dunmere Fens', cave: false, zone: 'dunmere',
+    footprint: [
+      { x0: DUNMERE.x - 70, x1: DUNMERE.x + 70, z0: 100, z1: 948 },
+      { x0: DUNMERE.x - 3, x1: DUNMERE.x + 3, z0: 70, z1: 106 },
+    ],
+    obstacles: [...fen.obstacles, { ...SALT_GATE.post, r: 0.55, kind: 'person' }], tall: fen.tall, trees: [], rocks: [],
+    landmarks: { gate: { x: DUNMERE.x, z: SALT_GATE.at } },
+    connections: [{ to: 'saltmarrow', at: { x: DUNMERE.x, z: 76 } }, { to: 'thornwick', at: { x: THORNWICK.x, z: 943 } }],
+    spawns: dunmereSpawns,
+    road: { axis: 'z', at: DUNMERE.x },
+    hazards: withering.hazards,
+    herbs: [...withering.herbs, ...fenHerbs(withering.hazards)],
+    gates: [SALT_GATE],
+  },
+  {
+    // Thornwick and the Thornwood. The town is safe ground: no spawns, no aggro. The thornoaks have no woodcutting rung yet (Woodcutting has one tree),
+    // so they are scenery that stops you; the herb patches are props until herbalism. The Rotroot's mouth and the Barrowdowns road are later cards.
+    id: 'thornwick', name: 'Thornwick', cave: false, zone: 'thornwick',
+    footprint: [{ x0: THORNWICK.x - 70, x1: THORNWICK.x + 70, z0: THORNWICK.z - 70, z1: THORNWICK.z + 70 }],
+    obstacles: [
+      ...THORN_HOUSES, THORN_ALEMBIC, ...THORNWOODS, ...THORN_HEADSTONES, { ...THORN_GATE.post, r: 0.55, kind: 'person' },
+      { ...thornLandmarks.thornReeve, kind: 'person' }, { ...thornLandmarks.thornVendor, kind: 'person' }, { ...thornLandmarks.flightThorn, kind: 'person' },
+    ],
+    tall: [...THORN_HOUSES, ...THORNWOODS],
+    trees: [], rocks: [],
+    landmarks: thornLandmarks,
+    connections: [{ to: 'dunmere', at: { x: THORNWICK.x, z: 943 } }],
+    safe: [{ ...thornLandmarks.thornSquare, r: 35 }, { ...graveThorn, r: GRAVE_SAFE_R }],
+    spawns: thornSpawns,
+    herbs: THORN_HERBS,
+    gates: [THORN_GATE],
+  },
 ];
 // the hollow's and hall's standing stones are tall (they break sight lines)
 for (const r of REGIONS) if (r.cave) r.tall.push(...r.obstacles);
@@ -348,7 +513,8 @@ for (const r of REGIONS) if (r.cave) r.tall.push(...r.obstacles);
 export const TOWNS: { id: string; name: string; wake: Pt; grave: Pt; map: Pt }[] = [
   { id: 'hale', name: 'Hale', wake: { x: 0, z: 6 }, grave: graveHale, map: { x: 0, z: 0 } }, // where a new game starts (PLAYER_SPAWN in data.ts reads this)
   { id: 'saltmarrow', name: 'Saltmarrow', wake: at(SALTMARROW, -25, -4), grave: graveSalt, map: { x: 900, z: 0 } },
-]; // `map`: the world-map position (design 1.2), used for the map screen and for flight prices only: walking never reads it
+  { id: 'thornwick', name: 'Thornwick', wake: at(THORNWICK, 2, -30), grave: graveThorn, map: { x: 900, z: 1000 } },
+];// `map`: the world-map position (design 1.2), used for the map screen and for flight prices only: walking never reads it
 export function nearestTown(x: number, z: number, found: readonly string[] = TOWNS.map(t => t.id)) {
   const open = TOWNS.filter(t => found.includes(t.id));
   return (open.length ? open : TOWNS).reduce((best, t) =>
@@ -360,7 +526,10 @@ export const regionById = (id: string): Region => REGIONS.find(r => r.id === id)
 // --- Flat views of the regions: what the renderer and the sim read. -----------------------------------------------------------
 
 export let WORLD_HALF = 30; // the clearing is a square of side 2*WORLD_HALF
-export const LANDMARKS = { ...clearingLandmarks, ...ridgeLandmarks, ...saltLandmarks };
+export const LANDMARKS = { ...clearingLandmarks, ...ridgeLandmarks, ...saltLandmarks, ...thornLandmarks };
+/** Every hard gate in the world (each region's own), and every Withering Ground patch. */
+export const GATES: Gate[] = REGIONS.flatMap(r => r.gates ?? []);
+export const WITHERING: { x: number; z: number; r: number }[] = REGIONS.flatMap(r => r.hazards ?? []);
 
 const surface = REGIONS.filter(r => !r.cave), caves = REGIONS.filter(r => r.cave);
 /** Rock walls either side of the cave mouth gap. */

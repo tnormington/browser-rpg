@@ -10,7 +10,8 @@ import { damagedGear, repairCost } from './durability';
 
 export const VENDOR = { name: 'Brannoch the Peddler', x: LANDMARKS.vendor.x, z: LANDMARKS.vendor.z, r: LANDMARKS.vendor.r };
 export const HARBOUR_VENDOR = { name: 'Tam Brine, Chandler', x: LANDMARKS.harbourVendor.x, z: LANDMARKS.harbourVendor.z, r: LANDMARKS.harbourVendor.r };
-export const TRAINER = { name: 'Orla Saltblade, Trainer', x: LANDMARKS.trainer.x, z: LANDMARKS.trainer.z, r: LANDMARKS.trainer.r };
+export const THORN_VENDOR = { name: 'Edda Bracken, Provisioner', x: LANDMARKS.thornVendor.x, z: LANDMARKS.thornVendor.z, r: LANDMARKS.thornVendor.r };
+export const TRAINER ={ name: 'Orla Saltblade, Trainer', x: LANDMARKS.trainer.x, z: LANDMARKS.trainer.z, r: LANDMARKS.trainer.r };
 export const SHOP_REACH = 6; // centre to centre, like the forge
 export const BUY_MARKUP = 4; // the shop charges this many times an item's value: far above what it pays, so a round trip always loses gold
 export const MAX_GOLD = 1e9;
@@ -21,9 +22,12 @@ export const SHOP_STOCK = ['rusty_blade', 'leather_cap', 'hide_jerkin', 'hide_le
 /** Saltmarrow's stock is the tier above Hale's (the bible: a town sells the previous tier's dropped gear), and again never anything a recipe consumes, bar the pie's pinch of sea salt. */
 export const HARBOUR_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword', 'sea_salt'] as const;
 
+/** Thornwick's is Saltmarrow's stock without the salt: no tier of dropped gear exists above steel yet, and vials arrive with alchemy. */
+export const THORN_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword'] as const;
+
 export interface Vendor { id: string; name: string; x: number; z: number; r: number; stock: readonly string[] }
 /** Merchants buy and sell; the trainer has no stock and teaches whatever ABILITIES names her in `trainer.vendor`. */
-export const VENDORS: Vendor[] = [{ id: 'hale', ...VENDOR, stock: SHOP_STOCK }, { id: 'harbour', ...HARBOUR_VENDOR, stock: HARBOUR_STOCK }, { id: 'trainer', ...TRAINER, stock: [] }];
+export const VENDORS: Vendor[] = [{ id: 'hale', ...VENDOR, stock: SHOP_STOCK }, { id: 'harbour', ...HARBOUR_VENDOR, stock: HARBOUR_STOCK }, { id: 'trainer', ...TRAINER, stock: [] }, { id: 'thorn', ...THORN_VENDOR, stock: THORN_STOCK }];
 /** The slots a trainer teaches. */
 export const taughtBy = (vendor: string) => ABILITIES.flatMap((a, slot) => a.trainer?.vendor === vendor ? [slot] : []);
 export const vendorById = (id: string) => VENDORS.find(v => v.id === id);

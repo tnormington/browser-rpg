@@ -1917,9 +1917,9 @@ section('HOM-15 enemy mechanic: the ground mark punishes standing still');
   }
   assert(castName(ENEMY_TYPES.ogre, 'heavy') === 'Boulder Slam' && castName(seer, 'ground') === 'Withering Ground' && castName(seer, 'bolt') === 'Hex Bolt' && castName(ENEMY_TYPES.boar, 'ground') === 'Wild Boar',
     'castName gives the right name for every kind of wind-up and never throws, for any enemy');
-  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'seer,tide_hag,warden', 'only the Seer, the Warden and (HOM-46) the Tide Hag mark the ground');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'bog_witch,bogfather,mother_mire,seer,thorn_warden,tide_hag,warden', 'only the Seer, the Warden, (HOM-46) the Tide Hag and (HOM-63) the Bog Witch, Bogfather, Mother Mire and Thorn Warden mark the ground');
   assert(Object.values(ENEMY_TYPES).every(d => !d.look || ['wolf', 'hexer', 'brute', 'boar', 'pup'].includes(d.look.model)), 'every cave look reuses a model that is already loaded: no new art');
-  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 15 && ['boar', 'wolf', 'brute', 'pup', 'hexer'].every(k => !ENEMY_TYPES[k].look), 'the five cave enemies and (HOM-46) the ten of the road and the Strand say how to draw themselves, and the original five rigs do not');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 25 && ['boar', 'wolf', 'brute', 'pup', 'hexer'].every(k => !ENEMY_TYPES[k].look), 'the five cave enemies, (HOM-46) the ten of the road and the Strand and (HOM-63) the ten of the fens and the Thornwood say how to draw themselves, and the original five rigs do not');
 }
 
 // ---------------------------------------------------------------------------

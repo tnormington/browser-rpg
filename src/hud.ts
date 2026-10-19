@@ -388,8 +388,11 @@ export class Hud {
         this.note('You were hit and spat out your meal.', 'log-bad');
       } else if (ev.t === 'buff') {
         this.note(ev.on ? `${BUFFS[ev.id].name}: +${Math.round((BUFFS[ev.id].maxHp ?? 0) * 100)}% max health.` : `${BUFFS[ev.id].name} has worn off.`, 'log-info');
+      } else if (ev.t === 'gate') {
+        this.say(`${ev.keeper}: "${ev.text}"`);
+        this.note(`${ev.keeper}: "${ev.text}" (combat ${ev.need} needed, you are ${s.player.combat.level})`, 'log-quest');
       } else if (ev.t === 'stuck') {
-        this.say("Can't reach that");
+        if (!events.some(x => x.t === 'gate')) this.say("Can't reach that"); // a keeper turning you back has already said why
       } else if (ev.t === 'invfull') {
         this.say('Inventory full');
       } else if (ev.t === 'levelup') {

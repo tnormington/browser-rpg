@@ -11,7 +11,9 @@
 // Looks here are stand-ins made of primitives in the clearing's palette: the 3D Artist dresses them (W2.5).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { LANDMARKS, REGIONS, Obstacle, Rect, Region, SALTMARROW } from './sim/world';
+import { LANDMARKS, REGIONS, Gate, Obstacle, Rect, Region, SALTMARROW, THORNWICK } from './sim/world';
+import { PROPS, PropId } from './props';
+import { mergeParts } from './creatures';
 
 /** The few things this file needs from the renderer: its mesh factory (materials and shadows stay in render.ts) and its palette. */
 export interface Kit {
@@ -27,6 +29,12 @@ export const SHOW_RANGE = 62;
 const SEA = 0x1b2c3a, SAND = 0x6b6654, DECK = 0x5a4a38, DECK_DARK = 0x3e3329, PLASTER = 0x92948f, ROOF = 0x4e5b69, LANTERN = 0xff9a3c;
 /** Saltmarrow's value ladder: pale limewash walls over a dark stone footing, black timber, slate roofs, a weathered hull; the sea's foam is the palest thing in the frame. */
 const FOOTING = 0x59626b, TIMBER = 0x2c241e, HULL = 0x52483e, FOAM = 0xa9bcc6, STONE_MARK = 0x7d858c;
+/** A town's building colours: Saltmarrow's limewash and slate, Thornwick's warm plaster and dark thatch. */
+interface Pal { wall: number; roof: number; foot: number }
+const SALT_PAL: Pal = { wall: PLASTER, roof: ROOF, foot: FOOTING }, THORN_PAL: Pal = { wall: 0x8a7d66, roof: 0x4a3f2e, foot: 0x4d4a44 };
+/** The fens' ground: peat and moss, still water, reeds, and the stain Withering Ground leaves. Thornwick's: leaf litter under a dark canopy. */
+const FEN = { moss: 0x41584a, mossAlt: 0x364b3e, peat: 0x2f3329, stain: 0x6b6a2f, water: 0x2f525a, reed: 0x7d8a52 };
+const WOOD_FLOOR = { litter: 0x3a4630, litterAlt: 0x2f3a2a, loam: 0x3a3226 };
 
 let poolMaterial: THREE.MeshBasicMaterial | undefined;
 const hash = (n: number) => Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1;
@@ -45,8 +53,27 @@ function headstone(o: Obstacle, ry: number, i: number): THREE.BufferGeometry[] {
   return [place(new THREE.BoxGeometry(0.8, 1.2, 0.22).rotateZ(lean), o.x, 0.6, o.z, ry), place(new THREE.CylinderGeometry(0.4, 0.4, 0.22, 8).rotateX(Math.PI / 2).rotateZ(lean), o.x - lean * 0.6, 1.2, o.z, ry)];
 }
 
-type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool', THREE.BufferGeometry[]>;
-const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [] });
+type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed', THREE.BufferGeometry[]> & {
+  /** Placed copies of props.ts props, by `prop:layer`: one draw per layer however many there are. */
+  props: Map<string, { color: number; cls: string; geoms: THREE.BufferGeometry[] }>;
+};
+const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], props: new Map() });
+
+/** A prop's layers as one merged geometry each, built the first time it is wanted and copied (never moved) for every placement. */
+const propSources = new Map<PropId, { name: string; color: number; cls: string; geo: THREE.BufferGeometry }[]>();
+function propLayers(id: PropId) {
+  let layers = propSources.get(id);
+  if (!layers) propSources.set(id, layers = PROPS[id]().layers.map(l => ({ name: l.name, color: l.color, cls: l.cls, geo: mergeParts(l.parts) })));
+  return layers;
+}
+function placeProp(bag: Bag, id: PropId, x: number, z: number, rot = 0, scale = 1) {
+  for (const l of propLayers(id)) {
+    const key = `${id}:${l.name}`;
+    let entry = bag.props.get(key);
+    if (!entry) bag.props.set(key, entry = { color: l.color, cls: l.cls, geoms: [] });
+    entry.geoms.push(place(l.geo.clone(), x, 0, z, rot, scale));
+  }
+}
 
 /** A pool of lamplight on the ground: a warm disc fading to nothing at its rim. Unlit and faint (well under the forge's glow), no real light behind it; alpha, not additive, so the fog takes it back to the ground's own colour rather than to a pale blue. */
 function lampPool(x: number, z: number, r: number, strength = 0.3, y = 0.05): THREE.BufferGeometry {
@@ -104,12 +131,15 @@ export function headstones(kit: Kit, obs: Obstacle[]): THREE.Mesh {
   return kit.mesh(mergeGeometries(obs.flatMap((o, i) => headstone(o, hash(o.x * 3.1 + o.z * 7.7) * Math.PI * 2, i)))!, kit.P.slate, 'rock');
 }
 
-interface Tile { kind: 'slab' | 'quay' | 'town'; region: Region; rect: Rect; group: THREE.Group | null; ground: THREE.Mesh[]; picks: { npc: THREE.Mesh[]; vendor: THREE.Mesh[]; flight: THREE.Mesh[]; trainer: THREE.Mesh[] } }
+/** `slab`: a stretch of a region's floor and what stands on it; `quay`, `town`: what is only once; `gate`: the posts, lamps and keeper at a hard gate. The pick meshes carry their town's id in `userData.id`. */
+interface Tile { kind: 'slab' | 'quay' | 'town' | 'gate'; region: Region; rect: Rect; gate?: Gate; group: THREE.Group | null; ground: THREE.Mesh[]; picks: { npc: THREE.Mesh[]; vendor: THREE.Mesh[]; flight: THREE.Mesh[]; trainer: THREE.Mesh[] } }
 
 const inside = (r: Rect, x: number, z: number, e = 0.01) => x > r.x0 + e && x < r.x1 - e && z > r.z0 + e && z < r.z1 - e;
 /** A region's main floor: the biggest of its rects (the others are corridors and piers). */
 const mainRect = (r: Region): Rect => r.footprint.reduce((best, f) => (f.x1 - f.x0) * (f.z1 - f.z0) > (best.x1 - best.x0) * (best.z1 - best.z0) ? f : best);
 const overlaps = (a: Rect, b: Rect) => a.x0 < b.x1 && a.x1 > b.x0 && a.z0 < b.z1 && a.z1 > b.z0;
+/** A floor that runs north to south (much deeper than wide): the fens. Its slabs are cut in z. */
+const isLong = (r: Rect) => r.z1 - r.z0 > (r.x1 - r.x0) * 1.5;
 
 export class WorldView {
   private tiles: Tile[] = [];
@@ -121,11 +151,18 @@ export class WorldView {
       if (region.zone === 'hale') continue; // the clearing and the cave are render.ts's own
       // the region's main floor (its biggest rect) is cut into slabs; the rest (the gate's corridor, the quay) ride with the slab they touch
       const rect = mainRect(region);
-      const tile = (kind: Tile['kind'], rect: Rect): Tile => ({ kind, region, rect, group: null, ground: [], picks: { npc: [], vendor: [], flight: [], trainer: [] } });
-      for (let x = rect.x0; x < rect.x1 - 1e-6; x += TILE) this.tiles.push(tile('slab', { x0: x, x1: Math.min(rect.x1, x + TILE), z0: rect.z0, z1: rect.z1 }));
+      const tile = (kind: Tile['kind'], rect: Rect, gate?: Gate): Tile => ({ kind, region, rect, gate, group: null, ground: [], picks: { npc: [], vendor: [], flight: [], trainer: [] } });
+      // slabs are cut along the region's long way: the road of a region that runs north to south (the fens) is cut in z, the rest in x
+      if (isLong(rect)) for (let z = rect.z0; z < rect.z1 - 1e-6; z += TILE) this.tiles.push(tile('slab', { x0: rect.x0, x1: rect.x1, z0: z, z1: Math.min(rect.z1, z + TILE) }));
+      else for (let x = rect.x0; x < rect.x1 - 1e-6; x += TILE) this.tiles.push(tile('slab', { x0: x, x1: Math.min(rect.x1, x + TILE), z0: rect.z0, z1: rect.z1 }));
       if (region.id === 'saltmarrow') { // what is only once: the sea and the quay, and the people of the square
         this.tiles.push(tile('quay', { x0: SALTMARROW.x + 10, x1: SALTMARROW.x + 160, z0: SALTMARROW.z - 130, z1: SALTMARROW.z + 130 }));
         this.tiles.push(tile('town', { x0: LANDMARKS.square.x - 40, x1: LANDMARKS.square.x + 40, z0: LANDMARKS.square.z - 40, z1: LANDMARKS.square.z + 40 }));
+      }
+      if (region.id === 'thornwick') this.tiles.push(tile('town', { x0: LANDMARKS.thornSquare.x - 40, x1: LANDMARKS.thornSquare.x + 40, z0: LANDMARKS.thornSquare.z - 40, z1: LANDMARKS.thornSquare.z + 40 }));
+      for (const g of region.gates ?? []) {
+        const c = g.axis === 'z' ? { x: (g.span[0] + g.span[1]) / 2, z: g.at } : { x: g.at, z: (g.span[0] + g.span[1]) / 2 };
+        this.tiles.push(tile('gate', { x0: c.x - 16, x1: c.x + 16, z0: c.z - 16, z1: c.z + 16 }, g));
       }
     }
   }
@@ -160,14 +197,15 @@ export class WorldView {
     const add = (m: THREE.Object3D) => { g.add(m); return m; };
     if (t.kind === 'quay') return this.quay(t, add);
     if (t.kind === 'town') return this.town(t, add);
+    if (t.kind === 'gate') return this.gate(t, add);
 
-    // floors: this slab of the main rect, plus every other rect of the region that touches it (the gate's corridor, the quay's land end)
-    const main = mainRect(r), floors = [rect, ...r.footprint.filter(f => f !== main && overlaps(f, rect) && r.id === 'greywater')];
+    // floors: this slab of the main rect, plus every other rect of the region that touches it (a gate's corridor; Saltmarrow's quay is its own tile)
+    const main = mainRect(r), floors = [rect, ...r.footprint.filter(f => f !== main && overlaps(f, rect) && r.id !== 'saltmarrow')];
     for (const f of floors) { const m = this.floor(f, r); t.ground.push(m); add(m); }
 
-    // scenery: the region's obstacles that stand in this slab
-    const mine = r.obstacles.filter(o => o.x >= rect.x0 && o.x < rect.x1);
-    this.scenery(mine, rect, r, add);
+    // scenery: the region's obstacles that stand in this slab (a slab of a north-south region is cut in z, so z counts too)
+    const long = isLong(main), inSlab = (o: { x: number; z: number }) => o.x >= rect.x0 && o.x < rect.x1 && (!long || (o.z >= rect.z0 && o.z < rect.z1));
+    this.scenery(r.obstacles.filter(inSlab), r.herbs?.filter(inSlab) ?? [], rect, r, add);
 
     // the edge of the world: a wall of boulders where the floor ends and nothing else begins
     this.boundary(floors, rect, r, add);
@@ -180,13 +218,24 @@ export class WorldView {
     const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color(), a = new THREE.Color(P.grass), b = new THREE.Color(P.grassAlt);
     const dirt = new THREE.Color(P.dirt).multiplyScalar(1.45), dirtAlt = new THREE.Color(P.dirtAlt).multiplyScalar(1.45), // the road reads as a road in the dark: lighter than the clearing's earth
       sand = new THREE.Color(SAND), stone = new THREE.Color(P.stone);
-    const road = r.id === 'greywater' ? (f.z0 + f.z1) / 2 : null, square = r.safe?.[0];
+    const road = r.road ?? null, square = r.safe?.[0], fen = r.id === 'dunmere', wood = r.id === 'thornwick';
+    if (fen) { a.set(FEN.moss); b.set(FEN.mossAlt); } else if (wood) { a.set(WOOD_FLOOR.litter); b.set(WOOD_FLOOR.litterAlt); }
+    const peat = new THREE.Color(FEN.peat), stain = new THREE.Color(FEN.stain), loam = new THREE.Color(WOOD_FLOOR.loam);
     for (let v = 0; v < pos.count; v++) {
       const x = pos.getX(v), z = pos.getZ(v), j = hash(x * 12.9898 + z * 78.233);
       c.copy(a).lerp(b, j);
-      if (road !== null) {
-        const k = THREE.MathUtils.clamp((4.2 - Math.abs(z - road)) / 2.4, 0, 1) + (x < 52 ? 0.6 : 0); // the road, and the dirt of the gate's yard
-        if (k > 0) c.lerp(dirt.clone().lerp(dirtAlt, j), Math.min(1, k) * (Math.abs(z - road) < 12 ? 1 : 0));
+      if (fen) { // peat in the hollows, and the ground the Withering patches have killed
+        c.lerp(peat, THREE.MathUtils.clamp((hash(Math.floor(x / 7) * 3.7 + Math.floor(z / 7) * 9.1) - 0.55) * 2.2, 0, 0.7));
+        for (const h of r.hazards ?? []) { const k = THREE.MathUtils.clamp((h.r + 2.2 - Math.hypot(x - h.x, z - h.z)) / 3, 0, 1); if (k > 0) c.lerp(stain, k * 0.85); }
+      }
+      if (road) {
+        const off = road.axis === 'x' ? Math.abs(z - road.at) : Math.abs(x - road.at); // distance from the road's centre line
+        const k = THREE.MathUtils.clamp((4.2 - off) / 2.4, 0, 1) + (r.id === 'greywater' && x < 52 ? 0.6 : 0); // the road, and the dirt of Hale's gate yard
+        if (k > 0) c.lerp(dirt.clone().lerp(dirtAlt, j), Math.min(1, k) * (off < 12 ? 1 : 0));
+      } else if (wood) {
+        c.lerp(loam, hash(Math.floor(x / 5) * 5.3 + Math.floor(z / 5) * 2.9) * 0.35); // loam showing through the litter
+        if (square) { const k = THREE.MathUtils.clamp((square.r - Math.hypot(x - square.x, z - square.z)) / 8, 0, 1); if (k > 0) c.lerp(stone.clone().lerp(dirtAlt, j * 0.6), k * 0.8); }
+        if (Math.abs(x - THORNWICK.x) < 3.6 && z < square!.z) c.lerp(dirt, 0.9); // the road in from the north
       } else {
         if (x > SALTMARROW.x + 6) c.lerp(sand, THREE.MathUtils.clamp((x - SALTMARROW.x - 6) / 10, 0, 1)); // the beach
         if (square) { const k = THREE.MathUtils.clamp((square.r - Math.hypot(x - square.x, z - square.z)) / 8, 0, 1); if (k > 0) c.lerp(stone.clone().lerp(dirtAlt, j * 0.6), k * 0.8); }
@@ -201,12 +250,14 @@ export class WorldView {
   }
 
   /** Obstacles by what they are, merged into one draw per material; the road's waymarks ride with the slab they stand in. */
-  private scenery(obs: Obstacle[], rect: Rect, r: Region, add: (o: THREE.Object3D) => void) {
+  private scenery(obs: Obstacle[], herbs: NonNullable<Region['herbs']>, rect: Rect, r: Region, add: (o: THREE.Object3D) => void) {
     const bag = newBag();
     obs.forEach((o, i) => {
       const h = hash(o.x * 3.1 + o.z * 7.7), ry = h * Math.PI * 2;
       switch (o.kind) {
         case 'person': return;
+        case 'thornoak': placeProp(bag, 'thornoak', o.x, o.z, ry, 0.9 + hash(i + 11) * 0.3); return;
+        case 'alembic': placeProp(bag, 'alembic', o.x, o.z, Math.atan2(LANDMARKS.thornSquare.x - o.x, LANDMARKS.thornSquare.z - o.z) - Math.PI / 2); return; // the bench's front (+z in its own frame) faces the square
         case 'tree': { // a dead tree, bent inland by the wind off the sea: a leaning trunk and two bare limbs
           bag.bark.push(place(new THREE.CylinderGeometry(0.14, 0.26, 3.2, 5).rotateZ(0.14).translate(-0.22, 0, 0), o.x, 1.6, o.z),
             place(new THREE.CylinderGeometry(0.05, 0.1, 1.6, 4).rotateZ(0.9), o.x + Math.cos(ry) * 0.5 - 0.35, 2.6, o.z - Math.sin(ry) * 0.5, ry),
@@ -227,34 +278,61 @@ export class WorldView {
         }
       }
     });
-    if (r.id === 'greywater') this.waymarks(bag, rect, (r.footprint.find(f => f === mainRect(r)) ?? rect));
-    this.emit(bag, add);
+    herbs.forEach((hb, i) => placeProp(bag, hb.kind === 'fen' ? 'herbPatchFen' : 'herbPatchThorn', hb.x, hb.z, hash(i * 3 + hb.x) * Math.PI * 2, 1));
+    if (r.road) this.waymarks(bag, rect, mainRect(r), r.road.axis, r.id === 'greywater' ? 100 : 0);
+    if (r.id === 'dunmere') this.fenDressing(bag, rect, r);
+    this.emit(bag, add, r.id === 'thornwick' ? THORN_PAL : SALT_PAL);
   }
 
-  /** A milestone every 80 units down the road, on its north verge: a squared post with a board pointing on to the sea. How far from home the player is, in a thing they pass. */
-  private waymarks(bag: Bag, rect: Rect, main: Rect) {
-    const roadZ = (main.z0 + main.z1) / 2;
-    for (let x = Math.ceil(rect.x0 / 80) * 80; x < rect.x1; x += 80) {
-      if (x < 100) continue; // Hale's gate has its own
-      const z = roadZ - 6.5;
+  /** A milestone every 80 units down the road, on its verge: a squared post with a board pointing on. How far from home the player is, in a thing they pass. `skip`: nearer than this to the origin Hale's gate has its own. */
+  private waymarks(bag: Bag, rect: Rect, main: Rect, axis: 'x' | 'z', skip: number) {
+    const lo = axis === 'x' ? rect.x0 : rect.z0, hi = axis === 'x' ? rect.x1 : rect.z1, road = axis === 'x' ? (main.z0 + main.z1) / 2 : (main.x0 + main.x1) / 2;
+    for (let s = Math.ceil(lo / 80) * 80; s < hi; s += 80) {
+      if (s < skip) continue;
+      // on the north verge of an east-west road, the east verge of a north-south one; the board points along the road, on
+      const x = axis === 'x' ? s : road + 6.5, z = axis === 'x' ? road - 6.5 : s, rot = axis === 'x' ? 0 : -Math.PI / 2;
       bag.stone.push(place(new THREE.BoxGeometry(0.7, 1.6, 0.7), x, 0.8, z), place(new THREE.BoxGeometry(0.9, 0.2, 0.9), x, 1.7, z));
-      bag.wood.push(place(new THREE.BoxGeometry(1.5, 0.32, 0.08), x + 0.45, 1.25, z + 0.38), place(new THREE.ConeGeometry(0.2, 0.4, 3).rotateZ(-Math.PI / 2), x + 1.4, 1.25, z + 0.38));
+      bag.wood.push(place(new THREE.BoxGeometry(1.5, 0.32, 0.08).translate(0.45, 1.25, 0.38), x, 0, z, rot), place(new THREE.ConeGeometry(0.2, 0.4, 3).rotateZ(-Math.PI / 2).translate(1.4, 1.25, 0.38), x, 0, z, rot));
+    }
+  }
+
+  /**
+   * The fens' dressing: still pools in the hollows, ringed with reeds. One candidate per 26-unit cell of the world (so a pool belongs to
+   * the slab its centre is in, and the same pools are there however the slabs are cut), none on the road, a patch of Withering Ground, a camp or a tree.
+   */
+  private fenDressing(bag: Bag, rect: Rect, r: Region) {
+    const CELL = 26, road = r.road!.at, camps = r.spawns ?? [];
+    for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
+      const k = hash(i * 7.3 + j * 13.1);
+      if (k > 0.5) continue;
+      const x = (i + 0.2 + 0.6 * hash(i * 3.1 + j)) * CELL, z = (j + 0.2 + 0.6 * hash(j * 5.7 + i)) * CELL, rad = 2.6 + k * 6;
+      if (x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || Math.abs(x - road) < rad + 8) continue;
+      if (!r.footprint.some(f => inside(f, x, z, rad))) continue;
+      if ((r.hazards ?? []).some(h => Math.hypot(h.x - x, h.z - z) < h.r + rad + 1.5) || camps.some(c => Math.hypot(c.x - x, c.z - z) < rad + 6) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + rad + 1)) continue;
+      bag.water.push(place(new THREE.CircleGeometry(rad, 14).rotateX(-Math.PI / 2).scale(1, 1, 0.7 + 0.3 * hash(i + j * 2.3)), x, 0.03, z, hash(i * 9.1 + j) * Math.PI));
+      for (let n = 0; n < 7; n++) {
+        const a = n * 2.4 + k * 10, d = rad * (0.85 + 0.3 * hash(n + k * 7)), h = 0.9 + hash(n * 3 + k) * 0.8;
+        bag.reed.push(place(new THREE.ConeGeometry(0.07, h, 4).rotateZ(Math.sin(a) * 0.15), x + Math.cos(a) * d, h / 2, z + Math.sin(a) * d * 0.7));
+      }
     }
   }
 
   /** One merged draw per material, for a bag of parts. The pools are unlit and additive, so they are not a material class of the renderer's. */
-  private emit(bag: Bag, add: (o: THREE.Object3D) => void) {
-    const { P, mesh } = this.kit, one = (list: THREE.BufferGeometry[], color: number, cls: string, shadow: 'both' | 'cast' | 'none' = 'both') => {
+  private emit(bag: Bag, add: (o: THREE.Object3D) => void, pal: Pal = SALT_PAL) {
+    const { P, mesh } = this.kit, one = (list: THREE.BufferGeometry[], color: number, cls: string, shadow: 'both' | 'cast' | 'receive' | 'none' = 'both') => {
       if (list.length) add(mesh(mergeGeometries(list)!, color, cls, shadow));
     };
     one(bag.rock, P.slate, 'rock');
     one(bag.bark, P.bark, 'wood');
-    one(bag.wall, PLASTER, 'stone');
-    one(bag.stone, FOOTING, 'stone');
-    one(bag.roof, ROOF, 'stone');
+    one(bag.wall, pal.wall, 'stone');
+    one(bag.stone, pal.foot, 'stone');
+    one(bag.roof, pal.roof, 'stone');
     one(bag.hull, HULL, 'stone');
     one(bag.wood, TIMBER, 'wood');
     one(bag.sign, P.gold, 'cloth', 'cast');
+    one(bag.water, FEN.water, 'ground', 'receive');
+    one(bag.reed, FEN.reed, 'foliage', 'cast');
+    for (const e of bag.props.values()) one(e.geoms, e.color, e.cls, e.cls === 'glow' ? 'none' : 'both');
     if (bag.glow.length) { const m = mesh(mergeGeometries(bag.glow)!, LANTERN, 'glow', 'none'); (m.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.1; add(m); }
     if (bag.pool.length) {
       poolMaterial ??= new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
@@ -272,9 +350,10 @@ export class WorldView {
       if (r.id === 'saltmarrow' && x > SALTMARROW.x + 29) return; // the shore is open water (rocks along it would wall the quay in)
       pts.push({ x, z });
     };
-    // the slab's own north and south edges, and its end edges only where they are the region's ends
-    for (let x = rect.x0; x <= rect.x1 + 1e-6; x += 4) { edge(x, rect.z0); edge(x, rect.z1); }
-    for (let z = rect.z0; z <= rect.z1 + 1e-6; z += 4) { if (rect.x0 <= main.x0 + 1e-6) edge(rect.x0, z); if (rect.x1 >= main.x1 - 1e-6) edge(rect.x1, z); }
+    // the slab's own edges along the region's long way (north and south for a road that runs east to west, west and east for one that runs north to south), and its end edges only where they are the region's ends
+    const long = isLong(main), west = rect.x0 <= main.x0 + 1e-6, east = rect.x1 >= main.x1 - 1e-6, north = rect.z0 <= main.z0 + 1e-6, south = rect.z1 >= main.z1 - 1e-6;
+    for (let x = rect.x0; x <= rect.x1 + 1e-6; x += 4) { if (!long || north) edge(x, rect.z0); if (!long || south) edge(x, rect.z1); }
+    for (let z = rect.z0; z <= rect.z1 + 1e-6; z += 4) { if (long || west) edge(rect.x0, z); if (long || east) edge(rect.x1, z); }
     if (!pts.length) return;
     const im = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1.6), this.kit.mesh(new THREE.BufferGeometry(), this.kit.P.boulder, 'rock').material, pts.length);
     pts.forEach((p, i) => { const k = hash(i * 7 + p.x), s = 0.8 + k * 0.45; im.setMatrixAt(i, M.compose(V.set(p.x, 0.8 * s, p.z), Q.setFromAxisAngle(UP, k * 40), S.set(s, s, s))); });
@@ -310,27 +389,60 @@ export class WorldView {
     add(mesh(mergeGeometries(foam)!, FOAM, 'ground', 'none'));
   }
 
-  /** The harbourmaster and the chandler: the clearing's two figures in the sea's colours (stand-ins, as theirs were). */
+  /** A townsperson: a robed cone, a head and a cap or a pedlar's hat and pack. Stand-ins, as the clearing's two figures were. `into` collects the meshes as click targets, each tagged with `id`. */
+  private person(add: (o: THREE.Object3D) => void, at: { x: number; z: number }, body: number, hat: 'cap' | 'brim', face: number, into: THREE.Mesh[], id: string, capColor = 0x2c3a52) {
+    const { P, mesh } = this.kit, grp = new THREE.Group();
+    grp.position.set(at.x, 0, at.z);
+    grp.rotation.y = face;
+    const part = (g: THREE.BufferGeometry, color: number, cls: string, y: number, x = 0, z = 0) => { const m = mesh(g, color, cls, 'cast'); m.position.set(x, y, z); m.userData.id = id; grp.add(m); into.push(m); return m; };
+    part(new THREE.ConeGeometry(0.7, 1.7, 6), body, 'cloth', 0.85);
+    part(new THREE.SphereGeometry(0.3, 6, 4), P.skin, 'skin', 1.95);
+    if (hat === 'cap') part(new THREE.CylinderGeometry(0.28, 0.34, 0.22, 8), capColor, 'cloth', 2.28);
+    else { part(new THREE.ConeGeometry(0.55, 0.35, 6), 0x3a2a1a, 'cloth', 2.2); part(new THREE.BoxGeometry(0.9, 0.7, 0.7), 0x5a4128, 'wood', 0.35, 1.2, 0.3); part(new THREE.BoxGeometry(0.28, 0.28, 0.28), P.gold, 'metal', 0.8, 0.2, 0.55); }
+    add(grp);
+  }
+
+  /** The people of a town square: Saltmarrow's harbourmaster, chandler, trainer and flight master, or Thornwick's reeve, provisioner and flight master. */
   private town(t: Tile, add: (o: THREE.Object3D) => void) {
-    const { P, mesh } = this.kit;
-    const person = (at: { x: number; z: number }, body: number, hat: 'cap' | 'brim', into: THREE.Mesh[]) => {
-      const grp = new THREE.Group();
-      grp.position.set(at.x, 0, at.z);
-      grp.rotation.y = Math.atan2(LANDMARKS.square.x - at.x, LANDMARKS.square.z - at.z + 0.01) + Math.PI; // turned toward the way in
-      const part = (g: THREE.BufferGeometry, color: number, cls: string, y: number, x = 0, z = 0) => { const m = mesh(g, color, cls, 'cast'); m.position.set(x, y, z); grp.add(m); into.push(m); return m; };
-      part(new THREE.ConeGeometry(0.7, 1.7, 6), body, 'cloth', 0.85);
-      part(new THREE.SphereGeometry(0.3, 6, 4), P.skin, 'skin', 1.95);
-      if (hat === 'cap') part(new THREE.CylinderGeometry(0.28, 0.34, 0.22, 8), 0x2c3a52, 'cloth', 2.28);
-      else { part(new THREE.ConeGeometry(0.55, 0.35, 6), 0x3a2a1a, 'cloth', 2.2); part(new THREE.BoxGeometry(0.9, 0.7, 0.7), 0x5a4128, 'wood', 0.35, 1.2, 0.3); part(new THREE.BoxGeometry(0.28, 0.28, 0.28), P.gold, 'metal', 0.8, 0.2, 0.55); }
-      add(grp);
-    };
-    person(LANDMARKS.harbourmaster, 0x3d5870, 'cap', t.picks.npc);
-    person(LANDMARKS.harbourVendor, 0x6b4a2c, 'brim', t.picks.vendor);
-    add(flightMasterFigure(this.kit, LANDMARKS.flightSalt, LANDMARKS.square, t.picks.flight));
-    person(LANDMARKS.trainer, 0x7a2e2a, 'cap', t.picks.trainer);
+    const thorn = t.region.id === 'thornwick', square = thorn ? LANDMARKS.thornSquare : LANDMARKS.square;
+    const toward = (at: { x: number; z: number }) => Math.atan2(square.x - at.x, square.z - at.z + 0.01) + Math.PI; // turned toward the way in
+    const tag = (g: THREE.Group, id: string) => { g.traverse(o => { o.userData.id = id; }); return g; };
+    const stands = thorn ? [LANDMARKS.thornReeve, LANDMARKS.thornVendor, LANDMARKS.flightThorn] : [LANDMARKS.harbourmaster, LANDMARKS.harbourVendor, LANDMARKS.trainer, LANDMARKS.flightSalt];
+    if (thorn) {
+      this.person(add, LANDMARKS.thornReeve, 0x5c4a6e, 'cap', toward(LANDMARKS.thornReeve), t.picks.npc, 'thorn', 0x3a2f44);
+      this.person(add, LANDMARKS.thornVendor, 0x6a5a30, 'brim', toward(LANDMARKS.thornVendor), t.picks.vendor, 'thorn');
+      add(tag(flightMasterFigure(this.kit, LANDMARKS.flightThorn, square, t.picks.flight), 'thornwick'));
+    } else {
+      this.person(add, LANDMARKS.harbourmaster, 0x3d5870, 'cap', toward(LANDMARKS.harbourmaster), t.picks.npc, 'harbour');
+      this.person(add, LANDMARKS.harbourVendor, 0x6b4a2c, 'brim', toward(LANDMARKS.harbourVendor), t.picks.vendor, 'harbour');
+      add(tag(flightMasterFigure(this.kit, LANDMARKS.flightSalt, square, t.picks.flight), 'saltmarrow'));
+      this.person(add, LANDMARKS.trainer, 0x7a2e2a, 'cap', toward(LANDMARKS.trainer), t.picks.trainer, 'trainer');
+    }
     const bag = newBag(); // lamps by the people who matter: the square, the gate, the stalls
-    for (const l of [LANDMARKS.harbourmaster, LANDMARKS.harbourVendor, LANDMARKS.trainer, LANDMARKS.flightSalt]) lampPost(bag, l.x + 1.4, l.z - 1.1, 0, 6);
+    for (const l of stands) lampPost(bag, l.x + 1.4, l.z - 1.1, 0, 6);
+    if (thorn) lampPost(bag, LANDMARKS.alembic.x - 1.8, LANDMARKS.alembic.z + 1.6, 0, 5); // the alchemist works late
     this.emit(bag, add);
+  }
+
+  /**
+   * A hard gate: two stout posts and a lintel across the opening, a lantern on each, and its keeper standing by, facing whoever comes up to it. A gate that is
+   * closed for good is also barred with planks. Where the sim holds the line is `gate.at`; the posts stand a unit to the near side of it.
+   */
+  private gate(t: Tile, add: (o: THREE.Object3D) => void) {
+    const g = t.gate!, bag = newBag(), lo = g.span[0], hi = g.span[1], mid = (lo + hi) / 2, wide = hi - lo + 2.6;
+    const at = (a: number, b: number) => g.axis === 'z' ? { x: a, z: b } : { x: b, z: a }; // (across, along) to world
+    const post = (a: number) => { const p = at(a, g.at); bag.stone.push(place(new THREE.BoxGeometry(1.1, 4.4, 1.1), p.x, 2.2, p.z), place(new THREE.BoxGeometry(1.4, 0.35, 1.4), p.x, 4.55, p.z)); lampPost(bag, p.x + (g.axis === 'z' ? 0 : -0.9), p.z + (g.axis === 'z' ? -0.9 : 0), 0, 5); };
+    post(lo - 0.9); post(hi + 0.9);
+    const c = at(mid, g.at), lintel = g.axis === 'z' ? new THREE.BoxGeometry(wide, 0.55, 0.8) : new THREE.BoxGeometry(0.8, 0.55, wide);
+    bag.wood.push(place(lintel, c.x, 4.2, c.z));
+    if (g.closed) { // planks across the opening, and a cross-brace
+      for (let y = 0.5; y < 3.4; y += 0.65) bag.wood.push(place(g.axis === 'z' ? new THREE.BoxGeometry(hi - lo, 0.28, 0.2) : new THREE.BoxGeometry(0.2, 0.28, hi - lo), c.x, y, c.z));
+      bag.wood.push(place(g.axis === 'z' ? new THREE.BoxGeometry(hi - lo, 0.2, 0.2).rotateZ(0.5) : new THREE.BoxGeometry(0.2, 0.2, hi - lo).rotateX(0.5), c.x, 1.9, c.z));
+    }
+    this.emit(bag, add);
+    // the keeper, to one side, facing the way the player comes from (the near side of the line)
+    const face = g.axis === 'z' ? (g.from < 0 ? Math.PI : 0) : (g.from < 0 ? -Math.PI / 2 : Math.PI / 2);
+    this.person(add, g.post, g.closed ? 0x4a3a2a : 0x3a4a3c, 'cap', face, [], 'gate', 0x2a2a2a);
   }
 }
 

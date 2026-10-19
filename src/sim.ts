@@ -14,6 +14,8 @@ import { ShopAction, applyShopAction } from './sim/shop';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
 import { START_TOWN, discoverMasters, startFlight, updateFlight } from './sim/flight';
+import { holdAtGates } from './sim/gates';
+import { updateWithering } from './sim/hazards';
 import { PLAYER_RADIUS, clampToWorld, inCave, regionAt, resolveCollisions } from './sim/world';
 import { Pt, route } from './sim/path';
 import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
@@ -115,6 +117,7 @@ export type GameEvent =
   | { t: 'untarget'; id: number; reason: 'dead' | 'evade' } // the target was taken from you, and why (the player's own Esc / retarget raise nothing)
   | { t: 'combat'; on: boolean }                            // the player entered / left combat
   | { t: 'stuck' }                                          // a click-to-move walk could not go anywhere: the HUD says so
+  | { t: 'gate'; id: string; keeper: string; text: string; need: number } // a hard gate turned the player back: the keeper's line, and the combat level it asks for
   | { t: 'jump' }                                           // left the ground
   | { t: 'land'; x: number; z: number }                     // back on the ground
   | { t: 'step'; surface: 'grass' | 'cave' }                // a foot came down: once per STRIDE_DIST walked on the ground, not while airborne
@@ -272,6 +275,7 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     if (input.flight) startFlight(s, input.flight);
     discoverMasters(s);
   }
+  updateWithering(s, dt);
   updateEnemies(s, dt);
   updateDrops(s, dt);
   updateNodes(s, dt);
@@ -314,6 +318,7 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   p.x += dx * MOVE_SPEED * dt;
   p.z += dz * MOVE_SPEED * dt;
   resolveCollisions(p, PLAYER_RADIUS);
+  holdAtGates(s, px, pz);
 
   const moved = Math.hypot(p.x - px, p.z - pz);
   p.moving = moved > 1e-4;

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
-import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, caveDepth, caveWallPoints, clampToWorld, inCave } from './sim/world';
+import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, inCave } from './sim/world';
 import { ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NODE_TYPES } from './sim/gathering';
@@ -90,6 +90,8 @@ const RING_OPACITY = 0.42;
 const FOG = { near: 6, far: 42 };
 /** Actors past this camera distance are not drawn or animated. Strictly beyond FOG.far, where fog is already 100%: nothing still meant to be visible is culled. */
 const FOG_CULL = FOG.far + 8;
+/** Withering Ground's circle: a sick yellow-green edge over a murkier fill, nowhere near the red of a mark that is about to land. */
+const WITHER_EDGE = 0xb4c85a, WITHER_FILL = 0x5f7228;
 /** The Warden's arcane gem floats just above his right fist (glTF loading strips the dot from "Fist.R"), carried by the bone. */
 const GEM_HAND = 'FistR', GEM_LIFT = 0.4;
 /** Furnace core emissive: hot enough to bloom orange, not so hot it clips to a white hole and washes out the building. */
@@ -180,6 +182,8 @@ export class Renderer {
   private curr = { x: 0, z: 0 };
   private raycaster = new THREE.Raycaster();
   private actors = new Map<number, Actor>();
+  /** The fens' Withering Ground, each drawn as a boss's ground circle (makeTele) in the colour of the stain: made when the player first comes near. */
+  private witherMarks = new Map<number, NonNullable<Actor['tele']>>();
   private selection: THREE.Mesh;
   private shakeMag = 0;
   private levelRing: THREE.Mesh;
@@ -983,8 +987,8 @@ export class Renderer {
   }
 
   /** A danger circle on the ground: an outline that pulses and a fill that grows to meet it. The radius is fixed per type. */
-  private makeTele(r: number): NonNullable<Actor['tele']> {
-    const tm = (o: number) => new THREE.MeshBasicMaterial({ color: P.blood, transparent: true, opacity: o, fog: false, depthWrite: false, side: THREE.DoubleSide });
+  private makeTele(r: number, color: number = P.blood): NonNullable<Actor['tele']> {
+    const tm = (o: number) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: o, fog: false, depthWrite: false, side: THREE.DoubleSide });
     const outline = new THREE.Mesh(new THREE.RingGeometry(r - 0.12, r, 48).rotateX(-Math.PI / 2), tm(0.85));
     const fill = new THREE.Mesh(new THREE.CircleGeometry(r, 48).rotateX(-Math.PI / 2), tm(0.3));
     const root = new THREE.Group();
@@ -1129,13 +1133,13 @@ export class Renderer {
     this.shakeMag = Math.max(this.shakeMag, 0.12);
   }
 
-  /** The merchant under the click ('hale', 'harbour' or 'trainer'), or null. */
+  /** The merchant under the click ('hale', 'harbour', 'thorn' or 'trainer'), or null. */
   pickVendor(clientX: number, clientY: number): string | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
     if (this.raycaster.intersectObjects(this.vendorParts, false).length > 0) return 'hale';
     if (this.raycaster.intersectObjects(this.world.trainerPicks(), false).length > 0) return 'trainer';
-    return this.raycaster.intersectObjects(this.world.vendorPicks(), false).length > 0 ? 'harbour' : null;
+    return this.raycaster.intersectObjects(this.world.vendorPicks(), false)[0]?.object.userData.id ?? null; // Saltmarrow's chandler or Thornwick's provisioner
   }
 
   /** The flight master under the click (a town id), or null. */
@@ -1143,15 +1147,15 @@ export class Renderer {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
     if (this.raycaster.intersectObjects(this.flightParts, false).length > 0) return 'hale';
-    return this.raycaster.intersectObjects(this.world.flightPicks(), false).length > 0 ? 'saltmarrow' : null;
+    return this.raycaster.intersectObjects(this.world.flightPicks(), false)[0]?.object.userData.id ?? null; // each master's figure is tagged with its town
   }
 
-  /** The quest giver under the click ('hale' or 'harbour'), or null. */
+  /** The quest giver under the click ('hale', 'harbour' or 'thorn'), or null. */
   pickNpc(clientX: number, clientY: number): string | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
     if (this.raycaster.intersectObjects([...this.npcParts, this.npcMarker], false).length > 0) return 'hale';
-    return this.raycaster.intersectObjects(this.world.npcPicks(), false).length > 0 ? 'harbour' : null;
+    return this.raycaster.intersectObjects(this.world.npcPicks(), false)[0]?.object.userData.id ?? null;
   }
 
   /**
@@ -1292,6 +1296,7 @@ export class Renderer {
     if (this.npcAnim) { this.npcAnim.locomotion(false); this.npcAnim.update(dtFx); }
 
     for (const e of s.enemies) this.drawActor(e, alpha, dtFx);
+    this.drawWithering(x, z, nowMs);
     this.drawDrops(s);
     this.drawNodes(s);
     if (this.gear) this.gear.sync(s.player.equipment, dtFx, this.motes);
@@ -1386,6 +1391,25 @@ export class Renderer {
       this.scene.remove(v.group);
       this.drops.delete(id);
     }
+  }
+
+  /** Withering Ground, from the sim's patches: the same circle a boss's mark draws, but full and slow rather than filling, and in sickly green so it is never mistaken for a hit on its way. Only the ones within sight exist. */
+  private drawWithering(px: number, pz: number, nowMs: number) {
+    const pulse = 0.5 + 0.5 * Math.sin(nowMs / 700);
+    WITHERING.forEach((h, i) => {
+      const near = Math.hypot(h.x - px, h.z - pz) < FOG_CULL + h.r;
+      let m = this.witherMarks.get(i);
+      if (!m) {
+        if (!near) return;
+        this.witherMarks.set(i, m = this.makeTele(h.r, WITHER_EDGE));
+        (m.fill.material as THREE.MeshBasicMaterial).color.setHex(WITHER_FILL);
+        m.root.position.set(h.x, 0.07, h.z);
+      }
+      m.root.visible = near;
+      if (!near) return;
+      (m.fill.material as THREE.MeshBasicMaterial).opacity = 0.22 + 0.1 * pulse;
+      (m.outline.material as THREE.MeshBasicMaterial).opacity = 0.45 + 0.3 * pulse;
+    });
   }
 
   private drawActor(e: Enemy, alpha: number, dt: number) {

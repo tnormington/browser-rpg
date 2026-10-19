@@ -33,9 +33,11 @@ export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 
 export const QUEST_NAME = 'The Brute of the Cave Mouth';
 export const NPC = { name: 'Warden Hale', x: LANDMARKS.npc.x, z: LANDMARKS.npc.z, r: LANDMARKS.npc.r };
 export const HARBOURMASTER = { name: 'Harbourmaster Pell', x: LANDMARKS.harbourmaster.x, z: LANDMARKS.harbourmaster.z, r: LANDMARKS.harbourmaster.r };
-export type NpcId = 'hale' | 'harbour';
+/** Thornwick's reeve: the town's one quest giver, with no quest to give yet (the Rotroot's chain is a later card). */
+export const THORN_REEVE = { name: 'Reeve Maud Alder', x: LANDMARKS.thornReeve.x, z: LANDMARKS.thornReeve.z, r: LANDMARKS.thornReeve.r };
+export type NpcId = 'hale' | 'harbour' | 'thorn';
 /** Everyone with something to say, by id. Hale's warden is the first: an interaction with no one named falls back to him. */
-export const NPCS: { id: NpcId; name: string; x: number; z: number; r: number }[] = [{ id: 'hale', ...NPC }, { id: 'harbour', ...HARBOURMASTER }];
+export const NPCS: { id: NpcId; name: string; x: number; z: number; r: number }[] = [{ id: 'hale', ...NPC }, { id: 'harbour', ...HARBOURMASTER }, { id: 'thorn', ...THORN_REEVE }];
 export const TALK_RANGE = 7;                       // centre to centre: advancing the quest needs this
 export const HUNT_GOALS: Record<string, number> = { boar: 4, wolf: 3 };
 const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves', ravager: 'Cave Ravagers', footpad: 'Footpads', toll_captain: 'Toll Captain' };
@@ -317,11 +319,19 @@ export const activeDialogue = (s: GameState): Dialogue =>
 
 /** What a given giver has to say: the Warden's two chains, or the harbourmaster's one (a plain greeting before the road opens). */
 export const dialogueAt = (s: GameState, who: string): Dialogue => {
+  if (who === 'thorn') return THORN_DIALOGUE;
   if (who !== 'harbour') { // the Warden's own words, and the errand as one more thing to ask him while it is on offer
     const d = activeDialogue(s);
     return s.quest.fourth === 'offer' ? { ...d, options: [...d.options, ERRAND_OFFER] } : d;
   }
   return s.quest.fourth === 'report' ? DIALOGUE4_REPORT : harbourDialogue(s);
+};
+const THORN_DIALOGUE: Dialogue = {
+  lines: [
+    'Thornwick keeps its gates shut at dusk and its lamps lit all night. You came down the fen road on foot? Then you know about the stained ground: do not stand in it.',
+    'The Thornwood past the square is boar and cult country. There is work for someone who can clear it, but I have no errand to give you yet. Come back when the roads are quieter.',
+  ],
+  options: [{ label: 'Farewell.' }],
 };
 const harbourDialogue = (s: GameState): Dialogue =>
   s.quest.third === 'locked'

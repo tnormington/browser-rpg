@@ -22,7 +22,7 @@ const spot = (x: number, z: number): Pt => ({ x, z });
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.z - b.z);
 
 console.log('\n# the world is region data');
-assert(REGIONS.map(r => r.id).join() === 'ridge,clearing,throat,hollow,neck,hall,greywater,saltmarrow,seams,wayside', 'the world is Hale (ridge, clearing, four cave rooms), then the road, then Saltmarrow, then the copper and tin seams (HOM-56), then the road\'s waysides (HOM-57), in node-id order');
+assert(REGIONS.map(r => r.id).join() === 'ridge,clearing,throat,hollow,neck,hall,greywater,saltmarrow,seams,wayside,dunmere,thornwick', 'the world is Hale (ridge, clearing, four cave rooms), then the road, then Saltmarrow, then the copper and tin seams (HOM-56), then the road\'s waysides (HOM-57), then the fens and Thornwick (HOM-63), in node-id order');
 assert(REGIONS.every(r => r.connections.every(c => REGIONS.find(o => o.id === c.to)?.connections.some(b => b.to === r.id))), 'connections are symmetric and name real regions');
 assert(REGIONS.every(r => r.connections.every(c => {
   const there = REGIONS.find(o => o.id === c.to)!, snapped = clampToWorld(c.at);
@@ -54,7 +54,7 @@ console.log('\n# Hale\'s east gate, the road and Saltmarrow');
 
 console.log('\n# safe zones');
 {
-  assert(SAFE_ZONES.length === 4 && inSafeZone(20, -8) && inSafeZone(SALTMARROW.x - 25, SALTMARROW.z) && !inSafeZone(0, 0) && !inSafeZone(0, -20) && !inSafeZone(GREYWATER.x, GREYWATER.z), 'Hale (the forge yard) and Saltmarrow (its square) have safe ground, and so does each graveyard; the middle of the clearing, the road and the Hollow do not');
+  assert(SAFE_ZONES.length === 6 && inSafeZone(20, -8) && inSafeZone(SALTMARROW.x - 25, SALTMARROW.z) && !inSafeZone(0, 0) && !inSafeZone(0, -20) && !inSafeZone(GREYWATER.x, GREYWATER.z), 'Hale (the forge yard) and Saltmarrow (its square) have safe ground, and so does each graveyard; the middle of the clearing, the road and the Hollow do not');
   assert(TOWNS.every(t => inSafeZone(t.grave.x, t.grave.z) && Math.hypot(t.grave.x - t.wake.x, t.grave.z - t.wake.z) > 25), 'every graveyard is safe ground to wake on and more than 25 units from where the town wakes you or lands a flight');
   assert(TOWNS.every(t => inFootprint(regionAt(t.grave.x, t.grave.z)!.footprint, t.grave) && collidersAt(t.grave.x, t.grave.z).every(o => Math.hypot(o.x - t.grave.x, o.z - t.grave.z) > o.r + PLAYER_RADIUS)), 'and each is on walkable ground with nothing standing on it');
   const zone = (r: string) => REGIONS.find(x => x.id === r)!.safe![0];
@@ -63,7 +63,7 @@ console.log('\n# safe zones');
   assert(SPAWNS.every(sp => SAFE_ZONES.every(z => dist(sp, z) >= z.r + 2.5)), 'and none stands within two and a half units of the edge of one');
   const sm = zone('saltmarrow');
   assert(dist(LANDMARKS.harbourmaster, sm) < sm.r && dist(LANDMARKS.harbourVendor, sm) < sm.r && dist(LANDMARKS.inn, sm) < sm.r, 'the harbourmaster, the vendor and the inn are all inside it');
-  assert(SPAWNS.filter(sp => sp.x > 800).every(sp => regionAt(sp.x, sp.z)?.id === 'saltmarrow') && SPAWNS.filter(sp => sp.x > 30 && sp.x < 800).every(sp => regionAt(sp.x, sp.z)?.id === 'greywater'), 'every new enemy stands in the region that owns it');
+  assert(SPAWNS.filter(sp => sp.x > 800 && sp.z < 100).every(sp => regionAt(sp.x, sp.z)?.id === 'saltmarrow') && SPAWNS.filter(sp => sp.x > 30 && sp.x < 800).every(sp => regionAt(sp.x, sp.z)?.id === 'greywater'), 'every new enemy stands in the region that owns it');
 }
 
 console.log('\n# the collider index');

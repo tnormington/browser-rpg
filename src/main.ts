@@ -7,7 +7,7 @@ import type { Interact } from './sim';
 import type { WeatherKind } from './weather';
 import { loadGame, loadQuality, saveGame, saveQuality, wipeSave } from './storage';
 import { playEvents, setAmbience, toggleMute, unlockAudio } from './sfx';
-import { regionAt } from './sim/world';
+import { GATES, WITHERING, regionAt } from './sim/world';
 import { applyStress } from './sim/stress';
 import { ITEMS } from './sim/items';
 import { bestFoodSlot } from './sim/consumables';
@@ -66,7 +66,7 @@ addEventListener('beforeunload', save);
 addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 const canvas = view.renderer.domElement;
 if (debug && params.has('weather')) view.weather.set(params.get('weather') as WeatherKind, true); // ?weather=clear|overcast|rain|fog pins it for the bench
-if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scene, view, sim: state, step: () => step(state, readInput()), stress, items: ITEMS };
+if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scene, view, sim: state, step: () => step(state, readInput()), stress, items: ITEMS, world: { WITHERING, GATES } };
 
 // --- input -> sim Input ---
 /** G: eat the best food the bag has and the moment allows. */

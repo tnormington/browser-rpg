@@ -168,6 +168,38 @@ export const DROP_TABLES: Record<string, DropTable> = {
   gutterhook: { rolls: 3, nothing: 45, entries: [
     { id: 'wolf_pelt', qty: [3, 5], weight: 15 }, { id: 'iron_greaves', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'steel_sword', weight: 8 },
   ] },
+  // the fens and the Thornwood, the same rule: each table's `nothing` is solved to land within 1 % of 0.6 x level + 3 (an elite 3x, a rare 4x). No new gear tier is
+  // dropped above steel, so these are the road's tables with the odds moved.
+  fen_stalker: { rolls: 2, nothing: 34, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 40 }, { id: 'hide_jerkin', weight: 8 }, { id: 'leather_cap' }, { id: 'hide_leggings' }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 2 }, { id: 'steel_sword', weight: 1 },
+  ] },
+  bog_witch: { rolls: 2, nothing: 68, entries: [
+    { id: 'hide_jerkin', weight: 8 }, { id: 'leather_cap' }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
+  ] },
+  mire_troll: { rolls: 2, nothing: 77, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 20 }, { id: 'iron_helm', weight: 5 }, { id: 'iron_greaves', weight: 5 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 4 }, { id: 'steel_sword', weight: 2 },
+  ] },
+  bogfather: { rolls: 3, nothing: 43, entries: [
+    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'steel_sword', weight: 6 },
+  ] },
+  mother_mire: { rolls: 3, nothing: 40, entries: [
+    { id: 'wolf_pelt', qty: [3, 5], weight: 15 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 10 },
+  ] },
+  thornback: { rolls: 2, nothing: 31, entries: [
+    { id: 'boar_hide', qty: [1, 3], weight: 30 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 3 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 2 }, { id: 'steel_sword', weight: 1 },
+  ] },
+  blight_stag: { rolls: 2, nothing: 53, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 30 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
+  ] },
+  rotwood_cultist: { rolls: 2, nothing: 63, entries: [
+    { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 4 }, { id: 'iron_greaves', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
+  ] },
+  thorn_warden: { rolls: 3, nothing: 38, entries: [
+    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 7 },
+  ] },
+  elder_thornback: { rolls: 3, nothing: 25, entries: [
+    { id: 'boar_hide', qty: [3, 5], weight: 20 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_sword', weight: 6 }, { id: 'steel_sword', weight: 10 },
+  ] },
 };
 
 export interface DerivedStats {

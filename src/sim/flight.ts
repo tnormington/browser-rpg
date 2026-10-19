@@ -8,6 +8,7 @@ export interface FlightMaster { id: string; name: string; x: number; z: number; 
 export const FLIGHT_MASTERS: FlightMaster[] = [
   { id: 'hale', name: 'Fenna Skywright', ...LANDMARKS.flightHale },
   { id: 'saltmarrow', name: 'Orrin Gullwing', ...LANDMARKS.flightSalt },
+  { id: 'thornwick', name: 'Hesper Rookwing', ...LANDMARKS.flightThorn },
 ];
 export const masterById = (id: string) => FLIGHT_MASTERS.find(m => m.id === id);
 
