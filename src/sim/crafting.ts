@@ -3,6 +3,8 @@ import type { GameState } from '../sim';
 import type { Action } from './actions';
 import { LANDMARKS } from './world';
 import { SkillId, grantXp } from './skills';
+import { ITEMS } from './items';
+import { masteryTime, masteryYield } from './mastery';
 import { addItem, countItem, hasRoom, removeItem } from './inventory';
 
 export interface Recipe {
@@ -47,6 +49,13 @@ export const nearForge = (s: GameState) =>
   Math.hypot(s.player.x - LANDMARKS.forge.x, s.player.z - LANDMARKS.forge.z) <= FORGE_REACH;
 export const hasInputs = (s: GameState, r: Recipe) => r.inputs.every(i => countItem(s.player.inventory, i.id) >= i.qty);
 
+/** One craft at the player's current skill: the base time, cut by whatever they have over the recipe's level. */
+export const craftTime = (s: GameState, r: Recipe) =>
+  masteryTime(r.time, s.player.skills[r.skill].level, r.level);
+
+/** A smith over the level gets more out of a batch — of stackable stock. A second helm out of the same bars would be a trick, not a skill. */
+export const bonusOutput = (r: Recipe) => ITEMS[r.output.id].stack > 1;
+
 /** Returns a failure reason, or null when the recipe can be made right now. */
 function blocker(s: GameState, r: Recipe): 'range' | 'level' | 'materials' | 'full' | null {
   if (!nearForge(s)) return 'range';
@@ -64,7 +73,7 @@ export function beginCraft(s: GameState, recipeId: string, count: number) {
   if (!r || !Number.isFinite(count)) return;
   const why = blocker(s, r);
   if (why) return fail(s, r, why);
-  s.player.action = { k: 'craft', recipe: r.id, t: 0, duration: r.time, left: Math.max(1, Math.min(MAX_BATCH, Math.floor(count))) };
+  s.player.action = { k: 'craft', recipe: r.id, t: 0, duration: craftTime(s, r), left: Math.max(1, Math.min(MAX_BATCH, Math.floor(count))) };
 }
 
 /** One craft completed: consume inputs, produce output, xp. Continues the batch while it still can. */
@@ -73,9 +82,11 @@ export function finishCraft(s: GameState, a: Extract<Action, { k: 'craft' }>) {
   const why = blocker(s, r);
   if (why) { p.action = null; return fail(s, r, why); }
   for (const i of r.inputs) removeItem(p.inventory, i.id, i.qty);
-  addItem(p.inventory, r.output.id, r.output.qty);
-  s.events.push({ t: 'crafted', item: r.output.id, qty: r.output.qty });
+  const want = bonusOutput(r) ? masteryYield(s, r.output.qty, p.skills[r.skill].level, r.level) : r.output.qty;
+  const made = want - addItem(p.inventory, r.output.id, want);
+  s.events.push({ t: 'crafted', item: r.output.id, qty: made });
   grantXp(s, r.skill, r.xp, p.x, p.z);
   a.t = 0;
+  a.duration = craftTime(s, r); // a level gained on this craft speeds up the rest of the batch
   if (--a.left <= 0 || blocker(s, r)) p.action = null;
 }

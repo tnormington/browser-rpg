@@ -10,6 +10,7 @@ import {
 import { xpForLevel, levelForXp, addXp, newTrack, levelProgress } from './sim/xp';
 import { SKILL_IDS, SKILLS, grantXp } from './sim/skills';
 import { NODE_TYPES } from './sim/gathering';
+import { MAX_BONUS, MAX_SPEEDUP, mastery } from './sim/mastery';
 import { RECIPES, FORGE_REACH, recipeById } from './sim/crafting';
 import {
   CAVE_DOOR_Z, CAVE_PILLARS, CAVE_ROCKS, CAVE_ROOMS, COLLIDERS, LANDMARKS, PLAYER_RADIUS, ROCKS, TREES, WORLD_HALF,
@@ -1893,11 +1894,14 @@ section('HOM-15 mithril: a Mining gate above coal, a Smithing ladder, and gear a
   tick(f, { craft: { recipe: 'mithril_bar', count: 1 } });
   assert(hasEvent(f, e => e.t === 'actionfail' && e.reason === 'level' && e.need === bar.level) && countOf(f, 'mithril_bar') === 0, `Smithing 6 cannot smelt a bar (needs ${bar.level})`);
   grantXp(f, 'smithing', xpForLevel(bar.level) - f.player.skills.smithing.xp, 0, 0);
+  const ore0 = countOf(f, 'mithril_ore'), coal0 = countOf(f, 'coal');
   craft(f, 'mithril_bar', 9);
-  assert(countOf(f, 'mithril_bar') === 9 && countOf(f, 'mithril_ore') === 0 && countOf(f, 'coal') === 0, 'nine bars use up exactly nine ore and eighteen coal');
+  const bars = countOf(f, 'mithril_bar');
+  assert(bars >= 9 && ore0 - countOf(f, 'mithril_ore') <= 9 && coal0 - countOf(f, 'coal') <= 18,
+    `nine bars take no more than nine ore and eighteen coal (${bars} bars from ${ore0 - countOf(f, 'mithril_ore')} ore)`);
   assert(f.player.skills.smithing.level >= rec('mithril_chestplate').level, `the bars alone carry Smithing to ${f.player.skills.smithing.level}: every piece is open without grinding`);
   for (const id of MITHRIL_SET) craft(f, id, 1);
-  assert(MITHRIL_SET.every(id => countOf(f, id) === 1) && countOf(f, 'mithril_bar') === 0, 'helm, greaves and chestplate smithed from the nine bars');
+  assert(MITHRIL_SET.every(id => countOf(f, id) === 1) && bars - countOf(f, 'mithril_bar') === MITHRIL_PLAN.bars, 'helm, greaves and chestplate smithed from the nine bars');
 
   // gear at the top of the ladder
   const iron = deriveStats({ ...emptyEquipment(), head: 'iron_helm', chest: 'iron_chestplate', legs: 'iron_greaves' });
@@ -2849,6 +2853,83 @@ section('HOM-38 talents: saved, and only if the build was legal');
   assert(bad(f => { f.player.talents.brutality = 9; }) === null, 'more ranks than the talent has -> null');
   assert(bad(f => { f.player.talents.serration = 3; f.player.talents.whirling = 2; f.player.talents.bloodscent = 1; }) === null, 'more points than the level ever handed out -> null');
   assert(bad(f => { f.player.talents = { brutality: 3, frenzy: 2, execute: 1, bloodscent: 1 }; }) === null, 'a tier bought without paying into its tree -> null');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-41 mastery: levels make the actions you have outgrown quicker and richer');
+{
+  const at = (above: number) => mastery(1 + above, 1);
+  assert(at(0).speed === 1 && at(0).bonus === 0, 'at the level an action asks for, nothing changes: base time, base yield');
+  assert(at(5).speed < at(0).speed && at(5).bonus > at(0).bonus && at(10).speed < at(5).speed && at(10).bonus > at(5).bonus,
+    'every level over the requirement is quicker and richer than the last');
+  assert(mastery(99, 1).speed === 1 - MAX_SPEEDUP && mastery(99, 1).bonus === MAX_BONUS,
+    `both cap: never under ${((1 - MAX_SPEEDUP) * 100).toFixed(0)}% of the base time, never over one extra`);
+  assert(mastery(1, 9).above === 0 && mastery(1, 9).speed === 1 && mastery(1, 9).bonus === 0,
+    'under the requirement there is no penalty: the level gate already refuses you');
+
+  // the user's example: mining iron
+  const ironAt = (level: number, charges: number) => {
+    const g = quietState(41);
+    g.player.skills.mining.xp = xpForLevel(level); g.player.skills.mining.level = level;
+    const rock = nodesOf(g, 'iron')[0];
+    g.player.x = rock.x + 2; g.player.z = rock.z;
+    rock.charges = charges; // one long seam, so the comparison is swings and not respawns
+    tick(g, { interact: { k: 'node', id: rock.id } });
+    const duration = g.player.action!.duration, t0 = g.tick;
+    untilIdle(g);
+    return { duration, ore: countOf(g, 'iron_ore'), secs: (g.tick - t0) * TICK_DT };
+  };
+  const def = NODE_TYPES.iron;
+  const green = ironAt(def.level, def.charges), veteran = ironAt(def.level + 20, def.charges);
+  assert(green.duration === def.time && green.ore === def.charges,
+    `a Mining ${def.level} miner takes the full ${def.time}s a swing for one ore a swing (${green.ore} from ${def.charges})`);
+  assert(veteran.duration === def.time * (1 - MAX_SPEEDUP) && veteran.ore === def.charges * 2,
+    `twenty levels on, the same rock takes ${veteran.duration}s a swing and gives two ore a swing (${veteran.ore} from ${def.charges})`);
+  assert(veteran.secs < green.secs * 0.6, `...so the seam is emptied in ${veteran.secs.toFixed(1)}s instead of ${green.secs.toFixed(1)}s`);
+  const mid = ironAt(def.level + 10, 12);
+  assert(mid.duration > veteran.duration && mid.duration < green.duration && mid.ore > 12 && mid.ore < 24,
+    `halfway up it is part of the way to both: ${mid.duration}s a swing, ${mid.ore} ore from 12 swings`);
+
+  // smithing the bars you outgrew
+  const barAt = (level: number, ore: number) => {
+    const g = quietState(42);
+    g.player.x = LANDMARKS.forge.x - 4; g.player.z = LANDMARKS.forge.z + 3;
+    g.player.skills.smithing.xp = xpForLevel(level); g.player.skills.smithing.level = level;
+    addItem(g.player.inventory, 'iron_ore', ore);
+    tick(g, { craft: { recipe: 'iron_bar', count: 99 } });
+    const duration = g.player.action!.duration;
+    untilIdle(g);
+    return { duration, bars: countOf(g, 'iron_bar'), ore: countOf(g, 'iron_ore') };
+  };
+  const bar = recipeById('iron_bar')!;
+  const apprentice = barAt(bar.level, 4), master = barAt(bar.level + 20, 20);
+  assert(apprentice.duration === bar.time && apprentice.bars === 2, `Smithing ${bar.level} takes ${bar.time}s to smelt one bar from two ore`);
+  assert(master.duration === bar.time * (1 - MAX_SPEEDUP) && master.bars === 20 && master.ore === 0,
+    `twenty levels on, the same bar takes ${master.duration}s and twenty ore make ${master.bars} bars instead of ten`);
+
+  // gear is not doubled: a second helm out of the same bars would be a trick, not a skill
+  const g = quietState(43);
+  g.player.x = LANDMARKS.forge.x - 4; g.player.z = LANDMARKS.forge.z + 3;
+  g.player.skills.smithing.xp = xpForLevel(40); g.player.skills.smithing.level = 40;
+  addItem(g.player.inventory, 'mithril_bar', 2);
+  craft(g, 'mithril_helm', 1);
+  assert(countOf(g, 'mithril_helm') === 1 && countOf(g, 'mithril_bar') === 0, 'an unstackable piece of gear is never doubled, however good the smith');
+
+  // the extra never outruns the bag: what does not fit is not mined, and the player is told what they got
+  const full = quietState(44);
+  full.player.skills.mining.xp = xpForLevel(def.level + 20); full.player.skills.mining.level = def.level + 20;
+  full.player.inventory.fill({ id: 'boar_hide', qty: 50 });
+  full.player.inventory[0] = { id: 'iron_ore', qty: 49 };
+  const rock = nodesOf(full, 'iron')[0];
+  full.player.x = rock.x + 2; full.player.z = rock.z;
+  tick(full, { interact: { k: 'node', id: rock.id } });
+  let looted: { item: string; qty: number } | null = null;
+  for (let n = 0; n < 200 && !looted; n++) {
+    tick(full);
+    for (const ev of full.events) if (ev.t === 'loot') looted = { item: ev.item, qty: ev.qty };
+  }
+  assert(countOf(full, 'iron_ore') === 50 && looted !== null && looted.item === 'iron_ore' && looted.qty === 1,
+    'with room for one, a two-ore swing yields one and says so: the bonus is never lost silently');
 }
 
 console.log(`\nAll ${checks} checks passed.`);

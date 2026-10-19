@@ -233,7 +233,7 @@ export class Hud {
         this.forgeUi.setOpen(true);
       } else if (ev.t === 'crafted') {
         const name = ITEMS[ev.item].name;
-        this.float(`Smithed ${name}`, 'loot', s.player.x, 3.0, s.player.z);
+        this.float(`Smithed ${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`, 'loot', s.player.x, 3.0, s.player.z);
         this.note(`Smithed ${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`, 'log-loot');
       } else if (ev.t === 'stuck') {
         this.say("Can't reach that");

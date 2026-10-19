@@ -3,6 +3,7 @@ import type { GameState } from '../sim';
 import type { Action } from './actions';
 import { CAVE_ROCKS, ROCKS, TREES } from './world';
 import { SkillId, grantXp } from './skills';
+import { masteryTime, masteryYield } from './mastery';
 import { addItem, hasRoom } from './inventory';
 
 export interface NodeDef {
@@ -41,6 +42,10 @@ export function createNodes(): ResourceNode[] {
 
 export const nodeById = (s: GameState, id: number) => s.nodes.find(n => n.id === id);
 
+/** One gather cycle at the player's current skill: the base time, cut by whatever they have over the requirement. */
+export const gatherTime = (s: GameState, def: NodeDef) =>
+  masteryTime(def.time, s.player.skills[def.skill].level, def.level);
+
 export function beginGather(s: GameState, node: ResourceNode) {
   const p = s.player, def = NODE_TYPES[node.type];
   const fail = (reason: 'level' | 'depleted' | 'full') =>
@@ -48,7 +53,7 @@ export function beginGather(s: GameState, node: ResourceNode) {
   if (node.charges <= 0) return fail('depleted');
   if (p.skills[def.skill].level < def.level) return fail('level');
   if (!hasRoom(p.inventory, def.item)) return fail('full');
-  p.action = { k: 'gather', nodeId: node.id, t: 0, duration: def.time };
+  p.action = { k: 'gather', nodeId: node.id, t: 0, duration: gatherTime(s, def) };
 }
 
 /** The pick or axe falls every GATHER_STRIKE seconds of a cycle, so audio lands on a beat instead of once at the end. */
@@ -69,11 +74,14 @@ export function finishGather(s: GameState, a: Extract<Action, { k: 'gather' }>) 
     s.events.push({ t: 'actionfail', reason: 'full', skill: def.skill, need: def.level, what: def.name });
     return;
   }
-  addItem(p.inventory, def.item, 1);
-  s.events.push({ t: 'loot', item: def.item, qty: 1 });
+  // a high-level gatherer brings up more per swing; whatever the bag cannot hold is simply not mined
+  const want = masteryYield(s, 1, p.skills[def.skill].level, def.level);
+  const got = want - addItem(p.inventory, def.item, want);
+  s.events.push({ t: 'loot', item: def.item, qty: got });
   grantXp(s, def.skill, def.xp, node.x, node.z);
   node.charges--;
   a.t = 0;
+  a.duration = gatherTime(s, def); // a level gained on this swing speeds up the next one
   if (node.charges <= 0) {
     node.respawnIn = def.respawn;
     p.action = null;

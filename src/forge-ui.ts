@@ -1,7 +1,8 @@
 // Forge panel (DOM): recipe list with inputs, level requirement and output. Reads GameState;
 // crafting goes out as a sim craft request only.
 import type { GameState } from './sim';
-import { RECIPES, hasInputs, nearForge, FORGE_REACH } from './sim/crafting';
+import { RECIPES, bonusOutput, craftTime, hasInputs, nearForge, FORGE_REACH } from './sim/crafting';
+import { mastery } from './sim/mastery';
 import { SKILLS } from './sim/skills';
 import { ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { countItem } from './sim/inventory';
@@ -55,7 +56,10 @@ export class ForgeUi {
         const have = countItem(p.inventory, i.id);
         el(inputs, `rin${have >= i.qty ? '' : ' bad'}`, `${ITEMS[i.id].name} ${have}/${i.qty}`);
       }
-      el(row, 'rmeta', `${r.time}s  ·  ${r.xp} ${SKILLS[r.skill].name} XP`);
+      // time and extra-output chance are what your level over the recipe's buys you, so show what it costs you now
+      const m = mastery(p.skills[r.skill].level, r.level);
+      const extra = bonusOutput(r) && m.bonus > 0 ? `  ·  ${Math.round(m.bonus * 100)}% extra` : '';
+      el(row, 'rmeta', `${+craftTime(s, r).toFixed(1)}s  ·  ${r.xp} ${SKILLS[r.skill].name} XP${extra}`);
       const btns = el(row, 'rbtns');
       for (const [label, count] of [['Make', 1], ['Make all', 99]] as const) {
         const b = el(btns, `rbtn${can ? '' : ' off'}`, label);
