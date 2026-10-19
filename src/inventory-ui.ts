@@ -26,6 +26,7 @@ function div(parent: HTMLElement, cls: string, text = ''): HTMLDivElement {
 export class InventoryUi {
   private invPanel: HTMLElement;
   private charPanel: HTMLElement;
+  private gold: HTMLElement;
   private grid: HTMLElement;
   private eqEl: HTMLElement;
   private statsEl: HTMLElement;
@@ -37,7 +38,9 @@ export class InventoryUi {
 
   constructor(root: HTMLElement, private send: (a: InvAction) => void, private sell: (slot: number, qty: number) => void) {
     this.invPanel = div(root, 'panel invpanel');
-    div(this.invPanel, 'ptitle', 'Inventory  (I)');
+    const title = div(this.invPanel, 'ptitle', 'Inventory  (I)');
+    div(title, 'psort', 'Sort').addEventListener('click', () => this.send({ k: 'sort' }));
+    this.gold = div(this.invPanel, 'invgold');
     this.grid = div(this.invPanel, 'grid');
     this.charPanel = div(root, 'panel charpanel');
     div(this.charPanel, 'ptitle', 'Character  (C)');
@@ -62,6 +65,7 @@ export class InventoryUi {
 
   update(s: GameState) {
     const p = s.player;
+    this.gold.textContent = `${p.gold} gold`;
     // rebuild only when something changed so drag-and-drop and hover stay stable
     const sig = JSON.stringify([p.inventory, p.equipment, p.durability, p.combat.level, p.talents]);
     if (sig === this.sig) return;

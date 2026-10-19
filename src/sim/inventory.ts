@@ -1,7 +1,7 @@
 // Inventory + equipment operations on the player. Pure sim.
 import type { GameState } from '../sim';
-import { ITEMS, deriveStats } from './items';
-import type { EquipSlot } from './items';
+import { EQUIP_SLOTS, ITEMS, deriveStats } from './items';
+import type { EquipSlot, ItemDef } from './items';
 import { useItem } from './consumables';
 
 export const INVENTORY_SIZE = 28;
@@ -16,7 +16,8 @@ export type InvAction =
   | { k: 'move'; from: number; to: number }
   | { k: 'drop'; slot: number }
   | { k: 'destroy'; slot: number }
-  | { k: 'use'; slot: number };
+  | { k: 'use'; slot: number }
+  | { k: 'sort' };
 
 /** Adds to existing stacks first, then empty slots. Returns the quantity that did not fit. */
 export function addItem(inv: Inventory, id: string, qty: number): number {
@@ -62,6 +63,28 @@ export function removeItem(inv: Inventory, id: string, qty: number): number {
 export const countItem = (inv: Inventory, id: string) =>
   inv.reduce((n, st) => n + (st && st.id === id ? st.qty : 0), 0);
 
+/** Where an item sits in a sorted bag: gear by the slot it goes in, then food, then materials. */
+const group = (d: ItemDef) => d.slot ? EQUIP_SLOTS.indexOf(d.slot) : d.use ? EQUIP_SLOTS.length : EQUIP_SLOTS.length + 1;
+const byOrder = (a: string, b: string) => {
+  const A = ITEMS[a], B = ITEMS[b];
+  return group(A) - group(B) || B.tier - A.tier || B.value - A.value || A.name.localeCompare(B.name);
+};
+
+/** Tidies the bag in place: part-stacks of the same item merge, then everything packs to the front in `byOrder`. */
+export function sortInventory(inv: Inventory) {
+  const total = new Map<string, number>();
+  for (const st of inv) if (st) total.set(st.id, (total.get(st.id) ?? 0) + st.qty);
+  inv.fill(null);
+  let i = 0;
+  for (const id of [...total.keys()].sort(byOrder)) {
+    for (let left = total.get(id)!; left > 0; ) {
+      const n = Math.min(left, ITEMS[id].stack);
+      inv[i++] = { id, qty: n };
+      left -= n;
+    }
+  }
+}
+
 const validSlot = (i: number) => Number.isInteger(i) && i >= 0 && i < INVENTORY_SIZE;
 
 function moveSlot(inv: Inventory, from: number, to: number) {
@@ -83,6 +106,7 @@ export function refreshGearStats(s: GameState) {
 export function applyInvAction(s: GameState, act: InvAction) {
   const p = s.player, inv = p.inventory;
   if (act.k === 'move') return moveSlot(inv, act.from, act.to);
+  if (act.k === 'sort') return sortInventory(inv);
   if (act.k === 'use') return useItem(s, act.slot);
   if (act.k === 'unequip') {
     const id = p.equipment[act.slot];

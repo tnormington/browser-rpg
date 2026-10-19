@@ -7,13 +7,13 @@ import { maxHpForLevel } from './data';
 export const FOOD_TIME = 5;       // seconds a meal takes to heal in full
 export const FOOD_COOLDOWN = 20;  // one shared clock for every food, from the moment you start eating
 
-/** `damageTaken` multiplies every hit that lands on the player while the buff is on (Guard halves it). `desc` is the line the log says when it goes on. */
-export interface BuffDef { name: string; desc: string; duration: number; maxHp?: number; damageTaken?: number }
+/** `damageTaken` multiplies every hit that lands on the player while the buff is on (Guard halves it). `desc` is the line the log says when it goes on, `icon` the face it wears on the unit frame. */
+export interface BuffDef { name: string; desc: string; icon: string; duration: number; maxHp?: number; damageTaken?: number }
 export interface Buff { id: string; left: number }
 
 export const BUFFS: Record<string, BuffDef> = {
-  well_fed: { name: 'Well Fed', desc: '+10% max health.', duration: 20 * 60, maxHp: 0.10 },
-  guard: { name: 'Guard', desc: 'damage taken halved.', duration: 4, damageTaken: 0.5 },
+  well_fed: { name: 'Well Fed', desc: '+10% max health.', icon: '🍗', duration: 20 * 60, maxHp: 0.10 },
+  guard: { name: 'Guard', desc: 'damage taken halved.', icon: '🛡', duration: 4, damageTaken: 0.5 },
 };
 
 /** What a hit that has already been through armour is worth once every buff has had its say. */

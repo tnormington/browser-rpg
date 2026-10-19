@@ -4,7 +4,8 @@ import { ABILITIES, ENEMY_TYPES, GCD, castName } from './sim/data';
 import { levelProgress } from './sim/xp';
 import { ITEMS } from './sim/items';
 import { InvAction } from './sim/inventory';
-import { SKILLS } from './sim/skills';
+import { SKILLS, SkillId } from './sim/skills';
+import { Status, enemyStatuses, playerStatuses } from './sim/status';
 import { TALENTS, spentTotal, talentPoints, talentById } from './sim/talents';
 import { NODE_TYPES } from './sim/gathering';
 import { recipeById } from './sim/crafting';
@@ -100,6 +101,41 @@ function bar(parent: HTMLElement, cls: string) {
   return { fill, label };
 }
 
+/** A duration as the HUD prints it: seconds under a minute, m:ss above. */
+const clock = (t: number) => {
+  const n = Math.max(0, Math.ceil(t));
+  return n < 60 ? `${n}s` : `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`;
+};
+
+/** The row of buff / debuff icons under a unit frame. An icon is built once and kept while the effect lasts: only its clock and bar move. */
+class StatusRow {
+  private cells = new Map<string, { root: HTMLElement; clock: HTMLElement; fill: HTMLElement }>();
+
+  constructor(private host: HTMLElement) {}
+
+  update(list: Status[]) {
+    for (const [key, cell] of this.cells) {
+      if (list.some(s => s.key === key)) continue;
+      cell.root.remove();
+      this.cells.delete(key);
+    }
+    for (const s of list) {
+      let cell = this.cells.get(s.key);
+      if (!cell) {
+        const root = el(this.host, `buff${s.bad ? ' bad' : ''}`);
+        el(root, 'bicon', s.icon);
+        cell = { root, clock: el(root, 'bclock'), fill: el(root, 'bfill') };
+        this.cells.set(s.key, cell);
+      }
+      const left = clock(s.left);
+      cell.root.title = `${s.name}  -  ${left} left`;
+      cell.clock.textContent = left;
+      cell.fill.style.width = `${Math.max(0, Math.min(1, s.left / s.total)) * 100}%`;
+      cell.root.classList.toggle('soon', s.left <= 5);
+    }
+  }
+}
+
 /** Opaque HUD panels that world-space plates must not draw over. */
 const PLATE_BLOCKERS = '.frame, .tracker, .panel, .actionbar, .msglog, .menubar, .xp, .minimap';
 const PLATE_HALF_W = 45, PLATE_H = 28; // generous footprint of a nameplate around its anchor
@@ -119,6 +155,10 @@ export class Hud {
   private targetName: HTMLElement;
   private targetHp: ReturnType<typeof bar>;
   private targetCast: ReturnType<typeof bar>;
+  private playerStatus: StatusRow;
+  private targetStatus: StatusRow;
+  /** Which track the XP bar shows: the skill that last earned XP, so the bar follows whatever is being levelled. */
+  private xpSkill: SkillId = 'combat';
   /** One per bar slot (not per ability): `ability` is what it currently casts, null when the slot is empty. */
   private slots: { root: HTMLElement; icon: HTMLElement; aname: HTMLElement; sweep: HTMLElement; cdText: HTMLElement; lock: HTMLElement; lockText: HTMLElement; ability: number | null }[] = [];
   private bar = sanitizeBar(loadBar());
@@ -166,11 +206,13 @@ export class Hud {
     this.statusEl = el(pf, 'status');
     this.hp = bar(pf, 'hp');
     this.energy = bar(pf, 'energy');
+    this.playerStatus = new StatusRow(el(pf, 'buffs'));
 
     this.targetFrame = el(this.root, 'frame target');
     this.targetName = el(this.targetFrame, 'name');
     this.targetHp = bar(this.targetFrame, 'enemyhp');
     this.targetCast = bar(this.targetFrame, 'enemycast');
+    this.targetStatus = new StatusRow(el(this.targetFrame, 'buffs'));
 
     this.xp = bar(this.root, 'xp');
     this.minimap = new Minimap(this.root); // before the panels, so an open panel prints over it
@@ -338,6 +380,7 @@ export class Hud {
       } else if (ev.t === 'heal') {
         if (ev.amount > 0) this.float(`+${ev.amount}`, 'heal', ev.x, 2.6, ev.z);
       } else if (ev.t === 'xp') {
+        this.xpSkill = ev.skill; // the bar follows whatever is earning right now
         this.float(`+${ev.amount} ${ev.skill === 'combat' ? '' : SKILLS[ev.skill].name + ' '}XP`, 'xpgain', ev.x, 3.2, ev.z);
         this.note(`+${ev.amount} ${SKILLS[ev.skill].name} XP`, 'log-xp');
       } else if (ev.t === 'fail') {
@@ -521,15 +564,14 @@ export class Hud {
     const p = s.player;
     this.playerLvl.textContent = `Adventurer  Lv ${p.combat.level}`;
     this.goldEl.textContent = `Gold ${p.gold}`;
-    const clock = (t: number) => `${Math.floor(Math.ceil(t) / 60)}:${String(Math.ceil(t) % 60).padStart(2, '0')}`;
-    this.statusEl.textContent = [
-      p.food ? `Eating ${Math.ceil(p.food.left)}s` : p.foodCd > 0 ? `Food ready in ${Math.ceil(p.foodCd)}s` : '',
-      ...p.buffs.map(b => `${BUFFS[b.id].name} ${clock(b.left)}`),
-    ].filter(Boolean).join('  ·  ');
+    // the buff row carries whatever is running; the line above it is left for the one thing that is a wait, not an effect
+    this.statusEl.textContent = !p.food && p.foodCd > 0 ? `Food ready in ${Math.ceil(p.foodCd)}s` : '';
+    this.playerStatus.update(playerStatuses(p));
     this.setBar(this.hp, p.hp / p.maxHp, `${Math.ceil(p.hp)} / ${p.maxHp}`);
     this.setBar(this.energy, p.energy / p.maxEnergy, `${Math.floor(p.energy)}`);
-    const prog = levelProgress(p.combat);
-    this.setBar(this.xp, prog.frac, `Combat ${p.combat.level}  -  ${prog.into} / ${prog.needed} XP`);
+    const track = p.skills[this.xpSkill], skill = SKILLS[this.xpSkill], prog = levelProgress(track);
+    this.xp.fill.parentElement!.classList.toggle('skill', this.xpSkill !== 'combat');
+    this.setBar(this.xp, prog.frac, `${skill.icon} ${skill.name} ${track.level}  -  ${prog.needed ? `${prog.into} / ${prog.needed} XP` : 'MAX'}`);
 
     const t = s.targetId === null ? undefined : s.enemies.find(e => e.id === s.targetId);
     this.targetFrame.style.display = t ? 'block' : 'none';
@@ -543,6 +585,7 @@ export class Hud {
         this.setBar(this.targetCast, t.cast.t / t.cast.total, castName(def, t.cast.kind));
       }
     }
+    this.targetStatus.update(t ? enemyStatuses(t) : []); // dropped with the target, so the next one never shows its predecessor's
 
     // swing timer: fills toward the next auto-attack; lit while armed, and full (waiting) when the target is out of reach
     const interval = swingInterval(p);

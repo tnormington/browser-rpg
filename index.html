@@ -25,6 +25,15 @@ canvas{display:block}
 .bar .label{position:absolute;inset:0;text-align:center;font-size:11px;line-height:16px;color:#ece6d2}
 .hp .fill{background:linear-gradient(#6f8f56,#4a6a3a)}.energy .fill{background:linear-gradient(#b08a3a,#7a5e24)}.enemyhp .fill{background:linear-gradient(#c23a32,#7e1f1c)}
 .xp{position:absolute;left:12%;right:12%;bottom:6px;height:12px}.xp .fill{background:linear-gradient(#6b4aa0,#43306a)}.xp .label{line-height:12px;font-size:10px}
+.xp.skill .fill{background:linear-gradient(#5a7a96,#3a566e)} /* the bar is following a gathering/crafting skill, not combat */
+/* buffs and debuffs under a unit frame: icon, seconds left, and a bar that empties over the effect's run */
+.buffs{display:flex;gap:4px;margin-top:5px}.buffs:empty{display:none}
+.buff{position:relative;width:28px;height:32px;background:var(--iron-lift);border:1px solid var(--edge);border-radius:2px;text-align:center;overflow:hidden}
+.buff.bad{border-color:var(--blood-dark)}
+.buff .bicon{font-size:15px;line-height:19px}.buff .bclock{font-size:9px;line-height:9px;color:var(--ink)}
+.buff .bfill{position:absolute;left:0;bottom:0;height:3px;background:var(--moss)}.buff.bad .bfill{background:var(--blood)}
+.buff.soon{animation:buffsoon 1s ease-in-out infinite}
+@keyframes buffsoon{50%{border-color:var(--gold)}}
 .actionbar{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:min(96vw,820px);pointer-events:auto}
 .slot{position:relative;width:64px;height:64px;background:var(--iron);border:2px solid var(--edge);box-shadow:inset 0 0 0 1px #000,0 2px 6px rgba(0,0,0,.6);border-radius:3px;overflow:hidden;text-align:center;cursor:grab}
 .slot.empty{background:rgba(15,16,19,.45);border-style:dashed;border-color:#2e3034;cursor:default}
@@ -58,6 +67,8 @@ canvas{display:block}
 .floater.loot{color:var(--moss);font-size:18px}.floater.dropname{color:#e8d9a0;font-size:13px}
 .panel{position:absolute;top:90px;background:var(--iron);border:1px solid var(--edge);box-shadow:inset 0 0 0 1px #000,0 4px 14px rgba(0,0,0,.7);border-radius:2px;padding:8px;pointer-events:auto;text-shadow:none}
 .invpanel{right:12px;width:268px}.charpanel{right:292px;width:210px}
+.invgold{color:var(--gold);font-size:12px;margin:-3px 0 6px}
+.psort{float:right;margin-top:-1px;padding:1px 8px;background:var(--iron-lift);border:1px solid var(--edge);border-radius:2px;font-size:11px;font-weight:normal;color:var(--ink);letter-spacing:0;cursor:pointer}.psort:hover{background:#3a362c;color:var(--gold)}
 .invpanel,.charpanel{top:170px;max-height:calc(100vh - 278px);overflow-y:auto;scrollbar-width:thin} /* clear of the minimap above and the action bar below */
 .ptitle{font-weight:bold;margin-bottom:6px;color:var(--gold);letter-spacing:.05em}
 .grid{display:grid;grid-template-columns:repeat(4,60px);gap:4px}
@@ -113,7 +124,9 @@ canvas{display:block}
 .qtitle{font-weight:bold;color:var(--gold);margin-bottom:5px}.qline{font-size:13px;margin-top:3px}.qline.done{color:var(--moss);opacity:.8}
 .qnav{display:none;align-items:center;gap:8px;margin-top:8px;padding-top:6px;border-top:1px solid var(--edge);font-size:12px;color:var(--arcane)}
 .qarrow{display:inline-block;font-size:20px;color:var(--gold);transition:transform .1s}
-.panel.dialogue{left:50%;top:auto;bottom:250px;transform:translateX(-50%);width:520px;border-color:var(--edge-hi)} /* above the unit frames */
+/* Above the unit frames, centred on the screen -- but never left of the quest tracker's column: in a short window the panel
+   rides up level with the tracker, and in a narrow one its centred left edge would otherwise run under it. */
+.panel.dialogue{box-sizing:border-box;left:max(286px,calc(50% - 269px));top:auto;bottom:250px;transform:none;width:538px;max-width:calc(100vw - 298px);border-color:var(--edge-hi)}
 .dhint{float:right;font-size:11px;font-weight:normal;color:var(--ink-dim)}
 .dline{margin-bottom:8px;font-size:14px;line-height:1.4}
 .dopt{margin-top:5px;padding:5px 8px;border-radius:2px;background:var(--iron-lift);border:1px solid #34363a;cursor:pointer;font-size:13px;color:#e8d9a0}.dopt:hover{background:#3a362c}
