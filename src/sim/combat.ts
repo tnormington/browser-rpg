@@ -46,6 +46,10 @@ export function refreshPlayerStats(s: GameState, fillHp: boolean) {
 export const swingInterval = (p: Player) => p.stats.swingInterval * p.talentFx.swingSpeed;
 /** Fraction of incoming damage removed: armour plus talents, under armour's own cap. */
 export const reductionOf = (p: Player) => Math.min(MAX_REDUCTION, p.stats.reduction + p.talentFx.reduction);
+/** Level reached and, for a trainer's ability, bought: the one test for whether a slot does anything. */
+export const abilityOpen = (p: Player, slot: number) =>
+  p.combat.level >= ABILITIES[slot].unlockLevel && (!ABILITIES[slot].trainer || p.learned.includes(ABILITIES[slot].name));
+
 /** An ability's cooldown after talents: Second Wind comes back sooner with Rally, Pummel with Counterstrike. */
 export function cooldownOf(p: Player, slot: number): number {
   const a = ABILITIES[slot];
@@ -228,7 +232,7 @@ export function pressAbility(s: GameState, slot: number) {
   const p = s.player;
   if (p.dead || !ABILITIES[slot]) return;
   const a = ABILITIES[slot];
-  if (p.combat.level < a.unlockLevel) return fail(s, 'locked', slot);
+  if (!abilityOpen(p, slot)) return fail(s, 'locked', slot);
   // a press this close to ready (its own cooldown or the GCD, whichever is later) is held and fires the moment it is
   const gcdWait = a.offGcd ? 0 : p.gcd;
   if (p.cd[slot] > QUEUE_WINDOW) return fail(s, 'cooldown', slot);
@@ -284,13 +288,13 @@ function tryUse(s: GameState, slot: number) {
     const hit = s.enemies.filter(e => targetable(e) && dist(p, e) <= a.range && (e === target || angleTo(e) <= half))
       .sort((m, n) => dist(p, m) - dist(p, n));
     for (const e of hit) {
-      const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage);
+      const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1));
       damageEnemy(s, e, amount, crit, slot);
     }
   } else if (target) {
     // Execute: Crushing Blow finishes a wounded target, and a kill hands the cooldown straight back
     const exec = a.tag === 'crush' && fx.executeUnder > 0 && target.hp <= target.maxHp * fx.executeUnder;
-    const { amount, crit } = rollDamage(s, a.damage * (exec ? 1 + EXECUTE_BONUS : 1), power, p.stats.weaponDamage);
+    const { amount, crit } = rollDamage(s, a.damage * (exec ? 1 + EXECUTE_BONUS : 1), power, p.stats.weaponDamage * (a.weaponMult ?? 1));
     if (a.kind === 'dot') target.bleed = { ticks: a.dotTicks!, timer: 1, damage: Math.round(a.dotDamage! * power * fx.bleedBonus) };
     damageEnemy(s, target, amount, crit, slot);
     if (exec && target.state === 'dead') p.cd[slot] = 0;
@@ -329,7 +333,7 @@ function announceUnlocks(s: GameState) {
   const p = s.player;
   if (p.combat.level <= p.unlocked) return;
   ABILITIES.forEach((a, slot) => {
-    if (a.unlockLevel > p.unlocked && a.unlockLevel <= p.combat.level) s.events.push({ t: 'unlock', slot, level: a.unlockLevel });
+    if (!a.trainer && a.unlockLevel > p.unlocked && a.unlockLevel <= p.combat.level) s.events.push({ t: 'unlock', slot, level: a.unlockLevel });
   });
   p.unlocked = p.combat.level;
 }

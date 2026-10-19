@@ -1017,7 +1017,7 @@ section('Phase 3: ability unlocks tied to combat level');
   assert(ABILITIES[SLOT.strike].unlockLevel === 1 && ABILITIES.every(a => a.unlockLevel >= 1), `Strike is the only level-1 ability (${shipped})`);
   assert(ABILITIES.filter(a => a.unlockLevel === 1).length === 1, 'a fresh character starts with exactly one ability');
   assert(ABILITIES.some(a => a.kind === 'cleave') && ABILITIES.some(a => a.kind === 'interrupt'), 'the kit includes a cleave and an interrupt');
-  assert(ABILITIES.every(a => a.unlockLevel <= 5), 'the whole kit is handed over by combat level 5, within the quest levelling');
+  assert(ABILITIES.every(a => a.trainer || a.unlockLevel <= 5), 'the whole kit is handed over by combat level 5 (trainer abilities are bought), within the quest levelling');
 
   // locked: does nothing, costs nothing, says why
   const s = createState(41);

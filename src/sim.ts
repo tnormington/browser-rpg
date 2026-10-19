@@ -74,6 +74,7 @@ export interface Player {
   energy: number; maxEnergy: number;
   gcd: number;
   cd: number[];            // per-ability cooldown remaining
+  learned: string[];       // names of the trainer abilities bought so far (see AbilityDef.trainer)
   unlocked: number;        // combat level up to which ability unlocks have been announced (so each fires exactly once)
   queued: number | null;   // ability pressed just before the GCD ended
   cast: number;            // short attack-animation timer
@@ -135,6 +136,7 @@ export type GameEvent =
   | { t: 'loot'; item: string; qty: number }
   | { t: 'invfull' }
   | { t: 'shop'; vendor: string }                       // player reached a merchant: open their shop
+  | { t: 'learn'; slot: number; gold: number }               // an ability was bought from a trainer
   | { t: 'trade'; sold: boolean; item: string; qty: number; gold: number } // a sale (gold earned) or a purchase (gold spent) went through
   | { t: 'death'; killer: string; toll: number; recap: { src: string; what: string; amount: number; heavy: boolean; ago: number }[] } // killer: "Cave Brute: Crushing Slam"; toll: gold the repair cost, already paid; recap: last hits, oldest first, `ago` seconds before death
   | { t: 'respawn'; town: string }                      // woke in this town
@@ -197,7 +199,7 @@ export function createState(seed = 1): GameState {
       x: PLAYER_SPAWN.x, z: PLAYER_SPAWN.z, facing: Math.PI, moving: false,
       y: 0, vy: 0, stride: STRIDE_DIST / 2, airborne: false, autoAttack: false, swing: 0, inCombat: false, recap: [],
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
-      gcd: 0, cd: ABILITIES.map(() => 0), unlocked: 1, queued: null, cast: 0,
+      gcd: 0, cd: ABILITIES.map(() => 0), learned: [], unlocked: 1, queued: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
       skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), stats: deriveStats(emptyEquipment()),
       talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [],

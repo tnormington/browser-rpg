@@ -36,7 +36,7 @@ function place(g: THREE.BufferGeometry, x: number, y: number, z: number, rotY = 
   return out;
 }
 
-interface Tile { kind: 'slab' | 'quay' | 'town'; region: Region; rect: Rect; group: THREE.Group | null; ground: THREE.Mesh[]; picks: { npc: THREE.Mesh[]; vendor: THREE.Mesh[]; flight: THREE.Mesh[] } }
+interface Tile { kind: 'slab' | 'quay' | 'town'; region: Region; rect: Rect; group: THREE.Group | null; ground: THREE.Mesh[]; picks: { npc: THREE.Mesh[]; vendor: THREE.Mesh[]; flight: THREE.Mesh[]; trainer: THREE.Mesh[] } }
 
 const inside = (r: Rect, x: number, z: number, e = 0.01) => x > r.x0 + e && x < r.x1 - e && z > r.z0 + e && z < r.z1 - e;
 /** A region's main floor: the biggest of its rects (the others are corridors and piers). */
@@ -53,7 +53,7 @@ export class WorldView {
       if (region.zone === 'hale') continue; // the clearing and the cave are render.ts's own
       // the region's main floor (its biggest rect) is cut into slabs; the rest (the gate's corridor, the quay) ride with the slab they touch
       const rect = mainRect(region);
-      const tile = (kind: Tile['kind'], rect: Rect): Tile => ({ kind, region, rect, group: null, ground: [], picks: { npc: [], vendor: [], flight: [] } });
+      const tile = (kind: Tile['kind'], rect: Rect): Tile => ({ kind, region, rect, group: null, ground: [], picks: { npc: [], vendor: [], flight: [], trainer: [] } });
       for (let x = rect.x0; x < rect.x1 - 1e-6; x += TILE) this.tiles.push(tile('slab', { x0: x, x1: Math.min(rect.x1, x + TILE), z0: rect.z0, z1: rect.z1 }));
       if (region.id === 'saltmarrow') { // what is only once: the sea and the quay, and the people of the square
         this.tiles.push(tile('quay', { x0: SALTMARROW.x + 10, x1: SALTMARROW.x + 160, z0: SALTMARROW.z - 130, z1: SALTMARROW.z + 130 }));
@@ -80,6 +80,7 @@ export class WorldView {
   npcPicks(): THREE.Mesh[] { return this.tiles.flatMap(t => t.group?.visible ? t.picks.npc : []); }
   vendorPicks(): THREE.Mesh[] { return this.tiles.flatMap(t => t.group?.visible ? t.picks.vendor : []); }
   flightPicks(): THREE.Mesh[] { return this.tiles.flatMap(t => t.group?.visible ? t.picks.flight : []); }
+  trainerPicks(): THREE.Mesh[] { return this.tiles.flatMap(t => t.group?.visible ? t.picks.trainer : []); }
   /** Is the harbourmaster's slab in view (his mark floats only then)? */
   harbourShown(): boolean { return this.tiles.some(t => t.group?.visible && t.picks.npc.length > 0); }
 
@@ -240,6 +241,7 @@ export class WorldView {
     person(LANDMARKS.harbourmaster, 0x3d5870, 'cap', t.picks.npc);
     person(LANDMARKS.harbourVendor, 0x6b4a2c, 'brim', t.picks.vendor);
     add(flightMasterFigure(this.kit, LANDMARKS.flightSalt, LANDMARKS.square, t.picks.flight));
+    person(LANDMARKS.trainer, 0x7a2e2a, 'cap', t.picks.trainer);
   }
 }
 

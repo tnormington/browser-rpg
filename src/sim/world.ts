@@ -155,6 +155,7 @@ const saltLandmarks = {
   square: at(SALTMARROW, -25, 0),
   harbourmaster: { ...at(SALTMARROW, -20, 4), r: 0.7 },
   harbourVendor: { ...at(SALTMARROW, -30, 6), r: 0.7 },
+  trainer: { ...at(SALTMARROW, -26, -8), r: 0.7 },
   inn: { x: SALT_INN.x, z: SALT_INN.z },
   /** The cooking range, in the inn. */
   range: at(SALTMARROW, -10, -9),
@@ -273,7 +274,7 @@ export const REGIONS: Region[] = [
       { x0: SALTMARROW.x - 70, x1: SALTMARROW.x + 30, z0: SALTMARROW.z - 70, z1: SALTMARROW.z + 70 },
       { x0: SALTMARROW.x + 16, x1: SALTMARROW.x + 62, z0: SALTMARROW.z - 3, z1: SALTMARROW.z + 3 },
     ],
-    obstacles: [SALT_INN, ...SALT_HOUSES, ...SALT_PROPS, { ...saltLandmarks.harbourmaster, kind: 'person' }, { ...saltLandmarks.harbourVendor, kind: 'person' }, { ...saltLandmarks.flightSalt, kind: 'person' }],
+    obstacles: [SALT_INN, ...SALT_HOUSES, ...SALT_PROPS, { ...saltLandmarks.harbourmaster, kind: 'person' }, { ...saltLandmarks.harbourVendor, kind: 'person' }, { ...saltLandmarks.flightSalt, kind: 'person' }, { ...saltLandmarks.trainer, kind: 'person' }],
     tall: [SALT_INN, ...SALT_HOUSES, SALT_PROPS[4]], trees: [],
     rocks: [-14, -8, -2, 4, 10].map((lx, i) => ({ type: 'adamant' as const, ...at(SALTMARROW, lx, i % 2 ? -66 : -64), r: 1.2 })),
     spots: SALT_SPOTS,

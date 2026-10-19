@@ -1,6 +1,6 @@
 import { createState, step, TICK_DT, Input } from './sim';
 import { Renderer } from './render';
-import { Hud } from './hud';
+import { ABILITY_KEYS, Hud } from './hud';
 import type { InvAction } from './sim/inventory';
 import type { ShopAction } from './sim/shop';
 import type { Interact } from './sim';
@@ -43,6 +43,7 @@ const hud = new Hud((x, y, z) => view.showingMap ? null : view.project(x, y, z),
   talentReset: () => { pendingTalentReset = true; saveDirty = true; },
   sell: (slot, qty) => { pendingShop.push({ k: 'sell', slot, qty }); saveDirty = true; },
   buy: (item, qty) => { pendingShop.push({ k: 'buy', item, qty }); saveDirty = true; },
+  learn: slot => { pendingShop.push({ k: 'learn', slot }); saveDirty = true; },
   craft: (recipe, count) => { pendingCraft = { recipe, count }; },
   questAdvance: () => { pendingAdvance = true; },
   quality: toggle => {
@@ -98,7 +99,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyC') hud.toggle('char');
   else if (e.code === 'KeyK') hud.toggle('skills');
   else if (e.code === 'KeyN') hud.toggle('talents');
-  else if (/^Digit[1-6]$/.test(e.code)) pendingAbility = Number(e.code.slice(5)) - 1;
+  else if (ABILITY_KEYS.includes(e.code)) pendingAbility = ABILITY_KEYS.indexOf(e.code);
 });
 addEventListener('keyup', e => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());

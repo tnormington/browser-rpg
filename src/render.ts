@@ -1081,11 +1081,12 @@ export class Renderer {
     this.shakeMag = Math.max(this.shakeMag, 0.12);
   }
 
-  /** The merchant under the click ('hale' or 'harbour'), or null. */
+  /** The merchant under the click ('hale', 'harbour' or 'trainer'), or null. */
   pickVendor(clientX: number, clientY: number): string | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
     if (this.raycaster.intersectObjects(this.vendorParts, false).length > 0) return 'hale';
+    if (this.raycaster.intersectObjects(this.world.trainerPicks(), false).length > 0) return 'trainer';
     return this.raycaster.intersectObjects(this.world.vendorPicks(), false).length > 0 ? 'harbour' : null;
   }
 

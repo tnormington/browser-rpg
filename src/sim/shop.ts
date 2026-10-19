@@ -5,9 +5,11 @@ import type { GameState } from '../sim';
 import { LANDMARKS } from './world';
 import { ITEMS } from './items';
 import { addItem, hasRoom } from './inventory';
+import { ABILITIES } from './data';
 
 export const VENDOR = { name: 'Brannoch the Peddler', x: LANDMARKS.vendor.x, z: LANDMARKS.vendor.z, r: LANDMARKS.vendor.r };
 export const HARBOUR_VENDOR = { name: 'Tam Brine, Chandler', x: LANDMARKS.harbourVendor.x, z: LANDMARKS.harbourVendor.z, r: LANDMARKS.harbourVendor.r };
+export const TRAINER = { name: 'Orla Saltblade, Trainer', x: LANDMARKS.trainer.x, z: LANDMARKS.trainer.z, r: LANDMARKS.trainer.r };
 export const SHOP_REACH = 6; // centre to centre, like the forge
 export const BUY_MARKUP = 4; // the shop charges this many times an item's value: far above what it pays, so a round trip always loses gold
 export const MAX_GOLD = 1e9;
@@ -18,26 +20,32 @@ export const SHOP_STOCK = ['rusty_blade', 'leather_cap', 'hide_jerkin', 'hide_le
 /** Saltmarrow's stock is the tier above Hale's (the bible: a town sells the previous tier's dropped gear), and again never anything a recipe consumes, bar the pie's pinch of sea salt. */
 export const HARBOUR_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword', 'sea_salt'] as const;
 
-export type VendorId = 'hale' | 'harbour';
-export interface Vendor { id: VendorId; name: string; x: number; z: number; r: number; stock: readonly string[] }
-export const VENDORS: Vendor[] = [{ id: 'hale', ...VENDOR, stock: SHOP_STOCK }, { id: 'harbour', ...HARBOUR_VENDOR, stock: HARBOUR_STOCK }];
+export interface Vendor { id: string; name: string; x: number; z: number; r: number; stock: readonly string[] }
+/** Merchants buy and sell; the trainer has no stock and teaches whatever ABILITIES names her in `trainer.vendor`. */
+export const VENDORS: Vendor[] = [{ id: 'hale', ...VENDOR, stock: SHOP_STOCK }, { id: 'harbour', ...HARBOUR_VENDOR, stock: HARBOUR_STOCK }, { id: 'trainer', ...TRAINER, stock: [] }];
+/** The slots a trainer teaches. */
+export const taughtBy = (vendor: string) => ABILITIES.flatMap((a, slot) => a.trainer?.vendor === vendor ? [slot] : []);
 export const vendorById = (id: string) => VENDORS.find(v => v.id === id);
 
-export type ShopAction = { k: 'sell'; slot: number; qty: number } | { k: 'buy'; item: string; qty: number };
+export type ShopAction = { k: 'sell'; slot: number; qty: number } | { k: 'buy'; item: string; qty: number } | { k: 'learn'; slot: number };
 
 export const buyPrice = (id: string) => ITEMS[id].value * BUY_MARKUP;
 const reachOf = (s: GameState, v: Vendor) => Math.hypot(s.player.x - v.x, s.player.z - v.z);
 /** The merchant the player is standing at (the nearest one in reach), if any. */
 export const vendorNear = (s: GameState): Vendor | undefined =>
-  VENDORS.filter(v => reachOf(s, v) <= SHOP_REACH).sort((a, b) => reachOf(s, a) - reachOf(s, b))[0];
+  VENDORS.filter(v => v.stock.length > 0 && reachOf(s, v) <= SHOP_REACH).sort((a, b) => reachOf(s, a) - reachOf(s, b))[0];
 export const nearVendor = (s: GameState) => !!vendorNear(s);
+/** Reach to the trainer, which `vendorNear` leaves out: nobody buys your bag there. */
+const nearTrainer = (s: GameState, id: string) => { const v = vendorById(id); return !!v && reachOf(s, v) <= SHOP_REACH; };
 
 const fail = (s: GameState, reason: 'range' | 'full' | 'gold', what: string) =>
   void s.events.push({ t: 'actionfail', reason, need: 0, what });
 
 export function applyShopAction(s: GameState, act: ShopAction) {
   const p = s.player;
-  if (p.dead || !Number.isInteger(act.qty) || act.qty < 1) return;
+  if (p.dead) return;
+  if (act.k === 'learn') return learnAbility(s, act.slot);
+  if (!Number.isInteger(act.qty) || act.qty < 1) return;
   if (act.k === 'sell') {
     const st = Number.isInteger(act.slot) ? p.inventory[act.slot] : null;
     if (!st) return;
@@ -59,6 +67,18 @@ export function applyShopAction(s: GameState, act: ShopAction) {
   addItem(p.inventory, act.item, act.qty);
   p.gold -= cost;
   s.events.push({ t: 'trade', sold: false, item: act.item, qty: act.qty, gold: cost });
+}
+
+/** Buy an ability from its trainer: needs the level, the gold and the trainer in reach, and is paid for once. */
+function learnAbility(s: GameState, slot: number) {
+  const p = s.player, a = Number.isInteger(slot) ? ABILITIES[slot] : undefined;
+  if (!a?.trainer || p.learned.includes(a.name)) return;
+  if (!nearTrainer(s, a.trainer.vendor)) return fail(s, 'range', a.name);
+  if (p.combat.level < a.unlockLevel) return s.events.push({ t: 'fail', reason: 'locked', slot });
+  if (p.gold < a.trainer.price) return fail(s, 'gold', a.name);
+  p.gold -= a.trainer.price;
+  p.learned.push(a.name);
+  s.events.push({ t: 'learn', slot, gold: a.trainer.price });
 }
 
 function removeFromSlot(s: GameState, slot: number, qty: number) {

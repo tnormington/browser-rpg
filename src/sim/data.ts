@@ -61,6 +61,10 @@ export interface AbilityDef {
   offGcd?: boolean;   // interrupt: usable mid-GCD, so it can answer a wind-up the instant it starts
   /** What a talent calls this ability by. `kind` already names the other five; only the two strikes need telling apart. */
   tag?: 'crush';
+  /** Share of the weapon's damage the ability carries (default 1). Without it a bigger `damage` is just Strike, the weapon being most of a hit by level 12. */
+  weaponMult?: number;
+  /** Not handed over by level alone: bought from this vendor (see VENDORS) for gold, once the level is reached. */
+  trainer?: { vendor: string; price: number };
 }
 
 export const ABILITIES: AbilityDef[] = [
@@ -76,6 +80,8 @@ export const ABILITIES: AbilityDef[] = [
     kind: 'cleave', unlockLevel: 5, damage: 10, cost: 25, cooldown: 8, range: 3.5, arc: 140 },
   { name: 'Pummel', desc: 'Off the global cooldown. Stops an enemy wind-up dead and staggers it. Useless when nothing is winding up.',
     kind: 'interrupt', unlockLevel: 4, damage: 0, cost: 10, cooldown: 10, range: 3.5, offGcd: true },
+  { name: 'Whirlwind', desc: 'Spin and hit everything around you, whichever way it stands. Learned from the Saltmarrow trainer.',
+    kind: 'cleave', unlockLevel: 12, damage: 8, weaponMult: 0.6, cost: 35, cooldown: 10, range: 4, arc: 360, trainer: { vendor: 'trainer', price: 120 } },
 ];
 
 /** How long an interrupted enemy is stunned, and what share of its heavy-attack cooldown it keeps (so it cannot slam again at once). */

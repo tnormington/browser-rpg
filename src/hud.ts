@@ -11,7 +11,8 @@ import { recipeById } from './sim/crafting';
 import { nearestTown } from './sim/world';
 import { BUFFS } from './sim/consumables';
 import { clearLine } from './sim/sight';
-import { cooldownOf, costOf, swingInterval } from './sim/combat';
+import { abilityOpen, cooldownOf, costOf, swingInterval } from './sim/combat';
+import { VENDORS } from './sim/shop';
 import { InventoryUi } from './inventory-ui';
 import { SkillsUi } from './skills-ui';
 import { TalentsUi } from './talents-ui';
@@ -33,6 +34,7 @@ export interface HudActions {
   fly: (to: string) => void;
   skipFlight: () => void;
   map: MapView;
+  learn: (slot: number) => void;
   questAdvance: () => void;
   save: () => void;
   newGame: () => void;
@@ -56,7 +58,10 @@ function actionFailText(ev: Extract<GameEvent, { t: 'actionfail' }>): string {
 
 type Project = (x: number, y: number, z: number) => { x: number; y: number } | null;
 
-const ICONS = ['⚔', '🔨', '🗡', '❤', '🌀', '✊'];
+const ICONS = ['⚔', '🔨', '🗡', '❤', '🌀', '✊', '🌪'];
+/** The key for each bar slot, in order: a longer bar is more entries here, and the bar lays itself out. */
+export const ABILITY_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'];
+export const keyLabel = (slot: number) => ABILITY_KEYS[slot].replace(/^Digit/, '').replace('Minus', '-').replace('Equal', '=');
 const FAIL_TEXT = {
   range: 'Out of range', cooldown: 'Not ready yet', gcd: 'Not ready yet',
   energy: 'Not enough energy', target: 'No target', nocast: 'Nothing to interrupt',
@@ -98,7 +103,7 @@ export class Hud {
   private targetName: HTMLElement;
   private targetHp: ReturnType<typeof bar>;
   private targetCast: ReturnType<typeof bar>;
-  private slots: { root: HTMLElement; sweep: HTMLElement; cdText: HTMLElement; lock: HTMLElement }[] = [];
+  private slots: { root: HTMLElement; sweep: HTMLElement; cdText: HTMLElement; lock: HTMLElement; lockText: HTMLElement }[] = [];
   private swingBar: ReturnType<typeof bar>;
   private msg: HTMLElement;
   private banner: HTMLElement;
@@ -151,14 +156,14 @@ export class Hud {
       const root = el(ab, 'slot');
       root.title = `${a.name}: ${a.desc}`;
       el(root, 'icon', ICONS[i]);
-      el(root, 'key', String(i + 1));
+      el(root, 'key', keyLabel(i));
       el(root, 'aname', a.name);
       const sweep = el(root, 'sweep');
       const cdText = el(root, 'cdtext');
       const lock = el(root, 'lock');
       el(lock, 'lockicon', '🔒');
-      el(lock, 'locklvl', `Lv ${a.unlockLevel}`);
-      this.slots.push({ root, sweep, cdText, lock });
+      const lockText = el(lock, 'locklvl', `Lv ${a.unlockLevel}`);
+      this.slots.push({ root, sweep, cdText, lock, lockText });
     });
 
     this.swingBar = bar(this.root, 'swing');
@@ -173,7 +178,7 @@ export class Hud {
     this.invUi = new InventoryUi(this.root, actions.inv, actions.sell);
     this.skillsUi = new SkillsUi(this.root);
     this.talentsUi = new TalentsUi(this.root, { learn: actions.talent, reset: actions.talentReset });
-    this.shopUi = new ShopUi(this.root, actions.buy);
+    this.shopUi = new ShopUi(this.root, actions.buy, actions.learn);
     this.flightUi = new FlightUi(this.root, actions.fly);
     this.mapUi = new MapUi(this.root, actions.map, actions.skipFlight);
     const craft = (r: string, n: number) => { this.acting = true; actions.craft(r, n); };
@@ -248,7 +253,9 @@ export class Hud {
       } else if (ev.t === 'fail') {
         if (ev.reason === 'gcd') continue; // too noisy while mashing; the sweep already shows it
         this.say(ev.reason === 'locked'
-          ? `${ABILITIES[ev.slot].name} unlocks at combat level ${ABILITIES[ev.slot].unlockLevel} (you are level ${s.player.combat.level})`
+          ? (s.player.combat.level >= ABILITIES[ev.slot].unlockLevel
+            ? `${ABILITIES[ev.slot].name} is taught in Saltmarrow: ${ABILITIES[ev.slot].trainer!.price} gold`
+            : `${ABILITIES[ev.slot].name} unlocks at combat level ${ABILITIES[ev.slot].unlockLevel} (you are level ${s.player.combat.level})`)
           : FAIL_TEXT[ev.reason]);
       } else if (ev.t === 'loot') {
         const name = ITEMS[ev.item].name;
@@ -261,7 +268,7 @@ export class Hud {
         this.say(actionFailText(ev));
       } else if (ev.t === 'shop') {
         this.shopUi.setOpen(true, ev.vendor);
-        this.invUi.show('inv'); // selling is done from the bag
+        if (VENDORS.find(v => v.id === ev.vendor)!.stock.length > 0) this.invUi.show('inv'); // selling is done from the bag
       } else if (ev.t === 'flightmaster') {
         this.flightUi.setOpen(true, ev.town);
       } else if (ev.t === 'discover') {
@@ -273,6 +280,9 @@ export class Hud {
           this.float(`-${ev.price} gold`, 'loot', s.player.x, 3.0, s.player.z);
           this.note(`You pay ${ev.price} gold and take flight.`, 'log-loot');
         } else this.note(ev.skipped ? 'You cut the flight short and land.' : 'You land.', 'log-info');
+      } else if (ev.t === 'learn') {
+        this.float(`-${ev.gold} gold`, 'loot', s.player.x, 3.0, s.player.z);
+        this.unlock(ev.slot);
       } else if (ev.t === 'trade') {
         const name = `${ITEMS[ev.item].name}`;
         this.float(ev.sold ? `+${ev.gold} gold` : `-${ev.gold} gold`, 'loot', s.player.x, 3.0, s.player.z);
@@ -354,11 +364,11 @@ export class Hud {
     setTimeout(() => {
       this.unlockQueue = Math.max(0, this.unlockQueue - 1);
       this.popBanner(this.unlockBanner, `NEW ABILITY:  ${a.name}`);
-      this.unlockBanner.dataset.sub = `Press ${slot + 1}  -  ${a.desc}`;
+      this.unlockBanner.dataset.sub = `Press ${keyLabel(slot)}  -  ${a.desc}`;
       this.slots[slot].root.classList.add('fresh');
       setTimeout(() => this.slots[slot].root.classList.remove('fresh'), UNLOCK_GLOW_MS);
     }, at);
-    this.note(`New ability unlocked: ${a.name} (press ${slot + 1})`, 'log-lvl');
+    this.note(`New ability unlocked: ${a.name} (press ${keyLabel(slot)})`, 'log-lvl');
   }
 
   /** An enemy begins a wind-up: tell the player exactly what it is and what answers it. */
@@ -369,10 +379,10 @@ export class Hud {
     const name = castName(def, ev.kind);
     const canPummel = p.combat.level >= ABILITIES[PUMMEL].unlockLevel;
     const answer = ev.kind === 'ground'
-      ? (canPummel ? `Pummel it (${PUMMEL + 1}), or keep moving: it lands where you stood.` : 'Keep moving: it lands where you stood.')
+      ? (canPummel ? `Pummel it (${keyLabel(PUMMEL)}), or keep moving: it lands where you stood.` : 'Keep moving: it lands where you stood.')
       : ev.kind === 'heavy'
-      ? (canPummel ? `Pummel it (${PUMMEL + 1}) or step out of the circle!` : 'Step out of the circle!')
-      : (canPummel ? `Pummel it (${PUMMEL + 1}) or break line of fire!` : 'Close in and strike it down!');
+      ? (canPummel ? `Pummel it (${keyLabel(PUMMEL)}) or step out of the circle!` : 'Step out of the circle!')
+      : (canPummel ? `Pummel it (${keyLabel(PUMMEL)}) or break line of fire!` : 'Close in and strike it down!');
     this.warn.textContent = `${name.toUpperCase()}  -  ${answer}`;
     this.warn.style.animationDuration = `${ev.windup + 0.5}s`;
     this.warn.classList.remove('show');
@@ -443,7 +453,8 @@ export class Hud {
       slot.sweep.style.background = frac > 0
         ? `conic-gradient(rgba(0,0,0,0.65) ${frac * 360}deg, transparent 0)` : 'none';
       slot.cdText.textContent = cd > 0.05 ? (cd >= 10 ? String(Math.ceil(cd)) : cd.toFixed(1)) : '';
-      const locked = p.combat.level < a.unlockLevel;
+      const locked = !abilityOpen(p, i);
+      slot.lockText.textContent = p.combat.level >= a.unlockLevel ? 'Trainer' : `Lv ${a.unlockLevel}`; // level reached but locked: it is for sale
       slot.root.classList.toggle('locked', locked);
       slot.lock.style.display = locked ? 'flex' : 'none';
       const noEnergy = !locked && p.energy < costOf(p, i);

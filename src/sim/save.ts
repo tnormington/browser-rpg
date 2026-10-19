@@ -8,6 +8,7 @@ import { INVENTORY_SIZE, refreshGearStats } from './inventory';
 import { EQUIP_SLOTS, ITEMS } from './items';
 import { refreshPlayerStats } from './combat';
 import { BUFFS } from './consumables';
+import { ABILITIES, PLAYER_SPAWN } from './data';
 import { QUEST2_STAGES, QUEST3_STAGES, QUEST_STAGES, Quest2Stage, Quest3Stage, QuestStage } from './quest';
 import { legalTalents, refreshTalents, talentById } from './talents';
 import { nearestTown, resolveCollisions } from './world';
@@ -30,6 +31,7 @@ interface SaveFile {
     inventory: ({ id: string; qty: number } | null)[];
     equipment: Record<string, string | null>;
     talents?: Record<string, number>; // absent in saves from before the trees: nobody had spent a point
+    learned?: string[];               // trainer abilities bought; absent in saves from before the trainer
     gold?: number;                    // absent in saves from before the economy: nobody had any
     buffs?: { id: string; left: number }[]; // absent in saves from before cooking: nobody was Well Fed
   };
@@ -59,6 +61,7 @@ export function serialize(s: GameState): string {
       talents: { ...p.talents },
       gold: p.gold,
       buffs: p.buffs.map(b => ({ id: b.id, left: b.left })),
+      learned: [...p.learned],
     },
     found: [...s.found],
     quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second, third: s.quest.third },
@@ -118,6 +121,13 @@ export function deserialize(raw: string): GameState | null {
         p.talents[id] = num(n, 1, def.ranks, `talent.${id}`);
       }
       if (!legalTalents(p.talents, levelForXp(p.combat.xp))) throw new Error('impossible talent build');
+    }
+    if (fp.learned !== undefined) {
+      if (!Array.isArray(fp.learned)) return null;
+      for (const n of fp.learned) {
+        if (!ABILITIES.some(a => a.name === n && a.trainer)) throw new Error('bad learned ability');
+        if (!p.learned.includes(n)) p.learned.push(n);
+      }
     }
     if (fp.gold !== undefined) p.gold = num(fp.gold, 0, MAX_GOLD, 'gold');
     if (fp.buffs !== undefined) {
