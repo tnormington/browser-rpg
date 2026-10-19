@@ -59,12 +59,63 @@ export const SLOTS = {
 } satisfies Record<string, SlotDef>;
 export type SlotId = keyof typeof SLOTS;
 
+/**
+ * Faces meeting at a shallower angle than this shade as one continuous surface; anything sharper keeps a hard edge.
+ * 70 degrees rounds off the curvature the pack authored as facets while leaving real corners (a 90-degree box edge,
+ * the rim of a shield) crisp.
+ */
+const CREASE = Math.cos(70 * Math.PI / 180);
+
+/**
+ * Rewrite a geometry's normals so it shades smoothly: each corner takes the average of the faces meeting at its
+ * position that lie within CREASE of its own face. Only the normal attribute is replaced, so the index, the material
+ * groups and the skinning attributes all survive — three's `toCreasedNormals` re-indexes and throws those away. The
+ * pack ships everything flat-shaded (one vertex per face, no sharing), so every corner already has its own normal
+ * slot to write into and hard edges stay hard.
+ */
+export function smoothNormals(g: THREE.BufferGeometry) {
+  const pos = g.getAttribute('position'), idx = g.index;
+  const corners = idx ? idx.count : pos.count, faces = Math.floor(corners / 3);
+  const vertexAt = (corner: number) => (idx ? idx.getX(corner) : corner);
+  const faceNormals = new Float32Array(faces * 3);
+  const touching = new Map<string, number[]>(); // quantised position -> the faces meeting there
+  const keys = new Array<string>(corners);      // per corner, so the second pass need not re-quantise
+  const tri = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()], n = new THREE.Vector3(), e = new THREE.Vector3();
+
+  for (let f = 0; f < faces; f++) {
+    for (let k = 0; k < 3; k++) tri[k].fromBufferAttribute(pos, vertexAt(f * 3 + k));
+    n.subVectors(tri[1], tri[0]).cross(e.subVectors(tri[2], tri[0]));
+    if (n.lengthSq() === 0) n.set(0, 1, 0); // a degenerate triangle has no direction of its own
+    n.normalize().toArray(faceNormals, f * 3);
+    for (let k = 0; k < 3; k++) {
+      const v = tri[k], key = keys[f * 3 + k] = `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
+      let at = touching.get(key);
+      if (!at) touching.set(key, at = []);
+      at.push(f);
+    }
+  }
+
+  const out = new Float32Array(pos.count * 3), sum = new THREE.Vector3();
+  for (let f = 0; f < faces; f++) {
+    n.fromArray(faceNormals, f * 3);
+    for (let k = 0; k < 3; k++) {
+      sum.set(0, 0, 0);
+      for (const o of touching.get(keys[f * 3 + k])!) {
+        e.fromArray(faceNormals, o * 3);
+        if (e.dot(n) > CREASE) sum.add(e);
+      }
+      (sum.lengthSq() ? sum.normalize() : n).toArray(out, vertexAt(f * 3 + k) * 3);
+    }
+  }
+  g.setAttribute('normal', new THREE.BufferAttribute(out, 3));
+}
+
 const hsl = { h: 0, s: 0, l: 0 };
 function restyle(src: THREE.MeshStandardMaterial, def: SlotDef): THREE.MeshStandardMaterial {
   const named = def.look.named?.[src.name];
   const m = new THREE.MeshStandardMaterial({
     map: named === undefined ? src.map : null, // a hard colour replaces the pack's texture too (the anvil's stock texture is lime green)
-    vertexColors: !!src.vertexColors, roughness: def.roughness ?? 0.85, metalness: def.metal ?? 0.05, flatShading: true,
+    vertexColors: !!src.vertexColors, roughness: def.roughness ?? 0.85, metalness: def.metal ?? 0.05,
   });
   if (named !== undefined) m.color.setHex(named);
   else {
@@ -142,6 +193,9 @@ async function load(id: SlotId): Promise<Prepared> {
   const meshes: THREE.Mesh[] = [];
   let skinned = false;
   root.traverse(o => { if ((o as THREE.Mesh).isMesh) { meshes.push(o as THREE.Mesh); skinned ||= (o as THREE.SkinnedMesh).isSkinnedMesh; } });
+  // before anything splits or merges: the legs share the body's attributes, so the seam only shades smoothly if both
+  // sides were normalled while they were still one surface
+  for (const m of meshes) smoothNormals(m.geometry);
   if (def.splitLegs) for (const m of [...meshes]) {
     if ((m as THREE.SkinnedMesh).isSkinnedMesh && (m.material as THREE.Material).name === 'Armor') {
       const legs = splitLegs(m as THREE.SkinnedMesh);

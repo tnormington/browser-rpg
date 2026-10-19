@@ -51,7 +51,7 @@ const EMITTER_DIFFUSE = 0.15;
 
 const material = (color: number, cls: MatClass): Mat => {
   const [roughness, metalness] = MATERIALS[cls];
-  const m = new THREE.MeshStandardMaterial({ color, roughness, metalness, flatShading: true });
+  const m = new THREE.MeshStandardMaterial({ color, roughness, metalness });
   // glow: a lit emitter, self-lit and capped under the bloom threshold (glow.ts). beacon: a thin marker meant to cross it and bloom.
   if (cls === 'glow' || cls === 'beacon') { m.emissive.setHex(color); m.emissiveIntensity = cls === 'beacon' ? BEACON_INTENSITY : cappedIntensity(color, BEACON_INTENSITY); }
   if (cls === 'glow') m.color.multiplyScalar(EMITTER_DIFFUSE); // an emitter shows its own light, not the room's: a light parked beside it would otherwise wash it to white
@@ -203,7 +203,7 @@ export class Renderer {
     this.setupRim();
     this.setupSun();
 
-    this.ground = this.facetedGround();
+    this.ground = this.tintedGround();
     this.scene.add(this.ground);
     this.buildZone();
     this.rings = new Rings(this.scene);
@@ -308,21 +308,21 @@ export class Renderer {
     this.scene.add(rim);
   }
 
-  /** Ground as a coarse mesh of flat, individually tinted triangles: the cheapest way to make a plane read as low poly. */
-  private facetedGround() {
+  /** Ground as a coarse mesh tinted per vertex: the grid stays indexed so the tint washes across it instead of tiling it into triangles. */
+  private tintedGround() {
     const segs = Math.min(Math.round(WORLD_HALF * 2 / 3), 90);
-    const g = new THREE.PlaneGeometry(WORLD_HALF * 2, WORLD_HALF * 2, segs, segs).rotateX(-Math.PI / 2).toNonIndexed();
+    const g = new THREE.PlaneGeometry(WORLD_HALF * 2, WORLD_HALF * 2, segs, segs).rotateX(-Math.PI / 2);
     const a = new THREE.Color(P.grass), b = new THREE.Color(P.grassAlt), c = new THREE.Color();
-    const col = new Float32Array(g.attributes.position.count * 3);
-    const clr = LANDMARKS.clearing, da = new THREE.Color(P.dirt), db = new THREE.Color(P.dirtAlt), pos = g.attributes.position;
-    for (let t = 0; t < col.length / 9; t++) {
-      const r = Math.abs(Math.sin(t * 12.9898) * 43758.5453) % 1; // deterministic per-triangle jitter, no rng state touched
+    const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
+    const clr = LANDMARKS.clearing, da = new THREE.Color(P.dirt), db = new THREE.Color(P.dirtAlt), dirt = new THREE.Color();
+    for (let v = 0; v < pos.count; v++) {
+      const x = pos.getX(v), z = pos.getZ(v);
+      const r = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1; // deterministic per-vertex jitter, no rng state touched
       c.copy(a).lerp(b, r);
-      // the clearing is the same faceted ground, tinted toward bare earth: no separate slab, so no hard straight edge
-      const cx = (pos.getX(t * 3) + pos.getX(t * 3 + 1) + pos.getX(t * 3 + 2)) / 3, cz = (pos.getZ(t * 3) + pos.getZ(t * 3 + 1) + pos.getZ(t * 3 + 2)) / 3;
-      const k = THREE.MathUtils.clamp((clr.r + 1.5 - Math.hypot(cx - clr.x, cz - clr.z)) / 3, 0, 1);
-      if (k > 0) c.lerp(new THREE.Color().copy(da).lerp(db, r), k);
-      for (let v = 0; v < 3; v++) c.toArray(col, t * 9 + v * 3);
+      // the clearing is the same ground, tinted toward bare earth: no separate slab, so no hard straight edge
+      const k = THREE.MathUtils.clamp((clr.r + 1.5 - Math.hypot(x - clr.x, z - clr.z)) / 3, 0, 1);
+      if (k > 0) c.lerp(dirt.copy(da).lerp(db, r), k);
+      c.toArray(col, v * 3);
     }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     const m = mesh(g, 0xffffff, 'ground', 'receive');
@@ -379,7 +379,7 @@ export class Renderer {
 
   /** Everything inside the cave that is not a rock model: floor, wall rock, standing stones, braziers and the lights they carry. */
   private buildCave() {
-    this.caveFloor = this.facetedFloor();
+    this.caveFloor = this.tintedFloor();
     this.scene.add(this.caveFloor);
 
     // wall rock hangs on the sim's wall points, pushed out of the room so the walkable floor stays clear; one instanced draw
@@ -443,17 +443,17 @@ export class Renderer {
     this.scene.add(im);
   }
 
-  /** The cave floor: the rooms as flat tinted triangles like the outdoor ground, each room a hair above the last so overlaps do not shimmer. One draw. */
-  private facetedFloor() {
+  /** The cave floor: the rooms tinted per vertex like the outdoor ground, each room a hair above the last so overlaps do not shimmer. One draw. */
+  private tintedFloor() {
     const a = new THREE.Color(P.caveFloor), b = new THREE.Color(P.caveFloorAlt), c = new THREE.Color();
     const rooms = CAVE_ROOMS.map(({ rect: r }, i) => {
       const w = r.x1 - r.x0, d = r.z1 - r.z0;
       const g = new THREE.PlaneGeometry(w, d, Math.max(1, Math.round(w / 3)), Math.max(1, Math.round(d / 3))).rotateX(-Math.PI / 2)
-        .translate((r.x0 + r.x1) / 2, 0.02 * (i + 1), (r.z0 + r.z1) / 2).toNonIndexed();
-      const col = new Float32Array(g.attributes.position.count * 3);
-      for (let t = 0; t < col.length / 9; t++) {
-        c.copy(a).lerp(b, Math.abs(Math.sin((t + i * 977) * 12.9898) * 43758.5453) % 1);
-        for (let v = 0; v < 3; v++) c.toArray(col, t * 9 + v * 3);
+        .translate((r.x0 + r.x1) / 2, 0.02 * (i + 1), (r.z0 + r.z1) / 2);
+      const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
+      for (let v = 0; v < pos.count; v++) {
+        c.copy(a).lerp(b, Math.abs(Math.sin(pos.getX(v) * 12.9898 + pos.getZ(v) * 78.233 + i * 977) * 43758.5453) % 1);
+        c.toArray(col, v * 3);
       }
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       return g;
