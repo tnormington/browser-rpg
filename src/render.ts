@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
-import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, inCave, regionAt } from './sim/world';
+import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, dungeonAt, inCave, regionAt } from './sim/world';
 import { ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NODE_TYPES } from './sim/gathering';
@@ -116,6 +116,16 @@ const MITHRIL_LIGHT = { x: -27.8, y: 2.2, z: -48, intensity: 38, distance: 11 };
 const BRAZIER_LIGHT = { intensity: 260, distance: 24, y: 5.8 };
 /** Braziers that burn in the cave: the hall's big one carries a real light, the others are lit geometry only (the frame budget has room for few lights). */
 const BRAZIERS = [{ x: -16.4, z: -38, s: 0.8 }, { x: -30.8, z: -60, s: 1 }, { x: -7.2, z: -63, s: 1 }, { x: -18, z: -76.5, s: 1.7, light: true }];
+
+/**
+ * The Drowned Grotto (bible 1.2): a wrecked ship's belly in a sea-cave, flooded. Wet teal-slate floor under standing water, barnacle-pale walls, the
+ * ship's own ribs and cargo, and cold green-teal lantern light: a different dark from the Hollow's blue one. A real light in each room.
+ */
+const GROTTO = {
+  floor: 0x26403f, floorAlt: 0x305250, wall: new THREE.Color(0.78, 1, 0.95), water: 0x2f6e74, timber: 0x6a5a48, lantern: 0x58d8c8,
+  fog: new THREE.Color(0x04100f), light: { color: 0x58d8c8, intensity: 150, distance: 22, y: 5.2 },
+};
+const FLOORS: Record<string, [number, number]> = { hollow: [P.caveFloor, P.caveFloorAlt], grotto: [GROTTO.floor, GROTTO.floorAlt] };
 
 /**
  * Arcane crystal clusters: the cold emissive accents the art direction asks for (docs/art-direction.md), small bright shapes against large
@@ -233,6 +243,7 @@ export class Renderer {
   private mithrilLight!: THREE.PointLight;
   private hallLight?: THREE.PointLight;
   private caveFogColor = new THREE.Color(CAVE_LIGHT.fog.color);
+  private caveFogHollow = new THREE.Color(CAVE_LIGHT.fog.color);
   /** 0..1: how much of the mithril seam is still standing, so the cold light goes out with the last vein. */
   private veinGlow = 1;
   private npcGroup!: THREE.Group;
@@ -542,6 +553,56 @@ export class Renderer {
     this.mithrilLight = new THREE.PointLight(P.arcane, 0, MITHRIL_LIGHT.distance);
     this.mithrilLight.position.set(MITHRIL_LIGHT.x, MITHRIL_LIGHT.y, MITHRIL_LIGHT.z);
     this.scene.add(this.lantern, this.mithrilLight);
+    this.buildGrotto();
+  }
+
+  /** The Grotto's own dressing, one merged draw each for standing water, timber and lantern glass, and a light in each room. */
+  private buildGrotto() {
+    const rooms = CAVE_ROOMS.filter(r => r.dungeon === 'grotto');
+    const water: THREE.BufferGeometry[] = [], timber: THREE.BufferGeometry[] = [], glass: THREE.BufferGeometry[] = [];
+    let n = 0;
+    const rnd = () => this.jitter(500 + n++);
+    for (const { rect: r, name } of rooms) {
+      const w = r.x1 - r.x0, d = r.z1 - r.z0, cx = (r.x0 + r.x1) / 2, cz = (r.z0 + r.z1) / 2;
+      // standing water: shallow, wide, overlapping sheets, kept off the doorways at the room's ends
+      for (let i = 0; i < Math.round(d / 4); i++) {
+        const rad = 2 + rnd() * 2.2;
+        water.push(new THREE.CircleGeometry(rad, 12).rotateX(-Math.PI / 2).scale(1 + rnd(), 1, 0.8 + rnd() * 0.5)
+          .translate(cx + (rnd() - 0.5) * (w - 2), 0.07, r.z0 + 4 + rnd() * (d - 8)));
+      }
+      // the ship's ribs: arches rising from each wall and curving in, a lantern hung at the tip of every third
+      const R = Math.min(5, w * 0.45);
+      for (let z = r.z0 + 3, i = 0; z < r.z1 - 2; z += 5, i++) {
+        const arc = new THREE.TorusGeometry(R, 0.17, 5, 10, Math.PI * 0.42);
+        for (const side of [1, -1] as const) {
+          const rib = arc.clone();
+          if (side < 0) rib.rotateY(Math.PI);
+          timber.push(rib.translate(side > 0 ? r.x1 - R : r.x0 + R, 0, z + (rnd() - 0.5) * 0.6));
+          if ((i + (side > 0 ? 1 : 0)) % 3 === 0) {
+            const tip = { x: (side > 0 ? r.x1 - R : r.x0 + R) + side * R * Math.cos(Math.PI * 0.42), y: R * Math.sin(Math.PI * 0.42) };
+            glass.push(new THREE.OctahedronGeometry(0.28).scale(1, 1.4, 1).translate(tip.x, tip.y - 0.5, z));
+            timber.push(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 4).translate(tip.x, tip.y - 0.1, z));
+          }
+        }
+      }
+      // cargo, against the walls of the two big rooms: crates and barrels
+      if (name !== 'gangway') for (let i = 0; i < 6; i++) {
+        const side = i % 2 ? 1 : -1, x = side > 0 ? r.x1 - 1.4 - rnd() : r.x0 + 1.4 + rnd(), z = r.z0 + 3 + rnd() * (d - 6);
+        timber.push(i % 3 === 0
+          ? new THREE.CylinderGeometry(0.5, 0.55, 1.1, 7).translate(x, 0.55, z)
+          : new THREE.BoxGeometry(1, 0.9, 1).rotateY(rnd() * 3).scale(0.8 + rnd() * 0.5, 1, 0.8 + rnd() * 0.5).translate(x, 0.45, z));
+      }
+    }
+    const sheet = mesh(mergeGeometries(water)!, GROTTO.water, 'ground', 'receive');
+    const wm = sheet.material as Mat;
+    Object.assign(wm, { transparent: true, opacity: 0.62, roughness: 0.18, metalness: 0.1, depthWrite: false });
+    this.scene.add(sheet, mesh(mergeGeometries(timber)!, GROTTO.timber, 'wood', 'cast'), mesh(mergeGeometries(glass)!, GROTTO.lantern, 'glow', 'none'));
+    // lights, always present at their rooms (never added or removed): they only reach what is within their distance
+    for (const room of rooms) {
+      const l = new THREE.PointLight(GROTTO.light.color, GROTTO.light.intensity * (room.name === 'gangway' ? 0.5 : 1), GROTTO.light.distance);
+      l.position.set((room.rect.x0 + room.rect.x1) / 2, GROTTO.light.y, (room.rect.z0 + room.rect.z1) / 2);
+      this.scene.add(l);
+    }
   }
 
   /** (Re)build the wall rock from a geometry whose footprint is `unit` wide: the primitive first, the model once it loads. */
@@ -551,7 +612,8 @@ export class Renderer {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(), pos = new THREE.Vector3();
     this.caveWallPts.forEach((p, i) => {
       const s = p.w / unit;
-      im.setColorAt(i, shade.setScalar(THREE.MathUtils.lerp(1, 0.3, THREE.MathUtils.clamp((-p.z - 30) / 10, 0, 1)))); // the rock goes dark past the threshold, so the way in reads as a way in
+      // the Hollow's rock goes dark past the threshold, so the way in reads as a way in; the Grotto's stays pale with barnacle, the one thing the lantern can find
+      im.setColorAt(i, dungeonAt(p.x, p.z)?.id === 'grotto' ? shade.copy(GROTTO.wall) : shade.setScalar(THREE.MathUtils.lerp(1, 0.3, THREE.MathUtils.clamp((-p.z - 30) / 10, 0, 1))));
       im.setMatrixAt(i, m.compose(pos.set(p.x, -0.2, p.z), q.setFromAxisAngle(up, p.r * 40), sc.set(s, s * WALL_HEIGHT, s)));
     });
     im.castShadow = im.receiveShadow = true;
@@ -561,8 +623,9 @@ export class Renderer {
 
   /** The cave floor: the rooms tinted per vertex like the outdoor ground, each room a hair above the last so overlaps do not shimmer. One draw. */
   private tintedFloor() {
-    const a = new THREE.Color(P.caveFloor), b = new THREE.Color(P.caveFloorAlt), c = new THREE.Color();
-    const rooms = CAVE_ROOMS.map(({ rect: r }, i) => {
+    const a = new THREE.Color(), b = new THREE.Color(), c = new THREE.Color();
+    const rooms = CAVE_ROOMS.map(({ rect: r, dungeon }, i) => {
+      a.setHex(FLOORS[dungeon][0]); b.setHex(FLOORS[dungeon][1]);
       const w = r.x1 - r.x0, d = r.z1 - r.z0;
       const g = new THREE.PlaneGeometry(w, d, Math.max(1, Math.round(w / 3)), Math.max(1, Math.round(d / 3))).rotateX(-Math.PI / 2)
         .translate((r.x0 + r.x1) / 2, 0.02 * (i + 1), (r.z0 + r.z1) / 2);
@@ -598,6 +661,7 @@ export class Renderer {
     this.scene.environmentIntensity = mix(DAY.env * w.env, CAVE_LIGHT.env, depth);
     const fog = this.scene.fog as THREE.Fog;
     const air = this.zoneAir(x, z);
+    this.caveFogColor.lerp(dungeonAt(x, z)?.id === 'grotto' ? GROTTO.fog : this.caveFogHollow, 0.05); // the Grotto's dark is green-black, the Hollow's blue-black
     fog.color.setHex(P.horizon).lerp(this.fogLift, w.lift).lerp(FEN_AIR.color, air.fen * 0.5).lerp(WOOD_AIR.color, air.wood * 0.4).lerp(this.caveFogColor, depth);
     fog.near = mix(w.fogNear + air.fen * 2 - air.wood * 2, CAVE_LIGHT.fog.near, depth);
     fog.far = mix(w.fogFar + air.fen * 10 - air.wood * 7, CAVE_LIGHT.fog.far, depth);
