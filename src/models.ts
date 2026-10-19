@@ -51,7 +51,7 @@ export const SLOTS = {
   coalRock: { file: 'rock3', footprint: 2.6, look: { sat: 0.5, light: 1.0, named: { Rock: 0x2f3036 } } },
   caveRock: { file: 'rock2', footprint: 6.4, look: { sat: 0.5, light: 1.5, named: { Rock: 0x4b525b } } },
   boulder: { file: 'rock6', footprint: 3.6, look: { sat: 0.5, light: 1.5, named: { Rock: 0x454b53 } } },
-  forge: { file: 'blacksmith', footprint: 5.2, look: { sat: 0.45, light: 2.2 } },
+  forge: { file: 'blacksmith', footprint: 5.2, look: { sat: 0.45, light: 1.0 } },
   anvil: { file: 'anvil', height: 0.9, look: { sat: 0.3, light: 0.5, named: { MI_Trim_Metal: 0x2a2c33 } }, metal: 0.6, roughness: 0.5 },
   helmet: { file: 'helmet', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794, DarkGrey: 0x4a525c } } },
   pauldrons: { file: 'pauldrons', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794 } } },
@@ -61,10 +61,10 @@ export type SlotId = keyof typeof SLOTS;
 
 /**
  * Faces meeting at a shallower angle than this shade as one continuous surface; anything sharper keeps a hard edge.
- * 70 degrees rounds off the curvature the pack authored as facets while leaving real corners (a 90-degree box edge,
- * the rim of a shield) crisp.
+ * 45 degrees rounds off the curvature the pack authored as facets on a body while leaving armour plates, belts and
+ * corners crisp. Only skinned (organic) slots are smoothed: rock, trees, buildings and gear plates keep their facets.
  */
-const CREASE = Math.cos(70 * Math.PI / 180);
+const CREASE = Math.cos(45 * Math.PI / 180);
 
 /**
  * Rewrite a geometry's normals so it shades smoothly: each corner takes the average of the faces meeting at its
@@ -111,11 +111,11 @@ export function smoothNormals(g: THREE.BufferGeometry) {
 }
 
 const hsl = { h: 0, s: 0, l: 0 };
-function restyle(src: THREE.MeshStandardMaterial, def: SlotDef): THREE.MeshStandardMaterial {
+function restyle(src: THREE.MeshStandardMaterial, def: SlotDef, soft: boolean): THREE.MeshStandardMaterial {
   const named = def.look.named?.[src.name];
   const m = new THREE.MeshStandardMaterial({
     map: named === undefined ? src.map : null, // a hard colour replaces the pack's texture too (the anvil's stock texture is lime green)
-    vertexColors: !!src.vertexColors, roughness: def.roughness ?? 0.85, metalness: def.metal ?? 0.05,
+    vertexColors: !!src.vertexColors, roughness: def.roughness ?? 0.85, metalness: def.metal ?? 0.05, flatShading: !soft,
   });
   if (named !== undefined) m.color.setHex(named);
   else {
@@ -195,7 +195,7 @@ async function load(id: SlotId): Promise<Prepared> {
   root.traverse(o => { if ((o as THREE.Mesh).isMesh) { meshes.push(o as THREE.Mesh); skinned ||= (o as THREE.SkinnedMesh).isSkinnedMesh; } });
   // before anything splits or merges: the legs share the body's attributes, so the seam only shades smoothly if both
   // sides were normalled while they were still one surface
-  for (const m of meshes) smoothNormals(m.geometry);
+  if (skinned) for (const m of meshes) smoothNormals(m.geometry);
   if (def.splitLegs) for (const m of [...meshes]) {
     if ((m as THREE.SkinnedMesh).isSkinnedMesh && (m.material as THREE.Material).name === 'Armor') {
       const legs = splitLegs(m as THREE.SkinnedMesh);
@@ -203,7 +203,7 @@ async function load(id: SlotId): Promise<Prepared> {
     }
   }
   const mats = new Map<THREE.Material, THREE.MeshStandardMaterial>();
-  const styled = (m: THREE.Material) => { let s = mats.get(m); if (!s) { s = restyle(m as THREE.MeshStandardMaterial, def); mats.set(m, s); } return s; };
+  const styled = (m: THREE.Material) => { let s = mats.get(m); if (!s) { s = restyle(m as THREE.MeshStandardMaterial, def, skinned); mats.set(m, s); } return s; };
 
   let geometry: THREE.BufferGeometry | undefined;
   let materials: THREE.MeshStandardMaterial[];

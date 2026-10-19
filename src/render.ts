@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
-import { CAVE_MOUTH, CAVE_ROCKS, CAVE_PILLARS, CAVE_ROOMS, caveDepth, caveWallPoints, clampToWorld, inCave } from './sim/world';
+import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, caveDepth, caveWallPoints, clampToWorld, inCave } from './sim/world';
 import { ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NPC, npcMarker as markerOf } from './sim/quest';
@@ -35,7 +35,7 @@ const PALETTE = {
   blood: 0xd02424, bloodDark: 0x701010, bloodLight: 0xff7a5a,
   arcane: 0x6ad8ff, arcaneLight: 0xc4efff, violet: 0xb070ff, heal: 0x5affd0,
   // atmosphere
-  moon: 0xa9b8cc, rim: 0x6d8aa8, skyZenith: 0x10141c, skyMid: 0x232c38, horizon: 0x3b4a5c, skyGround: 0x161b22, hemiSky: 0x5a6a82, hemiGround: 0x232a33,
+  moon: 0xa9b8cc, rim: 0x6d8aa8, skyZenith: 0x07090d, skyMid: 0x141a22, horizon: 0x222c38, skyGround: 0x0c0f13, hemiSky: 0x4a5a74, hemiGround: 0x161b22,
   ash: 0xa8a49a, smoke: [0xbbbbbb, 0x888888] as number[],
 } as const;
 const P = PALETTE;
@@ -48,10 +48,12 @@ const MATERIALS = {
 } as const;
 type MatClass = keyof typeof MATERIALS;
 const EMITTER_DIFFUSE = 0.15;
+/** Hard surfaces keep their facets (docs/art-direction.md): big planes catching the key light is what makes rock read as rock. Everything organic shades smooth. */
+const FACETED = new Set<MatClass>(['rock', 'stone', 'foliage', 'ore', 'coal', 'gem']);
 
 const material = (color: number, cls: MatClass): Mat => {
   const [roughness, metalness] = MATERIALS[cls];
-  const m = new THREE.MeshStandardMaterial({ color, roughness, metalness });
+  const m = new THREE.MeshStandardMaterial({ color, roughness, metalness, flatShading: FACETED.has(cls) });
   // glow: a lit emitter, self-lit and capped under the bloom threshold (glow.ts). beacon: a thin marker meant to cross it and bloom.
   if (cls === 'glow' || cls === 'beacon') { m.emissive.setHex(color); m.emissiveIntensity = cls === 'beacon' ? BEACON_INTENSITY : cappedIntensity(color, BEACON_INTENSITY); }
   if (cls === 'glow') m.color.multiplyScalar(EMITTER_DIFFUSE); // an emitter shows its own light, not the room's: a light parked beside it would otherwise wash it to white
@@ -76,14 +78,14 @@ const SHADOW_EXTENT = 28, SHADOW_MAP = 2048;
  */
 const HOSTILE_TINT = 0x2c0e08;
 const RING_OPACITY = 0.42;
-const FOG = { near: 8, far: 46 };
+const FOG = { near: 6, far: 42 };
 /** Actors past this camera distance are not drawn or animated. Strictly beyond FOG.far, where fog is already 100%: nothing still meant to be visible is culled. */
 const FOG_CULL = FOG.far + 8;
 /** The Warden's arcane gem floats just above his right fist (glTF loading strips the dot from "Fist.R"), carried by the bone. */
 const GEM_HAND = 'FistR', GEM_LIFT = 0.4;
 /** Furnace core emissive: hot enough to bloom orange, not so hot it clips to a white hole and washes out the building. */
 const FURNACE_GLOW = 1.3;
-const FORGE_LIGHT = { intensity: 120, distance: 24, y: 1.2 };
+const FORGE_LIGHT = { intensity: 100, distance: 28, y: 1.2 };
 
 /**
  * Lighting at full cave depth (caveDepth = 1). Sun, hemisphere, sky-ambient and sky all drop to a trace and the fog closes in and goes
@@ -92,15 +94,27 @@ const FORGE_LIGHT = { intensity: 120, distance: 24, y: 1.2 };
 const CAVE_LIGHT = {
   sun: 0.03, rim: 0.05, hemi: 0.6, env: 0.2, sky: 0,
   fog: { color: 0x05070b, near: 3, far: 32 },
-  lantern: { color: 0x8fb0e0, intensity: 60, distance: 18, y: 4.2 },
+  lantern: { color: 0x8fb0e0, intensity: 65, distance: 18, y: 4.2 },
 };
 /** Daylight values the cave lighting fades from (what the constructor sets up). */
-const DAY = { sun: 3, rim: 0.8, hemi: 0.85, env: 1, sky: 1 };
+const DAY = { sun: 4.4, rim: 1.5, hemi: 0.4, env: 0.4, sky: 1 };
 const MITHRIL_LIGHT = { x: -27.8, y: 2.2, z: -48, intensity: 38, distance: 11 };
 /** Held above the flame (the 1.7x brazier's flame tops out near y 3.4): a light inside or beside a prop bloomed the prop to white. See glow.ts minLightDistance. */
 const BRAZIER_LIGHT = { intensity: 260, distance: 24, y: 5.8 };
 /** Braziers that burn in the cave: the hall's big one carries a real light, the others are lit geometry only (the frame budget has room for few lights). */
 const BRAZIERS = [{ x: -16.4, z: -38, s: 0.8 }, { x: -30.8, z: -60, s: 1 }, { x: -7.2, z: -63, s: 1 }, { x: -18, z: -76.5, s: 1.7, light: true }];
+
+/**
+ * Arcane crystal clusters: the cold emissive accents the art direction asks for (docs/art-direction.md), small bright shapes against large
+ * dark ones. Decorative, one merged draw, no light of their own. Outdoors they mark the clearing's rim and the way to the cave; in the cave they
+ * are the only cold light off the player's lantern.
+ */
+/** Glow sits under the beacon's 3: lit blue, not a white hole. */
+const CRYSTAL_COLOR = 0x2f7fe0, CRYSTAL_GLOW = 1.4, CRYSTAL_SHARDS = 4, CRYSTAL_CLEARANCE = 0.8;
+const CRYSTALS = [
+  { x: -10, z: -6, s: 1 }, { x: 11, z: 9, s: 0.8 }, { x: -6, z: 12, s: 1.1 }, { x: 14, z: -15, s: 0.9 }, { x: -24, z: -17, s: 1.2 }, { x: -11.5, z: -19, s: 0.9 },
+  { x: -19.5, z: -33, s: 1 }, { x: -29, z: -48, s: 1.3 }, { x: -8, z: -45, s: 1.1 }, { x: -25, z: -62, s: 1 }, { x: -9.5, z: -82, s: 1.2 }, { x: -26, z: -74, s: 0.9 },
+];
 
 /** Enemy type -> the model slot that draws it: cave enemies are existing rigs (`look.model`), everyone else draws as itself. */
 const slotOf = (type: string): SlotId => (ENEMY_TYPES[type].look?.model ?? type) as SlotId;
@@ -282,7 +296,7 @@ export class Renderer {
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     const rt = pmrem.fromScene(skyScene);
     this.scene.environment = this.scene.background = rt.texture;
-    this.scene.environmentIntensity = 1.0;
+    this.scene.environmentIntensity = DAY.env;
     this.scene.backgroundIntensity = 1.0;
     pmrem.dispose();
   }
@@ -330,6 +344,24 @@ export class Renderer {
     return m;
   }
 
+  private buildCrystals() {
+    const shards: THREE.BufferGeometry[] = [];
+    // deterministic scatter, no rng state touched: a cluster is a tall centre shard and leaning companions
+    const hash = (n: number) => Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1;
+    CRYSTALS.forEach((c, i) => {
+      if (COLLIDERS.some(o => Math.hypot(o.x - c.x, o.z - c.z) < o.r + CRYSTAL_CLEARANCE)) return; // never grow out of a tree, rock or wall
+      for (let k = 0; k < CRYSTAL_SHARDS; k++) {
+        const h = (k === 0 ? 1.5 : 0.7 + hash(i * 7 + k) * 0.6) * c.s, a = hash(i * 31 + k) * Math.PI * 2, lean = k === 0 ? 0 : 0.25 + hash(i * 13 + k) * 0.3;
+        shards.push(new THREE.OctahedronGeometry(1).scale(0.22 * c.s, h / 2, 0.22 * c.s).translate(0, h / 2, 0).rotateZ(lean).rotateY(a).translate(c.x + (k ? Math.cos(a) * 0.35 * c.s : 0), 0, c.z + (k ? Math.sin(a) * 0.35 * c.s : 0)));
+      }
+    });
+    if (!shards.length) return;
+    const crystals = mesh(mergeGeometries(shards)!, CRYSTAL_COLOR, 'beacon', 'none');
+    (crystals.material as Mat).flatShading = true; // gems are faceted by design
+    (crystals.material as Mat).emissiveIntensity = CRYSTAL_GLOW;
+    this.scene.add(crystals);
+  }
+
   /** Re-centre the shadow frustum on the player, snapped to shadow-texel steps so shadows do not swim as it moves. */
   private followSun(x: number, z: number) {
     const dir = SUN_OFFSET.clone().normalize();
@@ -359,6 +391,7 @@ export class Renderer {
     for (const o of CAVE_MOUTH) this.caveRocks.push(add(mesh(new THREE.DodecahedronGeometry(o.r * 1.4), P.slate, 'rock'), o.x, o.r * 0.9, o.z) as THREE.Mesh);
     for (const t of MOUTH_TOPS) this.caveRocks.push(add(mesh(new THREE.DodecahedronGeometry(t.w / 2), P.slateDark, 'rock'), t.x, t.y + t.w * 0.2, t.z) as THREE.Mesh);
     this.buildCave();
+    this.buildCrystals();
 
     // boundary: ring of boulders along the edge
     for (let i = -WORLD_HALF; i <= WORLD_HALF; i += 3) {

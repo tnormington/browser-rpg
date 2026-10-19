@@ -105,14 +105,14 @@ export class PlayerGear {
   /** Per-piece material: `trim` is the darker secondary colour, the main tint carries the metal response. Neither glows: only inlays and the blade do, so plate is never lit all over. */
   private material(ap: Appearance, trim = false): THREE.MeshStandardMaterial {
     const m = new THREE.MeshStandardMaterial({
-      color: trim ? ap.trim : ap.tint, metalness: trim ? Math.min(ap.metal, 0.6) : ap.metal, roughness: trim ? Math.min(1, ap.rough + 0.15) : ap.rough,
+      color: trim ? ap.trim : ap.tint, metalness: trim ? Math.min(ap.metal, 0.6) : ap.metal, roughness: trim ? Math.min(1, ap.rough + 0.15) : ap.rough, flatShading: true,
     });
     return m;
   }
 
   /** A glowing inlay (vein, seam): the one place the tier's cold emissive lives on generated geometry, capped under the bloom threshold. */
   private inlay(ap: Appearance): THREE.MeshStandardMaterial {
-    const m = new THREE.MeshStandardMaterial({ color: ap.trim, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
+    const m = new THREE.MeshStandardMaterial({ color: ap.trim, metalness: 0.3, roughness: 0.4, flatShading: true, side: THREE.DoubleSide });
     m.emissive.setHex(ap.glow || 0); m.emissiveIntensity = ap.glow ? cappedIntensity(ap.glow, ap.glowI * 1.8) : 0;
     return m;
   }
