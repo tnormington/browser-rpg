@@ -19,7 +19,7 @@ import { holdAtGates } from './sim/gates';
 import { updateWithering } from './sim/hazards';
 import { PLAYER_RADIUS, clampToWorld, inCave, regionAt, resolveCollisions } from './sim/world';
 import { Pt, route } from './sim/path';
-import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
+import { ABILITIES, CastKind, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
 import {
   acquireFront, clearTarget, pressAbility, refreshPlayerStats, setTarget, tabTarget, toggleAutoAttack,
   updateEnemies, updatePlayerCombat, updatePlayerDeath,
@@ -53,11 +53,13 @@ export interface Enemy {
   swing: number;
   bleed: { ticks: number; timer: number; damage: number } | null;
   /** A wind-up in progress: the tell the player reads. Cleared by a Pummel, by dying, or when it lands. */
-  cast: { kind: 'heavy' | 'bolt' | 'ground'; t: number; total: number; x?: number; z?: number; radius?: number } | null;
+  cast: { kind: CastKind; t: number; total: number; x?: number; z?: number; radius?: number } | null;
   stagger: number;   // seconds left stunned after an interrupt: it does nothing
   heavyCd: number;   // seconds until the heavy attack may start again
   evadeFor: number;  // seconds spent walking home after giving up a chase: a walk that goes nowhere (rock in the way) ends in a reset
   hazardCd: number;  // seconds until the ground hazard may be marked again
+  netCd: number;     // seconds until the net may be thrown again
+  netRun: number;    // seconds left of the retreat a landed net bought it: the only time a shooter gives ground
 }
 
 /** One incoming hit remembered for the death recap. `at` is game seconds (tick * TICK_DT). */
@@ -99,6 +101,8 @@ export interface Player {
   food: { left: number; rate: number; pending: number } | null;
   foodCd: number;          // seconds until any food may be eaten again
   buffs: Buff[];           // timed effects (Well Fed), by BUFFS id: max health reads them, death clears them
+  /** Held where you stand by a net: no walking for `left` more seconds. Turning, swinging and casting are untouched. Transient, so a save never carries one. */
+  root: { left: number; total: number; name: string } | null;
 }
 
 export type GameEvent =
@@ -109,7 +113,8 @@ export type GameEvent =
   | { t: 'talent'; id: string; rank: number }          // a talent point was spent, and the rank it bought
   | { t: 'talentfail'; reason: TalentFail; id: string } // ...or could not be
   | { t: 'talentreset' }                               // every point handed back
-  | { t: 'telegraph'; id: number; kind: 'heavy' | 'bolt' | 'ground'; windup: number; x?: number; z?: number; radius?: number }  // an enemy starts a wind-up; a 'ground' one carries the spot it will land on
+  | { t: 'telegraph'; id: number; kind: CastKind; windup: number; x?: number; z?: number; radius?: number }  // an enemy starts a wind-up; a 'ground' one carries the spot it will land on
+  | { t: 'net'; id: number; x: number; z: number; name: string; duration: number }  // a net landed: the player is held where they stand for `duration`
   | { t: 'interrupt'; id: number; x: number; z: number }  // a Pummel landed on a wind-up
   | { t: 'blocked'; id: number; x: number; z: number }    // a ranged wind-up finished with rock in the way: the shot is wasted
   | { t: 'slam'; id: number; x: number; z: number; radius: number }  // a heavy attack resolved (hit or miss: the ground shakes either way)
@@ -214,7 +219,7 @@ export function createState(seed = 1): GameState {
       gcd: 0, cd: ABILITIES.map(() => 0), learned: [], unlocked: 1, queued: null, queuedOff: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
       skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), durability: {}, stats: deriveStats(emptyEquipment()),
-      talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [],
+      talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [], root: null,
     },
     moveTarget: null,
     targetId: null,
@@ -224,6 +229,7 @@ export function createState(seed = 1): GameState {
       hp: ENEMY_TYPES[sp.type].hp, maxHp: ENEMY_TYPES[sp.type].hp, state: 'idle',
       attackCd: 0, respawnIn: 0, deadFor: 0, hitFlash: 0, swing: 0, bleed: null, cast: null, stagger: 0,
       heavyCd: ENEMY_TYPES[sp.type].heavy?.first ?? 0, hazardCd: ENEMY_TYPES[sp.type].hazard?.first ?? 0, evadeFor: 0,
+      netCd: ENEMY_TYPES[sp.type].net?.first ?? 0, netRun: 0,
     })),
     drops: [],
     nextDropId: 1,
@@ -316,6 +322,7 @@ function movePlayer(s: GameState, input: Input, dt: number) {
     }
   }
 
+  if (p.root) dx = dz = 0; // netted: your feet are the one thing the net holds, so the keys and the walk go nowhere
   const len = Math.hypot(dx, dz);
   if (len > 1) { dx /= len; dz /= len; }
   const px = p.x, pz = p.z;

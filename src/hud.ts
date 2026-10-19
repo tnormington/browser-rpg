@@ -467,6 +467,11 @@ export class Hud {
         this.float('INTERRUPTED', 'interrupt', ev.x, 3.4, ev.z);
         this.note(`${e ? ENEMY_TYPES[e.type].name : 'Enemy'} interrupted`, 'log-xp');
         this.warn.classList.remove('show');
+      } else if (ev.t === 'net') {
+        const e = s.enemies.find(x => x.id === ev.id);
+        this.float('CAUGHT', 'interrupt', ev.x, 3.4, ev.z);
+        this.note(`${e ? ENEMY_TYPES[e.type].name : 'Enemy'}'s ${ev.name} holds you: ${ev.duration}s before you can move`, 'log-xp');
+        this.warn.classList.remove('show');
       } else if (ev.t === 'blocked') {
         const e = s.enemies.find(x => x.id === ev.id);
         this.float('BLOCKED', 'interrupt', ev.x, 3.4, ev.z);
@@ -533,6 +538,8 @@ export class Hud {
       ? (pk ? `Pummel it (${pk}), or keep moving: it lands where you stood.` : 'Keep moving: it lands where you stood.')
       : ev.kind === 'heavy'
       ? (pk ? `Pummel it (${pk}) or step out of the circle!` : 'Step out of the circle!')
+      : ev.kind === 'net'
+      ? (pk ? `Pummel it (${pk}) or it pins you where you stand!` : 'Break its line, or it pins you where you stand!')
       : (pk ? `Pummel it (${pk}) or break line of fire!` : 'Close in and strike it down!');
     this.warn.textContent = `${name.toUpperCase()}  -  ${answer}`;
     this.warn.style.animationDuration = `${ev.windup + 0.5}s`;

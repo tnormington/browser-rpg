@@ -118,10 +118,18 @@ export interface EnemyDef {
   /** A telegraphed ground slam: stands still for `windup`, then hits everything within `radius` of itself for flat `damage`. Interruptible; or step out of the radius. */
   heavy?: { name: string; windup: number; every: number; first: number; damage: number; radius: number };
   /**
-   * Attacks from a distance and backs away from melee: a short interruptible wind-up, then a bolt that lands if the player is still within `range`.
+   * Attacks from a distance: a short interruptible wind-up, then a bolt that lands if the player is still within `range`.
+   * It closes to firing range and then holds the ground it is standing on. It never retreats from melee: a shooter you
+   * have run down stands and fights (see `net` for the one exception).
    * With a `heavy` as well it is a melee fighter that throws instead: it fights in reach, and throws only at a player standing off.
    */
-  ranged?: { name: string; range: number; keepAway: number; windup: number };
+  ranged?: { name: string; range: number; windup: number };
+  /**
+   * The one way a shooter makes distance. Within `range` of the player it plants its feet for `windup`, then holds them
+   * where they stand for `duration` seconds and backs off until it has a `retreat`-unit gap. Interruptible, needs a line
+   * of fire like a bolt, and does no damage of its own: the cost is the ground you have to make up again.
+   */
+  net?: { name: string; windup: number; every: number; first: number; range: number; duration: number; retreat: number };
   /**
    * Marks the ground under the player and, `windup` seconds later, hits everything within `radius` of that spot for flat `damage`.
    * The spot is fixed when the wind-up starts, so a player who keeps moving is long gone and one who stands and trades blows is not.
@@ -154,9 +162,12 @@ export function aggroRadius(def: EnemyDef, playerLevel: number): number {
   return Math.max(def.aggroRadius * AGGRO_MIN_FRAC, def.aggroRadius - shrink);
 }
 
+/** The wind-ups an enemy can be in the middle of. One name for the set, so the sim, the HUD and the renderer agree on it. */
+export type CastKind = 'heavy' | 'bolt' | 'ground' | 'net';
+
 /** The name of the wind-up an enemy is casting, for cast bars and the telegraph line. One place, so a new kind cannot crash a HUD that guessed. */
-export function castName(def: EnemyDef, kind: 'heavy' | 'bolt' | 'ground'): string {
-  return (kind === 'heavy' ? def.heavy?.name : kind === 'ground' ? def.hazard?.name : def.ranged?.name) ?? def.name;
+export function castName(def: EnemyDef, kind: CastKind): string {
+  return (kind === 'heavy' ? def.heavy?.name : kind === 'ground' ? def.hazard?.name : kind === 'net' ? def.net?.name : def.ranged?.name) ?? def.name;
 }
 
 export const ENEMY_TYPES: Record<string, EnemyDef> = {
@@ -171,7 +182,7 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     aggroRadius: 7, leash: 22, attackRange: 1.5, radius: 0.45, xp: 16, respawn: 25, pack: 7 },
   hexer: { name: 'Cave Hexer', level: 4, hp: 140, damage: 9, attackInterval: 2.6, speed: 4.4,
     aggroRadius: 10, leash: 24, attackRange: 11, radius: 0.6, xp: 90, respawn: 40,
-    ranged: { name: 'Hex Bolt', range: 11, keepAway: 5, windup: 0.9 } },
+    ranged: { name: 'Hex Bolt', range: 11, windup: 0.9 } },
 
   // The cave. Every one of these is a level above anything outside, and built around one tell the player must read:
   // the Ravagers come in a pack (Cleave), the Archers shoot from range, the Seer punishes standing still, the Ogre slams,
@@ -182,14 +193,14 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
   ravager: { name: 'Cave Ravager', level: 7, hp: 320, damage: 11, attackInterval: 1.6, speed: 5.6,
     aggroRadius: 9, leash: 20, attackRange: 1.9, radius: 0.65, xp: 60, respawn: 75, pack: 8,
     look: { model: 'wolf', scale: 1.15, tint: 0x4a5a7a } },
-  // leash 6: it backs off 4.8 from its post at most (leash * 0.8), so the sentry at (-13,-47) cannot be chased across the hollow into the Ogre and the Seer
+  // leash 6: it stays within 6 of its post, so the sentry at (-13,-47) cannot be drawn across the hollow into the Ogre and the Seer
   archer: { name: 'Gloom Archer', level: 8, hp: 320, damage: 28, attackInterval: 2.4, speed: 5.2,
     aggroRadius: 11, leash: 6, attackRange: 14, radius: 0.6, xp: 100, respawn: 90,
-    ranged: { name: 'Gloom Arrow', range: 14, keepAway: 7, windup: 0.8 },
+    ranged: { name: 'Gloom Arrow', range: 14, windup: 0.8 },
     look: { model: 'hexer', scale: 1.0, tint: 0x3a4a6a } },
   seer: { name: 'Cave Seer', level: 9, hp: 650, damage: 12, attackInterval: 3.0, speed: 4.2,
     aggroRadius: 11, leash: 14, attackRange: 12, radius: 0.65, xp: 140, respawn: 90,
-    ranged: { name: 'Hex Bolt', range: 12, keepAway: 5, windup: 0.9 },
+    ranged: { name: 'Hex Bolt', range: 12, windup: 0.9 },
     hazard: { name: 'Withering Ground', windup: 1.2, every: 4, first: 1.5, damage: 85, radius: 3, range: 14 },
     look: { model: 'hexer', scale: 1.25, tint: 0x6a3a8a } },
   ogre: { name: 'Hollow Ogre', level: 9, hp: 1250, damage: 42, attackInterval: 2.4, speed: 3.8,
@@ -213,7 +224,8 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     look: { model: 'wolf', scale: 1.0, tint: 0x6a6e78 } },
   footpad: { name: 'Footpad', level: 12, hp: 530, damage: 46, attackInterval: 2.4, speed: 4.4,
     aggroRadius: 10, leash: 24, attackRange: 11, radius: 0.6, xp: 32, respawn: 40,
-    ranged: { name: 'Knife Throw', range: 11, keepAway: 4, windup: 0.8 },
+    ranged: { name: 'Knife Throw', range: 11, windup: 0.8 },
+    net: { name: 'Bola', windup: 1.1, every: 14, first: 7, range: 6, duration: 2.5, retreat: 7 },
     look: { model: 'hexer', scale: 1.0, tint: 0x6a5a40 } },
   toll_captain: { name: 'Toll Captain', level: 13, hp: 1785, damage: 54, attackInterval: 2.2, speed: 4.0,
     aggroRadius: 10, leash: 22, attackRange: 2.8, radius: 1.25, xp: 99, respawn: 120,
@@ -228,11 +240,12 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     look: { model: 'boar', scale: 0.8, tint: 0xb8603a } },
   drowned_sailor: { name: 'Drowned Sailor', level: 15, hp: 745, damage: 59, attackInterval: 2.6, speed: 4.4,
     aggroRadius: 10, leash: 24, attackRange: 12, radius: 0.6, xp: 35, respawn: 40,
-    ranged: { name: 'Harpoon', range: 12, keepAway: 5, windup: 0.9 },
+    ranged: { name: 'Harpoon', range: 12, windup: 0.9 },
+    net: { name: 'Tangling Net', windup: 1.2, every: 12, first: 6, range: 7, duration: 3, retreat: 8 },
     look: { model: 'hexer', scale: 1.0, tint: 0x3a6a6a } },
   tide_hag: { name: 'Tide Hag', level: 16, hp: 840, damage: 71, attackInterval: 3.0, speed: 4.2,
     aggroRadius: 11, leash: 14, attackRange: 12, radius: 0.7, xp: 36, respawn: 45,
-    ranged: { name: 'Brine Bolt', range: 12, keepAway: 5, windup: 0.9 },
+    ranged: { name: 'Brine Bolt', range: 12, windup: 0.9 },
     hazard: { name: 'Undertow', windup: 1.3, every: 5, first: 2, damage: 120, radius: 3, range: 14 },
     look: { model: 'hexer', scale: 1.15, tint: 0x3a7a5a } },
   barnacle_ogre: { name: 'Barnacle Ogre', level: 17, hp: 2790, damage: 71, attackInterval: 2.4, speed: 3.9,
@@ -252,7 +265,7 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     look: { model: 'wolf', scale: 1.0, tint: 0x6a7a70 } },
   bog_witch: { name: 'Bog Witch', level: 19, hp: 1045, damage: 71, attackInterval: 2.8, speed: 4.2,
     aggroRadius: 11, leash: 14, attackRange: 12, radius: 0.7, xp: 39, respawn: 45,
-    ranged: { name: 'Bog Bolt', range: 12, keepAway: 5, windup: 0.9 },
+    ranged: { name: 'Bog Bolt', range: 12, windup: 0.9 },
     hazard: { name: 'Withering Ground', windup: 1.3, every: 5, first: 2, damage: 160, radius: 3, range: 14 },
     look: { model: 'hexer', scale: 1.1, tint: 0x4a6a58 } },
   mire_troll: { name: 'Mire Troll', level: 20, hp: 1145, damage: 67, attackInterval: 2.4, speed: 4.0,
@@ -276,7 +289,7 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     look: { model: 'wolf', scale: 1.3, tint: 0x6a5a48 } },
   rotwood_cultist: { name: 'Rotwood Cultist', level: 23, hp: 1495, damage: 78, attackInterval: 2.6, speed: 4.4,
     aggroRadius: 10, leash: 24, attackRange: 12, radius: 0.6, xp: 43, respawn: 40,
-    ranged: { name: 'Rot Hex', range: 12, keepAway: 5, windup: 0.9 },
+    ranged: { name: 'Rot Hex', range: 12, windup: 0.9 },
     look: { model: 'hexer', scale: 1.0, tint: 0x5a3a30 } },
   thorn_warden: { name: 'Thorn Warden', level: 24, hp: 4865, damage: 91, attackInterval: 2.4, speed: 3.9,
     aggroRadius: 10, leash: 20, attackRange: 3.0, radius: 1.35, xp: 132, respawn: 120,
@@ -294,7 +307,7 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     aggroRadius: 12, leash: 24, attackRange: 3.4, radius: 1.7, xp: 390, respawn: 600,
     heavy: { name: 'Anchor Slam', windup: 1.8, every: 10, first: 4, damage: 235, radius: 6.5 },
     hazard: { name: 'Cannon Volley', windup: 1.5, every: 7, first: 6, damage: 105, radius: 3.5, range: 16 },
-    ranged: { name: 'Harpoon', range: 14, keepAway: 0, windup: 0.9 },
+    ranged: { name: 'Harpoon', range: 14, windup: 0.9 },
     look: { model: 'brute', scale: 1.5, tint: 0x3a5a6a } },
   // The Rotroot (levels 23 to 26, section 3.4): the cult's sentries and a Thorn Warden are the Thornwood's own rows, the Mother is the bible's. She is Marrow's pattern at a bigger
   // size: the Root Slam under her feet, the Spore Cloud marked on the ground under you, and the Hex Bolt at anyone who stands off.
@@ -302,7 +315,7 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     aggroRadius: 12, leash: 24, attackRange: 3.6, radius: 1.9, xp: 460, respawn: 600,
     heavy: { name: 'Root Slam', windup: 1.8, every: 10, first: 4, damage: 350, radius: 6.5 },
     hazard: { name: 'Spore Cloud', windup: 1.5, every: 7, first: 6, damage: 150, radius: 3.5, range: 16 },
-    ranged: { name: 'Hex Bolt', range: 14, keepAway: 0, windup: 0.9 },
+    ranged: { name: 'Hex Bolt', range: 14, windup: 0.9 },
     look: { model: 'brute', scale: 1.6, tint: 0x4a6a3a } },
 };
 

@@ -32,6 +32,7 @@ import { appearanceOf, ITEM_LOOKS, TIER_LOOKS, TIER5_COLOR } from './gear-look';
 import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
 import { clearLine } from './sim/sight';
+import { playerStatuses } from './sim/status';
 import {
   EXECUTE_BONUS, EXECUTE_UNDER, TALENTS, TALENT_START_LEVEL, TIER_COST, TREE_IDS,
   deriveTalents, refreshTalents, spentIn, spentTotal, talentPoints,
@@ -108,7 +109,7 @@ function botMove(s: GameState, e: Enemy): Partial<Input> {
     if (dd < c.radius! + 0.7) return { dirX: (p.x - c.x!) / (dd || 1), dirZ: (p.z - c.z!) / (dd || 1) };
   }
   if (!botSmart && h) return d > 2.2 && !e.cast ? { dirX: -away.dirX, dirZ: -away.dirZ } : {}; // stands in the circle and trades blows
-  if (ENEMY_TYPES[e.type].ranged) return d > (ENEMY_TYPES[e.type].hazard ? 2.2 : 3) ? { dirX: -away.dirX, dirZ: -away.dirZ } : {}; // close the gap: it backs away from melee
+  if (ENEMY_TYPES[e.type].ranged) return d > (ENEMY_TYPES[e.type].hazard ? 2.2 : 3) ? { dirX: -away.dirX, dirZ: -away.dirZ } : {}; // close the gap and stay in its face
   if (!h) return {}; // everything else the player simply stands and trades with
   if (e.cast) return !canPummel && d < h.radius + 0.6 ? away : {};
   return d > 2.2 ? { dirX: -away.dirX, dirZ: -away.dirZ } : {};
@@ -1240,7 +1241,7 @@ section('Phase 3: ranged attacker and pack aggro');
   const s = quietState(81);
   atLevel(s, 4);
   const h = enemyOf(s, 'hexer'), r = ENEMY_TYPES.hexer.ranged!;
-  assert(ENEMY_TYPES.hexer.attackRange > 8 && r.keepAway > 3.5, 'the Cave Hexer is built to fight from outside melee range');
+  assert(ENEMY_TYPES.hexer.attackRange > 8 && r.range > 8, 'the Cave Hexer is built to fight from outside melee range');
   h.state = 'idle'; h.respawnIn = 0; h.hp = h.maxHp; h.x = h.spawnX = 0; h.z = h.spawnZ = 0;
   s.player.x = 0; s.player.z = 8.5; // inside its aggro and firing range, far outside melee (3)
   const hp0 = s.player.hp;
@@ -1254,10 +1255,11 @@ section('Phase 3: ranged attacker and pack aggro');
   assert(sawTell && bolt !== null, 'the Hexer winds up and then hits');
   assert(bolt!.dist > ABILITIES[SLOT.strike].range * 2 && s.player.hp < hp0 && standing, `the bolt landed from ${bolt!.dist.toFixed(1)}u away: outside melee (${ABILITIES[SLOT.strike].range}u)`);
 
-  // it does not want to be in melee: step in and it backs off
+  // HOM-73: it would rather be at range, but it does not run from you. Step into melee and it stands its ground.
   s.player.x = h.x; s.player.z = h.z + 2; h.attackCd = 99; h.cast = null; h.state = 'chase';
+  const post = { x: h.x, z: h.z };
   run(s, 1.2);
-  assert(Math.hypot(h.x - s.player.x, h.z - s.player.z) > 3.5 || Math.hypot(h.x - h.spawnX, h.z - h.spawnZ) > 3, 'closed to melee, the Hexer backs away');
+  assert(Math.hypot(h.x - post.x, h.z - post.z) < 0.1 && Math.hypot(h.x - s.player.x, h.z - s.player.z) < 2.5, 'closed to melee, the Hexer holds its ground');
 
   // a Pummel on the bolt wind-up cancels it
   const s2 = quietState(82);
@@ -2681,7 +2683,7 @@ section('HOM-38 ranged line of sight: a shot needs a line, and loses one mid-fli
 {
   const stone = CAVE_PILLARS[0]; // (-14.5, -50): the archer stands north of it, the player south
   const NORTH = { x: stone.x, z: stone.z + 6 };      // where the shooter posts
-  const OPEN = { x: stone.x - 8.5, z: stone.z };     // clear line, inside range, outside keepAway
+  const OPEN = { x: stone.x - 8.5, z: stone.z };     // clear line, inside range
   const COVER = { x: stone.x, z: stone.z - 6 };      // dead behind the stone
   /** An archer awake and at its post, the player wherever they are standing. */
   const shooter = (seed: number, at: { x: number; z: number }, type = 'archer') => {
@@ -3670,6 +3672,119 @@ section('HOM-75 the Rotroot: the third dungeon, in Thornwick\'s frame');
   assert(D.rolls === 1 && D.nothing === 65 && D.entries.length === 1 && D.entries[0].id === 'heartwood_shard' && D.entries[0].weight === 35 && !!ITEMS.heartwood_shard, 'a Heartwood shard 35 % of kills');
   const rt = deserialize(serialize(quietState(7503)));
   assert(rt !== null && rt.enemies.some(e => e.type === 'rotroot_mother'), 'a save round-trips with the Mother in it');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-73 shooters hold their ground, and the net is the one thing that makes distance');
+{
+  const T = ENEMY_TYPES, shooters = Object.entries(T).filter(([, d]) => d.ranged);
+  assert(shooters.length >= 6 && shooters.every(([, d]) => !('keepAway' in d.ranged!)), `no shooter has a keep-away distance any more (${shooters.length} of them)`);
+
+  /** A lone shooter awake at (0,0), the player standing `at` units from it in melee. Nothing else is alive. */
+  const duel = (seed: number, type: string, at = 2) => {
+    const s = quietState(seed);
+    atLevel(s, T[type].level);
+    const e = enemyOf(s, type);
+    e.state = 'chase'; e.respawnIn = 0; e.hp = e.maxHp; e.x = e.spawnX = 0; e.z = e.spawnZ = 0; e.cast = null;
+    s.player.x = 0; s.player.z = at;
+    return { s, e };
+  };
+
+  // every shooter, net or not, stays where it is with the player in its face
+  for (const [type] of shooters) {
+    const { s, e } = duel(91, type);
+    e.netCd = 1e9; // the net is tested on its own below: this is the default behaviour
+    run(s, 3, { dirX: 0, dirZ: 0 });
+    assert(Math.hypot(e.x, e.z) < 0.1, `${T[type].name}: in melee for 3s and it never took a step back`);
+  }
+
+  // ...and it keeps fighting from there rather than standing idle
+  {
+    const { s, e } = duel(92, 'hexer');
+    let hits = 0;
+    for (let i = 0; i < 300; i++) { tick(s); for (const ev of s.events) if (ev.t === 'hit' && ev.target === 'player' && ev.src === e.id) hits++; }
+    assert(hits >= 2 && Math.hypot(e.x, e.z) < 0.1, `a cornered Hexer shoots you point blank (${hits} bolts in 10s) instead of running`);
+  }
+
+  // a shooter still walks in when the player is out of its range
+  {
+    const { s, e } = duel(93, 'footpad', 20);
+    e.netCd = 1e9;
+    run(s, 4);
+    assert(Math.hypot(e.x - s.player.x, e.z - s.player.z) < T.footpad.ranged!.range, 'out of range, it still closes to firing distance');
+  }
+
+  // the net: who has one, and what it costs
+  const netters = Object.entries(T).filter(([, d]) => d.net);
+  assert(netters.length === 2 && netters.every(([, d]) => d.ranged && d.level >= 12), `only higher-level shooters carry a net (${netters.map(([, d]) => `${d.name} ${d.level}`).join(', ')})`);
+  assert(netters.every(([, d]) => d.net!.range < d.ranged!.range && d.net!.retreat > d.net!.range * 0.9), 'a net is thrown up close, and the gap it opens is bigger than the range it is thrown from');
+
+  for (const [type, d] of netters) {
+    const n = d.net!;
+    const { s, e } = duel(94, type);
+    const p = s.player;
+    let tell = false;
+    for (let i = 0; i < 600 && !p.root; i++) { tick(s); tell ||= hasEvent(s, ev => ev.t === 'telegraph' && ev.kind === 'net'); }
+    assert(tell && p.root !== null && p.root!.name === n.name, `${d.name} winds up the ${n.name} and it lands`);
+    assert(hasEvent(s, ev => ev.t === 'net') && castName(d, 'net') === n.name, '...raising a net event the HUD can name');
+    assert(playerStatuses(p).some(x => x.key === 'root' && x.bad && x.total === n.duration), '...and it shows on the player frame as a debuff');
+
+    // held where you stand: the keys do nothing, and it uses the time to open the gap
+    const held = { x: p.x, z: p.z };
+    run(s, n.duration * 0.6, { dirX: 0, dirZ: 1 });
+    assert(Math.hypot(p.x - held.x, p.z - held.z) < 1e-6 && p.root !== null, '...you cannot walk out of it');
+    const far = Math.hypot(e.x - p.x, e.z - p.z);
+    assert(far > 3, `...while it backs off (${far.toFixed(1)}u away and still going)`);
+
+    // the net frays, and then you can run it down again
+    run(s, n.duration);
+    assert(p.root === null, '...the net runs out on its own');
+    const gap = Math.hypot(e.x - p.x, e.z - p.z);
+    assert(gap >= n.retreat - 0.5 && gap <= n.retreat + 1.5, `...having bought itself the ${n.retreat}u it wanted (${gap.toFixed(1)}u)`);
+    const where = { x: e.x, z: e.z };
+    run(s, 2, { dirX: 0, dirZ: 0 });
+    assert(Math.hypot(e.x - where.x, e.z - where.z) < 0.1, '...and with the net spent it stops running and plants its feet again');
+  }
+
+  // a Pummel on the wind-up cancels it, net and all
+  {
+    const { s, e } = duel(95, 'drowned_sailor');
+    atLevel(s, 15);
+    tick(s, { clickEnemy: e.id });
+    for (let i = 0; i < 600 && e.cast?.kind !== 'net'; i++) { s.player.x = 0; s.player.z = 2; tick(s); }
+    assert(e.cast?.kind === 'net', 'the Sailor is mid-net');
+    tick(s, { ability: SLOT.pummel });
+    assert(e.cast === null && s.player.root === null && hasEvent(s, ev => ev.t === 'interrupt'), 'Pummel cancels the net before it lands');
+    assert(e.netCd > T.drowned_sailor.net!.every * 0.4, '...and the shutdown buys real time before the next one');
+  }
+
+  // rock in the way: the net is wasted like a bolt is
+  {
+    const stone = CAVE_PILLARS[0];
+    const s = quietState(96);
+    atLevel(s, 15);
+    const e = enemyOf(s, 'drowned_sailor');
+    e.state = 'chase'; e.respawnIn = 0; e.hp = e.maxHp; e.x = e.spawnX = stone.x; e.z = e.spawnZ = stone.z + 3;
+    s.player.x = stone.x; s.player.z = stone.z + 2.4;
+    for (let i = 0; i < 600 && e.cast?.kind !== 'net'; i++) { s.player.x = stone.x; s.player.z = stone.z + 2.4; tick(s); }
+    assert(e.cast?.kind === 'net', 'a Sailor winds up a net with the player a pace away');
+    s.player.x = stone.x; s.player.z = stone.z - 2.4; // round the pillar: its line is gone
+    let blocked = false;
+    for (let i = 0; i < 60 && e.cast; i++) { tick(s); blocked ||= hasEvent(s, ev => ev.t === 'blocked'); }
+    assert(blocked && s.player.root === null, 'stepping behind the stone wastes the net, as it wastes a bolt');
+  }
+
+  // death clears it, so you never wake up in a net
+  {
+    const { s, e } = duel(97, 'footpad');
+    const p = s.player;
+    for (let i = 0; i < 600 && !p.root; i++) tick(s);
+    assert(p.root !== null, 'netted');
+    p.hp = 1;
+    for (let i = 0; i < 300 && !p.dead; i++) tick(s);
+    assert(p.dead && p.root === null, 'dying cuts you out of the net');
+    void e;
+  }
 }
 
 console.log(`\nAll ${checks} checks passed.`);

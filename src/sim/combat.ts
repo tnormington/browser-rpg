@@ -215,6 +215,7 @@ function killEnemy(s: GameState, e: Enemy) {
   e.bleed = null;
   e.cast = null;
   e.stagger = 0;
+  e.netRun = 0;
   dropTarget(s, e.id, 'dead');
   s.events.push({ t: 'kill', id: e.id, x: e.x, z: e.z, species: e.type });
   rollDrops(s, e.type, e.x, e.z);
@@ -285,6 +286,7 @@ function tryUse(s: GameState, slot: number) {
     target.attackCd = Math.max(target.attackCd, 1);
     if (def.heavy) target.heavyCd = Math.max(target.heavyCd, def.heavy.every * STAGGER_HEAVY_KEEP);
     if (def.hazard) target.hazardCd = Math.max(target.hazardCd, def.hazard.every * STAGGER_HEAVY_KEEP);
+    if (def.net) target.netCd = Math.max(target.netCd, def.net.every * STAGGER_HEAVY_KEEP);
     p.energy = Math.min(p.maxEnergy, p.energy + fx.pummelEnergy); // Counterstrike: the shutdown pays for itself
     p.outOfCombat = 0;
     s.events.push({ t: 'interrupt', id: target.id, x: target.x, z: target.z });
@@ -317,6 +319,7 @@ export function updatePlayerCombat(s: GameState, dt: number) {
   const p = s.player;
   p.energy = Math.min(p.maxEnergy, p.energy + ENERGY_REGEN * dt);
   p.cast = Math.max(0, p.cast - dt);
+  if (p.root && (p.root.left -= dt) <= 0) p.root = null; // the net frays through
   p.outOfCombat += dt;
   setInCombat(s, p.outOfCombat <= OOC_DELAY || s.enemies.some(e => e.state === 'chase'));
   if (!p.inCombat) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * OOC_REGEN_FRAC * dt);
@@ -366,6 +369,7 @@ function killPlayer(s: GameState) {
   refreshGearStats(s);
   const grave = nearestTown(p.x, p.z, s.found);
   clearBuffs(s);
+  p.root = null;
   p.dead = true;
   p.action = null;
   s.interact = null;
@@ -403,6 +407,7 @@ function startReturn(e: Enemy) {
   e.bleed = null;
   e.cast = null;
   e.stagger = 0;
+  e.netRun = 0;
 }
 
 /** Wake an idle enemy (and the pack-mates that can see it: the cry does not carry through a standing stone). */
@@ -433,7 +438,7 @@ export function harmPlayer(s: GameState, src: string, srcId: number | undefined,
 const hurtPlayer = (s: GameState, e: Enemy, amount: number, what: string, heavy = false) => harmPlayer(s, e.type, e.id, amount, what, heavy);
 
 /** Begin a wind-up: the enemy plants its feet and the clock the player reads starts. */
-function startCast(s: GameState, e: Enemy, kind: 'heavy' | 'bolt', windup: number) {
+function startCast(s: GameState, e: Enemy, kind: 'heavy' | 'bolt' | 'net', windup: number) {
   e.cast = { kind, t: 0, total: windup };
   s.events.push({ t: 'telegraph', id: e.id, kind, windup });
 }
@@ -464,6 +469,16 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
     e.heavyCd = h.every;
     s.events.push({ t: 'slam', id: e.id, x: e.x, z: e.z, radius: h.radius });
     if (!p.dead && dist(e, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage), h.name, true);
+  } else if (c.kind === 'net') {
+    const n = def.net!;
+    e.netCd = n.every;
+    // the same two outs as a bolt: walk out of its reach, or put rock between you and it
+    if (p.dead || isFlying(p) || dist(e, p) > n.range + 2) return;
+    if (!clearLine(e, p)) return void s.events.push({ t: 'blocked', id: e.id, x: e.x, z: e.z });
+    p.root = { left: n.duration, total: n.duration, name: n.name };
+    s.moveTarget = null; // the walk you were on ends here
+    e.netRun = n.duration;
+    s.events.push({ t: 'net', id: e.id, x: p.x, z: p.z, name: n.name, duration: n.duration });
   } else if (!p.dead && dist(e, p) <= def.ranged!.range + 2) { // a little slack: a pace back mid-cast does not dodge a bolt, leaving its reach does
     // ...and so does putting rock between you and it: the shot is loosed into the stone
     if (!clearLine(e, p)) s.events.push({ t: 'blocked', id: e.id, x: e.x, z: e.z });
@@ -471,7 +486,11 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
   }
 }
 
-/** Ranged AI: round the rock if the shot is blocked, else close to firing range, back away from melee, shoot on cooldown. */
+/**
+ * Ranged AI: round the rock if the shot is blocked, else close to firing range and hold it, shooting on cooldown.
+ * It does not kite. Run one down and it stands and fights you at arm's length; the only time it gives ground is
+ * the retreat a landed net bought it (see `net` in EnemyDef).
+ */
 function updateRanged(s: GameState, e: Enemy, dt: number) {
   const p = s.player, def = ENEMY_TYPES[e.type], r = def.ranged!, d = dist(e, p);
   e.facing = Math.atan2(p.x - e.x, p.z - e.z);
@@ -482,12 +501,14 @@ function updateRanged(s: GameState, e: Enemy, dt: number) {
     const ax = -(p.z - e.z), az = p.x - e.x, n = Math.hypot(ax, az) || 1, side = e.id % 2 ? ROUND_OFFSET : -ROUND_OFFSET;
     return stepToward(e, p.x + (ax / n) * side, p.z + (az / n) * side, def.speed, dt, 0);
   }
-  if (d > r.range * 0.9) stepToward(e, p.x, p.z, def.speed, dt, r.range * 0.8);
-  else if (d < r.keepAway && dist(e, { x: e.spawnX, z: e.spawnZ }) < def.leash * 0.8) {
-    // back off along the line away from the player; cornered or at the end of its leash it stands and shoots
+  if (def.net && e.netRun > 0 && d < def.net.retreat && dist(e, { x: e.spawnX, z: e.spawnZ }) < def.leash * 0.8) {
+    // its net is on you: it walks the line away from you until it has its gap. Cornered or at the end of its leash it stands and shoots.
     stepToward(e, e.x + (e.x - p.x), e.z + (e.z - p.z), def.speed, dt, 0);
     e.facing = Math.atan2(p.x - e.x, p.z - e.z);
+  } else if (d > r.range * 0.9) {
+    stepToward(e, p.x, p.z, def.speed, dt, r.range * 0.8);
   }
+  // ...and otherwise it stands where it is, in melee or not, and keeps shooting
   if (d <= r.range && e.attackCd <= 0) startCast(s, e, 'bolt', r.windup);
 }
 
@@ -529,6 +550,8 @@ export function updateEnemies(s: GameState, dt: number) {
     e.attackCd = Math.max(0, e.attackCd - dt);
     e.heavyCd = Math.max(0, e.heavyCd - dt);
     e.hazardCd = Math.max(0, e.hazardCd - dt);
+    e.netCd = Math.max(0, e.netCd - dt);
+    e.netRun = Math.max(0, e.netRun - dt);
     e.hitFlash = Math.max(0, e.hitFlash - dt);
     e.swing = Math.max(0, e.swing - dt);
     const dp = dist(e, p);
@@ -547,6 +570,8 @@ export function updateEnemies(s: GameState, dt: number) {
         updateCast(s, e, dt);
       } else if (def.hazard && e.hazardCd <= 0 && dp <= def.hazard.range && clearLine(e, p)) { // it marks ground it can see you standing on
         startGroundCast(s, e);
+      } else if (def.net && e.netCd <= 0 && !p.root && dp <= def.net.range && clearLine(e, p)) { // you got close: it throws for your feet (one net at a time)
+        startCast(s, e, 'net', def.net.windup);
       } else if (def.ranged && !def.heavy) {
         updateRanged(s, e, dt);
       } else if (def.ranged && dp > def.attackRange + THROW_GAP && dp <= def.ranged.range && e.attackCd <= 0 && clearLine(e, p)) {

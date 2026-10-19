@@ -14,9 +14,10 @@ export interface Status {
 
 const BLEED_TICKS = ABILITIES.find(a => a.kind === 'dot')!.dotTicks!;
 
-/** What is on the player: the meal in the mouth, then every timed buff. */
+/** What is on the player: the net round their legs, the meal in the mouth, then every timed buff. */
 export function playerStatuses(p: Player): Status[] {
   const out: Status[] = [];
+  if (p.root) out.push({ key: 'root', icon: '🕸️', name: p.root.name, left: p.root.left, total: p.root.total, bad: true });
   if (p.food) out.push({ key: 'food', icon: '🍲', name: 'Eating', left: p.food.left, total: FOOD_TIME, bad: false });
   for (const b of p.buffs) {
     const def = BUFFS[b.id];

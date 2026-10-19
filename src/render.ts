@@ -1218,6 +1218,9 @@ export class Renderer {
         this.particles.burst(ev.x, 1.6, ev.z, { color: [P.gold, P.arcaneLight], count: 30, speed: 5, up: 1, life: 0.5 });
         this.rings.pulse(ev.x, 1.4, ev.z, P.gold, 2, 0.3);
         this.shakeMag = Math.max(this.shakeMag, 0.12);
+      } else if (ev.t === 'net') { // the net closes round the player's feet
+        this.particles.burst(ev.x, 0.5, ev.z, { color: [P.ash, P.arcaneLight], count: 24, speed: 2.5, up: 1, life: 0.6 });
+        this.rings.pulse(ev.x, 0.15, ev.z, P.ash, 2, 0.45);
       } else if (ev.t === 'blocked') {
         this.particles.burst(ev.x, 1.5, ev.z, { color: [P.ash, P.arcaneLight], count: 10, speed: 3, life: 0.35 }); // the shot spends itself on the rock
       } else if (ev.t === 'unlock') {

@@ -361,6 +361,8 @@ How the columns are derived (so the table can be extended rather than argued wit
 - **Hit** is whatever makes the fight cost its target share of max health after armour on the real sim, by what the enemy is: **plain melee 25 %, big melee 28 %, ranged 15 %, caster that marks the ground 30 %** (the road's measured split: wolf and hog 23 to 24, crab 33, footpad 13, sailor 17, hag 36). Cost is linear in hit, so each row is two runs and a solve; scaled by swing interval for free, since a longer swing is a bigger hit. **Elite hit is 1.2x the big-melee trash hit at its swing, rare 1.1x, boss 0.55x**: a boss fight is eight times as long, so a trash-sized hit would cost it three bars.
 - **Heavy** is a telegraphed slam (`heavy` in `EnemyDef`, windup 1.6 to 1.8 s), interruptible with Pummel, for **30 % of max health after armour when it is an elite's only big attack, 24 % when the row also has a ground hazard or is a rare** (a boss has both, so 24); the **ground hazard** (`hazard`, radius 3 to 3.2, every 8 s) is **10 %**, and a trash caster's is 16 %. Raw `damage` is the figure over `1 − armour reduction` at the line armour for the enemy's own level. The first draft's 30 % for both slam and hazard together put every heavy-plus-hazard elite at 92 to 99 % even with a Second Wind; at 24 and 10 they cost 73 to 86 % with none and 49 to 62 % with one (Stonehorn, 77 % either way, is the exception: the bot's heal did not fire before the end, which a person should check).
 - **A camp costs its bodies, not their sum.** A lone melee body costs 25 %; every extra body in a pack takes a discount so the camp is a fight, not a wall: **a pair carries HP x 0.85 and hit x 0.7 each (~47 % for the pair), a camp of three HP x 0.75 and hit x 0.6 (~70 %)**, with Cleave or Whirlwind in use. The rows below give the **member's** numbers. The shipped Greywater Wolf camp has no discount and kills a mithril player on the first pull (QA's bot died on the first pull, 102 % of health, 135 % with Cleave and a Second Wind; mine dies 8 of 8 with Cleave, Whirlwind and a Second Wind): the fix is two numbers on `road_wolf`, **HP 470 to 355 and hit 33 to 20**, which makes the camp 72 % (46 % with a Second Wind) and one wolf alone 13 % (a data line and one assertion at `golden-path.test.ts:3345`: not in this task).
+- **Ranged enemies do not kite.** A shooter (`ranged`) closes to firing range, then holds the ground it is standing on and keeps shooting, in melee or not. Running one down is the answer to it, and that answer has to keep working.
+- **The net** (`net`) is the one exception, and only the higher-level shooters carry one: the Footpad's Bola (level 12) and the Drowned Sailor's Tangling Net (15). Thrown from close (6 to 7 units), interruptible like any wind-up, needing a line of fire like a bolt, and doing no damage: it holds the player where they stand for 2.5 to 3 s while the caster backs off to a 7 to 8-unit gap. What it costs you is the ground you have to make up again, not health.
 - **XP** = `(20 + L)` × role multiplier (elite 3, rare 6, boss 10).
 - **Respawn**: trash 30 to 45 s; elite 120 s; rare **30 minutes**; boss **10 minutes**.
 - **Aggro radius** 8 to 12, as the cave's. `aggroRadius()` already lets a player who has outgrown an enemy walk past it.
@@ -393,7 +395,7 @@ How the columns are derived (so the table can be extended rather than argued wit
 |---|---|---|---|---|---|---|---|---|---|---|
 | `marsh_hog` | Marsh Hog | 10 | trash | boar x1.3 | 415 | 35 | 2s | - | 30 | plain melee, charges (speed 5.2) |
 | `road_wolf` | Greywater Wolf | 11 | trash | wolf | 470 (**355**) | 33 (**20**) | 1.8s | - | 31 | camp of 3 (pack 7): Cleave it. **Bold is the camp rule; as built, the camp kills a mithril player outright (3.4)** |
-| `footpad` | Footpad | 12 | trash | hexer | 530 | 46 | 2.4s | - | 32 | ranged knife: Pummel the throw |
+| `footpad` | Footpad | 12 | trash | hexer | 530 | 46 | 2.4s | - | 32 | ranged knife: Pummel the throw; Bola pins you while it backs off |
 | `toll_captain` | Toll Captain | 13 | elite | brute | 1785 | 54 | 2.2s | 195 | 99 | heavy Cudgel Slam; guards the toll camp |
 | `old_grey` | Old Grey | 12 | rare | wolf x1.4 pale | 2120 | 40 | 1.6s | 180 | 192 | rare spawn: every third hit opens a bleed |
 
@@ -402,7 +404,7 @@ How the columns are derived (so the table can be extended rather than argued wit
 | id | Name | Lv | Role | Rig | HP | Hit | Swing | Heavy | XP | Tell |
 |---|---|---|---|---|---|---|---|---|---|---|
 | `shore_crab` | Shore Crab | 14 | trash | boar x0.8 tint | 665 | 34 | 1.6s | - | 34 | quick, light hits |
-| `drowned_sailor` | Drowned Sailor | 15 | trash | hexer | 745 | 59 | 2.6s | - | 35 | ranged harpoon |
+| `drowned_sailor` | Drowned Sailor | 15 | trash | hexer | 745 | 59 | 2.6s | - | 35 | ranged harpoon; Tangling Net pins you while it backs off |
 | `tide_hag` | Tide Hag | 16 | trash | hexer x1.15 | 840 | 71 | 3s | - | 36 | ranged + Undertow ground hazard (the Seer tell) |
 | `barnacle_ogre` | Barnacle Ogre | 17 | elite | brute x1.15 tint | 2790 (2565) | 71 | 2.4s | 250 (260) | 111 | heavy Anchor Slam. Stands as built; the corrected figures are in brackets (67 % of health with no heal, 43 % with a Second Wind) |
 | `gutterhook` | Gutterhook | 16 | rare | boar x1.6 tint | 3365 | 55 | 1.8s | 235 | 216 | rare spawn: heavy claw |
