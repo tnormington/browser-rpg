@@ -185,7 +185,7 @@ export interface Input {
   shop?: ShopAction[];                          // sell/buy requests this tick (optional like the others added after the first callers)
   interact: Interact | null;                    // node or forge clicked this tick: walk there and use it
   craft: { recipe: string; count: number } | null; // forge recipe chosen this tick
-  questAdvance: boolean;                        // the advancing dialogue option was chosen this tick
+  questAdvance: boolean | 'road';               // the advancing dialogue option was chosen this tick
   talent?: string | null;                       // talent id bought this tick
   talentReset?: boolean;                        // every talent point handed back this tick
   flight?: string | null;                       // town id to fly to this tick (from the master the player stands at)
@@ -258,7 +258,7 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
       if (d) s.moveTarget = clampToWorld(d);
     }
     if (input.interact) requestInteract(s, input.interact);
-    if (input.questAdvance) advanceQuest(s);
+    if (input.questAdvance) advanceQuest(s, input.questAdvance);
     if (input.craft) beginCraft(s, input.craft.recipe, input.craft.count);
     if (input.tab) tabTarget(s);
     if (input.acquire) acquireFront(s);

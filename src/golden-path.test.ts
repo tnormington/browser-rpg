@@ -1,7 +1,7 @@
 // Headless verification: drives the sim with synthetic input. Run with `npm run verify`.
 // Exits non-zero on the first failed assertion. Extended every milestone.
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState, Enemy } from './sim';
-import { addItem, countItem, INVENTORY_SIZE } from './sim/inventory';
+import { addItem, countItem, removeItem, INVENTORY_SIZE } from './sim/inventory';
 import { ITEMS, DROP_TABLES, BRONZE_SET, MITHRIL_SET, TIER_COLORS, deriveStats, describeStats, emptyEquipment } from './sim/items';
 import {
   ABILITIES, ENEMY_TYPES, SPAWNS, aggroRadius, castName, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
@@ -23,7 +23,7 @@ import { refreshPlayerStats } from './sim/combat';
 import {
   BLADE_PLAN, DELVE_GOALS, DIALOGUE, DIALOGUE2, HUNT_GOALS, MITHRIL_PLAN, NPC, QUEST2_NAME, QUEST2_STAGES, QUEST_STAGES,
   QUEST_NAME, RECOMMENDED_COMBAT, RECOMMENDED_COMBAT_2, REWARD, REWARD2, TALK_RANGE, activeDialogue, activeQuestView, npcMarker, questOnKill, questView,
-  HARBOURMASTER, QUEST3_NAME, REWARD3, dialogueAt, harbourMarker,
+  HARBOURMASTER, QUEST3_NAME, REWARD3, dialogueAt, harbourMarker, ERRAND_GOODS, QUEST4_NAME, REWARD4,
 } from './sim/quest';
 import { appearanceOf, ITEM_LOOKS, TIER_LOOKS, TIER5_COLOR } from './gear-look';
 import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
@@ -608,7 +608,7 @@ section('M3 gathering: nodes, timing, depletion, respawn, interruption');
   const s = quietState(2);
   const def = NODE_TYPES.copper;
   const rock = nodesOf(s, 'copper')[0];
-  assert(nodesOf(s, 'iron').length >= 3 && nodesOf(s, 'coal').length >= 2 && nodesOf(s, 'tree').length === TREES.length, 'iron rocks, coal seams and trees are placed in the zone');
+  assert(nodesOf(s, 'iron').length >= 3 && nodesOf(s, 'coal').length >= 2 && nodesOf(s, 'tree').length === TREES.length + REGIONS.find(r => r.id === 'wayside')!.trees.length, 'iron rocks, coal seams and trees are placed in the zone (and along the road)');
   const cave = LANDMARKS.caveMouth;
   assert(ROCKS.filter(r => r.type === 'iron' || r.type === 'coal').every(r => dist2(r, cave) < 20), 'iron and coal are hand-placed near the cave mouth');
   assert(nodesOf(s, 'copper').length >= 3 && nodesOf(s, 'tin').length >= 3, 'copper and tin are placed in the clearing and on the ridge, three of each or more');
@@ -1823,7 +1823,9 @@ section('HOM-15 the cave stays out of the first quest');
   const RIDGE = ROCKS.filter(r => r.type === 'iron' || r.type === 'coal'); // HOM-56: copper and tin were added to the surface after everything, so the ridge's own ore is the first seven nodes still
   assert(NODE_TYPES.mithril && ROCKS.every(r => r.type !== 'mithril') && RIDGE.length === 7 && ROCKS.length === 13 && ROCKS.slice(0, 7).every(r => RIDGE.includes(r)), 'the ridge outside is unchanged: seven iron and coal rocks, no mithril, and copper and tin only after them');
   const s = createState(902);
-  const kinds = s.nodes.map(n => n.type);
+  const way = REGIONS.find(r => r.id === 'wayside')!, W = way.rocks.length + way.trees.length; // HOM-57: the road's waysides come after everything, the Seams included
+  assert(W >= 24 && s.nodes.slice(-W).every(n => n.x > GREYWATER.x - 400 && n.x < GREYWATER.x + 400), 'the road\'s waysides are the last nodes of all');
+  const kinds = s.nodes.map(n => n.type).slice(0, -W);
   assert(kinds.slice(0, RIDGE.length + TREES.length).join() === [...RIDGE.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(RIDGE.length + TREES.length).every(t => t === 'mithril' || t === 'coal' || t === 'adamant' || t === 'copper' || t === 'tin' || NODE_TYPES[t].skill === 'fishing') && kinds.slice(-6).every(t => t === 'copper' || t === 'tin'), // HOM-46: Saltmarrow's adamant is added after the cave's, so it too leaves every older id alone; HOM-48: and its fishing spots after that; HOM-56: and copper and tin last of all
     'cave nodes are added after every existing node, so old node ids (and saves) keep meaning the same rock');
   const caveFolk = SPAWNS.filter(sp => inCave(sp.x, sp.z));
@@ -3267,6 +3269,60 @@ section('HOM-46 the road east: Hale to Saltmarrow on foot, and back, with no tra
 }
 
 // ---------------------------------------------------------------------------
+section('HOM-57 the road has a reason: an errand from Hale to Saltmarrow, and ore and trees along the way');
+{
+  const way = REGIONS.find(r => r.id === 'wayside')!, spots = [...way.rocks, ...way.trees];
+  const west = GREYWATER.x - 400;
+  const bands = new Set(spots.map(p => Math.floor((p.x - west) / 100)));
+  assert(bands.size === 7 && !bands.has(4), `a stand in every hundred units of the road but the toll camp's (${bands.size} of 8 bands)`);
+  assert(way.rocks.every(r => r.type === 'copper' || r.type === 'tin' || r.type === 'iron') && way.rocks.filter(r => r.type === 'copper').length >= 8 && way.trees.length >= 8, 'copper and trees (Mining 1 and Woodcutting 1) in plenty, with tin and iron for later');
+  const s0 = createState(5701);
+  const road = s0.enemies.filter(e => e.region === 'greywater');
+  assert(spots.every(p => Math.abs(p.z - GREYWATER.z) >= 8 && road.every(e => Math.hypot(e.spawnX - p.x, e.spawnZ - p.z) > ENEMY_TYPES[e.type].aggroRadius + 4)), 'every node is off the road and out of every camp\'s aggro: a level-1 walker can stop at it');
+  assert(spots.every(p => regionAt(p.x, p.z)?.id === 'greywater' && clampToWorld(p, p.r).x === p.x), 'and on the road\'s floor');
+
+  const s = quietState(5702), q4 = () => s.quest.fourth as string;
+  assert(s.quest.fourth === 'offer' && s.quest.stage === 'offer', 'a fresh character has the errand on offer from the start, beside the first quest');
+  assert(dialogueAt(s, 'hale').options.some(o => o.advance === 'road') && activeDialogue(s) === DIALOGUE.offer && !DIALOGUE.offer.options.some(o => o.advance === 'road'), 'it is one more thing to ask the Warden, and his own dialogue is untouched');
+  s.player.x = HARBOURMASTER.x; s.player.z = HARBOURMASTER.z + 2;
+  tick(s, { questAdvance: 'road' });
+  assert(s.quest.fourth === 'offer', 'only the Warden gives it');
+  s.player.x = NPC.x; s.player.z = NPC.z + 1;
+  tick(s, { questAdvance: 'road' });
+  assert((s.quest.fourth as string) === 'carry' && s.quest.stage === 'offer' && hasEvent(s, e => e.t === 'quest' && e.what === 'accept' && e.name === QUEST4_NAME), 'asking him takes the errand, and does not start the Brute\'s quest');
+  assert(!dialogueAt(s, 'hale').options.some(o => o.advance === 'road') && activeQuestView(s).title === QUEST_NAME, 'in Hale the tracker still follows the first quest');
+  s.player.x = GREYWATER.x - 300; s.player.z = GREYWATER.z;
+  assert(activeQuestView(s).title === QUEST4_NAME && activeQuestView(s).target !== null && !activeQuestView(s).ready, 'out on the road it follows the errand, pointing at a node');
+  for (const g of ERRAND_GOODS) addItem(s.player.inventory, g.item, g.n - 1);
+  tick(s);
+  assert(q4() === 'carry', 'one short is still carrying');
+  for (const g of ERRAND_GOODS) addItem(s.player.inventory, g.item, 1);
+  tick(s);
+  assert(q4() === 'report' && activeQuestView(s).ready && harbourMarker(s) === 'ready', 'the goods in the bag make it a hand-in, and the quay has a mark');
+  removeItem(s.player.inventory, 'logs', 1);
+  tick(s);
+  assert(q4() === 'carry', 'spend a log and it is back to carrying');
+  addItem(s.player.inventory, 'logs', 1);
+  tick(s);
+  s.player.x = NPC.x; s.player.z = NPC.z + 1;
+  tick(s, { questAdvance: true }); // the Warden hears this as the first quest's accept, and nothing more
+  assert(q4() === 'report', 'only the harbourmaster takes it');
+  const rt = deserialize(serialize(s))!;
+  assert(rt.quest.fourth === 'report', 'the errand survives a save and load');
+  const old = JSON.parse(serialize(s)); delete old.quest.fourth;
+  assert(deserialize(JSON.stringify(old))!.quest.fourth === 'offer', 'a save from before it finds it on offer');
+  const bad = JSON.parse(serialize(s)); bad.quest.fourth = 'bogus';
+  assert(deserialize(JSON.stringify(bad)) === null, 'and a made-up stage is refused');
+  const mining0 = s.player.skills.mining.xp, wood0 = s.player.skills.woodcutting.xp;
+  s.player.x = HARBOURMASTER.x + 2; s.player.z = HARBOURMASTER.z;
+  assert(dialogueAt(s, 'harbour').options.some(o => o.advance), 'the harbourmaster\'s dialogue offers the hand-in');
+  tick(s, { questAdvance: true });
+  assert(q4() === 'cleared' && countOf(s, 'logs') === 0 && countOf(s, 'copper_ore') === 0 && hasEvent(s, e => e.t === 'quest' && e.what === 'complete' && e.name === QUEST4_NAME), 'handing in takes the goods and completes it');
+  assert(s.player.skills.mining.xp - mining0 >= REWARD4[1].xp && s.player.skills.woodcutting.xp - wood0 >= REWARD4[0].xp && harbourMarker(s) === null, 'and pays Mining and Woodcutting XP');
+  assert((s.quest.third as string) === 'locked', 'the story\'s third chain was not touched');
+}
+
+// ---------------------------------------------------------------------------
 section('HOM-46 Saltmarrow: its harbourmaster, its chandler, and the third quest');
 {
   const s = quietState(4640);
@@ -3454,7 +3510,7 @@ section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each w
   const file = JSON.parse(serialize(old));
   file.nodes = file.nodes.filter((n: { id: number }) => n.id <= 36); // a save from before copper and tin: the world had 36 nodes
   const back = deserialize(JSON.stringify(file));
-  assert(back !== null && back.nodes.length === 42 && back.nodes[0].charges === 1 && back.nodes.slice(36).every(n => n.charges === NODE_TYPES[n.type].charges), 'an old save still loads: its nodes keep their ids and state, and the six new ones stand full');
+  assert(back !== null && back.nodes.length === 42 + REGIONS.find(r => r.id === 'wayside')!.rocks.length + REGIONS.find(r => r.id === 'wayside')!.trees.length && back.nodes[0].charges === 1 && back.nodes.slice(36).every(n => n.charges === NODE_TYPES[n.type].charges), 'an old save still loads: its nodes keep their ids and state, and the six new ones stand full');
   assert(back !== null && back.player.skills.mining.level === 17 && back.player.skills.smithing.level === 19 && back.player.equipment.chest === 'mithril_chestplate' && back.player.equipment.weapon === 'warden_edge', 'a Mining 17, Smithing 19 character keeps both levels and the gear they wear: only the gates moved above them');
 }
 

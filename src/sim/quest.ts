@@ -5,7 +5,7 @@ import { ENEMY_TYPES } from './data';
 import { SkillId, grantXp } from './skills';
 import { NODE_TYPES } from './gathering';
 import { recipeById } from './crafting';
-import { countItem } from './inventory';
+import { countItem, removeItem } from './inventory';
 import { refreshPlayerStats } from './combat';
 import { EQUIP_SLOTS, ITEMS, MITHRIL_SET } from './items';
 
@@ -17,15 +17,18 @@ export type QuestStage = 'offer' | 'hunt' | 'report1' | 'forge' | 'brute' | 'rep
 export type Quest2Stage = 'locked' | 'offer' | 'delve' | 'armour' | 'warden' | 'report' | 'cleared';
 /** The third chain is Saltmarrow's: given by its harbourmaster once the Hollow is quiet, and handed in to them. */
 export type Quest3Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
-export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage; third: Quest3Stage }
+/** The fourth chain is an errand, not a story beat: taken from the Warden in Hale at any time, worked on the Greywater Road, handed in to the harbourmaster. No lock. */
+export type Quest4Stage = 'offer' | 'carry' | 'report' | 'cleared';
+export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage; third: Quest3Stage; fourth: Quest4Stage }
 export const QUEST_STAGES: QuestStage[] = ['offer', 'hunt', 'report1', 'forge', 'brute', 'report2', 'done'];
 export const QUEST2_STAGES: Quest2Stage[] = ['locked', 'offer', 'delve', 'armour', 'warden', 'report', 'cleared'];
 export const QUEST3_STAGES: Quest3Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
+export const QUEST4_STAGES: Quest4Stage[] = ['offer', 'carry', 'report', 'cleared'];
 
 /** True once the first quest has got as far as `stage`. */
 export const questReached = (s: GameState, stage: QuestStage) => QUEST_STAGES.indexOf(s.quest.stage) >= QUEST_STAGES.indexOf(stage);
 
-export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked', third: 'locked' });
+export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked', third: 'locked', fourth: 'offer' });
 
 export const QUEST_NAME = 'The Brute of the Cave Mouth';
 export const NPC = { name: 'Warden Hale', x: LANDMARKS.npc.x, z: LANDMARKS.npc.z, r: LANDMARKS.npc.r };
@@ -74,6 +77,14 @@ export const SALT_GOALS: Record<string, number> = { footpad: 4, toll_captain: 1 
 export const RECOMMENDED_COMBAT_3 = 12;
 export const REWARD3: { skill: SkillId; xp: number }[] = [{ skill: 'combat', xp: 600 }];
 
+export const QUEST4_NAME = 'Timber and Copper for Saltmarrow';
+/** What Saltmarrow's quay wants hauled from Hale: a level-1 character's whole kit (copper from Mining 1, logs from Woodcutting 1), all of it on the road's waysides. */
+export const ERRAND_GOODS: { item: string; node: string; n: number; name: string }[] = [
+  { item: 'logs', node: 'tree', n: 6, name: 'Logs' }, { item: 'copper_ore', node: 'copper', n: 6, name: 'Copper Ore' },
+];
+export const REWARD4: { skill: SkillId; xp: number }[] = [{ skill: 'woodcutting', xp: 150 }, { skill: 'mining', xp: 150 }];
+const haveGoods = (s: GameState) => ERRAND_GOODS.every(g => countItem(s.player.inventory, g.item) >= g.n);
+
 /** Inventory plus what is worn: a piece you put on has not stopped being yours. */
 const owned = (s: GameState, id: string) =>
   countItem(s.player.inventory, id) + EQUIP_SLOTS.filter(slot => s.player.equipment[slot] === id).length;
@@ -90,8 +101,8 @@ const hasBlade = (s: GameState) =>
 // ---------- transitions ----------
 
 /** Which quest an event belongs to travels with it: both chains share stage 'done', so the HUD cannot work it out from state. */
-const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', chain: 1 | 2 | 3 = 1) =>
-  s.events.push({ t: 'quest', what, name: chain === 3 ? QUEST3_NAME : chain === 2 ? QUEST2_NAME : QUEST_NAME });
+const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', chain: 1 | 2 | 3 | 4 = 1) =>
+  s.events.push({ t: 'quest', what, name: chain === 4 ? QUEST4_NAME : chain === 3 ? QUEST3_NAME : chain === 2 ? QUEST2_NAME : QUEST_NAME });
 
 /** Kill credit. Hunt counts boars/wolves; the Brute only counts once the quest says so. */
 export function questOnKill(s: GameState, type: string) {
@@ -119,11 +130,20 @@ export function questOnKill(s: GameState, type: string) {
 }
 
 /** The player picked the "advance" dialogue option. Only meaningful at the NPC stages of either chain, and only in earshot. */
-export function advanceQuest(s: GameState) {
+export function advanceQuest(s: GameState, what: boolean | 'road' = true) {
   const q = s.quest, who = npcNear(s);
   if (s.player.dead || !who) return;
-  if (who === 'harbour') { // Saltmarrow's chain: only its own giver moves it
-    if (q.third === 'offer') { q.third = 'hunt'; questEvent(s, 'accept', 3); }
+  if (what === 'road') { // the errand's offer is its own option on the Warden's dialogue: it never moves the story chains
+    if (who === 'hale' && q.fourth === 'offer') { q.fourth = 'carry'; questEvent(s, 'accept', 4); }
+    return;
+  }
+  if (who === 'harbour') { // Saltmarrow's chains: only its own giver moves them, the errand's hand-in first
+    if (q.fourth === 'report' && haveGoods(s)) {
+      q.fourth = 'cleared';
+      for (const g of ERRAND_GOODS) removeItem(s.player.inventory, g.item, g.n);
+      for (const r of REWARD4) grantXp(s, r.skill, r.xp, HARBOURMASTER.x, HARBOURMASTER.z);
+      questEvent(s, 'complete', 4);
+    } else if (q.third === 'offer') { q.third = 'hunt'; questEvent(s, 'accept', 3); }
     else if (q.third === 'report') {
       q.third = 'cleared';
       for (const r of REWARD3) if (grantXp(s, r.skill, r.xp, HARBOURMASTER.x, HARBOURMASTER.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
@@ -156,12 +176,15 @@ export function updateQuest(s: GameState) {
     q.second = 'armour'; questEvent(s, 'stage', 2);
   }
   if (q.second === 'armour' && pieces(s) === MITHRIL_SET.length) { q.second = 'warden'; questEvent(s, 'stage', 2); }
+  // the errand is ready the moment the goods are in the bag, and not ready again if they leave it
+  if (q.fourth === 'carry' && haveGoods(s)) { q.fourth = 'report'; questEvent(s, 'stage', 4); }
+  else if (q.fourth === 'report' && !haveGoods(s)) q.fourth = 'carry';
   if (q.second === 'cleared' && q.third === 'locked') q.third = 'offer'; // the road east opens once the Hollow is quiet: nothing is announced, the harbourmaster's mark is the news
 }
 
 // ---------- dialogue ----------
 
-export interface DialogueOption { label: string; advance?: boolean; reply?: string }
+export interface DialogueOption { label: string; advance?: boolean | 'road'; reply?: string } // 'road': the errand's offer (advanceQuest)
 export interface Dialogue { lines: string[]; options: DialogueOption[] }
 
 const CLOSE = (label: string): DialogueOption => ({ label });
@@ -293,18 +316,34 @@ export const activeDialogue = (s: GameState): Dialogue =>
   s.quest.stage === 'done' && s.quest.second !== 'locked' ? DIALOGUE2[s.quest.second] : DIALOGUE[s.quest.stage];
 
 /** What a given giver has to say: the Warden's two chains, or the harbourmaster's one (a plain greeting before the road opens). */
-export const dialogueAt = (s: GameState, who: string): Dialogue =>
-  who === 'harbour'
-    ? s.quest.third === 'locked'
-      ? { lines: ['Welcome to Saltmarrow, traveller. Mind the Strand after dark: the sea gives back what it takes, and not kindly.', 'Come and see me once you have dealt with whatever troubles Hale: there is work on the road.'], options: [{ label: 'Farewell.' }] }
-      : DIALOGUE3[s.quest.third]
-    : activeDialogue(s);
+export const dialogueAt = (s: GameState, who: string): Dialogue => {
+  if (who !== 'harbour') { // the Warden's own words, and the errand as one more thing to ask him while it is on offer
+    const d = activeDialogue(s);
+    return s.quest.fourth === 'offer' ? { ...d, options: [...d.options, ERRAND_OFFER] } : d;
+  }
+  return s.quest.fourth === 'report' ? DIALOGUE4_REPORT : harbourDialogue(s);
+};
+const harbourDialogue = (s: GameState): Dialogue =>
+  s.quest.third === 'locked'
+    ? { lines: ['Welcome to Saltmarrow, traveller. Mind the Strand after dark: the sea gives back what it takes, and not kindly.', 'Come and see me once you have dealt with whatever troubles Hale: there is work on the road.'], options: [{ label: 'Farewell.' }] }
+    : DIALOGUE3[s.quest.third];
+
+/** The fourth chain's two spoken parts: the ask, an option on the Warden's dialogue (see dialogueAt), and the hand-in at the quay. */
+const ERRAND_OFFER: DialogueOption = {
+  label: 'Is there anything I can carry to Saltmarrow?', advance: 'road',
+  reply: `Saltmarrow's quay is short of timber and copper, and nobody will walk the Greywater Road for it. Cut ${ERRAND_GOODS[0].n} Logs and mine ${ERRAND_GOODS[1].n} Copper Ore as you go: there are rocks and trees beside the road, a stand every hundred paces. Bring them to Harbourmaster Pell. The wolves and hogs out there are well beyond a new traveller: keep to the road.`,
+};
+const DIALOGUE4_REPORT: Dialogue = {
+  lines: ['From Hale? On foot, along the Greywater Road? And you have the timber and the copper.', 'The quay has been waiting on exactly this. Here is something for the trouble.'],
+  options: [{ label: 'Glad to help.', advance: true, reply: 'The carters will remember this. Come and see me if you want real work.' }],
+};
 
 export const npcName = (who: string) => NPCS.find(n => n.id === who)?.name ?? NPC.name;
 
 /** The mark over the harbourmaster: '!' there is work, '?' waiting for you, grey it is under way, none otherwise. */
 export function harbourMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
   const t = s.quest.third;
+  if (s.quest.fourth === 'report') return 'ready';
   return t === 'offer' ? 'offer' : t === 'report' ? 'ready' : t === 'hunt' ? 'wait' : null;
 }
 
@@ -420,6 +459,7 @@ export function questView(s: GameState): QuestView {
 /** The first chain's tracker until it is handed in, then the second's. This is what the HUD shows; `questView` stays the first chain only. */
 export function activeQuestView(s: GameState): QuestView {
   const q = s.quest;
+  if ((q.fourth === 'carry' || q.fourth === 'report') && s.player.x > EAST_OF_HALE) return errandView(s); // out on the road the errand is what you are doing
   if (q.stage !== 'done' || q.second === 'locked') return questView(s);
   if (q.second === 'cleared' && q.third !== 'locked') return saltRoadView(s);
   const have = (id: string) => countItem(s.player.inventory, id);
@@ -494,4 +534,20 @@ function saltRoadView(s: GameState): QuestView {
     case 'cleared': return v([{ text: 'Quest complete. The road is open.', done: true }], null);
     default: return v([talk(`Speak to ${HARBOURMASTER.name} on the quay`)], target, true); // offer
   }
+}
+
+/** Past Hale's east wall (x = 30): from here the tracker follows the errand rather than the Hale chains. */
+const EAST_OF_HALE = 34;
+
+/** The fourth chain's tracker: what is still to gather, the nearest node that gives it, then the quay. */
+function errandView(s: GameState): QuestView {
+  const have = (id: string) => countItem(s.player.inventory, id), ready = s.quest.fourth === 'report';
+  const lines: QuestLine[] = ERRAND_GOODS.map(g => {
+    const n = Math.min(g.n, have(g.item));
+    return { text: `${g.name}: ${n}/${g.n}`, done: n >= g.n };
+  });
+  const open = ERRAND_GOODS.find(g => have(g.item) < g.n);
+  const target = open ? nodeTarget(s, open.node) : { x: HARBOURMASTER.x, z: HARBOURMASTER.z, label: HARBOURMASTER.name };
+  if (ready) lines.push({ text: `Bring them to ${HARBOURMASTER.name} in Saltmarrow (click or press V)`, done: false });
+  return { title: QUEST4_NAME, lines, target, ready, stageNo: ready ? 2 : 1, progress: `(${ready ? 2 : 1}/2)` };
 }

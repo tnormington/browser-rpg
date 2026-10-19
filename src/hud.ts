@@ -39,7 +39,7 @@ export interface HudActions {
   map: MapView;
   learn: (slot: number) => void;
   repair: () => void;
-  questAdvance: () => void;
+  questAdvance: (what: boolean | 'road') => void;
   save: () => void;
   newGame: () => void;
   quality: (toggle: boolean) => import('./post').Quality;

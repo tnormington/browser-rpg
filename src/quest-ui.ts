@@ -23,7 +23,7 @@ export class QuestUi {
   private trackerSig = '';
   private replyCloses = false; // the reply followed an accepted quest step: Okay ends the conversation
 
-  constructor(root: HTMLElement, private advance: () => void) {
+  constructor(root: HTMLElement, private advance: (what: boolean | 'road') => void) {
     this.tracker = el(root, 'tracker');
     this.title = el(this.tracker, 'qtitle');
     this.lines = el(this.tracker, 'qlines');
@@ -100,7 +100,7 @@ export class QuestUi {
     d.options.forEach(o => {
       const b = el(this.opts, 'dopt', `▸ ${o.label}`);
       b.addEventListener('click', () => {
-        if (o.advance) this.advance();
+        if (o.advance) this.advance(o.advance);
         if (o.reply) { this.reply = o.reply; this.replyCloses = !!o.advance; this.sig = ''; } else this.setOpen(false);
       });
     });

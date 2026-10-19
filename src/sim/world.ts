@@ -187,6 +187,21 @@ const SALT_SPOTS: NodeSpot[] = ([
   ['saltpike', 12, -30], ['saltpike', 15, -25.5],
 ] as const).map(([type, lx, lz]) => ({ type, ...at(SALTMARROW, lx, lz), r: 1 }));
 
+/** The road's waysides: [local x, side of the road, nodes from the road's edge outward along it]. Each stand is three or four nodes a few units apart. */
+const WAYSIDES: [number, 1 | -1, ('copper' | 'tin' | 'iron' | 'tree')[]][] = [
+  [-350, 1, ['copper', 'copper', 'tree']], [-230, -1, ['tree', 'copper', 'tin', 'tree']], [-120, 1, ['copper', 'tin', 'tree']],
+  [-20, -1, ['copper', 'tin', 'tree']], [120, 1, ['tree', 'copper', 'tin', 'tree']], [230, -1, ['copper', 'tin', 'tree']],
+  [300, 1, ['copper', 'tin', 'iron', 'tree']], [365, -1, ['copper', 'tree', 'iron']],
+];
+function waysides(): { rocks: RockSpot[]; trees: Obstacle[] } {
+  const rocks: RockSpot[] = [], trees: Obstacle[] = [];
+  for (const [lx, side, kinds] of WAYSIDES) kinds.forEach((type, i) => {
+    const p = at(GREYWATER, lx + (i - (kinds.length - 1) / 2) * 3.6, side * (9 + (i % 2) * 2));
+    if (type === 'tree') trees.push({ ...p, r: 1 }); else rocks.push({ type, ...p, r: 1.2 });
+  });
+  return { rocks, trees };
+}
+
 /**
  * The world. Order matters: node ids follow region order (each region's rocks, then its trees), so new ground goes last and every
  * older node keeps its id (and its save). The ridge is first because its ore was always the first nodes.
@@ -274,7 +289,7 @@ export const REGIONS: Region[] = [
     ],
     obstacles: road.obstacles, tall: road.tall, trees: [], rocks: [],
     landmarks: { gate: { x: 30, z: 8 }, toll: at(GREYWATER, 60, 0) },
-    connections: [{ to: 'clearing', at: HALE_GATE }, { to: 'saltmarrow', at: at(GREYWATER, 405, 0) }],
+    connections: [{ to: 'clearing', at: HALE_GATE }, { to: 'saltmarrow', at: at(GREYWATER, 405, 0) }, { to: 'wayside', at: at(GREYWATER, -350, 0) }],
     spawns: roadSpawns,
   },
   {
@@ -307,6 +322,18 @@ export const REGIONS: Region[] = [
     ],
     landmarks: {},
     connections: [{ to: 'clearing', at: { x: 26, z: -12 } }],
+  },
+  {
+    // The road's waysides (HOM-57): eight small stands of copper, tin, a little iron and a tree or two, one every hundred units, alternating sides, a
+    // pace or so off the road (the verges start twelve out) and clear of every camp's aggro: a level-1 walker can work the copper and the trees as
+    // they pass, and tin and iron are there for when the pick is ready. Listed last (after the Seams) so every older node keeps its id and its save.
+    // A district of the road: it adds no floor of its own.
+    id: 'wayside', name: 'The Waysides', cave: false, zone: 'greywater',
+    footprint: [{ x0: GREYWATER.x - 400, x1: GREYWATER.x + 400, z0: GREYWATER.z - 12, z1: GREYWATER.z + 12 }],
+    obstacles: [], tall: [],
+    ...waysides(),
+    landmarks: {},
+    connections: [{ to: 'greywater', at: at(GREYWATER, -350, 0) }],
   },
 ];
 // the hollow's and hall's standing stones are tall (they break sight lines)

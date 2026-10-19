@@ -92,7 +92,7 @@ interface RegionDef {
 
 ### 1.4 What each region is for
 
-- **Greywater Road**: the first time the player is *away*. Wolves and bandits, a toll camp on the road, a rare wolf. No gathering.
+- **Greywater Road**: the first time the player is *away*. Wolves and bandits, a toll camp on the road, a rare wolf. And, since HOM-57, a reason to walk it: **the Waysides**, seven stands of copper, tin, a little iron and trees (copper and trees for a level-1 hand, tin from Mining 3, iron from 7), one in every hundred units of road bar the toll camp's, alternating sides, nine to eleven units off the road and well clear of every camp's aggro (region `wayside`, listed last so no older node id moved). The errand that uses them is **Timber and Copper for Saltmarrow** (`fourth` in the quest state): asked of Warden Hale as an extra line on his dialogue at any time, a level-1 character can take it before ever going east; cut 6 Logs and mine 6 Copper Ore on the road, hand them in to Harbourmaster Pell for 150 Woodcutting and 150 Mining XP. Pure gather, no kills: every road enemy is level 10 to 12. Beside the story chains, not in them: it never locks and never gates anything. Out past Hale's wall the tracker follows it.
 - **Saltmarrow Strand**: the sea. Crabs, drowned sailors, a hag in the marsh; the Grotto's door in a cliff; adamant veins in the cliffs.
 - **Dunmere Fens**: wet, ranged, hazardous: the first region where standing still hurts (Withering Ground everywhere). Fenbloom grows here.
 - **Thornwood**: dense; hard-hitting boars, a cult in the Rotroot. Herb patches and thornoak trees.

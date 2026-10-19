@@ -28,7 +28,7 @@ if (trace) (window as any).__frameTrace = trace, trace.attach(view.renderer);
 const pendingInv: InvAction[] = [];
 const pendingShop: ShopAction[] = [];
 let pendingCraft: { recipe: string; count: number } | null = null;
-let pendingAdvance = false;
+let pendingAdvance: boolean | 'road' = false;
 let pendingTalent: string | null = null, pendingTalentReset = false;
 let pendingFlight: string | null = null;
 
@@ -47,7 +47,7 @@ const hud = new Hud((x, y, z) => view.showingMap ? null : view.project(x, y, z),
   learn: slot => { pendingShop.push({ k: 'learn', slot }); saveDirty = true; },
   repair: () => { pendingShop.push({ k: 'repair' }); saveDirty = true; },
   craft: (recipe, count) => { pendingCraft = { recipe, count }; },
-  questAdvance: () => { pendingAdvance = true; },
+  questAdvance: what => { pendingAdvance = what; },
   quality: toggle => {
     if (toggle) { view.setQuality(view.quality === 'high' ? 'low' : 'high'); saveQuality(view.quality); }
     return view.quality;

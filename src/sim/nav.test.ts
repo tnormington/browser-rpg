@@ -1,7 +1,7 @@
 // Navigation tests: the region model and the routing layer over it (sim/world.ts, sim/path.ts). Plain Node, no DOM.
 import {
   COLLIDERS, FOOTPRINT, REGIONS, SAFE_ZONES, PLAYER_RADIUS, ROCKS, CAVE_ROCKS, TREES, GREYWATER, SALTMARROW, LANDMARKS,
-  TOWNS, Pt, clampToWorld, collidersAt, collidersIn, inCave, inSafeZone, regionAt, setWorldHalf, addScenery,
+  TOWNS, Pt, clampToWorld, collidersAt, collidersIn, inCave, inSafeZone, regionAt, regionById, setWorldHalf, addScenery,
 } from './world';
 import { route, segmentClear, gridStats, setGridBudget, evictGrids } from './path';
 import { createNodes } from './gathering';
@@ -22,7 +22,7 @@ const spot = (x: number, z: number): Pt => ({ x, z });
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.z - b.z);
 
 console.log('\n# the world is region data');
-assert(REGIONS.map(r => r.id).join() === 'ridge,clearing,throat,hollow,neck,hall,greywater,saltmarrow,seams', 'the world is Hale (ridge, clearing, four cave rooms), then the road, then Saltmarrow, then the copper and tin seams (HOM-56), in node-id order');
+assert(REGIONS.map(r => r.id).join() === 'ridge,clearing,throat,hollow,neck,hall,greywater,saltmarrow,seams,wayside', 'the world is Hale (ridge, clearing, four cave rooms), then the road, then Saltmarrow, then the copper and tin seams (HOM-56), then the road\'s waysides (HOM-57), in node-id order');
 assert(REGIONS.every(r => r.connections.every(c => REGIONS.find(o => o.id === c.to)?.connections.some(b => b.to === r.id))), 'connections are symmetric and name real regions');
 assert(REGIONS.every(r => r.connections.every(c => {
   const there = REGIONS.find(o => o.id === c.to)!, snapped = clampToWorld(c.at);
@@ -30,8 +30,9 @@ assert(REGIONS.every(r => r.connections.every(c => {
 })), 'every seam point is floor in both of the regions it joins');
 assert(regionAt(0, 0)?.id === 'clearing' && regionAt(-18, -55)?.id === 'hollow' && regionAt(-18, -85)?.id === 'hall' && regionAt(436, 8)?.id === 'greywater' && regionAt(906, 8)?.id === 'saltmarrow' && regionAt(100, 200) === null, 'regionAt names the region a point is in, and null off the map');
 const nodes = createNodes();
-assert(nodes.length === 42 && nodes.slice(0, 7).every(n => n.type === 'iron' || n.type === 'coal') && nodes.slice(7, 19).every(n => n.type === 'tree') && nodes.slice(19, 24).every(n => n.type === 'mithril' || n.type === 'coal') && nodes.slice(24, 29).every(n => n.type === 'adamant') && nodes.slice(29, 36).every(n => ['silverfin', 'brine_trout', 'saltpike'].includes(n.type)) && nodes.slice(36).every(n => n.type === 'copper' || n.type === 'tin'),
-  'node ids are as they were (7 ridge ores, 12 trees, 5 cave veins), with Saltmarrow\'s five adamant veins and its seven fishing spots after them, then the six copper and tin rocks last of all');
+const WAYSIDE_N = regionById('wayside').rocks.length + regionById('wayside').trees.length;
+assert(nodes.length === 42 + WAYSIDE_N && nodes.slice(0, 7).every(n => n.type === 'iron' || n.type === 'coal') && nodes.slice(7, 19).every(n => n.type === 'tree') && nodes.slice(19, 24).every(n => n.type === 'mithril' || n.type === 'coal') && nodes.slice(24, 29).every(n => n.type === 'adamant') && nodes.slice(29, 36).every(n => ['silverfin', 'brine_trout', 'saltpike'].includes(n.type)) && nodes.slice(36, 42).every(n => n.type === 'copper' || n.type === 'tin'),
+  'node ids are as they were (7 ridge ores, 12 trees, 5 cave veins), with Saltmarrow\'s five adamant veins and its seven fishing spots after them, then the six copper and tin rocks, then the road\'s waysides last of all');
 assert(nodes[0].x === -10 && nodes[0].z === -25.5 && nodes[7].x === -12 && nodes[7].z === 10 && nodes[19].x === -29.2 && nodes[19].z === -45.5 && nodes[23].x === -8.2, 'and the same node sits at each old id');
 assert(ROCKS.length === 13 && ROCKS.filter(r => r.type === 'iron' || r.type === 'coal').length === 7 && CAVE_ROCKS.length === 5 && TREES.length === 12, 'the flat lists the renderer reads hold what they always did for Hale');
 const SCENERY = REGIONS.reduce((n, r) => n + r.obstacles.length + r.trees.length + r.rocks.length, 0);
