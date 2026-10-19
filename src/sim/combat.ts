@@ -199,7 +199,7 @@ function damageEnemy(s: GameState, e: Enemy, amount: number, crit: boolean, slot
   e.hp = Math.max(0, e.hp - amount);
   e.hitFlash = 0.12;
   s.player.outOfCombat = 0;
-  s.events.push({ t: 'hit', target: e.id, x: e.x, z: e.z, amount, crit, slot, dot });
+  s.events.push({ t: 'hit', target: e.id, x: e.x, z: e.z, amount, crit, slot, dot, species: e.type });
   if (crit && !dot && e.bleed) e.bleed.ticks += fx.critBleed; // Bloodscent: a crit works the wound open
   aggro(s, e);
   if (e.hp <= 0) killEnemy(s, e);
@@ -214,7 +214,7 @@ function killEnemy(s: GameState, e: Enemy) {
   e.cast = null;
   e.stagger = 0;
   dropTarget(s, e.id, 'dead');
-  s.events.push({ t: 'kill', id: e.id, x: e.x, z: e.z });
+  s.events.push({ t: 'kill', id: e.id, x: e.x, z: e.z, species: e.type });
   rollDrops(s, e.type, e.x, e.z);
   questOnKill(s, e.type);
   const xp = Math.max(1, Math.round(def.xp * xpParity(def.level, s.player.combat.level))); // the rate at the level the player is when it dies
@@ -410,7 +410,7 @@ function hurtPlayer(s: GameState, e: Enemy, amount: number, what: string, heavy 
   breakFood(s);
   const now = s.tick * TICK_DT;
   p.recap = [...p.recap.filter(h => now - h.at <= RECAP_WINDOW), { src: e.type, what, amount, heavy, at: now }].slice(-RECAP_MAX);
-  s.events.push({ t: 'hit', target: 'player', x: p.x, z: p.z, amount, crit: false, slot: -1, dot: false, heavy, src: e.id });
+  s.events.push({ t: 'hit', target: 'player', x: p.x, z: p.z, amount, crit: false, slot: -1, dot: false, heavy, src: e.id, species: e.type });
   if (p.hp <= 0) killPlayer(s);
 }
 

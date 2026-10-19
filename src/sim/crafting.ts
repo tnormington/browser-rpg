@@ -111,6 +111,7 @@ export function beginCraft(s: GameState, recipeId: string, count: number) {
   const why = blocker(s, r);
   if (why) return fail(s, r, why);
   s.player.action = { k: 'craft', recipe: r.id, t: 0, duration: craftTime(s, r), left: Math.max(1, Math.min(MAX_BATCH, Math.floor(count))) };
+  s.events.push({ t: 'begin', skill: r.skill, what: 'craft', id: r.id });
 }
 
 /** One craft completed: consume inputs, produce output, xp. Continues the batch while it still can. */

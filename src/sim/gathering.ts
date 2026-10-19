@@ -57,6 +57,7 @@ export function beginGather(s: GameState, node: ResourceNode) {
   if (p.skills[def.skill].level < def.level) return fail('level');
   if (!hasRoom(p.inventory, def.item)) return fail('full');
   p.action = { k: 'gather', nodeId: node.id, t: 0, duration: gatherTime(s, def) };
+  s.events.push({ t: 'begin', skill: def.skill, what: 'gather', id: node.type });
 }
 
 /** The pick or axe falls every GATHER_STRIKE seconds of a cycle, so audio lands on a beat instead of once at the end. */
@@ -80,6 +81,7 @@ export function finishGather(s: GameState, a: Extract<Action, { k: 'gather' }>) 
   // a high-level gatherer brings up more per swing; whatever the bag cannot hold is simply not mined
   const want = masteryYield(s, 1, p.skills[def.skill].level, def.level);
   const got = want - addItem(p.inventory, def.item, want);
+  if (def.skill === 'fishing') s.events.push({ t: 'catch', fish: def.item, node: node.id });
   s.events.push({ t: 'loot', item: def.item, qty: got });
   grantXp(s, def.skill, def.xp, node.x, node.z);
   node.charges--;

@@ -6,7 +6,8 @@ import type { ShopAction } from './sim/shop';
 import type { Interact } from './sim';
 import type { WeatherKind } from './weather';
 import { loadGame, loadQuality, saveGame, saveQuality, wipeSave } from './storage';
-import { playEvents, toggleMute, unlockAudio } from './sfx';
+import { playEvents, setAmbience, toggleMute, unlockAudio } from './sfx';
+import { regionAt } from './sim/world';
 import { applyStress } from './sim/stress';
 import { ITEMS } from './sim/items';
 import { bestFoodSlot } from './sim/consumables';
@@ -189,6 +190,7 @@ function readInput(): Input {
 
 // --- fixed timestep loop ---
 let last = performance.now(), acc = 0;
+let lastRegion: string | null | undefined; // undefined until the first tick, so the starting region's bed is asked for too
 function frame(now: number) {
   trace?.beginFrame(now);
   const dt = Math.min((now - last) / 1000, 0.25);
@@ -200,6 +202,8 @@ function frame(now: number) {
     view.onEvents(state.events, state);
     hud.onEvents(state.events, state);
     playEvents(state.events);
+    const region = regionAt(state.player.x, state.player.z)?.id ?? null;
+    if (region !== lastRegion) setAmbience(lastRegion = region);
     trace?.tick(state.events);
     if (state.events.some(ev => ev.t === 'levelup' || ev.t === 'quest' || ev.t === 'crafted' || ev.t === 'kill' || ev.t === 'talent' || ev.t === 'talentreset' || ev.t === 'flight' || ev.t === 'discover')) saveDirty = true;
     acc -= TICK_DT;
