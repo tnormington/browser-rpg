@@ -1,6 +1,8 @@
+// Also presses T like a user would and saves the in-game trace as bench/shots/trace-<tag>.json; --inject adds a forced shader compile and a 60 ms
+// main-thread stall mid-fight, to prove that trace catches spikes.
 // Combat frame trace: drives a real fight against the Cave Brute through the real game loop (keyboard in, rAF out) and records
 // every frame's time, plus every GL program link and compile that happens, so a hitch can be matched to its cause.
-//   node bench/combat.mjs [--tag before|after] [--secs 25] [--quality high|low] [--skip-build]
+//   node bench/combat.mjs [--tag before|after] [--secs 25] [--quality high|low] [--skip-build] [--inject]
 // Writes bench/shots/combat-<tag>.json and combat-<tag>.png; prints worst frames, link events and the frames they landed in.
 import { build, preview } from 'vite';
 import { chromium } from 'playwright';
@@ -17,14 +19,7 @@ const server = await preview({ root, logLevel: 'error', preview: { port: 4175, o
 const browser = await chromium.launch({ args: ['--disable-frame-rate-limit', '--disable-gpu-vsync', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--use-angle=d3d11'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', e => console.error('pageerror', String(e)));
-// Time every program link (the stall a fresh shader costs the render thread) before the game loads.
-await page.addInitScript(() => {
-  window.__links = [];
-  for (const C of [WebGL2RenderingContext, WebGLRenderingContext]) {
-    const orig = C.prototype.linkProgram;
-    C.prototype.linkProgram = function (p) { const t = performance.now(); orig.call(this, p); window.__links.push({ at: t, ms: performance.now() - t }); };
-  }
-});
+// Program links come from the game's own ?debug=1 trace (src/trace.ts wraps linkProgram), so there is one copy of that wrapper.
 await page.goto(`${server.resolvedUrls.local[0]}?debug=1`);
 await page.waitForFunction(() => window.__debug, null, { timeout: 120000 });
 await page.evaluate(() => window.__debug.view.modelsReady);
@@ -38,7 +33,7 @@ const setup = await page.evaluate(() => {
   return { brute: [e.x, e.z] };
 });
 await page.evaluate(() => new Promise(res => { let n = 0; const f = () => (++n >= 60 ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); })); // idle warm-up: nothing combat-related has rendered yet
-await page.evaluate(() => { window.__links.length = 0; });
+await page.evaluate(() => { window.__frameTrace.links.length = 0; });
 await page.evaluate(({ secs }) => {
   const d = window.__debug, frames = [], ev = [];
   window.__trace = { frames, ev, t0: performance.now() };
@@ -50,15 +45,24 @@ await page.evaluate(({ secs }) => {
   };
   requestAnimationFrame(loop);
 }, { secs });
+const inject = process.argv.includes('--inject');
 const keys = ['Digit1', 'Digit2', 'Digit4', 'Digit3', 'Digit5', 'Digit6'];
 const t0 = Date.now(); let i = 0;
 while (Date.now() - t0 < secs * 1000) {
   await page.keyboard.press(i % 7 === 0 ? 'KeyR' : keys[i % keys.length]);
   if (i === 3) await page.screenshot({ path: join(shots, `combat-${tag}.png`) });
+  if (inject && i === 20) await page.evaluate(() => { // a brand-new program: a real link the game never asked for
+    const d = window.__debug; let m; d.scene.traverse(o => { if (!m && o.isMesh && o.material && o.material.isMeshStandardMaterial) m = o; });
+    m.material = m.material.clone(); m.material.customProgramCacheKey = () => 'bench-inject'; m.material.needsUpdate = true;
+  });
+  if (inject && i === 40) await page.evaluate(() => requestAnimationFrame(() => { const t = performance.now(); while (performance.now() - t < 60); }));
   i++; await page.waitForTimeout(350);
 }
 await page.waitForFunction(() => window.__trace.done);
-const out = await page.evaluate(() => ({ frames: window.__trace.frames, t0: window.__trace.t0, links: window.__links }));
+const dl = page.waitForEvent('download');
+await page.keyboard.press('KeyT');
+await (await dl).saveAs(join(shots, `trace-${tag}.json`));
+const out = await page.evaluate(() => ({ frames: window.__trace.frames, t0: window.__trace.t0, links: window.__frameTrace.links.map(l => ({ at: l.at, ms: l.ms, key: l.key })) }));
 await browser.close(); await server.close();
 const f = out.frames, dts = f.map(x => x.dt).sort((a, b) => a - b), q = p => dts[Math.min(dts.length - 1, Math.floor(p * dts.length))];
 const links = out.links.map(l => ({ t: l.at - out.t0, ms: l.ms }));
@@ -68,3 +72,6 @@ console.log(JSON.stringify(stats));
 const worst = [...f].sort((a, b) => b.dt - a.dt).slice(0, 12);
 console.table(worst.map(x => ({ t: x.t.toFixed(0), dt: x.dt.toFixed(1), rings: x.rings, programs: x.programs, events: x.events.slice(0, 40), linkInFrame: links.filter(l => l.t > x.t - x.dt - 5 && l.t <= x.t).map(l => l.ms.toFixed(1)).join('/') })));
 console.log('links:', links.map(l => `${l.t.toFixed(0)}ms:${l.ms.toFixed(1)}`).join(' '));
+const tr = JSON.parse((await import('node:fs')).readFileSync(join(shots, `trace-${tag}.json`), 'utf8'));
+console.log('in-game trace:', tr.meta.frames, 'frames,', tr.meta.bufferSeconds, 's, gpuTimer:', tr.meta.gpuTimer, ', heap:', tr.meta.jsHeap, ',', tr.meta.renderer);
+console.table(tr.spikes.slice(0, 6).map(x => ({ dt: x.dt, work: x.jsWorkMs, sim: x.simMs, draw: x.drawMs, gpu: x.gpuMs, link: x.linkMsInFrame, heapD: x.heapDeltaMB, progD: x.programsDelta, events: x.events.join(','), longTask: x.longTasks.map(k => k.ms).join('/') })));

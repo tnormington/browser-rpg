@@ -7,16 +7,20 @@ import { loadGame, loadQuality, saveGame, saveQuality, wipeSave } from './storag
 import { playEvents, toggleMute, unlockAudio } from './sfx';
 import { applyStress } from './sim/stress';
 import { ITEMS } from './sim/items';
+import { Trace } from './trace';
 
 // Dev-only tooling: ?debug=1 (or the dev server) enables ?stress=N and the window.__debug handle. Game code never reads either.
 const params = new URLSearchParams(location.search);
 const debug = import.meta.env.DEV || params.has('debug');
 const stress = debug ? Math.max(1, Number(params.get('stress')) || 1) : 1;
 applyStress(stress);
+// ?debug=1 only: frame trace (T saves it). Built before the Renderer so its GL link wrapper sees every program. Absent the flag it is null and every call below is a no-op.
+const trace = params.has('debug') ? new Trace() : null;
 
 const loaded = stress > 1 ? { state: null, status: 'none' as const } : loadGame(); // stress worlds never touch the real save
 const state = loaded.state ?? createState();
 const view = new Renderer(document.body, state, loadQuality());
+if (trace) (window as any).__frameTrace = trace, trace.attach(view.renderer);
 const pendingInv: InvAction[] = [];
 let pendingCraft: { recipe: string; count: number } | null = null;
 let pendingAdvance = false;
@@ -137,6 +141,7 @@ function readInput(): Input {
 // --- fixed timestep loop ---
 let last = performance.now(), acc = 0;
 function frame(now: number) {
+  trace?.beginFrame(now);
   const dt = Math.min((now - last) / 1000, 0.25);
   acc += dt;
   last = now;
@@ -146,14 +151,19 @@ function frame(now: number) {
     view.onEvents(state.events, state);
     hud.onEvents(state.events, state);
     playEvents(state.events);
+    trace?.tick(state.events);
     if (state.events.some(ev => ev.t === 'levelup' || ev.t === 'quest' || ev.t === 'crafted' || ev.t === 'kill')) saveDirty = true;
     acc -= TICK_DT;
   }
   // autosave: soon after anything meaningful, otherwise on a timer
   sinceSave += dt;
   if ((saveDirty && sinceSave > 1) || sinceSave > AUTOSAVE_EVERY) { save(); saveDirty = false; sinceSave = 0; }
+  trace?.simDone();
+  trace?.drawStart();
   view.draw(state, acc / TICK_DT);
+  trace?.drawEnd();
   hud.update(state, dt);
+  trace?.endFrame();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
