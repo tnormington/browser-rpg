@@ -16,6 +16,10 @@ const GROUPS = {
   smith:     { minGap: 800, maxVoices: 3 },
   step:      { minGap: 250, maxVoices: 2 },   // footfalls land every ~450 ms running; the gap only guards a burst
   gather:    { minGap: 400, maxVoices: 2 },   // strikes land every 1.1 s
+  kill:      { minGap: 150, maxVoices: 2 },
+  fish:      { minGap: 400, maxVoices: 1 },
+  cook:      { minGap: 300, maxVoices: 2 },
+  flight:    { minGap: 1000, maxVoices: 2 },
 };
 type Group = keyof typeof GROUPS;
 
@@ -46,16 +50,36 @@ const SOUNDS = {
   stepCave:  { files: ['step-cave-1', 'step-cave-2'], vol: 0.3, jitter: 0.08 },
   mine:      { files: ['mine-1', 'mine-2', 'mine-3'], vol: 0.55, jitter: 0.05 },
   chop:      { files: ['chop'], vol: 0.55, jitter: 0.06 },
+  fishCast:  { files: ['swing-2'], vol: 0.3, jitter: 0.04, rate: 0.7 },   // a line whipping out
+  fishCatch: { files: ['hit-flesh-2'], vol: 0.3, jitter: 0.05, rate: 1.8 },   // a wet flop; the loot chime follows on its own
+  cookStart: { files: ['cook-start'], vol: 0.45, jitter: 0.04 },
+  cookDone:  { files: ['cook-1', 'cook-2', 'cook-3'], vol: 0.5, jitter: 0.05 },
+  takeoff:   { files: ['levelup'], vol: 0.45, rate: 0.8 },
+  landing:   { files: ['thud'], vol: 0.6, jitter: 0.04 },
+  // enemy voices by body, see BODY: a big one's hit replaces the flesh hit, a shell's rides on top of it; a kill is one of the kill sounds
+  killBeast: { files: ['hurt-1', 'hurt-2'], vol: 0.5, jitter: 0.05, rate: 0.75 },
+  killMan:   { files: ['thud'], vol: 0.55, jitter: 0.06, rate: 1.1 },
+  killBig:   { files: ['slam'], vol: 0.6, jitter: 0.04, rate: 0.9 },
+  hitBig:    { files: ['hit-flesh-1', 'hit-flesh-2', 'hit-flesh-3'], vol: 0.55, jitter: 0.05, rate: 0.7 },
+  hitShell:  { files: ['interrupt'], vol: 0.25, jitter: 0.05, rate: 1.6 },   // a claw on a carapace
 } satisfies Record<string, Layer>;
-const slamVol = (radius: number) => Math.min(1, 0.5 + radius / 12);
+/** What an enemy sounds like when struck or killed, by species id; anything not listed is a beast. */
+type Body = 'beast' | 'man' | 'big' | 'shell';
+const BODY: Record<string, Body> = {
+  brute: 'big', ogre: 'big', warden: 'big', toll_captain: 'big', barnacle_ogre: 'big', gutterhook: 'big', mire_troll: 'big', bogfather: 'big',
+  mother_mire: 'big', thorn_warden: 'big', elder_thornback: 'big',
+  hexer: 'man', ravager: 'man', archer: 'man', seer: 'man', footpad: 'man', drowned_sailor: 'man', tide_hag: 'man', bog_witch: 'man', rotwood_cultist: 'man',
+  shore_crab: 'shell',
+};
+const bodyOf = (species: string): Body => BODY[species] ?? 'beast';
+const slamVol =(radius: number) => Math.min(1, 0.5 + radius / 12);
 
 /** Looping beds by region id (a region with no entry is silent), and the level each plays at. */
 const AMBIENCE: Record<string, { file: string; vol: number }> = {
   greywater: { file: 'road-ambience', vol: 0.35 },
   saltmarrow: { file: 'coast-ambience', vol: 0.4 },
-  // stand-ins until the fens and the wood have beds of their own: the road's wind, a little lower
-  dunmere: { file: 'road-ambience', vol: 0.3 },
-  thornwick: { file: 'road-ambience', vol: 0.25 },
+  dunmere: { file: 'fen-ambience', vol: 0.4 },
+  thornwick: { file: 'forest-ambience', vol: 0.4 },
 };
 const AMBIENCE_FADE = 1.5;   // seconds to cross between beds
 
@@ -239,7 +263,9 @@ export function playEvents(events: GameEvent[]) {
         if (ev.target === 'player') {
           play('hurt', ev.heavy ? [SOUNDS.hurt, SOUNDS.hurtHeavy] : [SOUNDS.hurt], { exempt: true });
         } else {
-          play('hitEnemy', ev.crit ? [SOUNDS.hitFlesh, SOUNDS.hitCrit] : [SOUNDS.hitFlesh], { steal: ev.crit });
+          const body = bodyOf(ev.species);
+          const layers = [body === 'big' ? SOUNDS.hitBig : SOUNDS.hitFlesh, ...(ev.crit ? [SOUNDS.hitCrit] : []), ...(body === 'shell' ? [SOUNDS.hitShell] : [])];
+          play('hitEnemy', layers, { steal: ev.crit });
         }
         break;
       case 'swing': play('swing', [SOUNDS.swing]); break;
@@ -251,6 +277,13 @@ export function playEvents(events: GameEvent[]) {
         break;
       case 'slam': play('slam', [{ ...SOUNDS.slam, vol: slamVol(ev.radius) }], { exempt: true }); break;
       case 'interrupt': play('interrupt', [SOUNDS.interrupt], { exempt: true }); break;
+      case 'kill': { const body = bodyOf(ev.species); play('kill', [body === 'big' ? SOUNDS.killBig : body === 'man' ? SOUNDS.killMan : SOUNDS.killBeast]); break; }
+      case 'begin':
+        if (ev.skill === 'fishing') play('fish', [SOUNDS.fishCast]);
+        else if (ev.skill === 'cooking') play('cook', [SOUNDS.cookStart]);
+        break;
+      case 'catch': play('fish', [SOUNDS.fishCatch], { noGap: true }); break;
+      case 'flight': play('flight', [ev.phase === 'start' ? SOUNDS.takeoff : SOUNDS.landing], { noGap: true }); break;
       case 'telegraph': tone(110, ev.windup, 'sawtooth', 0.05, 220); break;
       case 'levelup': play('stinger', [SOUNDS.levelup]); break;
       case 'unlock': play('stinger', [SOUNDS.unlock]); break;
@@ -260,7 +293,7 @@ export function playEvents(events: GameEvent[]) {
         break;
       case 'loot': play('loot', [SOUNDS.loot]); break;
       case 'crafted':
-        if (ev.skill === 'cooking') { play('loot', [SOUNDS.loot]); break; }
+        if (ev.skill === 'cooking') { play('cook', [SOUNDS.cookDone]); break; }
         play('smith', [SOUNDS.smith1, { ...SOUNDS.smith2, delay: SMITH_STEP }, { ...SOUNDS.smith1, delay: SMITH_STEP * 2 }]);
         break;
       case 'forge': play('smith', [SOUNDS.forge]); break;
