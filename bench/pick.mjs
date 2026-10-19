@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const out = join(root, 'bench', 'shots', 'pick');
 mkdirSync(out, { recursive: true });
-const TOL = 28; // keep in step with CLICK_TOLERANCE_PX in src/main.ts
+const TOL = 48; // keep in step with CLICK_TOLERANCE_PX in src/main.ts
 const server = await preview({ root, logLevel: 'error', preview: { port: 4175, open: false } });
 const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--use-angle=d3d11'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
@@ -46,6 +46,35 @@ window.measure = (id) => {
     let d = 1e9; for (const [hx, hy] of hits) { const dd = Math.hypot(hx - x, hy - y); if (dd < d) d = dd; if (d < gap - 4) break; }
     if (d >= gap - 4 && d <= gap + 4) { n++; if (view.pickEnemy(x, y, ${TOL}) === id) got++; } } return n ? Math.round(100 * got / n) : null; };
   return { rect: [x0, y0, x1, y1], hitPx: hits.length, oldPct: Math.round(100 * oldOk / hits.length), newPct: Math.round(100 * newOk / hits.length), near10: near(10), near20: near(20), near40: near(40), near80: near(80) };
+};
+// A gatherable: the props are fixed in the world, so the player is moved to the node instead of the other way round.
+window.setupNode = async (type, dist, pitch) => {
+  const { view, sim } = window.__debug, p = sim.player, n = sim.nodes.find(n => n.type === type && n.charges > 0);
+  if (!n) return null;
+  p.hp = p.maxHp = 1e9; p.x = n.x; p.z = n.z + dist; // yaw 0 looks down -z, so the node is straight ahead
+  view.yaw = 0; view.pitch = pitch; view.distance = 10; view.debugCam = null;
+  sim.enemies.forEach(e => { e.x = 500; e.z = 500; }); // nothing else under the cursor
+  await window.wait(400);
+  return n.id;
+};
+// A trunk is thin and a rock is low: what matters is how much of the prop's *box* on screen (and the gap around it) takes the click.
+window.measureNode = (id) => {
+  const { view } = window.__debug, v = view.nodes.get(id), cam = view.camera, rc = view.raycaster;
+  const drawn = m => Array.isArray(m) ? m.some(x => x.visible) : m.visible; // a model mesh can carry several materials; the hidden proxies carry one
+  const meshes = []; v.group.traverse(o => { if (o.isMesh && o.visible && drawn(o.material)) meshes.push(o); });
+  const ray = (x, y) => { rc.setFromCamera({ x: x / innerWidth * 2 - 1, y: -y / innerHeight * 2 + 1 }, cam); return rc.intersectObjects(meshes, false).length > 0; };
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  const hits = [];
+  for (let y = 0; y < innerHeight; y += 4) for (let x = 0; x < innerWidth; x += 4) if (ray(x, y)) { hits.push([x, y]); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  if (!hits.length) return null;
+  let boxN = 0, boxOld = 0, boxNew = 0;
+  for (let y = y0; y <= y1; y += 4) for (let x = x0; x <= x1; x += 4) { boxN++; if (ray(x, y)) boxOld++; if (view.pickNode(x, y) === id) boxNew++; }
+  // near misses, counted twice: the node aimed at, and any node at all (a click that lands on the neighbour it was nearest to is a good click too)
+  const near = (gap) => { let n = 0, got = 0, any = 0; for (let y = y0 - 80; y < y1 + 80; y += 8) for (let x = x0 - 80; x < x1 + 80; x += 8) {
+    let d = 1e9; for (const [hx, hy] of hits) { const dd = Math.hypot(hx - x, hy - y); if (dd < d) d = dd; if (d < gap - 4) break; }
+    if (d >= gap - 4 && d <= gap + 4) { n++; const p = view.pickNode(x, y, ${TOL}); if (p === id) got++; if (p !== null) any++; } }
+    return n ? \`\${Math.round(100 * got / n)}/\${Math.round(100 * any / n)}\` : null; };
+  return { rect: [x0, y0, x1, y1], hitPx: hits.length, oldPct: Math.round(100 * boxOld / boxN), newPct: Math.round(100 * boxNew / boxN), near10: near(10), near20: near(20), near40: near(40), near80: near(80) };
 };` });
 
 // type, distance from the player in world units (the camera is 10 behind the player, so the enemy is 10 + dist from the lens), pitch
@@ -71,4 +100,17 @@ for (const [type, dist, pitch] of CASES) {
   }, [cx, cy, got, `click here (${Math.round(x0 - cx)}px off the model): ${got ? 'TARGETS the ' + type : 'misses'}`]);
   await page.screenshot({ path: join(out, `${type}-${dist}u.png`) });
 }
+
+// the same for gatherables: type, how far the player stands from it, pitch
+const NODES = [['tree', 6, 0.5], ['tree', 12, 0.5], ['iron', 5, 0.5], ['iron', 12, 0.5], ['coal', 5, 0.5], ['mithril', 5, 0.5], ['adamant', 5, 0.5], ['silverfin', 6, 0.5]];
+for (const [type, dist, pitch] of NODES) {
+  const id = await page.evaluate(([t, d, p]) => window.setupNode(t, d, p), [type, dist, pitch]);
+  if (id === null) { console.log(`${type}: no such node in this world`); continue; }
+  const m = await page.evaluate(i => window.measureNode(i), id);
+  if (!m) { console.log(`${type} @${dist}u: not on screen`); continue; }
+  console.log(`${type.padEnd(8)} @${String(dist).padStart(2)}u  box ${String(m.oldPct).padStart(3)}% was geometry -> ${String(m.newPct).padStart(3)}% takes the click   near-miss pick rate this node/any node (px outside): 10=${m.near10} 20=${m.near20} 40=${m.near40} 80=${m.near80}`);
+  await page.evaluate(() => document.getElementById('probe')?.remove()); // the enemy loop's crosshair is not about this node
+  await page.screenshot({ path: join(out, `node-${type}-${dist}u.png`) });
+}
+
 await browser.close(); await server.close();

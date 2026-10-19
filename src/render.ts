@@ -193,6 +193,13 @@ function pickVolume(type: string): { height: number; radius: number } {
   return { height, radius: Math.max(ENEMY_TYPES[type].radius * 1.15, height * (QUADRUPEDS.has(slot) ? 1 : 0.32)) };
 }
 
+/** Gatherable click volume, in the same shape as an enemy's, sized from the bounds of the model that is drawn (`node bench/pick.mjs` measures them). */
+function nodeVolume(type: string, depleted: boolean): { height: number; radius: number } {
+  if (NODE_TYPES[type].skill === 'fishing') return { height: 0.4, radius: 1.1 }; // a flat ripple on the water
+  if (type === 'tree') return depleted ? { height: 1, radius: 0.8 } : { height: 6, radius: 1.8 }; // the whole crown, not the thin trunk; a felled one is a stump
+  return { height: 2.2, radius: 1.3 }; // an ore rock; a spent one shrinks with the group
+}
+
 export class Renderer {
   readonly renderer = new THREE.WebGLRenderer({ antialias: true });
   readonly scene = new THREE.Scene();
@@ -1307,40 +1314,55 @@ export class Renderer {
   }
 
   /**
-   * Enemy id under a screen position, or null. Hit volumes are sized from the model that is drawn (SLOTS height), not from
-   * the primitive the model replaced: a chain of spheres up the body, tested in screen pixels. `tolerance` is extra
-   * pixels of forgiveness around the silhouette (0 = the body itself). Several candidates resolve deterministically:
-   * nearest to the cursor (inside the body counts as 0), then nearest to the camera.
+   * Id of the click volume under a screen position, or null. A volume is a chain of spheres up the object, tested in
+   * screen pixels, so it is as easy to hit at range as it is up close. `tolerance` is extra pixels of forgiveness
+   * around the silhouette (0 = the volume itself). Several candidates resolve deterministically: nearest to the cursor
+   * (inside a volume counts as 0), then nearest to the camera.
    */
-  pickEnemy(clientX: number, clientY: number, tolerance = 0): number | null {
+  private pickVolumes(clientX: number, clientY: number, tolerance: number, vols: PickCandidate[]): number | null {
     const focal = innerHeight / 2 / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
     const v = new THREE.Vector3();
     let best: { id: number; miss: number; depth: number } | null = null;
-    for (const [id, a] of this.actors) {
-      if (!a.group.visible || a.dead) continue;
-      const { height, radius } = pickVolume(a.type);
+    for (const c of vols) {
       let miss = Infinity, depth = Infinity;
       for (let i = 0; i <= PICK_SPHERES; i++) {
-        v.set(a.group.position.x, (height * i) / PICK_SPHERES, a.group.position.z).applyMatrix4(this.camera.matrixWorldInverse);
+        v.set(c.x, (c.height * i) / PICK_SPHERES, c.z).applyMatrix4(this.camera.matrixWorldInverse);
         if (-v.z <= this.camera.near) continue; // behind the camera
-        const k = focal / -v.z, d = Math.hypot(v.x * k + innerWidth / 2 - clientX, -v.y * k + innerHeight / 2 - clientY) - radius * k;
+        const k = focal / -v.z, d = Math.hypot(v.x * k + innerWidth / 2 - clientX, -v.y * k + innerHeight / 2 - clientY) - c.radius * k;
         if (d < miss) miss = d;
         depth = Math.min(depth, -v.z);
       }
-      miss = Math.max(0, Math.round(miss)); // whole pixels: two enemies both under the cursor tie, and the nearer one wins
+      miss = Math.max(0, Math.round(miss)); // whole pixels: two candidates both under the cursor tie, and the nearer one wins
       if (miss > tolerance) continue;
-      if (!best || miss < best.miss || (miss === best.miss && depth < best.depth)) best = { id, miss, depth };
+      if (!best || miss < best.miss || (miss === best.miss && depth < best.depth)) best = { id: c.id, miss, depth };
     }
     return best ? best.id : null;
   }
 
-  /** Gatherable node id under a screen position, or null. */
-  pickNode(clientX: number, clientY: number): number | null {
+  /** Enemy id under a screen position, or null. The volume is sized from the model that is drawn (SLOTS height), not from the primitive the model replaced. */
+  pickEnemy(clientX: number, clientY: number, tolerance = 0): number | null {
+    const vols: PickCandidate[] = [];
+    for (const [id, a] of this.actors) {
+      if (!a.group.visible || a.dead) continue;
+      vols.push({ id, x: a.group.position.x, z: a.group.position.z, ...pickVolume(a.type) });
+    }
+    return this.pickVolumes(clientX, clientY, tolerance, vols);
+  }
+
+  /**
+   * Gatherable node id under a screen position, or null. A trunk is thin and a rock is low, so the exact ray is only the
+   * first try: a miss falls back to the same forgiving volume the enemies use, shrunk with a spent node's model.
+   */
+  pickNode(clientX: number, clientY: number, tolerance = 0): number | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
-    const hit = this.raycaster.intersectObjects([...this.nodes.values()].filter(n => n.group.visible).map(n => n.group), true)[0]; // a ray ignores `visible`: the far ones are left out here
+    const live = [...this.nodes].filter(([, n]) => n.group.visible); // a ray ignores `visible`: the far ones are left out here
+    const hit = this.raycaster.intersectObjects(live.map(([, n]) => n.group), true)[0];
     for (let o: THREE.Object3D | null = hit?.object ?? null; o; o = o.parent) if (o.userData.nodeId !== undefined) return o.userData.nodeId as number;
-    return null;
+    return this.pickVolumes(clientX, clientY, tolerance, live.map(([id, n]) => {
+      const { height, radius } = nodeVolume(n.type, n.crown ? !n.crown.visible : false), s = n.group.scale.x; // only a tree has a crown, and drawNodes hides it once the tree is felled
+      return { id, x: n.group.position.x, z: n.group.position.z, height: height * s, radius: radius * s };
+    }));
   }
 
   /** True when the click lands on the forge building. */
@@ -1649,5 +1671,7 @@ interface Actor {
   anim?: Animator;
 }
 
+/** One upright click volume: a capsule standing on the ground at (x, z). */
+interface PickCandidate { id: number; x: number; z: number; height: number; radius: number }
 interface NodeView { group: THREE.Group; type: string; crown?: THREE.Mesh; live?: THREE.Object3D; stump?: THREE.Object3D; mats: Mat[]; base: number[] }
 interface DropView { group: THREE.Group; gem: THREE.Mesh; hit: THREE.Mesh }

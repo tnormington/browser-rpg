@@ -119,21 +119,21 @@ let pendingEnemy: number | null = null;
 let pendingPickup: number | null = null;
 let pendingInteract: Interact | null = null;
 const held = new Set<number>();
-let dragMoved = 0;
-const DRAG_SLOP_PX = 5; // below this a press is a click, not a drag
-/** How far outside an enemy's silhouette a click still takes it, in screen pixels. */
-const CLICK_TOLERANCE_PX = 28;
+let dragMoved = 0, pressX = 0, pressY = 0;
+const DRAG_SLOP_PX = 5; // below this a press is a click, not a drag. How far the cursor got from where it went down, not how far it wandered getting there: a hand tremor over several mousemoves used to add up past the slop and eat the click
+/** How far outside a target's silhouette a click still takes it, in screen pixels. */
+const CLICK_TOLERANCE_PX = 48;
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('mousedown', e => {
-  if (!held.size) dragMoved = 0; // the first button down starts the gesture; the second joins it
+  if (!held.size) { dragMoved = 0; pressX = e.clientX; pressY = e.clientY; } // the first button down starts the gesture; the second joins it
   held.add(e.button);
   unlockAudio();
 });
 addEventListener('mouseup', e => {
   if (held.has(0) && e.button === 0 && dragMoved < DRAG_SLOP_PX) {
     // Precedence, most specific first: ground drop, then an enemy under the cursor itself, then the NPC, ore/tree node and
-    // forge (all exact), and only then the forgiving enemy pick: a near miss takes the enemy, but never a click that was
-    // really aimed at something else. A click that hits none of them does nothing at all.
+    // forge (all exact), and only then the forgiving picks: a near miss takes the enemy, else the node, but never a click
+    // that was really aimed at something else. A click that hits none of them does nothing at all.
     pendingPickup = view.pickDrop(e.clientX, e.clientY);
     if (pendingPickup === null) pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
     if (pendingPickup === null && pendingEnemy === null) {
@@ -145,14 +145,18 @@ addEventListener('mouseup', e => {
       else if (view.pickForge(e.clientX, e.clientY)) pendingInteract = { k: 'forge' };
       else if (view.pickRange(e.clientX, e.clientY)) pendingInteract = { k: 'range' };
       else if (view.pickAlembic(e.clientX, e.clientY)) pendingInteract = { k: 'alembic' };
-      else pendingEnemy = view.pickEnemy(e.clientX, e.clientY, CLICK_TOLERANCE_PX);
+      else {
+        pendingEnemy = view.pickEnemy(e.clientX, e.clientY, CLICK_TOLERANCE_PX);
+        const near = pendingEnemy === null ? view.pickNode(e.clientX, e.clientY, CLICK_TOLERANCE_PX) : null;
+        if (near !== null) pendingInteract = { k: 'node', id: near };
+      }
     }
   }
   held.delete(e.button);
 });
 addEventListener('mousemove', e => {
   if (!held.size) return;
-  dragMoved += Math.abs(e.movementX) + Math.abs(e.movementY);
+  dragMoved = Math.max(dragMoved, Math.hypot(e.clientX - pressX, e.clientY - pressY)); // a high-water mark: a drag that comes back to where it started is still a drag
   if (dragMoved >= DRAG_SLOP_PX) view.orbit(e.movementX, e.movementY);
 });
 canvas.addEventListener('wheel', e => { e.preventDefault(); view.zoom(e.deltaY); }, { passive: false });
