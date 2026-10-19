@@ -2,13 +2,15 @@
 import type { GameState } from './sim';
 import { ABILITIES } from './sim/data';
 import { powerForLevel } from './sim/data';
-import { INVENTORY_SIZE, InvAction } from './sim/inventory';
+import { INVENTORY_SIZE, InvAction, ItemStack } from './sim/inventory';
 import { EQUIP_SLOTS, EquipSlot, ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { reductionOf, swingInterval } from './sim/combat';
 
 const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖' };
 const SLOT_LABEL: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs' };
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
+
+type MenuRow = [label: string, run: (() => void) | null, cls?: string];
 
 function div(parent: HTMLElement, cls: string, text = ''): HTMLDivElement {
   const d = document.createElement('div');
@@ -80,10 +82,7 @@ export class InventoryUi {
       cell.addEventListener('click', () => { if (def.slot) this.send({ k: 'equip', slot: i }); });
       cell.addEventListener('contextmenu', e => {
         e.preventDefault();
-        const items: [string, InvAction | null][] = [];
-        if (def.slot) items.push(['Equip', { k: 'equip', slot: i }]);
-        items.push(['Drop', { k: 'drop', slot: i }], ['Destroy', { k: 'destroy', slot: i }], ['Cancel', null]);
-        this.openMenu(e.clientX, e.clientY, items);
+        this.openItemMenu(e.clientX, e.clientY, i, st);
       });
       this.hover(cell, st.id, s);
     }
@@ -148,8 +147,9 @@ export class InventoryUi {
         const line = div(this.tip, 'tcmp', `If equipped: ${diff.join(', ')}`);
         line.style.color = (dd >= 0 && da >= 0) ? '#93b58c' : '#e0604f';
       }
-      div(this.tip, 'thint', 'Click to equip  ·  Right-click for more');
+      div(this.tip, 'thint', 'Click to equip  ·  Right-click to drop or destroy');
     } else if (worn) div(this.tip, 'thint', 'Click to unequip');
+    else div(this.tip, 'thint', 'Right-click to drop or destroy');
     this.tip.style.display = 'block';
     this.moveTip(e);
   }
@@ -162,12 +162,27 @@ export class InventoryUi {
 
   private hideTip() { this.tip.style.display = 'none'; }
 
-  private openMenu(x: number, y: number, items: [string, InvAction | null][]) {
+  /** Right-click menu for a filled slot. Destroying a stack asks first: it cannot be undone. */
+  private openItemMenu(x: number, y: number, slot: number, st: ItemStack) {
+    const def = ITEMS[st.id], what = st.qty > 1 ? `${def.name} ×${st.qty}` : def.name;
+    const rows: MenuRow[] = [];
+    if (def.slot) rows.push(['Equip', () => this.send({ k: 'equip', slot })]);
+    rows.push([`Drop ${what}`, () => this.send({ k: 'drop', slot })]);
+    rows.push([`Destroy ${what}`, st.qty > 1
+      ? () => this.openMenu(x, y, [['Yes, destroy them', () => this.send({ k: 'destroy', slot }), 'bad'], ['Cancel', null]],
+          `Destroy all ${st.qty}? This cannot be undone.`)
+      : () => this.send({ k: 'destroy', slot }), 'bad']);
+    rows.push(['Cancel', null]);
+    this.openMenu(x, y, rows);
+  }
+
+  private openMenu(x: number, y: number, rows: MenuRow[], head = '') {
     this.hideTip();
     this.menu.textContent = '';
-    for (const [label, act] of items) {
-      const row = div(this.menu, 'mrow', label);
-      row.addEventListener('click', () => { if (act) this.send(act); this.menu.style.display = 'none'; });
+    if (head) div(this.menu, 'mhead', head);
+    for (const [label, run, cls] of rows) {
+      const row = div(this.menu, `mrow${cls ? ` ${cls}` : ''}`, label);
+      row.addEventListener('click', () => { this.menu.style.display = 'none'; run?.(); });
     }
     this.menu.style.left = `${x}px`;
     this.menu.style.top = `${y}px`;
