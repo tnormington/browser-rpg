@@ -11,6 +11,7 @@ import { PLAYER_SPAWN } from './data';
 import { QUEST2_STAGES, QUEST_STAGES, Quest2Stage, QuestStage } from './quest';
 import { legalTalents, refreshTalents, talentById } from './talents';
 import { resolveCollisions } from './world';
+import { MAX_GOLD } from './shop';
 
 export const SAVE_VERSION = 1;
 
@@ -26,6 +27,7 @@ interface SaveFile {
     inventory: ({ id: string; qty: number } | null)[];
     equipment: Record<string, string | null>;
     talents?: Record<string, number>; // absent in saves from before the trees: nobody had spent a point
+    gold?: number;                    // absent in saves from before the economy: nobody had any
   };
   quest: { stage: QuestStage; kills: Record<string, number>; second?: Quest2Stage }; // `second` is absent in saves from before the cave
   enemies: { id: number; type: string; deadIn: number }[]; // deadIn > 0: still respawning
@@ -49,6 +51,7 @@ export function serialize(s: GameState): string {
       inventory: p.inventory.map(st => st && { id: st.id, qty: st.qty }),
       equipment: { ...p.equipment },
       talents: { ...p.talents },
+      gold: p.gold,
     },
     quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second },
     enemies: s.enemies.map(e => ({ id: e.id, type: e.type, deadIn: e.state === 'dead' ? Math.max(0, e.respawnIn) : 0 })),
@@ -107,6 +110,7 @@ export function deserialize(raw: string): GameState | null {
       }
       if (!legalTalents(p.talents, levelForXp(p.combat.xp))) throw new Error('impossible talent build');
     }
+    if (fp.gold !== undefined) p.gold = num(fp.gold, 0, MAX_GOLD, 'gold');
     refreshTalents(s);
     refreshGearStats(s);
     refreshPlayerStats(s, false);

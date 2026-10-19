@@ -31,6 +31,7 @@ import {
   deriveTalents, refreshTalents, spentIn, spentTotal, talentPoints,
 } from './sim/talents';
 import { reductionOf } from './sim/combat';
+import { SHOP_STOCK, VENDOR, SHOP_REACH, BUY_MARKUP, buyPrice } from './sim/shop';
 
 let checks = 0;
 function assert(cond: unknown, msg: string): asserts cond {
@@ -2932,4 +2933,89 @@ section('HOM-41 mastery: levels make the actions you have outgrown quicker and r
     'with room for one, a two-ore swing yields one and says so: the bonus is never lost silently');
 }
 
+// ---------------------------------------------------------------------------
+section('HOM-42 economy: gold, item values and a merchant who buys your junk');
+{
+  const atVendor = (seed: number) => {
+    const g = quietState(seed);
+    g.player.x = VENDOR.x + 2; g.player.z = VENDOR.z;
+    return g;
+  };
+  const failOf = (g: GameState) => g.events.find(ev => ev.t === 'actionfail') as Extract<GameState['events'][number], { t: 'actionfail' }> | undefined;
+
+  assert(createState(1).player.gold === 0, 'a new game starts with no gold');
+  assert(Object.entries(ITEMS).every(([, d]) => Number.isInteger(d.value) && d.value > 0), 'every item in ITEMS has a positive whole-number value: a new item cannot forget one');
+
+  // selling
+  const g = atVendor(420);
+  addItem(g.player.inventory, 'boar_hide', 10);
+  tick(g, { shop: [{ k: 'sell', slot: 0, qty: 4 }] });
+  assert(countOf(g, 'boar_hide') === 6 && g.player.gold === 4 * ITEMS.boar_hide.value, 'selling part of a stack removes those items and pays value each');
+  assert(g.events.some(ev => ev.t === 'trade' && ev.sold && ev.qty === 4), 'and a trade event says so');
+  tick(g, { shop: [{ k: 'sell', slot: 0, qty: 999 }] });
+  assert(countOf(g, 'boar_hide') === 0 && g.player.inventory[0] === null && g.player.gold === 10 * ITEMS.boar_hide.value, 'asking to sell more than the stack holds sells the stack and no more');
+  const before = g.player.gold;
+  tick(g, { shop: [{ k: 'sell', slot: 0, qty: 1 }, { k: 'sell', slot: -1, qty: 1 }, { k: 'sell', slot: 99, qty: 1 }, { k: 'sell', slot: 1.5, qty: 1 }] });
+  assert(g.player.gold === before, 'selling from an empty or invalid slot does nothing');
+  addItem(g.player.inventory, 'iron_sword', 1);
+  tick(g, { shop: [{ k: 'sell', slot: 0, qty: 0 }, { k: 'sell', slot: 0, qty: -3 }, { k: 'sell', slot: 0, qty: NaN }] });
+  assert(countOf(g, 'iron_sword') === 1 && g.player.gold === before, 'a zero, negative or non-numeric quantity sells nothing');
+
+  // range is enforced in the sim
+  const far = quietState(421);
+  addItem(far.player.inventory, 'iron_sword', 1);
+  far.player.gold = 1000;
+  far.player.x = VENDOR.x + SHOP_REACH + 1; far.player.z = VENDOR.z;
+  tick(far, { shop: [{ k: 'sell', slot: 0, qty: 1 }] });
+  assert(countOf(far, 'iron_sword') === 1 && far.player.gold === 1000 && failOf(far)?.reason === 'range', 'selling out of range is refused with an actionfail');
+  tick(far, { shop: [{ k: 'buy', item: 'leather_cap', qty: 1 }] });
+  assert(countOf(far, 'leather_cap') === 0 && far.player.gold === 1000 && failOf(far)?.reason === 'range', 'and so is buying');
+
+  // buying
+  const b = atVendor(422);
+  b.player.gold = buyPrice('iron_helm') + 3;
+  tick(b, { shop: [{ k: 'buy', item: 'iron_helm', qty: 1 }] });
+  assert(countOf(b, 'iron_helm') === 1 && b.player.gold === 3, 'buying takes the price and hands over the item');
+  tick(b, { shop: [{ k: 'buy', item: 'iron_helm', qty: 1 }] });
+  assert(countOf(b, 'iron_helm') === 1 && b.player.gold === 3 && failOf(b)?.reason === 'gold', 'too little gold: nothing changes and an actionfail says gold');
+  b.player.gold = 1e6;
+  b.player.inventory.fill({ id: 'boar_hide', qty: 50 });
+  tick(b, { shop: [{ k: 'buy', item: 'iron_helm', qty: 1 }] });
+  assert(countOf(b, 'iron_helm') === 0 && b.player.gold === 1e6 && failOf(b)?.reason === 'full', 'a full bag: nothing changes and an actionfail says full');
+  b.player.inventory.fill(null);
+  tick(b, { shop: [{ k: 'buy', item: 'iron_ore', qty: 1 }, { k: 'buy', item: 'no_such_item', qty: 1 }] });
+  assert(countOf(b, 'iron_ore') === 0 && b.player.gold === 1e6, 'the merchant sells only what is on his shelf');
+  const dead = atVendor(423);
+  dead.player.gold = 1000; dead.player.dead = true;
+  tick(dead, { shop: [{ k: 'buy', item: 'leather_cap', qty: 1 }] });
+  assert(countOf(dead, 'leather_cap') === 0 && dead.player.gold === 1000, 'the dead do not shop');
+
+  // clicking the merchant walks up to him and opens the shop
+  const walk = quietState(424);
+  walk.player.x = VENDOR.x - 12; walk.player.z = VENDOR.z;
+  tick(walk, { interact: { k: 'vendor' } });
+  let opened = false;
+  for (let n = 0; n < 400 && !opened; n++) { tick(walk); opened = hasEvent(walk, ev => ev.t === 'shop'); }
+  assert(opened, 'clicking the merchant walks the player over and raises the shop event');
+
+  // the invariant that keeps it unfarmable: computed from the data, not a hand-written list
+  const inputs = new Set(RECIPES.flatMap(r => r.inputs.map(i => i.id)));
+  assert(SHOP_STOCK.every(id => ITEMS[id]), 'every item on the shelf exists');
+  assert(SHOP_STOCK.every(id => !inputs.has(id)), 'nothing the merchant sells is an input to any recipe: buy -> craft -> sell cannot make gold, whatever the smith\'s yield');
+  assert(SHOP_STOCK.every(id => buyPrice(id) > ITEMS[id].value) && BUY_MARKUP > 1, 'he sells dearer than he buys: a round trip always loses gold');
+  assert(SHOP_STOCK.every(id => RECIPES.every(r => r.output.id !== id)), 'and nothing on the shelf is something the forge makes');
+
+  // saved
+  const sv = atVendor(425);
+  sv.player.gold = 777;
+  assert(deserialize(serialize(sv))!.player.gold === 777, 'gold survives a save/load round trip');
+  const old = JSON.parse(serialize(quietState(426)));
+  delete old.player.gold;
+  assert(old.version === SAVE_VERSION && SAVE_VERSION === 1, 'the save version is untouched, so no old save is thrown away');
+  assert(deserialize(JSON.stringify(old))?.player.gold === 0, 'a save from before the economy still loads, with 0 gold');
+  for (const bad of [-1, 'lots', null, 1e12, NaN]) {
+    const f = structuredClone(old); f.player.gold = bad;
+    assert(deserialize(JSON.stringify(f)) === null, `a save with gold ${String(bad)} is refused`);
+  }
+}
 console.log(`\nAll ${checks} checks passed.`);

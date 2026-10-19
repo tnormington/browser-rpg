@@ -2,6 +2,7 @@ import { createState, step, TICK_DT, Input } from './sim';
 import { Renderer } from './render';
 import { Hud } from './hud';
 import type { InvAction } from './sim/inventory';
+import type { ShopAction } from './sim/shop';
 import type { Interact } from './sim';
 import { loadGame, loadQuality, saveGame, saveQuality, wipeSave } from './storage';
 import { playEvents, toggleMute, unlockAudio } from './sfx';
@@ -22,6 +23,7 @@ const state = loaded.state ?? createState();
 const view = new Renderer(document.body, state, loadQuality());
 if (trace) (window as any).__frameTrace = trace, trace.attach(view.renderer);
 const pendingInv: InvAction[] = [];
+const pendingShop: ShopAction[] = [];
 let pendingCraft: { recipe: string; count: number } | null = null;
 let pendingAdvance = false;
 let pendingTalent: string | null = null, pendingTalentReset = false;
@@ -34,6 +36,8 @@ const hud = new Hud((x, y, z) => view.project(x, y, z), () => view.yaw, {
   inv: a => { pendingInv.push(a); saveDirty = true; },
   talent: id => { pendingTalent = id; saveDirty = true; },
   talentReset: () => { pendingTalentReset = true; saveDirty = true; },
+  sell: (slot, qty) => { pendingShop.push({ k: 'sell', slot, qty }); saveDirty = true; },
+  buy: (item, qty) => { pendingShop.push({ k: 'buy', item, qty }); saveDirty = true; },
   craft: (recipe, count) => { pendingCraft = { recipe, count }; },
   questAdvance: () => { pendingAdvance = true; },
   quality: toggle => {
@@ -102,6 +106,7 @@ addEventListener('mouseup', e => {
       const node = view.pickNode(e.clientX, e.clientY);
       if (view.pickNpc(e.clientX, e.clientY)) pendingInteract = { k: 'npc' };
       else if (node !== null) pendingInteract = { k: 'node', id: node };
+      else if (view.pickVendor(e.clientX, e.clientY)) pendingInteract = { k: 'vendor' };
       else if (view.pickForge(e.clientX, e.clientY)) pendingInteract = { k: 'forge' };
       else if ((pendingEnemy = view.pickEnemy(e.clientX, e.clientY, CLICK_TOLERANCE_PX)) === null) pendingClick = view.pick(e.clientX, e.clientY);
     }
@@ -133,6 +138,7 @@ function readInput(): Input {
     ability: pendingAbility,
     pickup: pendingPickup,
     inv: pendingInv.splice(0),
+    shop: pendingShop.splice(0),
     interact: pendingInteract,
     craft: pendingCraft,
     questAdvance: pendingAdvance,

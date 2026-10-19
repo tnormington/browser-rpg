@@ -5,6 +5,7 @@ import { powerForLevel } from './sim/data';
 import { INVENTORY_SIZE, InvAction, ItemStack } from './sim/inventory';
 import { EQUIP_SLOTS, EquipSlot, ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { reductionOf, swingInterval } from './sim/combat';
+import { nearVendor } from './sim/shop';
 
 const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖' };
 const SLOT_LABEL: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs' };
@@ -30,7 +31,7 @@ export class InventoryUi {
   private menu: HTMLElement;
   private sig = '';
 
-  constructor(root: HTMLElement, private send: (a: InvAction) => void) {
+  constructor(root: HTMLElement, private send: (a: InvAction) => void, private sell: (slot: number, qty: number) => void) {
     this.invPanel = div(root, 'panel invpanel');
     div(this.invPanel, 'ptitle', 'Inventory  (I)');
     this.grid = div(this.invPanel, 'grid');
@@ -42,6 +43,10 @@ export class InventoryUi {
     this.menu = div(root, 'ctxmenu');
     addEventListener('mousedown', e => { if (!this.menu.contains(e.target as Node)) this.menu.style.display = 'none'; });
     this.invPanel.style.display = this.charPanel.style.display = 'none';
+  }
+
+  show(which: 'inv' | 'char') {
+    (which === 'inv' ? this.invPanel : this.charPanel).style.display = 'block';
   }
 
   toggle(which: 'inv' | 'char') {
@@ -82,7 +87,7 @@ export class InventoryUi {
       cell.addEventListener('click', () => { if (def.slot) this.send({ k: 'equip', slot: i }); });
       cell.addEventListener('contextmenu', e => {
         e.preventDefault();
-        this.openItemMenu(e.clientX, e.clientY, i, st);
+        this.openItemMenu(e.clientX, e.clientY, i, st, s);
       });
       this.hover(cell, st.id, s);
     }
@@ -138,6 +143,7 @@ export class InventoryUi {
     if (def.slot) div(this.tip, 'tslot', SLOT_LABEL[def.slot]);
     for (const line of describeStats(def)) div(this.tip, 'tstat', line);
     div(this.tip, 'tdesc', def.desc);
+    div(this.tip, 'tval', `Sells for ${def.value} gold`);
     if (def.slot && !worn) {
       const cur = s.player.equipment[def.slot];
       const dd = (def.stats?.damage ?? 0) - (cur ? ITEMS[cur].stats?.damage ?? 0 : 0);
@@ -162,20 +168,27 @@ export class InventoryUi {
 
   private hideTip() { this.tip.style.display = 'none'; }
 
-  /** Right-click menu for a filled slot. Destroying a stack asks first: it cannot be undone. */
-  private openItemMenu(x: number, y: number, slot: number, st: ItemStack) {
+  /** Right-click menu for a filled slot. Destroying or selling a stack asks first: neither can be undone. */
+  private openItemMenu(x: number, y: number, slot: number, st: ItemStack, s: GameState) {
     const def = ITEMS[st.id], what = st.qty > 1 ? `${def.name} ×${st.qty}` : def.name;
     const rows: MenuRow[] = [];
     if (def.slot) rows.push(['Equip', () => this.send({ k: 'equip', slot })]);
+    if (nearVendor(s)) {
+      if (st.qty > 1) rows.push([`Sell 1 (${def.value} gold)`, () => this.sell(slot, 1)]);
+      rows.push([`Sell ${what} (${def.value * st.qty} gold)`,
+        this.confirmed(x, y, st.qty, 'Yes, sell them', `Sell all ${st.qty} for ${def.value * st.qty} gold?`, () => this.sell(slot, st.qty))]);
+    }
     rows.push([`Drop ${what}`, () => this.send({ k: 'drop', slot })]);
-    rows.push([`Destroy ${what}`, st.qty > 1
-      ? () => this.openMenu(x, y, [['Yes, destroy them', () => this.send({ k: 'destroy', slot }), 'bad'], ['Cancel', null]],
-          `Destroy all ${st.qty}? This cannot be undone.`)
-      : () => this.send({ k: 'destroy', slot }), 'bad']);
+    rows.push([`Destroy ${what}`,
+      this.confirmed(x, y, st.qty, 'Yes, destroy them', `Destroy all ${st.qty}? This cannot be undone.`, () => this.send({ k: 'destroy', slot })), 'bad']);
     rows.push(['Cancel', null]);
     this.openMenu(x, y, rows);
   }
 
+  /** A menu action that runs at once for a single item and asks first for a stack. */
+  private confirmed(x: number, y: number, qty: number, yes: string, prompt: string, run: () => void): () => void {
+    return qty > 1 ? () => this.openMenu(x, y, [[yes, run, 'bad'], ['Cancel', null]], prompt) : run;
+  }
   private openMenu(x: number, y: number, rows: MenuRow[], head = '') {
     this.hideTip();
     this.menu.textContent = '';

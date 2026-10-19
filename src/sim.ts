@@ -9,6 +9,7 @@ import { SkillId, Skills, newSkills } from './sim/skills';
 import { TalentEffects, TalentFail, Talents, deriveTalents, learnTalent, newTalents, resetTalents } from './sim/talents';
 import { ResourceNode, createNodes, updateNodes } from './sim/gathering';
 import { beginCraft } from './sim/crafting';
+import { ShopAction, applyShopAction } from './sim/shop';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
 import { PLAYER_RADIUS, clampToWorld, inCave, resolveCollisions, steerPoint } from './sim/world';
@@ -80,6 +81,7 @@ export interface Player {
   combat: XpTrack;         // the same object as skills.combat: combat code reads it directly
   action: Action | null;   // the one timed gather/craft in progress
   inventory: Inventory;
+  gold: number;            // currency: sold for, spent at the merchant. Not a bag item, so it never takes a slot
   equipment: Equipment;
   stats: DerivedStats;     // always deriveStats(equipment); combat reads this, never the items
   talents: Talents;        // ranks bought, by talent id
@@ -111,7 +113,7 @@ export type GameEvent =
   | { t: 'kill'; id: number; x: number; z: number }
   | { t: 'xp'; skill: SkillId; amount: number; x: number; z: number }
   | { t: 'levelup'; skill: SkillId; level: number }
-  | { t: 'actionfail'; reason: 'level' | 'depleted' | 'full' | 'materials' | 'range'; skill: SkillId; need: number; what: string }
+  | { t: 'actionfail'; reason: 'level' | 'depleted' | 'full' | 'materials' | 'range' | 'gold'; skill?: SkillId; need: number; what: string } // skill: absent for a failed trade
   | { t: 'npc' }                                        // player reached the quest giver: open dialogue
   | { t: 'quest'; what: 'accept' | 'progress' | 'stage' | 'complete'; name: string }  // name: the quest it is about (both chains sit at stage 'done' at once)
   | { t: 'forge' }                                      // player reached the forge: open the recipe list
@@ -121,6 +123,8 @@ export type GameEvent =
   | { t: 'drop'; id: number; item: string; x: number; z: number }
   | { t: 'loot'; item: string; qty: number }
   | { t: 'invfull' }
+  | { t: 'shop' }                                       // player reached the merchant: open the shop
+  | { t: 'trade'; sold: boolean; item: string; qty: number; gold: number } // a sale (gold earned) or a purchase (gold spent) went through
   | { t: 'death'; killer: string; recap: { src: string; what: string; amount: number; heavy: boolean; ago: number }[] } // killer: "Cave Brute: Crushing Slam"; recap: last hits, oldest first, `ago` seconds before death
   | { t: 'respawn' };
 
@@ -156,6 +160,7 @@ export interface Input {
   jump?: boolean;                               // jump if on the ground (held = bunny-hop on landing)
   pickup: number | null;                        // ground-drop id clicked this tick: walk to it
   inv: InvAction[];                             // inventory/equipment actions this tick
+  shop?: ShopAction[];                          // sell/buy requests this tick (optional like the others added after the first callers)
   interact: Interact | null;                    // node or forge clicked this tick: walk there and use it
   craft: { recipe: string; count: number } | null; // forge recipe chosen this tick
   questAdvance: boolean;                        // the advancing dialogue option was chosen this tick
@@ -176,7 +181,7 @@ export function createState(seed = 1): GameState {
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
       gcd: 0, cd: ABILITIES.map(() => 0), unlocked: 1, queued: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
-      skills, combat: skills.combat, action: null, inventory: newInventory(), equipment: emptyEquipment(), stats: deriveStats(emptyEquipment()),
+      skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), stats: deriveStats(emptyEquipment()),
       talents: newTalents(), talentFx: deriveTalents(newTalents()),
     },
     moveTarget: null,
@@ -219,6 +224,7 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     if (input.clickEnemy !== null) setTarget(s, input.clickEnemy);
     else if (input.clickTarget) s.moveTarget = clampToWorld(input.clickTarget);
     for (const a of input.inv) applyInvAction(s, a);
+    for (const a of input.shop ?? []) applyShopAction(s, a);
     if (input.pickup !== null) {
       const d = s.drops.find(x => x.id === input.pickup);
       if (d) s.moveTarget = clampToWorld(d);

@@ -11,6 +11,7 @@ export const LANDMARKS = {
   forge: { x: 20, z: -8 },
   caveMouth: { x: -18, z: -24 },
   npc: { x: 5, z: 2, r: 0.7 },
+  vendor: { x: -5, z: 3, r: 0.7 },
 };
 
 /** Rock walls either side of the cave mouth gap (x = -18). Two stacked circles per side seal the strip down to the world edge. */
@@ -47,6 +48,8 @@ export const OBSTACLES: Obstacle[] = [
   FORGE_BUILDING,
   // quest giver
   { x: 5, z: 2, r: 0.7 },
+  // the merchant
+  { x: -5, z: 3, r: 0.7 },
   // cave mouth: rock walls either side of a gap that is now the way in (see CAVE_ROOMS); the old back rock is gone
   ...CAVE_MOUTH,
 ];

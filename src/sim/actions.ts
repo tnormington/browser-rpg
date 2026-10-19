@@ -4,12 +4,13 @@ import { PLAYER_RADIUS, LANDMARKS, OBSTACLES, clampToWorld } from './world';
 import { beginGather, finishGather, nodeById, strikeGather } from './gathering';
 import { finishCraft } from './crafting';
 import { NPC } from './quest';
+import { VENDOR } from './shop';
 
 export type Action =
   | { k: 'gather'; nodeId: number; t: number; duration: number }
   | { k: 'craft'; recipe: string; t: number; duration: number; left: number };
 
-export type Interact = { k: 'node'; id: number } | { k: 'forge' } | { k: 'npc' };
+export type Interact = { k: 'node'; id: number } | { k: 'forge' } | { k: 'npc' } | { k: 'vendor' };
 
 const FORGE_R = OBSTACLES.find(o => o.x === LANDMARKS.forge.x && o.z === LANDMARKS.forge.z)!.r;
 const REACH = 1.5; // gap between the player's edge and the thing's edge that still counts as touching
@@ -17,6 +18,7 @@ const REACH = 1.5; // gap between the player's edge and the thing's edge that st
 /** Where the thing is and how big. */
 function target(s: GameState, it: Interact) {
   if (it.k === 'npc') return { x: NPC.x, z: NPC.z, r: NPC.r };
+  if (it.k === 'vendor') return { x: VENDOR.x, z: VENDOR.z, r: VENDOR.r };
   if (it.k === 'forge') return { x: LANDMARKS.forge.x, z: LANDMARKS.forge.z, r: FORGE_R };
   const n = nodeById(s, it.id);
   return n && { x: n.x, z: n.z, r: n.r };
@@ -50,6 +52,7 @@ export function updateInteract(s: GameState) {
   p.facing = Math.atan2(t.x - p.x, t.z - p.z);
   if (it.k === 'forge') s.events.push({ t: 'forge' });
   else if (it.k === 'npc') s.events.push({ t: 'npc' });
+  else if (it.k === 'vendor') s.events.push({ t: 'shop' });
   else beginGather(s, nodeById(s, it.id)!);
 }
 

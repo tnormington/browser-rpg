@@ -14,6 +14,7 @@ import { InventoryUi } from './inventory-ui';
 import { SkillsUi } from './skills-ui';
 import { TalentsUi } from './talents-ui';
 import { ForgeUi } from './forge-ui';
+import { ShopUi } from './shop-ui';
 import { QuestUi } from './quest-ui';
 import { MenuUi } from './menu-ui';
 
@@ -24,6 +25,8 @@ export interface HudActions {
   talent: (id: string) => void;
   talentReset: () => void;
   craft: (recipe: string, count: number) => void;
+  sell: (slot: number, qty: number) => void;
+  buy: (item: string, qty: number) => void;
   questAdvance: () => void;
   save: () => void;
   newGame: () => void;
@@ -33,11 +36,12 @@ export interface HudActions {
 /** The player-facing message for a refused gather/craft. Level failures say exactly what is needed. */
 function actionFailText(ev: Extract<GameEvent, { t: 'actionfail' }>): string {
   switch (ev.reason) {
-    case 'level': return `You need ${SKILLS[ev.skill].name} level ${ev.need} to ${SKILLS[ev.skill].verb} ${ev.what}`;
+    case 'level': return `You need ${SKILLS[ev.skill!].name} level ${ev.need} to ${SKILLS[ev.skill!].verb} ${ev.what}`; // a level failure always names its skill
     case 'depleted': return `${ev.what} is depleted: it will return shortly`;
     case 'full': return 'Inventory full';
     case 'materials': return `Missing materials for ${ev.what}`;
-    case 'range': return 'Move closer to the forge';
+    case 'range': return ev.skill ? 'Move closer to the forge' : 'Move closer to the merchant';
+    case 'gold': return `Not enough gold for ${ev.what}`;
   }
 }
 
@@ -105,6 +109,8 @@ export class Hud {
   private skillsUi: SkillsUi;
   private talentsUi: TalentsUi;
   private forgeUi: ForgeUi;
+  private shopUi: ShopUi;
+  private goldEl: HTMLElement;
   private castBar: ReturnType<typeof bar>;
   /** A gather/craft is running (or was just requested): a hit while true is what broke it. */
   private acting = false;
@@ -113,6 +119,7 @@ export class Hud {
   constructor(private project: Project, private yaw: () => number, actions: HudActions) {
     const pf = el(this.root, 'frame player');
     this.playerLvl = el(pf, 'name');
+    this.goldEl = el(pf, 'gold');
     this.hp = bar(pf, 'hp');
     this.energy = bar(pf, 'energy');
 
@@ -147,9 +154,10 @@ export class Hud {
     this.warn = el(this.root, 'warn');
     this.hurt = el(this.root, 'hurt');
     this.log = el(this.root, 'msglog');
-    this.invUi = new InventoryUi(this.root, actions.inv);
+    this.invUi = new InventoryUi(this.root, actions.inv, actions.sell);
     this.skillsUi = new SkillsUi(this.root);
     this.talentsUi = new TalentsUi(this.root, { learn: actions.talent, reset: actions.talentReset });
+    this.shopUi = new ShopUi(this.root, actions.buy);
     this.forgeUi = new ForgeUi(this.root, (r, n) => { this.acting = true; actions.craft(r, n); });
     this.castBar = bar(this.root, 'castbar');
     this.questUi = new QuestUi(this.root, actions.questAdvance);
@@ -229,6 +237,13 @@ export class Hud {
         this.note(`Dropped: ${ITEMS[ev.item].name}`, 'log-drop');
       } else if (ev.t === 'actionfail') {
         this.say(actionFailText(ev));
+      } else if (ev.t === 'shop') {
+        this.shopUi.setOpen(true);
+        this.invUi.show('inv'); // selling is done from the bag
+      } else if (ev.t === 'trade') {
+        const name = `${ITEMS[ev.item].name}`;
+        this.float(ev.sold ? `+${ev.gold} gold` : `-${ev.gold} gold`, 'loot', s.player.x, 3.0, s.player.z);
+        this.note(ev.sold ? `Sold ${name} for ${ev.gold} gold` : `Bought ${name} for ${ev.gold} gold`, 'log-loot');
       } else if (ev.t === 'forge') {
         this.forgeUi.setOpen(true);
       } else if (ev.t === 'crafted') {
@@ -346,6 +361,7 @@ export class Hud {
   update(s: GameState, dtSeconds: number) {
     const p = s.player;
     this.playerLvl.textContent = `Adventurer  Lv ${p.combat.level}`;
+    this.goldEl.textContent = `Gold ${p.gold}`;
     this.setBar(this.hp, p.hp / p.maxHp, `${Math.ceil(p.hp)} / ${p.maxHp}`);
     this.setBar(this.energy, p.energy / p.maxEnergy, `${Math.floor(p.energy)}`);
     const prog = levelProgress(p.combat);
@@ -443,6 +459,7 @@ export class Hud {
     this.talentsUi.update(s);
     this.questUi.update(s, this.yaw());
     this.forgeUi.update(s);
+    this.shopUi.update(s);
     this.updateCastBar(s);
     this.updateNodePlates(s, blockers);
 

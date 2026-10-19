@@ -6,6 +6,7 @@ import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, caveDepth,
 import { ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NPC, npcMarker as markerOf } from './sim/quest';
+import { VENDOR } from './sim/shop';
 import { Motes, Particles, Rings, Slashes } from './fx';
 import { PostStack, Quality } from './post';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
@@ -166,6 +167,7 @@ export class Renderer {
   private nodes = new Map<number, NodeView>();
   private forgeParts: THREE.Object3D[] = [];
   private npcParts: THREE.Object3D[] = [];
+  private vendorParts: THREE.Object3D[] = [];
   private npcMarker!: THREE.Sprite;
   private staffLight!: THREE.PointLight;
   private markerTex!: Record<'offer' | 'ready' | 'wait', THREE.Texture>;
@@ -552,6 +554,27 @@ export class Renderer {
     this.npcMarker.scale.set(1.1, 1.1, 1);
     this.npcMarker.renderOrder = 10;
     this.scene.add(this.npcMarker);
+    this.buildVendor();
+  }
+
+  /** The merchant: a stand-in made of primitives (no model slot yet) - a hatted figure in a brown cloak behind a pack-laden crate. */
+  private buildVendor() {
+    const group = new THREE.Group();
+    group.position.set(VENDOR.x, 0, VENDOR.z);
+    group.rotation.y = Math.atan2(0 - VENDOR.x, 6 - VENDOR.z);
+    const part = (g: THREE.BufferGeometry, color: number, cls: MatClass, y: number, x = 0, z = 0) => {
+      const m = mesh(g, color, cls, 'cast');
+      m.position.set(x, y, z);
+      group.add(m);
+      this.vendorParts.push(m);
+    };
+    part(new THREE.ConeGeometry(0.75, 1.6, 6), 0x6b4a2c, 'cloth', 0.8);
+    part(new THREE.SphereGeometry(0.3, 6, 4), P.skin, 'skin', 1.85);
+    part(new THREE.ConeGeometry(0.55, 0.35, 6), 0x3a2a1a, 'cloth', 2.2); // wide hat brim
+    part(new THREE.BoxGeometry(0.9, 0.7, 0.7), 0x5a4128, 'wood', 0.35, 1.2, 0.3); // crate
+    part(new THREE.SphereGeometry(0.4, 6, 4), P.boar, 'hide', 0.95, 1.2, 0.3);    // sack on top
+    part(new THREE.BoxGeometry(0.28, 0.28, 0.28), P.gold, 'metal', 0.8, 0.2, 0.55);
+    this.scene.add(group);
   }
 
   // ---- models: each slot swaps in when its file is parsed; a slot that fails to load keeps its styled primitive ----
@@ -967,6 +990,13 @@ export class Renderer {
     }, i * 220));
     this.rings.pulse(x, 0.2, z, P.gold, 6, 1.2);
     this.shakeMag = Math.max(this.shakeMag, 0.12);
+  }
+
+  /** True when the click lands on the merchant. */
+  pickVendor(clientX: number, clientY: number): boolean {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    return this.raycaster.intersectObjects(this.vendorParts, false).length > 0;
   }
 
   /** True when the click lands on the quest giver. */
