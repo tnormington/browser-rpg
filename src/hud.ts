@@ -17,6 +17,7 @@ import { SkillsUi } from './skills-ui';
 import { TalentsUi } from './talents-ui';
 import { ForgeUi } from './forge-ui';
 import { ShopUi } from './shop-ui';
+import { FlightUi, MapUi, MapView } from './flight-ui';
 import { QuestUi } from './quest-ui';
 import { MenuUi } from './menu-ui';
 
@@ -29,6 +30,9 @@ export interface HudActions {
   craft: (recipe: string, count: number) => void;
   sell: (slot: number, qty: number) => void;
   buy: (item: string, qty: number) => void;
+  fly: (to: string) => void;
+  skipFlight: () => void;
+  map: MapView;
   questAdvance: () => void;
   save: () => void;
   newGame: () => void;
@@ -116,6 +120,8 @@ export class Hud {
   private forgeUi: ForgeUi;
   private rangeUi: ForgeUi;
   private shopUi: ShopUi;
+  private flightUi: FlightUi;
+  private mapUi: MapUi;
   private goldEl: HTMLElement;
   private statusEl: HTMLElement;
   private castBar: ReturnType<typeof bar>;
@@ -168,6 +174,8 @@ export class Hud {
     this.skillsUi = new SkillsUi(this.root);
     this.talentsUi = new TalentsUi(this.root, { learn: actions.talent, reset: actions.talentReset });
     this.shopUi = new ShopUi(this.root, actions.buy);
+    this.flightUi = new FlightUi(this.root, actions.fly);
+    this.mapUi = new MapUi(this.root, actions.map, actions.skipFlight);
     const craft = (r: string, n: number) => { this.acting = true; actions.craft(r, n); };
     this.forgeUi = new ForgeUi(this.root, 'forge', 'Forge', craft);
     this.rangeUi = new ForgeUi(this.root, 'range', 'Cooking Range', craft);
@@ -183,12 +191,14 @@ export class Hud {
   }
 
   toggleHelp() { this.menuUi.toggle(); }
+  toggleMap() { this.mapUi.toggle(); }
 
-  /** A dialogue or the help screen has focus: game keys (jump) must not act under it. */
-  get modalOpen(): boolean { return this.menuUi.isOpen || this.questUi.isOpen; }
+  /** A dialogue, the help screen or the map has focus: game keys (jump) must not act under it. */
+  get modalOpen(): boolean { return this.menuUi.isOpen || this.questUi.isOpen || this.mapUi.isOpen; }
 
-  /** Esc: closes the topmost overlay (help, dialogue). Returns true if it closed something. */
+  /** Esc: closes the topmost overlay (map, help, dialogue). Returns true if it closed something. */
   closeOverlay(): boolean {
+    if (this.mapUi.isOpen) { this.mapUi.setOpen(false); return true; }
     if (this.menuUi.isOpen) { this.menuUi.setOpen(false); return true; }
     if (this.questUi.isOpen) { this.questUi.setOpen(false); return true; }
     return false;
@@ -252,6 +262,17 @@ export class Hud {
       } else if (ev.t === 'shop') {
         this.shopUi.setOpen(true, ev.vendor);
         this.invUi.show('inv'); // selling is done from the bag
+      } else if (ev.t === 'flightmaster') {
+        this.flightUi.setOpen(true, ev.town);
+      } else if (ev.t === 'discover') {
+        this.popBanner(this.unlockBanner, `FLIGHT PATH:  ${ev.town}`);
+        this.unlockBanner.dataset.sub = 'You can now fly here from any flight master';
+        this.note(`Flight path discovered: ${ev.town}. You can now fly here from any flight master.`, 'log-quest');
+      } else if (ev.t === 'flight') {
+        if (ev.phase === 'start') {
+          this.float(`-${ev.price} gold`, 'loot', s.player.x, 3.0, s.player.z);
+          this.note(`You pay ${ev.price} gold and take flight.`, 'log-loot');
+        } else this.note(ev.skipped ? 'You cut the flight short and land.' : 'You land.', 'log-info');
       } else if (ev.t === 'trade') {
         const name = `${ITEMS[ev.item].name}`;
         this.float(ev.sold ? `+${ev.gold} gold` : `-${ev.gold} gold`, 'loot', s.player.x, 3.0, s.player.z);
@@ -486,6 +507,8 @@ export class Hud {
     this.forgeUi.update(s);
     this.rangeUi.update(s);
     this.shopUi.update(s);
+    this.flightUi.update(s);
+    this.mapUi.update(s);
     this.updateCastBar(s);
     this.updateNodePlates(s, blockers);
 
@@ -493,12 +516,12 @@ export class Hud {
     this.msg.style.opacity = String(Math.max(0, Math.min(1, 1.6 - this.msgAge * 1.5)));
 
     this.deathOverlay.style.display = p.dead ? 'flex' : 'none';
-    if (p.dead) this.deathOverlay.textContent = `You died.  Waking in ${nearestTown(p.x, p.z).name} in ${Math.ceil(p.respawnIn)}...${this.toll > 0 ? `  (repair toll: ${this.toll} gold)` : ''}`;
+    if (p.dead) this.deathOverlay.textContent = `You died.  Waking in ${nearestTown(p.x, p.z, s.found).name} in ${Math.ceil(p.respawnIn)}...${this.toll > 0 ? `  (repair toll: ${this.toll} gold)` : ''}`;
   }
 
   /** Progress bar for the current gather/craft. */
   private updateCastBar(s: GameState) {
-    const a = s.player.action;
+    const a = s.player.action?.k === 'flight' ? null : s.player.action; // the ride has its own caption (MapUi)
     this.acting = !!a;
     this.castBar.fill.parentElement!.style.display = a ? 'block' : 'none';
     if (!a) return;

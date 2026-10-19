@@ -15,7 +15,9 @@ import { Animator } from './anim';
 import { PlayerGear } from './gear';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
-import { WorldView } from './world-view';
+import { WorldView, flightMasterFigure, Kit } from './world-view';
+import { WorldMap, mapPosition } from './world-map';
+import { landingSpot } from './sim/flight';
 
 /**
  * Every colour in the scene, in one place. Desaturated, cold and narrow: the world sits in a tight dark band so that
@@ -181,9 +183,17 @@ export class Renderer {
   private rangeParts: THREE.Object3D[] = [];
   private npcParts: THREE.Object3D[] = [];
   private vendorParts: THREE.Object3D[] = [];
+  private flightParts: THREE.Mesh[] = [];
+  /** The world map: built the first time the map screen or a ride wants it, then kept (one mesh, two uses: see world-map.ts). */
+  private mapScene: WorldMap | null = null;
+  private mapScreen = false;
+  private inMap = false;
+  /** The last frame drawn was the map, not the game: nothing projected through the game's camera (nameplates, floaters) means anything. */
+  get showingMap() { return this.inMap; }
   private npcMarker!: THREE.Sprite;
   private harbourMarker!: THREE.Sprite;
   private world!: WorldView;
+  private kit!: Kit;
   private beyond!: THREE.Mesh;
   /** Model slots that have loaded: an enemy built after its slot arrived is dressed at once. */
   private prepared = new Map<string, Prepared>();
@@ -240,7 +250,9 @@ export class Renderer {
     this.ground = this.tintedGround();
     this.scene.add(this.ground);
     this.buildZone();
-    this.world = new WorldView(this.scene, { mesh: (g, c, cls, sh) => mesh(g, c, cls as MatClass, sh), P });
+    this.kit = { mesh: (g, c, cls, sh) => mesh(g, c, cls as MatClass, sh), P };
+    this.world = new WorldView(this.scene, this.kit);
+    this.scene.add(flightMasterFigure(this.kit, LANDMARKS.flightHale, { x: 0, z: 6 }, this.flightParts)); // faces the spawn, like the other two
     this.rings = new Rings(this.scene);
     this.slashes = new Slashes(this.scene);
     this.scene.add(this.particles.points, this.motes.points);
@@ -947,8 +959,9 @@ export class Renderer {
 
   /** Called once per sim tick so we can interpolate between the last two states. */
   snapshot(s: GameState) {
-    this.prev = this.curr;
-    this.curr = { x: s.player.x, z: s.player.z };
+    const next = { x: s.player.x, z: s.player.z };
+    this.prev = Math.hypot(next.x - this.curr.x, next.z - this.curr.z) > 30 ? next : this.curr; // a long jump (a flight's landing, a respawn) is a cut, not a slide
+    this.curr = next;
     for (const e of s.enemies) {
       const a = this.actors.get(e.id) ?? this.ensureActor(e, s);
       if (!a) continue;
@@ -1076,6 +1089,14 @@ export class Renderer {
     return this.raycaster.intersectObjects(this.world.vendorPicks(), false).length > 0 ? 'harbour' : null;
   }
 
+  /** The flight master under the click (a town id), or null. */
+  pickFlightMaster(clientX: number, clientY: number): string | null {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    if (this.raycaster.intersectObjects(this.flightParts, false).length > 0) return 'hale';
+    return this.raycaster.intersectObjects(this.world.flightPicks(), false).length > 0 ? 'saltmarrow' : null;
+  }
+
   /** The quest giver under the click ('hale' or 'harbour'), or null. */
   pickNpc(clientX: number, clientY: number): string | null {
     this.raycaster.setFromCamera(
@@ -1158,7 +1179,34 @@ export class Renderer {
     return hit ? { x: hit.point.x, z: hit.point.z } : null;
   }
 
+  /** Show the world map screen instead of the game (the ride shows the same map by itself, whatever this says). */
+  setMapScreen(on: boolean) { this.mapScreen = on; }
+  /** A town's beacon / the player's pin on the map screen, in CSS pixels (null before the map is first drawn or when off screen). */
+  mapProject(town: string) { return this.mapScene?.project(town) ?? null; }
+  mapProjectYou() { return this.mapScene?.projectYou() ?? null; }
+
+  /** The world map in place of the game: the screen (looking down, with the player's pin) or, mid-flight, the bird's-eye ride. */
+  private drawMap(s: GameState, ride: Extract<NonNullable<GameState['player']['action']>, { k: 'flight' }> | null) {
+    const map = this.mapScene ??= new WorldMap(), now = performance.now(), aspect = innerWidth / innerHeight;
+    this.lastDraw = now;
+    map.setFound(s.found);
+    if (ride) {
+      map.frameRide(ride.from, ride.to, ride.t / ride.duration, aspect, now);
+      const at = landingSpot(ride.to);
+      this.world.update(at.x, at.z); // the arrival is built while the ride runs, so landing costs no frame
+    } else {
+      const me = mapPosition(s.player.x, s.player.z);
+      map.setYou(me.x, me.z, now);
+      map.frameScreen(aspect);
+    }
+    map.update(now);
+    this.renderer.render(map.scene, map.camera);
+  }
+
   draw(s: GameState, alpha: number) {
+    const a = s.player.action, ride = a?.k === 'flight' ? a : null;
+    this.inMap = !!ride || this.mapScreen;
+    if (this.inMap) return this.drawMap(s, ride);
     const x = this.prev.x + (this.curr.x - this.prev.x) * alpha;
     const z = this.prev.z + (this.curr.z - this.prev.z) * alpha;
     this.castPunch = Math.max(0, this.castPunch - 1 / 60);

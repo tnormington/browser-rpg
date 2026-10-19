@@ -118,6 +118,16 @@ canvas{display:block}
 .hurt.show{animation:hurt .45s ease-out}.hurt.heavy.show{animation:hurt 1.2s ease-out}
 @keyframes hurt{0%{opacity:1}100%{opacity:0}}
 .questbanner{top:20%;color:var(--arcane);font-size:64px;text-shadow:0 0 22px #1a8fc0,0 3px 4px #000}.questbanner.show{animation:lvl 3.2s ease-out}
+/* the world map screen and the flight ride (flight-ui.ts): the map scene is drawn in place of the game, so the game's own overlays step aside */
+.hud.mapmode .tracker,.hud.mapmode .actionbar,.hud.mapmode .swing,.hud.mapmode .frame.target,.hud.mapmode .msglog,.hud.mapmode .panel,.hud.mapmode .menubar,.hud.mapmode .xp{display:none!important}
+.maplayer{position:absolute;inset:0;pointer-events:none}
+.maptitle{position:absolute;top:22px;left:0;right:0;text-align:center;font-size:30px;letter-spacing:.2em;color:var(--gold);text-shadow:0 0 14px #000,0 2px 3px #000}
+.maphint{position:absolute;bottom:22px;left:0;right:0;text-align:center;font-size:13px;color:var(--ink-dim)}
+.maptown{position:absolute;left:0;top:0;white-space:nowrap;font-size:17px;font-weight:bold;color:#ffd870;text-shadow:0 0 4px #000,0 2px 4px #000,0 0 10px #000}.maptown.lost{color:var(--ink-dim);font-weight:normal}.maptown.mapyou{color:var(--arcane);font-size:14px}
+.ridelayer{position:absolute;inset:0;pointer-events:none}
+.ridetitle{position:absolute;top:40px;left:0;right:0;text-align:center;font-size:28px;letter-spacing:.12em;color:var(--gold);text-shadow:0 0 14px #000,0 2px 3px #000}
+.ridebar{position:absolute;top:86px;left:50%;width:280px;height:6px;margin-left:-140px;background:rgba(8,9,11,.7);border:1px solid #000;box-shadow:0 0 0 1px var(--edge)}.ridefill{height:100%;width:0;background:var(--gold)}
+.rideskip{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);pointer-events:auto;cursor:pointer;padding:6px 18px;background:var(--iron);border:1px solid var(--edge-hi);border-radius:2px;font-size:14px}.rideskip:hover{background:var(--iron-lift)}.rideskip.off{opacity:.5;cursor:default}
 </style>
 </head>
 <body>

@@ -28,12 +28,16 @@ const pendingShop: ShopAction[] = [];
 let pendingCraft: { recipe: string; count: number } | null = null;
 let pendingAdvance = false;
 let pendingTalent: string | null = null, pendingTalentReset = false;
+let pendingFlight: string | null = null, pendingSkip = false;
 
 // --- save / load ---
 const AUTOSAVE_EVERY = 20; // seconds
 let wiped = stress > 1, saveDirty = false, sinceSave = 0;
 function save(): boolean { return !wiped && saveGame(state); }
-const hud = new Hud((x, y, z) => view.project(x, y, z), () => view.yaw, {
+const hud = new Hud((x, y, z) => view.showingMap ? null : view.project(x, y, z), () => view.yaw, {
+  fly: to => { pendingFlight = to; saveDirty = true; },
+  skipFlight: () => { pendingSkip = true; },
+  map: { setScreen: on => view.setMapScreen(on), project: town => view.mapProject(town), projectYou: () => view.mapProjectYou() },
   inv: a => { pendingInv.push(a); saveDirty = true; },
   talent: id => { pendingTalent = id; saveDirty = true; },
   talentReset: () => { pendingTalentReset = true; saveDirty = true; },
@@ -76,12 +80,17 @@ addEventListener('keydown', e => {
   if (typing(e)) return;
   keys.add(e.code);
   unlockAudio();
+  if (state.player.action?.k === 'flight') { // on the ride the only keys are the ones that cut it short
+    if (e.code === 'Space' || e.code === 'Escape') { e.preventDefault(); pendingSkip = true; }
+    return;
+  }
   if (e.code === 'Space' && !hud.modalOpen) { e.preventDefault(); if (!e.repeat) pendingJump = true; return; } // latched here so a tap shorter than a tick still jumps; never scrolls or presses a focused button
   if (e.repeat) return;
   if (e.code === 'Tab') { e.preventDefault(); pendingTab = true; }
   else if (e.code === 'Escape') { if (!hud.closeOverlay()) pendingClear = true; }
   else if (e.code === 'KeyR') pendingAttack = true;
   else if (e.code === 'KeyH') hud.toggleHelp();
+  else if (e.code === 'KeyJ') hud.toggleMap();
   else if (e.code === 'KeyF') eatBest();
   else if (e.code === 'KeyE') pendingInteract = { k: 'npc' };
   else if (e.code === 'KeyM') hud.say(toggleMute() ? 'Sound off' : 'Sound on');
@@ -112,8 +121,9 @@ addEventListener('mouseup', e => {
     pendingPickup = view.pickDrop(e.clientX, e.clientY);
     if (pendingPickup === null) pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
     if (pendingPickup === null && pendingEnemy === null) {
-      const node = view.pickNode(e.clientX, e.clientY), npc = view.pickNpc(e.clientX, e.clientY), vendor = view.pickVendor(e.clientX, e.clientY);
+      const node = view.pickNode(e.clientX, e.clientY), npc = view.pickNpc(e.clientX, e.clientY), vendor = view.pickVendor(e.clientX, e.clientY), flightMaster = view.pickFlightMaster(e.clientX, e.clientY);
       if (npc !== null) pendingInteract = { k: 'npc', id: npc };
+      else if (flightMaster !== null) pendingInteract = { k: 'flightmaster', id: flightMaster };
       else if (node !== null) pendingInteract = { k: 'node', id: node };
       else if (vendor !== null) pendingInteract = { k: 'vendor', id: vendor };
       else if (view.pickForge(e.clientX, e.clientY)) pendingInteract = { k: 'forge' };
@@ -154,7 +164,10 @@ function readInput(): Input {
     questAdvance: pendingAdvance,
     talent: pendingTalent,
     talentReset: pendingTalentReset,
+    flight: pendingFlight,
+    skipFlight: pendingSkip,
   };
+  pendingFlight = null; pendingSkip = false;
   pendingInteract = null; pendingCraft = null; pendingAdvance = false; pendingTalent = null; pendingTalentReset = false;
   pendingClick = null; pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingAttack = false; pendingJump = false; pendingClear = false; pendingAbility = null;
   return input;
@@ -174,7 +187,7 @@ function frame(now: number) {
     hud.onEvents(state.events, state);
     playEvents(state.events);
     trace?.tick(state.events);
-    if (state.events.some(ev => ev.t === 'levelup' || ev.t === 'quest' || ev.t === 'crafted' || ev.t === 'kill' || ev.t === 'talent' || ev.t === 'talentreset')) saveDirty = true;
+    if (state.events.some(ev => ev.t === 'levelup' || ev.t === 'quest' || ev.t === 'crafted' || ev.t === 'kill' || ev.t === 'talent' || ev.t === 'talentreset' || ev.t === 'flight' || ev.t === 'discover')) saveDirty = true;
     acc -= TICK_DT;
   }
   // autosave: soon after anything meaningful, otherwise on a timer

@@ -12,6 +12,7 @@ import { QUEST2_STAGES, QUEST3_STAGES, QUEST_STAGES, Quest2Stage, Quest3Stage, Q
 import { legalTalents, refreshTalents, talentById } from './talents';
 import { nearestTown, resolveCollisions } from './world';
 import { MAX_GOLD } from './shop';
+import { landingSpot, masterById } from './flight';
 
 export const SAVE_VERSION = 1;
 /** Nothing is further than this from the origin: the world is a few thousand units across at most (Saltmarrow ends near x = 970). */
@@ -32,6 +33,7 @@ interface SaveFile {
     gold?: number;                    // absent in saves from before the economy: nobody had any
     buffs?: { id: string; left: number }[]; // absent in saves from before cooking: nobody was Well Fed
   };
+  found?: string[]; // flight masters found, by town id: absent in saves from before flights (only home is found)
   quest: { stage: QuestStage; kills: Record<string, number>; second?: Quest2Stage; third?: Quest3Stage }; // `second` is absent in saves from before the cave, `third` in saves from before the road
   enemies: { id: number; type: string; deadIn: number }[]; // deadIn > 0: still respawning
   nodes: { id: number; type: string; charges: number; respawnIn: number }[];
@@ -40,6 +42,8 @@ interface SaveFile {
 
 export function serialize(s: GameState): string {
   const p = s.player;
+  // saving while dead stores the respawn: you wake in the nearest found town, healed (the toll is already paid); saving mid-ride stores the landing (the fare is already paid)
+  const at = p.dead ? nearestTown(p.x, p.z, s.found).wake : p.action?.k === 'flight' ? landingSpot(p.action.to) : p;
   const file: SaveFile = {
     version: SAVE_VERSION,
     savedAt: Date.now(),
@@ -47,8 +51,7 @@ export function serialize(s: GameState): string {
     rng: s.rng,
     nextDropId: s.nextDropId,
     player: {
-      // saving while dead stores the respawn: you wake in the nearest town, healed (the toll is already paid)
-      x: p.dead ? nearestTown(p.x, p.z).wake.x : p.x, z: p.dead ? nearestTown(p.x, p.z).wake.z : p.z, facing: p.facing,
+      x: at.x, z: at.z, facing: p.facing,
       hp: p.dead ? p.maxHp : p.hp, energy: p.energy,
       xp: Object.fromEntries(SKILL_IDS.map(id => [id, p.skills[id].xp])),
       inventory: p.inventory.map(st => st && { id: st.id, qty: st.qty }),
@@ -57,6 +60,7 @@ export function serialize(s: GameState): string {
       gold: p.gold,
       buffs: p.buffs.map(b => ({ id: b.id, left: b.left })),
     },
+    found: [...s.found],
     quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second, third: s.quest.third },
     enemies: s.enemies.map(e => ({ id: e.id, type: e.type, deadIn: e.state === 'dead' ? Math.max(0, e.respawnIn) : 0 })),
     nodes: s.nodes.map(n => ({ id: n.id, type: n.type, charges: n.charges, respawnIn: n.respawnIn })),
@@ -131,6 +135,14 @@ export function deserialize(raw: string): GameState | null {
     resolveCollisions(p);
     p.hp = Math.min(p.maxHp, Math.max(1, num(fp.hp, 0, 1e6, 'hp')));
     p.energy = Math.min(p.maxEnergy, num(fp.energy, 0, 1e6, 'energy'));
+
+    if (f.found !== undefined) {
+      if (!Array.isArray(f.found)) return null;
+      for (const id of f.found) {
+        if (typeof id !== 'string' || !masterById(id)) throw new Error('bad flight master');
+        if (!s.found.includes(id)) s.found.push(id);
+      }
+    }
 
     const fq = f.quest;
     if (!isObj(fq) || !QUEST_STAGES.includes(fq.stage as QuestStage) || !isObj(fq.kills)) return null;

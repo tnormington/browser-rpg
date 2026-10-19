@@ -13,6 +13,7 @@ import { Buff, updateConsumables } from './sim/consumables';
 import { ShopAction, applyShopAction } from './sim/shop';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
+import { START_TOWN, discoverMasters, startFlight, updateFlight } from './sim/flight';
 import { PLAYER_RADIUS, clampToWorld, inCave, regionAt, resolveCollisions } from './sim/world';
 import { Pt, route } from './sim/path';
 import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
@@ -81,7 +82,7 @@ export interface Player {
   outOfCombat: number;
   skills: Skills;
   combat: XpTrack;         // the same object as skills.combat: combat code reads it directly
-  action: Action | null;   // the one timed gather/craft in progress
+  action: Action | null;   // the one timed gather/craft/flight in progress
   inventory: Inventory;
   gold: number;            // currency: sold for, spent at the merchant. Not a bag item, so it never takes a slot
   equipment: Equipment;
@@ -136,7 +137,10 @@ export type GameEvent =
   | { t: 'shop'; vendor: string }                       // player reached a merchant: open their shop
   | { t: 'trade'; sold: boolean; item: string; qty: number; gold: number } // a sale (gold earned) or a purchase (gold spent) went through
   | { t: 'death'; killer: string; toll: number; recap: { src: string; what: string; amount: number; heavy: boolean; ago: number }[] } // killer: "Cave Brute: Crushing Slam"; toll: gold the repair cost, already paid; recap: last hits, oldest first, `ago` seconds before death
-  | { t: 'respawn'; town: string };                     // woke in this town
+  | { t: 'respawn'; town: string }                      // woke in this town
+  | { t: 'flightmaster'; town: string }                 // player reached a flight master (a town id): open the destinations
+  | { t: 'discover'; town: string }                     // a flight master was found for the first time (a town name)
+  | { t: 'flight'; phase: 'start' | 'land'; from: string; to: string; price: number; skipped?: boolean }; // a ride began (price paid) or ended (skipped: cut short); town ids
 
 export interface GameState {
   tick: number;
@@ -151,6 +155,8 @@ export interface GameState {
   nextDropId: number;
   nodes: ResourceNode[];
   quest: QuestState;
+  /** Town ids whose flight master has been found: the only places a flight can go (and, later, where a death wakes you). Hale is home. */
+  found: string[];
   interact: Interact | null; // walking toward a node/forge to use it
   events: GameEvent[]; // cleared at the start of every step; presentation reads them after each step
 }
@@ -176,6 +182,8 @@ export interface Input {
   questAdvance: boolean;                        // the advancing dialogue option was chosen this tick
   talent?: string | null;                       // talent id bought this tick
   talentReset?: boolean;                        // every talent point handed back this tick
+  flight?: string | null;                       // town id to fly to this tick (from the master the player stands at)
+  skipFlight?: boolean;                         // cut the ride short (the sim holds it until the first SKIP_AFTER seconds have been watched)
 }
 
 export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, pickup: null, inv: [], interact: null, craft: null, questAdvance: false, talent: null, talentReset: false };
@@ -207,6 +215,7 @@ export function createState(seed = 1): GameState {
     nextDropId: 1,
     nodes: createNodes(),
     quest: newQuest(),
+    found: [START_TOWN],
     interact: null,
     events: [],
   };
@@ -222,6 +231,8 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
 
   if (p.dead) {
     updatePlayerDeath(s, dt);
+  } else if (p.action?.k === 'flight') {
+    updateFlight(s, input.skipFlight === true, dt); // on the ride nothing else the player presses counts
   } else {
     // any movement intent abandons the current gather/craft and any walk-to-use
     if (input.dirX !== 0 || input.dirZ !== 0 || input.clickTarget || input.clickEnemy !== null || input.pickup !== null) {
@@ -251,6 +262,8 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     updateConsumables(s, dt);
     updatePlayerCombat(s, dt);
     if (input.ability !== null) pressAbility(s, input.ability);
+    if (input.flight) startFlight(s, input.flight);
+    discoverMasters(s);
   }
   updateEnemies(s, dt);
   updateDrops(s, dt);

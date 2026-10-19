@@ -1,17 +1,19 @@
-// The player's one timed action (gathering or crafting) and the click-to-interact walk that starts it.
+// The player's one timed action (gathering, crafting or a flight) and the click-to-interact walk that starts it.
 import type { GameState } from '../sim';
 import { PLAYER_RADIUS, LANDMARKS, OBSTACLES, clampToWorld } from './world';
 import { beginGather, finishGather, nodeById, strikeGather } from './gathering';
 import { finishCraft } from './crafting';
 import { NPCS, npcNear } from './quest';
 import { vendorById, vendorNear } from './shop';
+import { masterById, masterNear } from './flight';
 
 export type Action =
   | { k: 'gather'; nodeId: number; t: number; duration: number }
-  | { k: 'craft'; recipe: string; t: number; duration: number; left: number };
+  | { k: 'craft'; recipe: string; t: number; duration: number; left: number }
+  | { k: 'flight'; from: string; to: string; t: number; duration: number }; // the ride: flight.ts runs it, and the player is out of everyone's reach until it lands
 
 /** `npc` and `vendor` name who (a click on them knows); without one, the nearest in earshot is meant (the E key). */
-export type Interact = { k: 'node'; id: number } | { k: 'forge' } | { k: 'range' } | { k: 'npc'; id?: string } | { k: 'vendor'; id?: string };
+export type Interact = { k: 'node'; id: number } | { k: 'forge' } | { k: 'range' } | { k: 'npc'; id?: string } | { k: 'vendor'; id?: string } | { k: 'flightmaster'; id?: string };
 
 const FORGE_R = OBSTACLES.find(o => o.x === LANDMARKS.forge.x && o.z === LANDMARKS.forge.z)!.r;
 const RANGE_R = 0.9; // the hearth is a prop, not a collider: this is only how close counts as touching it
@@ -21,6 +23,7 @@ const REACH = 1.5; // gap between the player's edge and the thing's edge that st
 function target(s: GameState, it: Interact) {
   if (it.k === 'npc') return NPCS.find(n => n.id === it.id) ?? NPCS.find(n => n.id === npcNear(s)) ?? NPCS[0];
   if (it.k === 'vendor') return vendorById(it.id ?? '') ?? vendorNear(s) ?? vendorById('hale')!;
+  if (it.k === 'flightmaster') return masterById(it.id ?? '') ?? masterNear(s) ?? masterById('hale')!;
   if (it.k === 'forge') return { x: LANDMARKS.forge.x, z: LANDMARKS.forge.z, r: FORGE_R };
   if (it.k === 'range') return { x: LANDMARKS.range.x, z: LANDMARKS.range.z, r: RANGE_R };
   const n = nodeById(s, it.id);
@@ -57,12 +60,13 @@ export function updateInteract(s: GameState) {
   else if (it.k === 'range') s.events.push({ t: 'range' });
   else if (it.k === 'npc') s.events.push({ t: 'npc', who: (t as { id: string }).id });
   else if (it.k === 'vendor') s.events.push({ t: 'shop', vendor: (t as { id: string }).id });
+  else if (it.k === 'flightmaster') s.events.push({ t: 'flightmaster', town: (t as { id: string }).id });
   else beginGather(s, nodeById(s, it.id)!);
 }
 
 export function updateAction(s: GameState, dt: number) {
   const p = s.player, a = p.action;
-  if (!a) return;
+  if (!a || a.k === 'flight') return; // a flight is run by updateFlight, which walking cannot interrupt
   if (p.dead || p.moving) { p.action = null; return; }
   const before = a.t;
   a.t += dt;

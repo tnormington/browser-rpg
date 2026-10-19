@@ -244,6 +244,7 @@ section('HOM-48 death costs something: wake in the nearest town, poorer, with no
   const dress = (s: GameState) => {
     s.player.equipment.weapon = 'warden_edge'; s.player.equipment.chest = 'mithril_chestplate'; s.player.gold = 200;
     addItem(s.player.inventory, 'iron_ore', 7);
+    s.found.push('saltmarrow'); // walked there already (HOM-49): a death wakes you in the nearest town whose flight master you have found
     s.player.buffs.push({ id: 'well_fed', left: 900 }); s.player.maxHp = Math.round(s.player.maxHp * 1.1); s.player.hp = s.player.maxHp;
   };
 

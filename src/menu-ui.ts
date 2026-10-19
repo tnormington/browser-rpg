@@ -18,6 +18,8 @@ const CONTROLS: [string, string][] = [
   ['Click the forge / range', 'Smith bars and weapons / cook fish at the inn'],
   ['F', 'Eat the best food in your bag: heals over 5 seconds, a hit spoils it, one food every 20 s. Pies make you Well Fed out of combat.'],
   ['I   C   K', 'Inventory + equipment, Character, Skills'],
+  ['J', 'World map: where the towns are, and which flight masters you have found'],
+  ['Click a flight master', 'Fly to a town you have walked to, for gold (not in combat). Space skips the ride after 3 seconds.'],
   ['Right-click item', 'Drop it on the ground, destroy it, or sell it when at the merchant'],
   ['Click the merchant', 'Buy gear; right-click bag items to sell'],
   ['N', 'Talents: a point per combat level, spent in three trees, changing what your six abilities do. Out of combat only; unlearning is free.'],

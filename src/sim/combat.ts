@@ -10,6 +10,7 @@ import { questOnKill, questReached } from './quest';
 import { nextRandom } from './rng';
 import { inSafeZone, nearestTown, resolveCollisions, sameSideOfDoor } from './world';
 import { clearLine } from './sight';
+import { isFlying } from './flight';
 import {
   ABILITIES, ENEMY_TYPES, GCD, QUEUE_WINDOW, CRIT_CHANCE, CRIT_MULT, ENERGY_MAX, ENERGY_REGEN,
   RESPAWN_DELAY, OOC_DELAY, OOC_REGEN_FRAC, TAB_RANGE, TOLL_FRAC, powerForLevel,
@@ -366,7 +367,7 @@ export function updatePlayerDeath(s: GameState, dt: number) {
   p.respawnIn -= dt;
   if (p.respawnIn > 0) return;
   p.dead = false;
-  const town = nearestTown(p.x, p.z); // W2.3: only towns whose flight master has been found
+  const town = nearestTown(p.x, p.z, s.found); // only towns whose flight master has been found
   p.x = town.wake.x; p.z = town.wake.z; p.facing = Math.PI; p.moving = false;
   refreshPlayerStats(s, true);
   p.energy = p.maxEnergy;
@@ -401,6 +402,7 @@ function aggro(s: GameState, e: Enemy) {
 
 function hurtPlayer(s: GameState, e: Enemy, amount: number, what: string, heavy = false) {
   const p = s.player;
+  if (isFlying(p)) return; // on a flight nothing can touch you
   p.hp = Math.max(0, p.hp - amount);
   p.outOfCombat = 0;
   p.action = null; // getting hit breaks concentration
@@ -515,7 +517,7 @@ export function updateEnemies(s: GameState, dt: number) {
     if (e.state === 'idle') {
       if (dp > SIM_WAKE_RANGE) continue; // far from the player and at rest: there is nothing for it to do
       // no aggro in a town: not for a player standing in the square, and not from an enemy that has strayed into it
-      if (!p.dead && dp <= aggroRadius(def, p.combat.level) && !inSafeZone(p.x, p.z) && !strayedIntoTown(e) && clearLine(e, p)) aggro(s, e);
+      if (!p.dead && !isFlying(p) && dp <= aggroRadius(def, p.combat.level) && !inSafeZone(p.x, p.z) && !strayedIntoTown(e) && clearLine(e, p)) aggro(s, e);
     } else if (e.state === 'chase') {
       if (p.dead || dist(e, { x: e.spawnX, z: e.spawnZ }) > def.leash || strayedIntoTown(e)) { // a chase that reaches a town gives up, like one that outruns its leash
         startReturn(e);

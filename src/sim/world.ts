@@ -68,6 +68,8 @@ const clearingLandmarks = {
   forge: { x: 20, z: -8 },
   npc: { x: 5, z: 2, r: 0.7 },
   vendor: { x: -5, z: 3, r: 0.7 },
+  /** The flight master, just inside the east gate (design 5.1): the first thing the road's far end shows you too. */
+  flightHale: { x: 26, z: 1, r: 0.7 },
 };
 const ridgeLandmarks = { caveMouth: { x: -18, z: -24 } };
 
@@ -156,7 +158,9 @@ const saltLandmarks = {
   inn: { x: SALT_INN.x, z: SALT_INN.z },
   /** The cooking range, in the inn. */
   range: at(SALTMARROW, -10, -9),
-  /** The quay's root and its end: where the flight master (W2.3) will go. */
+  /** The flight master, just inside the gate from the road. */
+  flightSalt: { ...at(SALTMARROW, -54, -5), r: 0.7 },
+  /** The quay's root and its end. */
   quayRoot: at(SALTMARROW, 16, 0),
   quayEnd: at(SALTMARROW, 62, 0),
 };
@@ -197,7 +201,7 @@ export const REGIONS: Region[] = [
     // The outdoor square. Its half-side is live (setWorldHalf), so this rect is mutated in place.
     id: 'clearing', name: 'The Clearing', cave: false, zone: 'hale', cell: 0.25,
     footprint: [{ x0: -30, x1: 30, z0: -30, z1: 30 }],
-    obstacles: [FORGE_BUILDING, { x: 5, z: 2, r: 0.7 }, { x: -5, z: 3, r: 0.7 }], // forge building, quest giver, the merchant
+    obstacles: [FORGE_BUILDING, { x: 5, z: 2, r: 0.7 }, { x: -5, z: 3, r: 0.7 }, clearingLandmarks.flightHale], // forge building, quest giver, the merchant, the flight master
     tall: [FORGE_BUILDING], // the one outdoor thing big enough to hide behind
     trees: [
       { x: -12, z: 10, r: 1 }, { x: -20, z: 4, r: 1 }, { x: -8, z: 20, r: 1 },
@@ -269,7 +273,7 @@ export const REGIONS: Region[] = [
       { x0: SALTMARROW.x - 70, x1: SALTMARROW.x + 30, z0: SALTMARROW.z - 70, z1: SALTMARROW.z + 70 },
       { x0: SALTMARROW.x + 16, x1: SALTMARROW.x + 62, z0: SALTMARROW.z - 3, z1: SALTMARROW.z + 3 },
     ],
-    obstacles: [SALT_INN, ...SALT_HOUSES, ...SALT_PROPS, { ...saltLandmarks.harbourmaster, kind: 'person' }, { ...saltLandmarks.harbourVendor, kind: 'person' }],
+    obstacles: [SALT_INN, ...SALT_HOUSES, ...SALT_PROPS, { ...saltLandmarks.harbourmaster, kind: 'person' }, { ...saltLandmarks.harbourVendor, kind: 'person' }, { ...saltLandmarks.flightSalt, kind: 'person' }],
     tall: [SALT_INN, ...SALT_HOUSES, SALT_PROPS[4]], trees: [],
     rocks: [-14, -8, -2, 4, 10].map((lx, i) => ({ type: 'adamant' as const, ...at(SALTMARROW, lx, i % 2 ? -66 : -64), r: 1.2 })),
     spots: SALT_SPOTS,
@@ -287,10 +291,10 @@ for (const r of REGIONS) if (r.cave) r.tall.push(...r.obstacles);
  * you wake. Hale's is where a new game starts. `found` is the hook for flight masters (W2.3): pass the ids of the towns whose master you have
  * found and only those count; it defaults to every town, which is all there is until they exist.
  */
-export const TOWNS: { id: string; name: string; wake: Pt }[] = [
-  { id: 'hale', name: 'Hale', wake: { x: 0, z: 6 } }, // where a new game starts (PLAYER_SPAWN in data.ts reads this)
-  { id: 'saltmarrow', name: 'Saltmarrow', wake: at(SALTMARROW, -25, -4) },
-];
+export const TOWNS: { id: string; name: string; wake: Pt; map: Pt }[] = [
+  { id: 'hale', name: 'Hale', wake: { x: 0, z: 6 }, map: { x: 0, z: 0 } }, // where a new game starts (PLAYER_SPAWN in data.ts reads this)
+  { id: 'saltmarrow', name: 'Saltmarrow', wake: at(SALTMARROW, -25, -4), map: { x: 900, z: 0 } },
+]; // `map`: the world-map position (design 1.2), used for the map screen and for flight prices only: walking never reads it
 export function nearestTown(x: number, z: number, found: readonly string[] = TOWNS.map(t => t.id)) {
   const open = TOWNS.filter(t => found.includes(t.id));
   return (open.length ? open : TOWNS).reduce((best, t) =>
