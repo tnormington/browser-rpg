@@ -1,8 +1,8 @@
-// Rendering only: reads GameState, never mutates it.
+﻿// Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
-import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, inCave } from './sim/world';
+import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, inCave, regionAt } from './sim/world';
 import { ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NODE_TYPES } from './sim/gathering';
@@ -90,6 +90,8 @@ const RING_OPACITY = 0.42;
 const FOG = { near: 6, far: 42 };
 /** Actors past this camera distance are not drawn or animated. Strictly beyond FOG.far, where fog is already 100%: nothing still meant to be visible is culled. */
 const FOG_CULL = FOG.far + 8;
+/** The fens' air: lifted and green-grey, a long open view. The Thornwood's: a dark green close about the player, the opposite of the fens. */
+const FEN_AIR = { color: new THREE.Color(0x48645a) }, WOOD_AIR = { color: new THREE.Color(0x2c4636) };
 /** Withering Ground's circle: a sick yellow-green edge over a murkier fill, nowhere near the red of a mark that is about to land. */
 const WITHER_EDGE = 0xb4c85a, WITHER_FILL = 0x5f7228;
 /** The Warden's arcane gem floats just above his right fist (glTF loading strips the dot from "Fist.R"), carried by the bone. */
@@ -248,6 +250,7 @@ export class Renderer {
   private rain = new Rain();
   private skyClock = 0;
   private fogLift = new THREE.Color(0x3b4754);
+  private air = { fen: 0, wood: 0 };
 
   // orbit camera (render-side only; sim never sees it except via input direction)
   yaw = 0;
@@ -569,6 +572,15 @@ export class Renderer {
     return m;
   }
 
+  /** How much of the fens' air and the Thornwood's the player is standing in, eased frame by frame so crossing a region's edge is a change of weather and not a cut. */
+  private zoneAir(x: number, z: number) {
+    const id = regionAt(x, z)?.id, sq = LANDMARKS.thornSquare;
+    const wood = id === 'thornwick' ? THREE.MathUtils.clamp((Math.hypot(x - sq.x, z - sq.z) - 36) / 14, 0, 1) : 0;
+    this.air.fen += ((id === 'dunmere' ? 1 : 0) - this.air.fen) * 0.03;
+    this.air.wood += (wood - this.air.wood) * 0.03;
+    return this.air;
+  }
+
   /** Daylight to cave dark by `depth` (the sim's caveDepth at the player): sun, sky, ambient and fog fade, the lantern comes up. */
   private applyCaveLight(depth: number, x: number, z: number) {
     const mix = THREE.MathUtils.lerp;
@@ -578,9 +590,10 @@ export class Renderer {
     this.hemi.intensity = mix(DAY.hemi * w.hemi, CAVE_LIGHT.hemi, depth);
     this.scene.environmentIntensity = mix(DAY.env * w.env, CAVE_LIGHT.env, depth);
     const fog = this.scene.fog as THREE.Fog;
-    fog.color.setHex(P.horizon).lerp(this.fogLift, w.lift).lerp(this.caveFogColor, depth);
-    fog.near = mix(w.fogNear, CAVE_LIGHT.fog.near, depth);
-    fog.far = mix(w.fogFar, CAVE_LIGHT.fog.far, depth);
+    const air = this.zoneAir(x, z);
+    fog.color.setHex(P.horizon).lerp(this.fogLift, w.lift).lerp(FEN_AIR.color, air.fen * 0.5).lerp(WOOD_AIR.color, air.wood * 0.4).lerp(this.caveFogColor, depth);
+    fog.near = mix(w.fogNear + air.fen * 2 - air.wood * 2, CAVE_LIGHT.fog.near, depth);
+    fog.far = mix(w.fogFar + air.fen * 10 - air.wood * 7, CAVE_LIGHT.fog.far, depth);
     // the sky and the rain go with the daylight: nothing of the weather reaches underground (rain is gone by the first few metres of cave)
     this.skyDome.update(this.skyClock, w.cover, fog.color, mix(DAY.sky, CAVE_LIGHT.sky, depth), this.camera.position);
     this.rain.update(this.skyClock, w.rain * (1 - THREE.MathUtils.clamp(depth * 5, 0, 1)), this.camera.position);

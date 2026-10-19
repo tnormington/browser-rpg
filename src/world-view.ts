@@ -33,7 +33,8 @@ const FOOTING = 0x59626b, TIMBER = 0x2c241e, HULL = 0x52483e, FOAM = 0xa9bcc6, S
 interface Pal { wall: number; roof: number; foot: number }
 const SALT_PAL: Pal = { wall: PLASTER, roof: ROOF, foot: FOOTING }, THORN_PAL: Pal = { wall: 0x8a7d66, roof: 0x4a3f2e, foot: 0x4d4a44 };
 /** The fens' ground: peat and moss, still water, reeds, and the stain Withering Ground leaves. Thornwick's: leaf litter under a dark canopy. */
-const FEN = { moss: 0x41584a, mossAlt: 0x364b3e, peat: 0x2f3329, stain: 0x6b6a2f, water: 0x2f525a, reed: 0x7d8a52 };
+const FEN = { moss: 0x41584a, mossAlt: 0x364b3e, peat: 0x2f3329, stain: 0x6b6a2f, water: 0x4a7a80, reed: 0x9aa862, bone: 0x9a9680, mist: 0x8fa89c };
+const WOOD = { brush: 0x2e4a30, thorn: 0x4a3028, cap: 0x8a6a58 };
 const WOOD_FLOOR = { litter: 0x3a4630, litterAlt: 0x2f3a2a, loam: 0x3a3226 };
 
 let poolMaterial: THREE.MeshBasicMaterial | undefined;
@@ -53,11 +54,11 @@ function headstone(o: Obstacle, ry: number, i: number): THREE.BufferGeometry[] {
   return [place(new THREE.BoxGeometry(0.8, 1.2, 0.22).rotateZ(lean), o.x, 0.6, o.z, ry), place(new THREE.CylinderGeometry(0.4, 0.4, 0.22, 8).rotateX(Math.PI / 2).rotateZ(lean), o.x - lean * 0.6, 1.2, o.z, ry)];
 }
 
-type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed', THREE.BufferGeometry[]> & {
+type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed' | 'bone' | 'brush' | 'thorn' | 'cloth', THREE.BufferGeometry[]> & {
   /** Placed copies of props.ts props, by `prop:layer`: one draw per layer however many there are. */
   props: Map<string, { color: number; cls: string; geoms: THREE.BufferGeometry[] }>;
 };
-const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], props: new Map() });
+const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], bone: [], brush: [], thorn: [], cloth: [], props: new Map() });
 
 /** A prop's layers as one merged geometry each, built the first time it is wanted and copied (never moved) for every placement. */
 const propSources = new Map<PropId, { name: string; color: number; cls: string; geo: THREE.BufferGeometry }[]>();
@@ -76,8 +77,8 @@ function placeProp(bag: Bag, id: PropId, x: number, z: number, rot = 0, scale = 
 }
 
 /** A pool of lamplight on the ground: a warm disc fading to nothing at its rim. Unlit and faint (well under the forge's glow), no real light behind it; alpha, not additive, so the fog takes it back to the ground's own colour rather than to a pale blue. */
-function lampPool(x: number, z: number, r: number, strength = 0.3, y = 0.05): THREE.BufferGeometry {
-  const g = new THREE.CircleGeometry(r, 20).rotateX(-Math.PI / 2).translate(x, y, z), warm = new THREE.Color(LANTERN);
+function lampPool(x: number, z: number, r: number, strength = 0.3, y = 0.05, color = LANTERN): THREE.BufferGeometry {
+  const g = new THREE.CircleGeometry(r, 20).rotateX(-Math.PI / 2).translate(x, y, z), warm = new THREE.Color(color);
   const col = new Float32Array(g.attributes.position.count * 4);
   warm.toArray(col, 0); // vertex 0 is the centre; the rim stays clear
   col[3] = strength;
@@ -124,6 +125,19 @@ function boat(o: Obstacle, rot: number, bag: Bag) {
   put(bag.hull, new THREE.ConeGeometry(0.28, 1.8, 4).rotateZ(-0.5), len - 0.1, depth + 0.6, 0); // the stem post, raised
   put(bag.wood, new THREE.CylinderGeometry(0.1, 0.16, 3.6, 5), -len * 0.15, depth + 1.7, 0); // the mast, snapped
   put(bag.wood, new THREE.CylinderGeometry(0.06, 0.07, 2.8, 4).rotateZ(1.25), -len * 0.15 + 1.1, depth + 1.8, 0); // the boom, hanging
+}
+
+/** A clump of fen reed: a fan of tall pale blades leaning out of one root. Seeded, so it is the same reed every time the slab is built. */
+function reedClump(bag: Bag, x: number, z: number, seed: number) {
+  for (let b = 0, n = 5 + Math.floor(hash(seed) * 4); b < n; b++) {
+    const a = b * 2.4 + seed, h = 1.5 + hash(seed + b * 3) * 1.3, lean = 0.1 + hash(b + seed * 2) * 0.2;
+    bag.reed.push(place(new THREE.ConeGeometry(0.1, h, 4).rotateZ(Math.sin(a) * lean).rotateX(Math.cos(a) * lean), x + Math.cos(a) * 0.35, h / 2, z + Math.sin(a) * 0.35));
+  }
+}
+/** A drowned tree: a bleached trunk, snapped short, with a limb or two. */
+function snag(bag: Bag, x: number, z: number, seed: number) {
+  const ry = hash(seed) * Math.PI * 2, h = 2.4 + hash(seed + 1) * 1.6;
+  bag.bone.push(place(new THREE.CylinderGeometry(0.1, 0.24, h, 5).rotateZ(0.12), x, h / 2, z, ry), place(new THREE.CylinderGeometry(0.04, 0.09, 1.5, 4).rotateZ(1), x + 0.5, h * 0.7, z, ry), place(new THREE.CylinderGeometry(0.04, 0.08, 1.1, 4).rotateZ(-1.1), x - 0.4, h * 0.5, z, ry));
 }
 
 /** The graveyard's stones as one draw. Saltmarrow's are drawn with its slabs; Hale's clearing is render.ts's own, so it asks for them here. */
@@ -281,6 +295,7 @@ export class WorldView {
     herbs.forEach((hb, i) => placeProp(bag, hb.kind === 'fen' ? 'herbPatchFen' : 'herbPatchThorn', hb.x, hb.z, hash(i * 3 + hb.x) * Math.PI * 2, 1));
     if (r.road) this.waymarks(bag, rect, mainRect(r), r.road.axis, r.id === 'greywater' ? 100 : 0);
     if (r.id === 'dunmere') this.fenDressing(bag, rect, r);
+    if (r.id === 'thornwick') this.woodDressing(bag, rect, r);
     this.emit(bag, add, r.id === 'thornwick' ? THORN_PAL : SALT_PAL);
   }
 
@@ -310,11 +325,77 @@ export class WorldView {
       if (!r.footprint.some(f => inside(f, x, z, rad))) continue;
       if ((r.hazards ?? []).some(h => Math.hypot(h.x - x, h.z - z) < h.r + rad + 1.5) || camps.some(c => Math.hypot(c.x - x, c.z - z) < rad + 6) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + rad + 1)) continue;
       bag.water.push(place(new THREE.CircleGeometry(rad, 14).rotateX(-Math.PI / 2).scale(1, 1, 0.7 + 0.3 * hash(i + j * 2.3)), x, 0.03, z, hash(i * 9.1 + j) * Math.PI));
-      for (let n = 0; n < 7; n++) {
-        const a = n * 2.4 + k * 10, d = rad * (0.85 + 0.3 * hash(n + k * 7)), h = 0.9 + hash(n * 3 + k) * 0.8;
-        bag.reed.push(place(new THREE.ConeGeometry(0.07, h, 4).rotateZ(Math.sin(a) * 0.15), x + Math.cos(a) * d, h / 2, z + Math.sin(a) * d * 0.7));
+      bag.pool.push(lampPool(x, z, rad * 1.8, 0.2, 0.5, FEN.mist)); // the mist that sits on still water: the one pale thing in a fen
+      for (let n = 0; n < 5; n++) { const a = n * 2.4 + k * 10, d = rad * (0.9 + 0.3 * hash(n + k * 7)); reedClump(bag, x + Math.cos(a) * d, z + Math.sin(a) * d * 0.7, i * 17 + j * 5 + n); }
+    }
+    // reed beds and snags across the open ground, so the fen is never bare to the horizon: one candidate per 11-unit cell
+    const free = (x: number, z: number, pad: number) => x >= rect.x0 && x < rect.x1 && z >= rect.z0 && z < rect.z1 && Math.abs(x - road) > 6 && r.footprint.some(f => inside(f, x, z, 2))
+      && !(r.hazards ?? []).some(h => Math.hypot(h.x - x, h.z - z) < h.r + pad) && !camps.some(c => Math.hypot(c.x - x, c.z - z) < 4) && !r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + pad);
+    const SCATTER = 11;
+    for (let i = Math.floor(rect.x0 / SCATTER); i <= Math.floor(rect.x1 / SCATTER); i++) for (let j = Math.floor(rect.z0 / SCATTER); j <= Math.floor(rect.z1 / SCATTER); j++) {
+      const k = hash(i * 4.1 + j * 9.7 + 3), x = (i + 0.15 + 0.7 * hash(i * 2.3 + j * 1.7)) * SCATTER, z = (j + 0.15 + 0.7 * hash(j * 6.1 + i * 3.9)) * SCATTER;
+      if (k > 0.5 || !free(x, z, 1.5)) continue;
+      if (k < 0.07) snag(bag, x, z, i * 31 + j);
+      else if (k < 0.12) bag.rock.push(place(new THREE.DodecahedronGeometry(1), x, 0.25, z, k * 40, 0.8 + k * 3, 0.45, 0.7 + k * 2));
+      else for (let n = 0; n < 2 + Math.floor(k * 6); n++) reedClump(bag, x + (hash(n + k * 9) - 0.5) * 3, z + (hash(n * 3 + k * 5) - 0.5) * 3, i * 13 + j * 7 + n);
+    }
+    // Withering Ground, told apart from far off without the overlay: a ring of bone-pale stakes on the rim, and dead stalks standing in the stain
+    for (const h of r.hazards ?? []) {
+      if (h.x < rect.x0 || h.x >= rect.x1 || h.z < rect.z0 || h.z >= rect.z1) continue;
+      for (let n = 0; n < 12; n++) {
+        const a = n * Math.PI / 6 + hash(h.x + n) * 0.3, out = 0.25 * (n % 2 ? 1 : -1);
+        bag.bone.push(place(new THREE.ConeGeometry(0.14, 1.9 + hash(n + h.z) * 0.8, 4).rotateZ(Math.sin(a) * out).rotateX(-Math.cos(a) * out), h.x + Math.cos(a) * (h.r + 0.2), 1.1, h.z + Math.sin(a) * (h.r + 0.2)));
+      }
+      for (let n = 0; n < 10; n++) {
+        const a = n * 2.4, d = h.r * (0.2 + 0.7 * hash(n * 5 + h.x)), lean = (hash(n + h.z) - 0.5) * 0.8;
+        bag.bone.push(place(new THREE.ConeGeometry(0.06, 0.9, 3).rotateZ(lean), h.x + Math.cos(a) * d, 0.45, h.z + Math.sin(a) * d));
       }
     }
+  }
+
+  /**
+   * The Thornwood's undergrowth, the opposite of the fens' open reed: brambles, fallen boughs and close brush in every 7-unit cell, none in the town, on the road in,
+   * at the east gate, or crowding a thornoak or a camp. Low (under a person's waist), so an enemy is never hidden behind it, and with nothing to collide with.
+   */
+  private woodDressing(bag: Bag, rect: Rect, r: Region) {
+    const CELL = 7, sq = LANDMARKS.thornSquare, camps = r.spawns ?? [], herbs = r.herbs ?? [];
+    for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
+      const k = hash(i * 5.3 + j * 11.9 + 1), x = (i + 0.15 + 0.7 * hash(i * 3.3 + j * 2.1)) * CELL, z = (j + 0.15 + 0.7 * hash(j * 4.7 + i * 1.3)) * CELL;
+      if (k > 0.6 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
+      if (Math.hypot(x - sq.x, z - sq.z) < 38 || (Math.abs(x - THORNWICK.x) < 6 && z < THORNWICK.z - 20) || (x > THORNWICK.x + 52 && Math.abs(z - THORNWICK.z) < 9)) continue;
+      if (camps.some(c => Math.hypot(c.x - x, c.z - z) < 5) || herbs.some(h => Math.hypot(h.x - x, h.z - z) < 3) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + 1.5)) continue;
+      const ry = k * 40;
+      if (k < 0.34) { // a bramble: a mound of leaf with thorn canes arching out of it
+        bag.brush.push(place(new THREE.IcosahedronGeometry(1, 0), x, 0.35, z, ry, 0.9 + k * 1.5, 0.55, 0.9 + k * 1.2));
+        for (let n = 0; n < 7; n++) { const a = n * 0.9 + ry; bag.thorn.push(place(new THREE.ConeGeometry(0.06, 1.3 + hash(n + i * 3 + j) * 0.7, 3).rotateZ(Math.sin(a) * 0.9).rotateX(Math.cos(a) * 0.9), x + Math.cos(a) * 0.6, 0.7, z + Math.sin(a) * 0.6)); }
+      } else if (k < 0.47) { // a fallen bough: a trunk on the ground with a broken limb
+        bag.bark.push(place(new THREE.CylinderGeometry(0.22, 0.3, 3.6, 5).rotateZ(Math.PI / 2 - 0.05), x, 0.28, z, ry), place(new THREE.CylinderGeometry(0.06, 0.1, 1.2, 4).rotateZ(0.9), x + Math.cos(ry) * 0.8, 0.7, z - Math.sin(ry) * 0.8, ry));
+      } else { // close brush: a fan of dark fronds
+        for (let n = 0; n < 6; n++) { const a = n * 1.05 + ry; bag.brush.push(place(new THREE.ConeGeometry(0.2, 1.1, 3).rotateZ(Math.sin(a) * 0.55).rotateX(Math.cos(a) * 0.55), x + Math.cos(a) * 0.3, 0.55, z + Math.sin(a) * 0.3)); }
+      }
+    }
+  }
+
+  /** Thornwick's own: a well in the square, a stall at the provisioner's, a notice board at the reeve's, barrels and crates, and lamps down the road from the north. */
+  private townDressing(bag: Bag) {
+    const sq = LANDMARKS.thornSquare, v = LANDMARKS.thornVendor, rv = LANDMARKS.thornReeve;
+    bag.stone.push(place(new THREE.CylinderGeometry(1.25, 1.4, 0.95, 8), sq.x, 0.47, sq.z), place(new THREE.CylinderGeometry(1.5, 1.5, 0.12, 8), sq.x, 0.98, sq.z));
+    bag.water.push(place(new THREE.CircleGeometry(1, 8).rotateX(-Math.PI / 2), sq.x, 0.9, sq.z));
+    for (const s of [-1, 1]) bag.wood.push(place(new THREE.BoxGeometry(0.18, 2.5, 0.18), sq.x + s * 1.25, 1.25, sq.z));
+    bag.wood.push(place(new THREE.BoxGeometry(2.8, 0.14, 0.14), sq.x, 2.5, sq.z));
+    bag.roof.push(place(new THREE.ConeGeometry(1.9, 0.9, 4).rotateY(Math.PI / 4).scale(1, 1, 0.6), sq.x, 3, sq.z));
+    // the provisioner's stall: four posts, a counter and a striped-cloth awning pitched forward
+    for (const [dx, dz] of [[-1.6, -1.1], [1.6, -1.1], [-1.6, 1.1], [1.6, 1.1]]) bag.wood.push(place(new THREE.BoxGeometry(0.14, dz > 0 ? 2 : 2.5, 0.14), v.x + dx, dz > 0 ? 1 : 1.25, v.z + dz));
+    bag.wood.push(place(new THREE.BoxGeometry(3.4, 0.9, 0.7), v.x, 0.45, v.z + 1.1));
+    bag.cloth.push(place(new THREE.BoxGeometry(3.8, 0.1, 2.9).rotateX(0.2), v.x, 2.3, v.z));
+    for (const [dx, dz] of [[2.6, -0.8], [3.2, 0.2], [-2.7, -0.4]]) bag.wood.push(place(new THREE.CylinderGeometry(0.45, 0.4, 0.95, 7), v.x + dx, 0.47, v.z + dz));
+    bag.wood.push(place(new THREE.BoxGeometry(1.1, 0.9, 1.1), v.x - 3.2, 0.45, v.z + 0.9), place(new THREE.BoxGeometry(0.9, 0.8, 0.9), v.x - 3.1, 1.3, v.z + 0.9, 0.4));
+    // the reeve's notice board: two posts and a board with three pinned sheets
+    for (const s of [-1, 1]) bag.wood.push(place(new THREE.BoxGeometry(0.14, 2.2, 0.14), rv.x + 1.8 + s * 0.8, 1.1, rv.z + 1));
+    bag.wood.push(place(new THREE.BoxGeometry(1.9, 1.2, 0.1), rv.x + 1.8, 1.5, rv.z + 1));
+    for (let n = 0; n < 3; n++) bag.sign.push(place(new THREE.BoxGeometry(0.4, 0.5, 0.04), rv.x + 1.2 + n * 0.6, 1.5 + (n % 2) * 0.15, rv.z + 1.07, (n - 1) * 0.08));
+    // the road in: a lamp every 13 units, alternating sides, from the town's north edge to the square
+    for (let n = 0, z = THORNWICK.z - 58; z < sq.z - 6; n++, z += 13) lampPost(bag, THORNWICK.x + (n % 2 ? 4.4 : -4.4), z, 0, 5.5);
   }
 
   /** One merged draw per material, for a bag of parts. The pools are unlit and additive, so they are not a material class of the renderer's. */
@@ -332,6 +413,10 @@ export class WorldView {
     one(bag.sign, P.gold, 'cloth', 'cast');
     one(bag.water, FEN.water, 'ground', 'receive');
     one(bag.reed, FEN.reed, 'foliage', 'cast');
+    one(bag.bone, FEN.bone, 'wood', 'cast');
+    one(bag.brush, WOOD.brush, 'foliage', 'cast');
+    one(bag.thorn, WOOD.thorn, 'wood', 'cast');
+    one(bag.cloth, 0x7a4a3a, 'cloth', 'cast');
     for (const e of bag.props.values()) one(e.geoms, e.color, e.cls, e.cls === 'glow' ? 'none' : 'both');
     if (bag.glow.length) { const m = mesh(mergeGeometries(bag.glow)!, LANTERN, 'glow', 'none'); (m.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.1; add(m); }
     if (bag.pool.length) {
@@ -421,6 +506,7 @@ export class WorldView {
     const bag = newBag(); // lamps by the people who matter: the square, the gate, the stalls
     for (const l of stands) lampPost(bag, l.x + 1.4, l.z - 1.1, 0, 6);
     if (thorn) lampPost(bag, LANDMARKS.alembic.x - 1.8, LANDMARKS.alembic.z + 1.6, 0, 5); // the alchemist works late
+    if (thorn) this.townDressing(bag);
     this.emit(bag, add);
   }
 
