@@ -17,6 +17,9 @@ export interface Pt { x: number; z: number }
 // Ore rocks (gatherable, see sim/gathering.ts).
 export interface RockSpot extends Obstacle { type: 'iron' | 'coal' | 'mithril' | 'adamant' }
 
+/** A gathering spot you stand beside and cannot stand on: a shoal in the water. Unlike a rock it is not a collider. `type` is a NODE_TYPES key. */
+export interface NodeSpot extends Obstacle { type: string }
+
 export interface Region {
   id: string;
   name: string;
@@ -34,6 +37,8 @@ export interface Region {
   /** Trees: radius-1 obstacles that are also woodcutting nodes. */
   trees: Obstacle[];
   rocks: RockSpot[];
+  /** Fishing spots: nodes with no collider, after the rocks and trees in node-id order. */
+  spots?: NodeSpot[];
   landmarks: Record<string, Pt & { r?: number }>;
   /** Neighbours and a walkable point on the seam between them. Symmetric: if a lists b, b lists a. */
   connections: { to: string; at: Pt }[];
@@ -149,12 +154,22 @@ const saltLandmarks = {
   harbourmaster: { ...at(SALTMARROW, -20, 4), r: 0.7 },
   harbourVendor: { ...at(SALTMARROW, -30, 6), r: 0.7 },
   inn: { x: SALT_INN.x, z: SALT_INN.z },
-  /** The cooking range, in the inn: reserved for the cooking station (W2.2). */
+  /** The cooking range, in the inn. */
   range: at(SALTMARROW, -10, -9),
-  /** The quay's root and its end: where the flight master (W2.3) and the fishing spots (W2.2) will go. */
+  /** The quay's root and its end: where the flight master (W2.3) will go. */
   quayRoot: at(SALTMARROW, 16, 0),
   quayEnd: at(SALTMARROW, 62, 0),
 };
+
+/**
+ * Saltmarrow's fishing, by the bible (2.2): silverfin off the quay, brine trout in the shallows past its end, saltpike in the wreck pools on the
+ * Strand. The shoals sit in the water a pace off the edge, so the player stands on the quay or the shore to fish. Local coordinates.
+ */
+const SALT_SPOTS: NodeSpot[] = ([
+  ['silverfin', 28, -4.2], ['silverfin', 40, 4.2], ['silverfin', 52, -4.2],
+  ['brine_trout', 64, 0], ['brine_trout', 60, 4.8],
+  ['saltpike', 12, -30], ['saltpike', 15, -25.5],
+] as const).map(([type, lx, lz]) => ({ type, ...at(SALTMARROW, lx, lz), r: 1 }));
 
 /**
  * The world. Order matters: node ids follow region order (each region's rocks, then its trees), so new ground goes last and every
@@ -257,6 +272,7 @@ export const REGIONS: Region[] = [
     obstacles: [SALT_INN, ...SALT_HOUSES, ...SALT_PROPS, { ...saltLandmarks.harbourmaster, kind: 'person' }, { ...saltLandmarks.harbourVendor, kind: 'person' }],
     tall: [SALT_INN, ...SALT_HOUSES, SALT_PROPS[4]], trees: [],
     rocks: [-14, -8, -2, 4, 10].map((lx, i) => ({ type: 'adamant' as const, ...at(SALTMARROW, lx, i % 2 ? -66 : -64), r: 1.2 })),
+    spots: SALT_SPOTS,
     landmarks: saltLandmarks,
     connections: [{ to: 'greywater', at: at(GREYWATER, 405, 0) }],
     safe: [{ ...saltLandmarks.square, r: 35 }],
@@ -265,6 +281,21 @@ export const REGIONS: Region[] = [
 ];
 // the hollow's and hall's standing stones are tall (they break sight lines)
 for (const r of REGIONS) if (r.cave) r.tall.push(...r.obstacles);
+
+/**
+ * Where you wake when you die: the town nearest the place you fell (by straight distance, the world being flat), at the spot in it
+ * you wake. Hale's is where a new game starts. `found` is the hook for flight masters (W2.3): pass the ids of the towns whose master you have
+ * found and only those count; it defaults to every town, which is all there is until they exist.
+ */
+export const TOWNS: { id: string; name: string; wake: Pt }[] = [
+  { id: 'hale', name: 'Hale', wake: { x: 0, z: 6 } }, // where a new game starts (PLAYER_SPAWN in data.ts reads this)
+  { id: 'saltmarrow', name: 'Saltmarrow', wake: at(SALTMARROW, -25, -4) },
+];
+export function nearestTown(x: number, z: number, found: readonly string[] = TOWNS.map(t => t.id)) {
+  const open = TOWNS.filter(t => found.includes(t.id));
+  return (open.length ? open : TOWNS).reduce((best, t) =>
+    Math.hypot(x - t.wake.x, z - t.wake.z) < Math.hypot(x - best.wake.x, z - best.wake.z) ? t : best);
+}
 
 export const regionById = (id: string): Region => REGIONS.find(r => r.id === id)!;
 
@@ -344,9 +375,9 @@ export const inSafeZone = (x: number, z: number) => SAFE_ZONES.some(c => Math.hy
  */
 export const SIGHT_BLOCKERS: Obstacle[] = [...REGIONS.flatMap(r => r.tall), ...REGIONS.flatMap(r => r.trees)];
 
-/** The gatherable spots in node-id order: region by region, each region's rocks then its trees. Ids are positions in this list. */
-export const nodeSpots = (): (RockSpot | (Obstacle & { type: 'tree' }))[] =>
-  REGIONS.flatMap(r => [...r.rocks, ...r.trees.map(t => ({ ...t, type: 'tree' as const }))]);
+/** The gatherable spots in node-id order: region by region, each region's rocks, then its trees, then its fishing spots. Ids are positions in this list. */
+export const nodeSpots = (): (RockSpot | NodeSpot)[] =>
+  REGIONS.flatMap(r => [...r.rocks, ...r.trees.map(t => ({ ...t, type: 'tree' as const })), ...(r.spots ?? [])]);
 
 /** Every region's floor in one list (the same rect objects, so a resized clearing shows here). */
 export const FOOTPRINT: Rect[] = REGIONS.flatMap(r => r.footprint);

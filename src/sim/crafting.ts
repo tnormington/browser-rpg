@@ -1,16 +1,22 @@
-// Smithing at the forge: recipes, requirements, timed crafting. Pure sim.
+// Crafting at a station (the forge, the cooking range): recipes, requirements, timed crafting. Pure sim.
 import type { GameState } from '../sim';
 import type { Action } from './actions';
-import { LANDMARKS } from './world';
+import { LANDMARKS, Pt } from './world';
 import { SkillId, grantXp } from './skills';
 import { ITEMS } from './items';
 import { masteryTime, masteryYield } from './mastery';
 import { addItem, countItem, hasRoom, removeItem } from './inventory';
+import { FISH, SEA_SALT, cookedId, pieId } from './fish';
+
+/** Where a recipe is made. Only the forge and the range are built; the rest are named by the bible (2.2) for the skills still to come. */
+export type Station = 'forge' | 'range' | 'alembic' | 'rack' | 'circle';
 
 export interface Recipe {
   id: string;
   name: string;
   skill: SkillId;
+  /** Default 'forge'. */
+  station?: Station;
   level: number;
   inputs: { id: string; qty: number }[];
   output: { id: string; qty: number };
@@ -52,14 +58,32 @@ export const RECIPES: Recipe[] = [
     inputs: [{ id: 'adamant_bar', qty: 3 }], output: { id: 'adamant_greaves', qty: 1 } },
   { id: 'adamant_chestplate', name: 'Adamant Chestplate', skill: 'smithing', level: 19, time: 11, xp: 300,
     inputs: [{ id: 'adamant_bar', qty: 4 }], output: { id: 'adamant_chestplate', qty: 1 } },
+  // the range: each fish cooked on its own, and a pie (2 fish and a pinch of salt) two levels up that also makes you Well Fed. Craft XP: fish.ts.
+  ...FISH.flatMap((f): Recipe[] => [
+    { id: cookedId(f), name: `Cooked ${f.name}`, skill: 'cooking', station: 'range', level: f.level, time: f.cookTime, xp: f.cookXp,
+      inputs: [{ id: f.id, qty: 1 }], output: { id: cookedId(f), qty: 1 } },
+    { id: pieId(f), name: `${f.name} Pie`, skill: 'cooking', station: 'range', level: f.level + 2, time: 6, xp: Math.round(f.cookXp * 1.5 / 5) * 5,
+      inputs: [{ id: f.id, qty: 2 }, { id: SEA_SALT, qty: 1 }], output: { id: pieId(f), qty: 1 } },
+  ]),
 ];
 
 export const FORGE_REACH = 6; // centre-to-centre; the hut is 2.6 radius
+export const STATION_REACH = FORGE_REACH; // the same for every station
 export const MAX_BATCH = 99;
 
+/** Where each built station stands, and what to call it when you are too far from it. */
+export const STATIONS: Partial<Record<Station, { at: Pt; name: string }>> = {
+  forge: { at: LANDMARKS.forge, name: 'forge' },
+  range: { at: LANDMARKS.range, name: 'cooking range' },
+};
+export const stationOf = (r: Recipe): Station => r.station ?? 'forge';
+
 export const recipeById = (id: string) => RECIPES.find(r => r.id === id);
-export const nearForge = (s: GameState) =>
-  Math.hypot(s.player.x - LANDMARKS.forge.x, s.player.z - LANDMARKS.forge.z) <= FORGE_REACH;
+/** Standing within reach of a station. A station that is not built anywhere is never near. */
+export const nearStation = (s: GameState, station: Station) => {
+  const at = STATIONS[station]?.at;
+  return !!at && Math.hypot(s.player.x - at.x, s.player.z - at.z) <= STATION_REACH;
+};
 export const hasInputs = (s: GameState, r: Recipe) => r.inputs.every(i => countItem(s.player.inventory, i.id) >= i.qty);
 
 /** One craft at the player's current skill: the base time, cut by whatever they have over the recipe's level. */
@@ -71,7 +95,7 @@ export const bonusOutput = (r: Recipe) => ITEMS[r.output.id].stack > 1;
 
 /** Returns a failure reason, or null when the recipe can be made right now. */
 function blocker(s: GameState, r: Recipe): 'range' | 'level' | 'materials' | 'full' | null {
-  if (!nearForge(s)) return 'range';
+  if (!nearStation(s, stationOf(r))) return 'range';
   if (s.player.skills[r.skill].level < r.level) return 'level';
   if (!hasInputs(s, r)) return 'materials';
   if (!hasRoom(s.player.inventory, r.output.id, r.output.qty)) return 'full';
@@ -79,7 +103,7 @@ function blocker(s: GameState, r: Recipe): 'range' | 'level' | 'materials' | 'fu
 }
 
 const fail = (s: GameState, r: Recipe, reason: NonNullable<ReturnType<typeof blocker>>) =>
-  void s.events.push({ t: 'actionfail', reason, skill: r.skill, need: r.level, what: r.name });
+  void s.events.push({ t: 'actionfail', reason, skill: r.skill, need: r.level, what: r.name, station: STATIONS[stationOf(r)]?.name });
 
 export function beginCraft(s: GameState, recipeId: string, count: number) {
   const r = recipeById(recipeId);
@@ -97,7 +121,7 @@ export function finishCraft(s: GameState, a: Extract<Action, { k: 'craft' }>) {
   for (const i of r.inputs) removeItem(p.inventory, i.id, i.qty);
   const want = bonusOutput(r) ? masteryYield(s, r.output.qty, p.skills[r.skill].level, r.level) : r.output.qty;
   const made = want - addItem(p.inventory, r.output.id, want);
-  s.events.push({ t: 'crafted', item: r.output.id, qty: made });
+  s.events.push({ t: 'crafted', item: r.output.id, qty: made, skill: r.skill });
   grantXp(s, r.skill, r.xp, p.x, p.z);
   a.t = 0;
   a.duration = craftTime(s, r); // a level gained on this craft speeds up the rest of the batch

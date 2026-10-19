@@ -554,7 +554,7 @@ function grindCombat(s: GameState, level: number) {
 section('M3 skills: parallel tracks on the RuneScape curve');
 {
   const s = createState(1);
-  assert(SKILL_IDS.length === 4 && ['combat', 'mining', 'woodcutting', 'smithing'].every(k => SKILLS[k as never]), 'skills: Combat, Mining, Woodcutting, Smithing');
+  assert(SKILL_IDS.length === 6 && ['combat', 'mining', 'woodcutting', 'smithing', 'fishing', 'cooking'].every(k => SKILLS[k as never]), 'skills: Combat, Mining, Woodcutting, Smithing, Fishing, Cooking');
   assert(SKILL_IDS.every(k => s.player.skills[k].level === 1 && s.player.skills[k].xp === 0), 'every skill starts at level 1, 0 xp');
   assert(s.player.skills.combat === s.player.combat, 'combat skill is the same track combat code reads');
   grantXp(s, 'mining', 100, 0, 0);
@@ -1763,7 +1763,7 @@ section('HOM-15 the cave stays out of the first quest');
   assert(NODE_TYPES.mithril && ROCKS.every(r => r.type !== 'mithril') && ROCKS.length === 7, 'the ridge outside is unchanged: seven iron and coal rocks, no mithril');
   const s = createState(902);
   const kinds = s.nodes.map(n => n.type);
-  assert(kinds.slice(0, ROCKS.length + TREES.length).join() === [...ROCKS.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(ROCKS.length + TREES.length).every(t => t === 'mithril' || t === 'coal' || t === 'adamant'), // HOM-46: Saltmarrow's adamant is added after the cave's, so it too leaves every older id alone
+  assert(kinds.slice(0, ROCKS.length + TREES.length).join() === [...ROCKS.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(ROCKS.length + TREES.length).every(t => t === 'mithril' || t === 'coal' || t === 'adamant' || NODE_TYPES[t].skill === 'fishing'), // HOM-46: Saltmarrow's adamant is added after the cave's, so it too leaves every older id alone; HOM-48: and its fishing spots after that
     'cave nodes are added after every existing node, so old node ids (and saves) keep meaning the same rock');
   const caveFolk = SPAWNS.filter(sp => inCave(sp.x, sp.z));
   const ridge = [...ROCKS, ...TREES, LANDMARKS.npc];
@@ -3259,7 +3259,8 @@ section('HOM-46 Saltmarrow: its harbourmaster, its chandler, and the third quest
   tick(v, { shop: [{ k: 'sell', slot: v.player.inventory.findIndex(x => x?.id === 'steel_sword'), qty: 1 }] });
   assert(countOf(v, 'steel_sword') === 0 && v.player.gold === 1000 + ITEMS.steel_sword.value, 'selling to him pays an item\'s value');
   const recipeIn = new Set(RECIPES.flatMap(r => r.inputs.map(i => i.id)));
-  assert(HARBOUR_STOCK.every(id => !recipeIn.has(id) && buyPrice(id) > ITEMS[id].value && RECIPES.every(r => r.output.id !== id)), 'nothing he sells is a crafting input or a crafted item: buy -> craft -> sell still cannot make gold');
+  // sea salt is the one exception: a pie's bought pinch. A pie also eats two fish that cannot be bought, and nothing it makes is for sale
+  assert(HARBOUR_STOCK.filter(id => id !== 'sea_salt').every(id => !recipeIn.has(id) && buyPrice(id) > ITEMS[id].value && RECIPES.every(r => r.output.id !== id)), 'nothing he sells is a crafting input or a crafted item: buy -> craft -> sell still cannot make gold');
 }
 
 // ---------------------------------------------------------------------------

@@ -30,8 +30,8 @@ assert(REGIONS.every(r => r.connections.every(c => {
 })), 'every seam point is floor in both of the regions it joins');
 assert(regionAt(0, 0)?.id === 'clearing' && regionAt(-18, -55)?.id === 'hollow' && regionAt(-18, -85)?.id === 'hall' && regionAt(436, 8)?.id === 'greywater' && regionAt(906, 8)?.id === 'saltmarrow' && regionAt(100, 200) === null, 'regionAt names the region a point is in, and null off the map');
 const nodes = createNodes();
-assert(nodes.length === 29 && nodes.slice(0, 7).every(n => n.type === 'iron' || n.type === 'coal') && nodes.slice(7, 19).every(n => n.type === 'tree') && nodes.slice(19, 24).every(n => n.type === 'mithril' || n.type === 'coal') && nodes.slice(24).every(n => n.type === 'adamant'),
-  'node ids are as they were (7 ridge ores, 12 trees, 5 cave veins), with Saltmarrow\'s five adamant veins added after them');
+assert(nodes.length === 36 && nodes.slice(0, 7).every(n => n.type === 'iron' || n.type === 'coal') && nodes.slice(7, 19).every(n => n.type === 'tree') && nodes.slice(19, 24).every(n => n.type === 'mithril' || n.type === 'coal') && nodes.slice(24, 29).every(n => n.type === 'adamant') && nodes.slice(29).every(n => ['silverfin', 'brine_trout', 'saltpike'].includes(n.type)),
+  'node ids are as they were (7 ridge ores, 12 trees, 5 cave veins), with Saltmarrow\'s five adamant veins and then its seven fishing spots added after them');
 assert(nodes[0].x === -10 && nodes[0].z === -25.5 && nodes[7].x === -12 && nodes[7].z === 10 && nodes[19].x === -29.2 && nodes[19].z === -45.5 && nodes[23].x === -8.2, 'and the same node sits at each old id');
 assert(ROCKS.length === 7 && CAVE_ROCKS.length === 5 && TREES.length === 12, 'the flat lists the renderer reads hold what they always did for Hale');
 const SCENERY = REGIONS.reduce((n, r) => n + r.obstacles.length + r.trees.length + r.rocks.length, 0);

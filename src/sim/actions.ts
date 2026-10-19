@@ -11,9 +11,10 @@ export type Action =
   | { k: 'craft'; recipe: string; t: number; duration: number; left: number };
 
 /** `npc` and `vendor` name who (a click on them knows); without one, the nearest in earshot is meant (the E key). */
-export type Interact = { k: 'node'; id: number } | { k: 'forge' } | { k: 'npc'; id?: string } | { k: 'vendor'; id?: string };
+export type Interact = { k: 'node'; id: number } | { k: 'forge' } | { k: 'range' } | { k: 'npc'; id?: string } | { k: 'vendor'; id?: string };
 
 const FORGE_R = OBSTACLES.find(o => o.x === LANDMARKS.forge.x && o.z === LANDMARKS.forge.z)!.r;
+const RANGE_R = 0.9; // the hearth is a prop, not a collider: this is only how close counts as touching it
 const REACH = 1.5; // gap between the player's edge and the thing's edge that still counts as touching
 
 /** Where the thing is and how big. */
@@ -21,6 +22,7 @@ function target(s: GameState, it: Interact) {
   if (it.k === 'npc') return NPCS.find(n => n.id === it.id) ?? NPCS.find(n => n.id === npcNear(s)) ?? NPCS[0];
   if (it.k === 'vendor') return vendorById(it.id ?? '') ?? vendorNear(s) ?? vendorById('hale')!;
   if (it.k === 'forge') return { x: LANDMARKS.forge.x, z: LANDMARKS.forge.z, r: FORGE_R };
+  if (it.k === 'range') return { x: LANDMARKS.range.x, z: LANDMARKS.range.z, r: RANGE_R };
   const n = nodeById(s, it.id);
   return n && { x: n.x, z: n.z, r: n.r };
 }
@@ -52,6 +54,7 @@ export function updateInteract(s: GameState) {
   p.moving = false;
   p.facing = Math.atan2(t.x - p.x, t.z - p.z);
   if (it.k === 'forge') s.events.push({ t: 'forge' });
+  else if (it.k === 'range') s.events.push({ t: 'range' });
   else if (it.k === 'npc') s.events.push({ t: 'npc', who: (t as { id: string }).id });
   else if (it.k === 'vendor') s.events.push({ t: 'shop', vendor: (t as { id: string }).id });
   else beginGather(s, nodeById(s, it.id)!);

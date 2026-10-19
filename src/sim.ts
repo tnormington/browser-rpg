@@ -9,6 +9,7 @@ import { SkillId, Skills, newSkills } from './sim/skills';
 import { TalentEffects, TalentFail, Talents, deriveTalents, learnTalent, newTalents, resetTalents } from './sim/talents';
 import { ResourceNode, createNodes, updateNodes } from './sim/gathering';
 import { beginCraft } from './sim/crafting';
+import { Buff, updateConsumables } from './sim/consumables';
 import { ShopAction, applyShopAction } from './sim/shop';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
@@ -87,6 +88,10 @@ export interface Player {
   stats: DerivedStats;     // always deriveStats(equipment); combat reads this, never the items
   talents: Talents;        // ranks bought, by talent id
   talentFx: TalentEffects; // always deriveTalents(talents); combat reads this, never the ranks
+  /** A meal being eaten: heals `rate` a second for `left` more seconds, and a hit ends it. `pending` is healing not yet reported as one number. */
+  food: { left: number; rate: number; pending: number } | null;
+  foodCd: number;          // seconds until any food may be eaten again
+  buffs: Buff[];           // timed effects (Well Fed), by BUFFS id: max health reads them, death clears them
 }
 
 export type GameEvent =
@@ -114,11 +119,15 @@ export type GameEvent =
   | { t: 'kill'; id: number; x: number; z: number }
   | { t: 'xp'; skill: SkillId; amount: number; x: number; z: number }
   | { t: 'levelup'; skill: SkillId; level: number }
-  | { t: 'actionfail'; reason: 'level' | 'req' | 'depleted' | 'full' | 'materials' | 'range' | 'gold'; skill?: SkillId; need: number; what: string } // skill: absent for a failed trade
+  | { t: 'actionfail'; reason: 'level' | 'req' | 'depleted' | 'full' | 'materials' | 'range' | 'gold' | 'cooldown' | 'combat'; skill?: SkillId; need: number; what: string; station?: string } // skill: absent for a failed trade or a refused meal; station: what a 'range' failure was too far from
   | { t: 'npc'; who: string }                           // player reached a quest giver: open their dialogue
   | { t: 'quest'; what: 'accept' | 'progress' | 'stage' | 'complete'; name: string }  // name: the quest it is about (both chains sit at stage 'done' at once)
   | { t: 'forge' }                                      // player reached the forge: open the recipe list
-  | { t: 'crafted'; item: string; qty: number }
+  | { t: 'range' }                                      // ...or the cooking range
+  | { t: 'crafted'; item: string; qty: number; skill: SkillId }
+  | { t: 'use'; item: string }                          // an item was eaten or drunk (one is gone from the bag)
+  | { t: 'eatbreak' }                                   // a hit spoiled the meal being eaten
+  | { t: 'buff'; id: string; on: boolean }              // a timed effect began (or was renewed) or ended
   | { t: 'depleted'; id: number }
   | { t: 'respawned'; id: number }
   | { t: 'drop'; id: number; item: string; x: number; z: number }
@@ -126,8 +135,8 @@ export type GameEvent =
   | { t: 'invfull' }
   | { t: 'shop'; vendor: string }                       // player reached a merchant: open their shop
   | { t: 'trade'; sold: boolean; item: string; qty: number; gold: number } // a sale (gold earned) or a purchase (gold spent) went through
-  | { t: 'death'; killer: string; recap: { src: string; what: string; amount: number; heavy: boolean; ago: number }[] } // killer: "Cave Brute: Crushing Slam"; recap: last hits, oldest first, `ago` seconds before death
-  | { t: 'respawn' };
+  | { t: 'death'; killer: string; toll: number; recap: { src: string; what: string; amount: number; heavy: boolean; ago: number }[] } // killer: "Cave Brute: Crushing Slam"; toll: gold the repair cost, already paid; recap: last hits, oldest first, `ago` seconds before death
+  | { t: 'respawn'; town: string };                     // woke in this town
 
 export interface GameState {
   tick: number;
@@ -183,7 +192,7 @@ export function createState(seed = 1): GameState {
       gcd: 0, cd: ABILITIES.map(() => 0), unlocked: 1, queued: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
       skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), stats: deriveStats(emptyEquipment()),
-      talents: newTalents(), talentFx: deriveTalents(newTalents()),
+      talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [],
     },
     moveTarget: null,
     targetId: null,
@@ -239,6 +248,7 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     movePlayer(s, input, dt);
     updateInteract(s);
     updateAction(s, dt);
+    updateConsumables(s, dt);
     updatePlayerCombat(s, dt);
     if (input.ability !== null) pressAbility(s, input.ability);
   }

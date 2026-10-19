@@ -15,8 +15,8 @@ export const MAX_GOLD = 1e9;
 /** What the merchant sells: gear the enemies already drop, never anything a recipe consumes. */
 export const SHOP_STOCK = ['rusty_blade', 'leather_cap', 'hide_jerkin', 'hide_leggings', 'iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves'] as const;
 
-/** Saltmarrow's stock is the tier above Hale's (the bible: a town sells the previous tier's dropped gear), and again never anything a recipe consumes. */
-export const HARBOUR_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword'] as const;
+/** Saltmarrow's stock is the tier above Hale's (the bible: a town sells the previous tier's dropped gear), and again never anything a recipe consumes, bar the pie's pinch of sea salt. */
+export const HARBOUR_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword', 'sea_salt'] as const;
 
 export type VendorId = 'hale' | 'harbour';
 export interface Vendor { id: VendorId; name: string; x: number; z: number; r: number; stock: readonly string[] }

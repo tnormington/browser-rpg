@@ -5,6 +5,7 @@ import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from
 import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, caveDepth, caveWallPoints, clampToWorld, inCave } from './sim/world';
 import { ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
+import { NODE_TYPES } from './sim/gathering';
 import { HARBOURMASTER, NPC, harbourMarker as harbourMarkOf, npcMarker as markerOf } from './sim/quest';
 import { VENDOR } from './sim/shop';
 import { Motes, Particles, Rings, Slashes } from './fx';
@@ -122,6 +123,7 @@ const CRYSTALS = [
 const ACTOR_RANGE = FOG_CULL + 25;
 /** Ore, trees and other nodes are drawn only within this of the player (the fog has hidden them well before). */
 const NODE_RANGE = FOG_CULL + 25;
+const FISH_RIPPLE = 0x9fc8d8; // a fishing shoal's ripple and fins: cold, pale, the one thing on the water
 /** A spot on the clearing's wall with another region's floor beyond it: the east gate. No boulder is set there. */
 const openToWorld = (x: number, z: number) => REGIONS.some(r => r.zone !== 'hale' && r.footprint.some(f => x > f.x0 + 0.01 && x < f.x1 - 0.01 && z > f.z0 + 0.01 && z < f.z1 - 0.01));
 /** Adamant (Saltmarrow's cliff ore): sea-green flecks on a dark green-black rock. A stand-in look until the Artist's (W2.5). */
@@ -176,6 +178,7 @@ export class Renderer {
   private weapon: THREE.Mesh;
   private nodes = new Map<number, NodeView>();
   private forgeParts: THREE.Object3D[] = [];
+  private rangeParts: THREE.Object3D[] = [];
   private npcParts: THREE.Object3D[] = [];
   private vendorParts: THREE.Object3D[] = [];
   private npcMarker!: THREE.Sprite;
@@ -403,6 +406,14 @@ export class Renderer {
       add(mesh(new THREE.BoxGeometry(1, 2, 1), P.stoneDark, 'stone'), f.x + 1, 3.4, f.z),
       add(furnace, f.x - 1, 1, f.z + 1.55),
       add(mesh(new THREE.BoxGeometry(0.8, 0.6, 0.5), P.anvil, 'metal'), f.x - 3, 0.3, f.z + 2));
+    // the cooking range, in Saltmarrow's inn: a stone hearth with a bed of coals. No light of its own: the forge keeps the one warm light
+    const r = LANDMARKS.range;
+    const coals = mesh(new THREE.BoxGeometry(1.1, 0.1, 0.6), P.fire, 'glow', 'receive');
+    (coals.material as Mat).emissiveIntensity = FURNACE_GLOW;
+    this.rangeParts.push(
+      add(mesh(new THREE.BoxGeometry(1.6, 0.9, 0.9), P.stone, 'stone'), r.x, 0.45, r.z),
+      add(mesh(new THREE.BoxGeometry(0.5, 1.3, 0.5), P.stoneDark, 'stone'), r.x + 0.5, 1.55, r.z - 0.2),
+      add(coals, r.x - 0.1, 0.93, r.z));
     this.forgeLight = add(new THREE.PointLight(P.forgeLight, FORGE_LIGHT.intensity, FORGE_LIGHT.distance), f.x - 1, FORGE_LIGHT.y, f.z + 3.6) as THREE.PointLight;
 
     // cave mouth: the sim's four flank colliders, rock heaped over them and across the top; the way in is the gap between
@@ -832,7 +843,15 @@ export class Renderer {
       mats.push(m.material as Mat);
       return m;
     };
-    if (n.type === 'tree') {
+    if (NODE_TYPES[n.type].skill === 'fishing') {
+      // a shoal: a pale ripple on the water and the fins breaking it. Flat, so the click is the ring and not the sea behind it
+      part(new THREE.TorusGeometry(0.9, 0.07, 6, 20).rotateX(Math.PI / 2), FISH_RIPPLE, 'beacon', 0.06);
+      part(new THREE.CylinderGeometry(0.9, 0.9, 0.04, 16), P.slateDark, 'dark', 0.02);
+      for (const [dx, dz] of [[0.3, 0.1], [-0.35, -0.2], [0.05, -0.4]]) {
+        const fin = part(new THREE.ConeGeometry(0.1, 0.35, 4), FISH_RIPPLE, 'ore', 0.2);
+        fin.position.x = dx; fin.position.z = dz;
+      }
+    } else if (n.type === 'tree') {
       part(new THREE.CylinderGeometry(0.25, 0.35, 2, 5), P.bark, 'wood', 1);
       crown = part(new THREE.ConeGeometry(1.4, 3.5, 6), P.pine, 'foliage', 3.5);
     } else {
@@ -1107,6 +1126,13 @@ export class Renderer {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
     return this.raycaster.intersectObjects(this.forgeParts, false).length > 0;
+  }
+
+  /** True when the click lands on the cooking range. */
+  pickRange(clientX: number, clientY: number): boolean {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    return this.raycaster.intersectObjects(this.rangeParts, false).length > 0;
   }
 
   /** Ground-drop id under a screen position, or null. Drops are generous to click. */

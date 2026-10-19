@@ -8,6 +8,8 @@ import { SKILLS } from './sim/skills';
 import { TALENTS, spentTotal, talentPoints, talentById } from './sim/talents';
 import { NODE_TYPES } from './sim/gathering';
 import { recipeById } from './sim/crafting';
+import { nearestTown } from './sim/world';
+import { BUFFS } from './sim/consumables';
 import { clearLine } from './sim/sight';
 import { cooldownOf, costOf, swingInterval } from './sim/combat';
 import { InventoryUi } from './inventory-ui';
@@ -41,7 +43,9 @@ function actionFailText(ev: Extract<GameEvent, { t: 'actionfail' }>): string {
     case 'depleted': return `${ev.what} is depleted: it will return shortly`;
     case 'full': return 'Inventory full';
     case 'materials': return `Missing materials for ${ev.what}`;
-    case 'range': return ev.skill ? 'Move closer to the forge' : 'Move closer to the merchant';
+    case 'range': return `Move closer to the ${ev.station ?? 'merchant'}`;
+    case 'cooldown': return `${ev.what}: you cannot eat again yet`;
+    case 'combat': return `${ev.what} needs a quiet moment: not in combat`;
     case 'gold': return `Not enough gold for ${ev.what}`;
   }
 }
@@ -110,17 +114,22 @@ export class Hud {
   private skillsUi: SkillsUi;
   private talentsUi: TalentsUi;
   private forgeUi: ForgeUi;
+  private rangeUi: ForgeUi;
   private shopUi: ShopUi;
   private goldEl: HTMLElement;
+  private statusEl: HTMLElement;
   private castBar: ReturnType<typeof bar>;
   /** A gather/craft is running (or was just requested): a hit while true is what broke it. */
   private acting = false;
+  /** What the last death cost, for the overlay while the player waits. */
+  private toll = 0;
   private nodePlates = new Map<number, { root: HTMLElement; sub: HTMLElement }>();
 
   constructor(private project: Project, private yaw: () => number, actions: HudActions) {
     const pf = el(this.root, 'frame player');
     this.playerLvl = el(pf, 'name');
     this.goldEl = el(pf, 'gold');
+    this.statusEl = el(pf, 'status');
     this.hp = bar(pf, 'hp');
     this.energy = bar(pf, 'energy');
 
@@ -159,7 +168,9 @@ export class Hud {
     this.skillsUi = new SkillsUi(this.root);
     this.talentsUi = new TalentsUi(this.root, { learn: actions.talent, reset: actions.talentReset });
     this.shopUi = new ShopUi(this.root, actions.buy);
-    this.forgeUi = new ForgeUi(this.root, (r, n) => { this.acting = true; actions.craft(r, n); });
+    const craft = (r: string, n: number) => { this.acting = true; actions.craft(r, n); };
+    this.forgeUi = new ForgeUi(this.root, 'forge', 'Forge', craft);
+    this.rangeUi = new ForgeUi(this.root, 'range', 'Cooking Range', craft);
     this.castBar = bar(this.root, 'castbar');
     this.questUi = new QuestUi(this.root, actions.questAdvance);
     this.menuUi = new MenuUi(this.root, actions);
@@ -245,12 +256,19 @@ export class Hud {
         const name = `${ITEMS[ev.item].name}`;
         this.float(ev.sold ? `+${ev.gold} gold` : `-${ev.gold} gold`, 'loot', s.player.x, 3.0, s.player.z);
         this.note(ev.sold ? `Sold ${name} for ${ev.gold} gold` : `Bought ${name} for ${ev.gold} gold`, 'log-loot');
-      } else if (ev.t === 'forge') {
-        this.forgeUi.setOpen(true);
+      } else if (ev.t === 'forge' || ev.t === 'range') {
+        (ev.t === 'forge' ? this.forgeUi : this.rangeUi).setOpen(true);
       } else if (ev.t === 'crafted') {
-        const name = ITEMS[ev.item].name;
-        this.float(`Smithed ${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`, 'loot', s.player.x, 3.0, s.player.z);
-        this.note(`Smithed ${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`, 'log-loot');
+        const text = `${SKILLS[ev.skill].made} ${ev.qty > 1 ? ev.qty + 'x ' : ''}${ITEMS[ev.item].name}`;
+        this.float(text, 'loot', s.player.x, 3.0, s.player.z);
+        this.note(text, 'log-loot');
+      } else if (ev.t === 'use') {
+        this.note(`You eat the ${ITEMS[ev.item].name}.`, 'log-info');
+      } else if (ev.t === 'eatbreak') {
+        this.say('Your meal is spoiled: you were hit');
+        this.note('You were hit and spat out your meal.', 'log-bad');
+      } else if (ev.t === 'buff') {
+        this.note(ev.on ? `${BUFFS[ev.id].name}: +${Math.round((BUFFS[ev.id].maxHp ?? 0) * 100)}% max health.` : `${BUFFS[ev.id].name} has worn off.`, 'log-info');
       } else if (ev.t === 'stuck') {
         this.say("Can't reach that");
       } else if (ev.t === 'invfull') {
@@ -297,10 +315,11 @@ export class Hud {
           this.note(`Quest complete: ${ev.name}`, 'log-quest');
         }
       } else if (ev.t === 'death') {
-        this.note('You have died.', 'log-bad');
+        this.note(ev.toll > 0 ? `You have died. The repair toll is ${ev.toll} gold.` : 'You have died.', 'log-bad');
         this.hurtFlash(true);
+        this.toll = ev.toll;
       } else if (ev.t === 'respawn') {
-        this.note('You wake at the clearing.', 'log-info');
+        this.note(`You wake in ${ev.town}.`, 'log-info');
       }
     }
   }
@@ -363,6 +382,11 @@ export class Hud {
     const p = s.player;
     this.playerLvl.textContent = `Adventurer  Lv ${p.combat.level}`;
     this.goldEl.textContent = `Gold ${p.gold}`;
+    const clock = (t: number) => `${Math.floor(Math.ceil(t) / 60)}:${String(Math.ceil(t) % 60).padStart(2, '0')}`;
+    this.statusEl.textContent = [
+      p.food ? `Eating ${Math.ceil(p.food.left)}s` : p.foodCd > 0 ? `Food ready in ${Math.ceil(p.foodCd)}s` : '',
+      ...p.buffs.map(b => `${BUFFS[b.id].name} ${clock(b.left)}`),
+    ].filter(Boolean).join('  ·  ');
     this.setBar(this.hp, p.hp / p.maxHp, `${Math.ceil(p.hp)} / ${p.maxHp}`);
     this.setBar(this.energy, p.energy / p.maxEnergy, `${Math.floor(p.energy)}`);
     const prog = levelProgress(p.combat);
@@ -460,6 +484,7 @@ export class Hud {
     this.talentsUi.update(s);
     this.questUi.update(s, this.yaw());
     this.forgeUi.update(s);
+    this.rangeUi.update(s);
     this.shopUi.update(s);
     this.updateCastBar(s);
     this.updateNodePlates(s, blockers);
@@ -468,7 +493,7 @@ export class Hud {
     this.msg.style.opacity = String(Math.max(0, Math.min(1, 1.6 - this.msgAge * 1.5)));
 
     this.deathOverlay.style.display = p.dead ? 'flex' : 'none';
-    if (p.dead) this.deathOverlay.textContent = `You died.  Waking at the clearing in ${Math.ceil(p.respawnIn)}...`;
+    if (p.dead) this.deathOverlay.textContent = `You died.  Waking in ${nearestTown(p.x, p.z).name} in ${Math.ceil(p.respawnIn)}...${this.toll > 0 ? `  (repair toll: ${this.toll} gold)` : ''}`;
   }
 
   /** Progress bar for the current gather/craft. */
@@ -482,7 +507,8 @@ export class Hud {
       const d = NODE_TYPES[s.nodes.find(n => n.id === a.nodeId)!.type];
       label = `${SKILLS[d.skill].name}: ${d.name}`;
     } else {
-      label = `${SKILLS.smithing.name}: ${recipeById(a.recipe)!.name}${a.left > 1 ? `  (${a.left} left)` : ''}`;
+      const r = recipeById(a.recipe)!;
+      label = `${SKILLS[r.skill].name}: ${r.name}${a.left > 1 ? `  (${a.left} left)` : ''}`;
     }
     this.setBar(this.castBar, a.t / a.duration, label);
   }

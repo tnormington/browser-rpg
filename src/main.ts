@@ -8,6 +8,7 @@ import { loadGame, loadQuality, saveGame, saveQuality, wipeSave } from './storag
 import { playEvents, toggleMute, unlockAudio } from './sfx';
 import { applyStress } from './sim/stress';
 import { ITEMS } from './sim/items';
+import { bestFoodSlot } from './sim/consumables';
 import { Trace } from './trace';
 
 // Dev-only tooling: ?debug=1 (or the dev server) enables ?stress=N and the window.__debug handle. Game code never reads either.
@@ -60,6 +61,13 @@ const canvas = view.renderer.domElement;
 if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scene, view, sim: state, step: () => step(state, readInput()), stress, items: ITEMS };
 
 // --- input -> sim Input ---
+/** F: eat the best food the bag has and the moment allows. */
+function eatBest() {
+  const slot = bestFoodSlot(state.player);
+  if (slot < 0) return hud.say('Nothing to eat');
+  pendingInv.push({ k: 'use', slot });
+  saveDirty = true;
+}
 const keys = new Set<string>();
 let pendingTab = false, pendingClear = false, pendingAttack = false, pendingJump = false, pendingAbility: number | null = null;
 /** Keys typed into a form control belong to it. */
@@ -74,6 +82,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'Escape') { if (!hud.closeOverlay()) pendingClear = true; }
   else if (e.code === 'KeyR') pendingAttack = true;
   else if (e.code === 'KeyH') hud.toggleHelp();
+  else if (e.code === 'KeyF') eatBest();
   else if (e.code === 'KeyE') pendingInteract = { k: 'npc' };
   else if (e.code === 'KeyM') hud.say(toggleMute() ? 'Sound off' : 'Sound on');
   else if (e.code === 'KeyI') hud.toggle('inv');
@@ -108,6 +117,7 @@ addEventListener('mouseup', e => {
       else if (node !== null) pendingInteract = { k: 'node', id: node };
       else if (vendor !== null) pendingInteract = { k: 'vendor', id: vendor };
       else if (view.pickForge(e.clientX, e.clientY)) pendingInteract = { k: 'forge' };
+      else if (view.pickRange(e.clientX, e.clientY)) pendingInteract = { k: 'range' };
       else if ((pendingEnemy = view.pickEnemy(e.clientX, e.clientY, CLICK_TOLERANCE_PX)) === null) pendingClick = view.pick(e.clientX, e.clientY);
     }
   }

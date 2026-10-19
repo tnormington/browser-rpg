@@ -84,7 +84,7 @@ export class InventoryUi {
       this.fillCell(cell, st.id, st.qty);
       cell.draggable = true;
       cell.addEventListener('dragstart', e => { e.dataTransfer?.setData('text/plain', String(i)); this.hideTip(); });
-      cell.addEventListener('click', () => { if (def.slot) this.send({ k: 'equip', slot: i }); });
+      cell.addEventListener('click', () => { if (def.slot) this.send({ k: 'equip', slot: i }); else if (def.use) this.send({ k: 'use', slot: i }); });
       cell.addEventListener('contextmenu', e => {
         e.preventDefault();
         this.openItemMenu(e.clientX, e.clientY, i, st, s);
@@ -125,7 +125,7 @@ export class InventoryUi {
   private fillCell(cell: HTMLElement, id: string, qty: number) {
     const def = ITEMS[id];
     cell.style.borderColor = hex(TIER_COLORS[def.tier]);
-    div(cell, 'icon', def.slot ? SLOT_ICON[def.slot] : '◆').style.color = hex(TIER_COLORS[def.tier]);
+    div(cell, 'icon', def.slot ? SLOT_ICON[def.slot] : def.use ? '🍖' : '◆').style.color = hex(TIER_COLORS[def.tier]);
     div(cell, 'iname', def.name);
     if (qty > 1) div(cell, 'qty', String(qty));
   }
@@ -155,6 +155,7 @@ export class InventoryUi {
       }
       div(this.tip, 'thint', 'Click to equip  ·  Right-click to drop or destroy');
     } else if (worn) div(this.tip, 'thint', 'Click to unequip');
+    else if (def.use) div(this.tip, 'thint', 'Click to eat (F eats the best food)  ·  Right-click to drop or destroy');
     else div(this.tip, 'thint', 'Right-click to drop or destroy');
     this.tip.style.display = 'block';
     this.moveTip(e);
@@ -173,6 +174,7 @@ export class InventoryUi {
     const def = ITEMS[st.id], what = st.qty > 1 ? `${def.name} ×${st.qty}` : def.name;
     const rows: MenuRow[] = [];
     if (def.slot) rows.push(['Equip', () => this.send({ k: 'equip', slot })]);
+    if (def.use) rows.push(['Eat', () => this.send({ k: 'use', slot })]);
     if (nearVendor(s)) {
       if (st.qty > 1) rows.push([`Sell 1 (${def.value} gold)`, () => this.sell(slot, 1)]);
       rows.push([`Sell ${what} (${def.value * st.qty} gold)`,

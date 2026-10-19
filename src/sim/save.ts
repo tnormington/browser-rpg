@@ -7,10 +7,10 @@ import { levelForXp } from './xp';
 import { INVENTORY_SIZE, refreshGearStats } from './inventory';
 import { EQUIP_SLOTS, ITEMS } from './items';
 import { refreshPlayerStats } from './combat';
-import { PLAYER_SPAWN } from './data';
+import { BUFFS } from './consumables';
 import { QUEST2_STAGES, QUEST3_STAGES, QUEST_STAGES, Quest2Stage, Quest3Stage, QuestStage } from './quest';
 import { legalTalents, refreshTalents, talentById } from './talents';
-import { resolveCollisions } from './world';
+import { nearestTown, resolveCollisions } from './world';
 import { MAX_GOLD } from './shop';
 
 export const SAVE_VERSION = 1;
@@ -30,6 +30,7 @@ interface SaveFile {
     equipment: Record<string, string | null>;
     talents?: Record<string, number>; // absent in saves from before the trees: nobody had spent a point
     gold?: number;                    // absent in saves from before the economy: nobody had any
+    buffs?: { id: string; left: number }[]; // absent in saves from before cooking: nobody was Well Fed
   };
   quest: { stage: QuestStage; kills: Record<string, number>; second?: Quest2Stage; third?: Quest3Stage }; // `second` is absent in saves from before the cave, `third` in saves from before the road
   enemies: { id: number; type: string; deadIn: number }[]; // deadIn > 0: still respawning
@@ -46,14 +47,15 @@ export function serialize(s: GameState): string {
     rng: s.rng,
     nextDropId: s.nextDropId,
     player: {
-      // saving while dead stores the respawn: you wake at the clearing, healed
-      x: p.dead ? PLAYER_SPAWN.x : p.x, z: p.dead ? PLAYER_SPAWN.z : p.z, facing: p.facing,
+      // saving while dead stores the respawn: you wake in the nearest town, healed (the toll is already paid)
+      x: p.dead ? nearestTown(p.x, p.z).wake.x : p.x, z: p.dead ? nearestTown(p.x, p.z).wake.z : p.z, facing: p.facing,
       hp: p.dead ? p.maxHp : p.hp, energy: p.energy,
       xp: Object.fromEntries(SKILL_IDS.map(id => [id, p.skills[id].xp])),
       inventory: p.inventory.map(st => st && { id: st.id, qty: st.qty }),
       equipment: { ...p.equipment },
       talents: { ...p.talents },
       gold: p.gold,
+      buffs: p.buffs.map(b => ({ id: b.id, left: b.left })),
     },
     quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second, third: s.quest.third },
     enemies: s.enemies.map(e => ({ id: e.id, type: e.type, deadIn: e.state === 'dead' ? Math.max(0, e.respawnIn) : 0 })),
@@ -85,7 +87,8 @@ export function deserialize(raw: string): GameState | null {
     const fp = f.player;
     if (!isObj(fp)) return null;
     for (const id of SKILL_IDS) {
-      const xp = num((fp.xp as Record<string, unknown>)[id], 0, 1e10, `xp.${id}`);
+      const raw = (fp.xp as Record<string, unknown>)[id];
+      const xp = raw === undefined && (id === 'fishing' || id === 'cooking') ? 0 : num(raw, 0, 1e10, `xp.${id}`); // saves from before the two skills have none
       p.skills[id].xp = xp;
       p.skills[id].level = levelForXp(xp);
     }
@@ -113,6 +116,13 @@ export function deserialize(raw: string): GameState | null {
       if (!legalTalents(p.talents, levelForXp(p.combat.xp))) throw new Error('impossible talent build');
     }
     if (fp.gold !== undefined) p.gold = num(fp.gold, 0, MAX_GOLD, 'gold');
+    if (fp.buffs !== undefined) {
+      if (!Array.isArray(fp.buffs)) return null;
+      for (const b of fp.buffs) {
+        if (!isObj(b) || typeof b.id !== 'string' || !BUFFS[b.id]) throw new Error('bad buff');
+        if (!p.buffs.some(x => x.id === b.id)) p.buffs.push({ id: b.id, left: num(b.left, 0.01, BUFFS[b.id].duration, 'buff time') });
+      }
+    }
     refreshTalents(s);
     refreshGearStats(s);
     refreshPlayerStats(s, false);

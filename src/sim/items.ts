@@ -1,5 +1,6 @@
 // Item data, drop tables and the single derived-stat function. Pure data + math: no DOM/Three.
 import { BARE_SWING } from './data';
+import { FISH, SEA_SALT, cookedId, pieId } from './fish';
 
 export type EquipSlot = 'weapon' | 'head' | 'chest' | 'legs';
 export const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'head', 'chest', 'legs'];
@@ -9,6 +10,12 @@ export interface ItemStats {
   speed?: number;  // weapon: seconds between auto-attack swings (default BARE_SWING); sets the rhythm, not the damage per second
   armor?: number;  // armour: contributes to incoming damage reduction
 }
+
+/**
+ * What using an item does (sim/consumables.ts). `food`: a 5-second heal over time that a hit breaks, on the one shared food cooldown.
+ * `buff`: a timed effect from BUFFS, taken on use; food that carries one is a meal and needs a quiet moment.
+ */
+export interface ItemUse { heal?: number; food?: boolean; buff?: string }
 
 export interface ItemDef {
   name: string;
@@ -20,8 +27,22 @@ export interface ItemDef {
   tier: number;       // 0 material, 1 common, 2 good, 3 rare, 4 epic, 5 legendary: drives ground/tooltip colour and the worn look (gear-look.ts)
   /** What it takes to put it on. Absent on everything before adamant, so no old save is affected; the equip action reads it. */
   req?: { combat?: number };
+  /** Present = it can be used (eaten, drunk) from the bag. `heal` is a share of max HP. */
+  use?: ItemUse;
   desc: string;
 }
+
+/** Each fish's raw, cooked and pie rows (fish.ts has the numbers). A dish is worth half again its fish, a pie twice a dish. */
+const fishItems = (): Record<string, ItemDef> => Object.fromEntries(FISH.flatMap(f => {
+  const cooked = Math.round(f.value * 1.5);
+  return [
+    [f.id, { name: f.name, stack: 50, dropWeight: 0, tier: 0, value: f.value, desc: 'Fresh from the water. Cook it at a range.' }],
+    [cookedId(f), { name: `Cooked ${f.name}`, stack: 20, dropWeight: 0, tier: 1, value: cooked, use: { food: true, heal: f.heal },
+      desc: 'Heals over 5 seconds. Being hit spoils it, and every food shares a 20 second cooldown.' }],
+    [pieId(f), { name: `${f.name} Pie`, stack: 20, dropWeight: 0, tier: 2, value: cooked * 2, use: { food: true, heal: f.heal, buff: 'well_fed' },
+      desc: 'Heals over 5 seconds, and leaves you Well Fed: +10% max health for 20 minutes, lost on death. Needs a quiet moment: not in combat.' }],
+  ] as [string, ItemDef][];
+}));
 
 export const ITEMS: Record<string, ItemDef> = {
   // materials (M3 smithing uses iron_ore + coal; they come from mining nodes, not drops)
@@ -37,6 +58,8 @@ export const ITEMS: Record<string, ItemDef> = {
   mithril_bar: { name: 'Mithril Bar', stack: 50, dropWeight: 0, tier: 0, value: 30, desc: 'Light, cold and harder than steel. Armour is smithed from it.' },
   adamant_ore: { name: 'Adamant Ore', stack: 50, dropWeight: 0, tier: 0, value: 19, desc: 'Green-black ore from the cliffs above the Strand. Smelts into adamant at the forge.' },
   adamant_bar: { name: 'Adamant Bar', stack: 50, dropWeight: 0, tier: 0, value: 55, desc: 'Dense and sea-dark. Armour and a blade are smithed from it.' },
+  [SEA_SALT]: { name: 'Sea Salt', stack: 50, dropWeight: 0, tier: 0, value: 2, desc: 'Coarse grey salt from the Saltmarrow pans. A pie wants a pinch.' },
+  ...fishItems(),
   // weapons
   rusty_blade: { name: 'Rusty Blade', slot: 'weapon', stats: { damage: 2, speed: 2.2 }, stack: 1, dropWeight: 10, tier: 1, value: 6, desc: 'Better than bare hands.' },
   iron_sword: { name: 'Iron Sword', slot: 'weapon', stats: { damage: 5, speed: 2.4 }, stack: 1, dropWeight: 6, tier: 2, value: 30, desc: 'A reliable soldier\'s sword.' },
@@ -173,5 +196,6 @@ export function describeStats(def: ItemDef): string[] {
   if (def.stats?.speed) out.push(`${def.stats.speed.toFixed(1)}s swing`);
   if (def.stats?.armor) out.push(`+${def.stats.armor} armour`);
   if (def.req?.combat) out.push(`Requires Combat ${def.req.combat}`);
+  if (def.use?.heal) out.push(`Heals ${Math.round(def.use.heal * 100)}% of max health`);
   return out;
 }

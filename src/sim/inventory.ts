@@ -2,6 +2,7 @@
 import type { GameState } from '../sim';
 import { ITEMS, deriveStats } from './items';
 import type { EquipSlot } from './items';
+import { useItem } from './consumables';
 
 export const INVENTORY_SIZE = 28;
 export interface ItemStack { id: string; qty: number }
@@ -14,7 +15,8 @@ export type InvAction =
   | { k: 'unequip'; slot: EquipSlot }
   | { k: 'move'; from: number; to: number }
   | { k: 'drop'; slot: number }
-  | { k: 'destroy'; slot: number };
+  | { k: 'destroy'; slot: number }
+  | { k: 'use'; slot: number };
 
 /** Adds to existing stacks first, then empty slots. Returns the quantity that did not fit. */
 export function addItem(inv: Inventory, id: string, qty: number): number {
@@ -81,6 +83,7 @@ export function refreshGearStats(s: GameState) {
 export function applyInvAction(s: GameState, act: InvAction) {
   const p = s.player, inv = p.inventory;
   if (act.k === 'move') return moveSlot(inv, act.from, act.to);
+  if (act.k === 'use') return useItem(s, act.slot);
   if (act.k === 'unequip') {
     const id = p.equipment[act.slot];
     if (!id) return;

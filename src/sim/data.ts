@@ -1,5 +1,5 @@
 // All combat numbers live here so tuning is one file.
-import { REGIONS } from './world';
+import { REGIONS, TOWNS } from './world';
 
 export const TICK_RATE = 30;          // fixed simulation steps per second
 export const TICK_DT = 1 / TICK_RATE;
@@ -9,7 +9,8 @@ export const CRIT_CHANCE = 0.1;
 export const CRIT_MULT = 1.5;
 export const ENERGY_MAX = 100;
 export const ENERGY_REGEN = 8;        // per second
-export const RESPAWN_DELAY = 4;       // seconds dead before waking at the clearing
+export const RESPAWN_DELAY = 4;       // seconds dead before waking in the nearest town
+export const TOLL_FRAC = 0.03;        // the repair toll a death costs: this share of the value of what you are wearing, never more gold than you carry
 export const OOC_DELAY = 5;           // seconds without combat before health regen
 export const OOC_REGEN_FRAC = 0.03;   // of max hp per second
 export const TAB_RANGE = 30;
@@ -28,7 +29,7 @@ export const FALL_GRAVITY = 42;  // on the way down: 1.4x, so the descent is the
 export const JUMP_HEIGHT = JUMP_VELOCITY ** 2 / (2 * GRAVITY);
 /** Seconds a jump stays in the air, up at GRAVITY and down at FALL_GRAVITY. The jump clip is stretched over this. */
 export const JUMP_AIRTIME = JUMP_VELOCITY / GRAVITY + Math.sqrt((2 * JUMP_HEIGHT) / FALL_GRAVITY);
-export const PLAYER_SPAWN = { x: 0, z: 6 };
+export const PLAYER_SPAWN = TOWNS[0].wake;
 
 // Auto-attack: a WoW-style melee swing on its own timer, off the GCD and free of energy. Rhythm, not power:
 // the abilities were re-tuned down by what the swings add, and weapon speed changes the beat, not the damage per second.

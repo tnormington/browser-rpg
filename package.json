@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --open",
-    "verify": "tsx src/golden-path.test.ts && tsx src/sim/nav.test.ts",
+    "verify": "tsx src/golden-path.test.ts && tsx src/sim/nav.test.ts && tsx src/consumables.test.ts",
     "build": "tsc --noEmit && vite build",
     "bench": "node bench/run.mjs",
     "shot": "node bench/run.mjs --shot-only --levels 1"

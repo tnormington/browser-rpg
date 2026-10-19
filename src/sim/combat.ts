@@ -3,14 +3,16 @@ import type { GameState, Enemy, EnemyState, Player } from '../sim';
 import { MAX_REDUCTION } from './items';
 import { EXECUTE_BONUS } from './talents';
 import { grantXp } from './skills';
+import { breakFood, clearBuffs, maxHpOf } from './consumables';
+import { ITEMS, EQUIP_SLOTS } from './items';
 import { rollDrops } from './loot';
 import { questOnKill, questReached } from './quest';
 import { nextRandom } from './rng';
-import { inSafeZone, resolveCollisions, sameSideOfDoor } from './world';
+import { inSafeZone, nearestTown, resolveCollisions, sameSideOfDoor } from './world';
 import { clearLine } from './sight';
 import {
   ABILITIES, ENEMY_TYPES, GCD, QUEUE_WINDOW, CRIT_CHANCE, CRIT_MULT, ENERGY_MAX, ENERGY_REGEN,
-  RESPAWN_DELAY, OOC_DELAY, OOC_REGEN_FRAC, TAB_RANGE, PLAYER_SPAWN, maxHpForLevel, powerForLevel,
+  RESPAWN_DELAY, OOC_DELAY, OOC_REGEN_FRAC, TAB_RANGE, TOLL_FRAC, powerForLevel,
   STAGGER_TIME, STAGGER_HEAVY_KEEP, ACQUIRE_RANGE, ACQUIRE_BEHIND_RANGE, FRONT_HALF_ARC, aggroRadius,
   AUTO_RANGE, AUTO_BASE, AUTO_WEAPON_SHARE, AUTO_SLOT, BARE_SWING, RECAP_WINDOW, RECAP_MAX, TICK_DT, SIM_WAKE_RANGE, xpParity,
 } from './data';
@@ -31,7 +33,7 @@ const pickable = (s: GameState, e: Enemy) => targetable(e) && sameSideOfDoor(s.p
 
 export function refreshPlayerStats(s: GameState, fillHp: boolean) {
   const p = s.player;
-  p.maxHp = maxHpForLevel(p.combat.level);
+  p.maxHp = maxHpOf(p);
   p.maxEnergy = ENERGY_MAX;
   if (fillHp) p.hp = p.maxHp;
 }
@@ -331,6 +333,12 @@ function announceUnlocks(s: GameState) {
   p.unlocked = p.combat.level;
 }
 
+/** The repair toll for a death: a share of what you are wearing, and never more gold than you carry. It takes gold only, never an item. */
+export function repairToll(p: Player): number {
+  const worn = EQUIP_SLOTS.reduce((sum, slot) => sum + (p.equipment[slot] ? ITEMS[p.equipment[slot]!].value : 0), 0);
+  return Math.min(p.gold, Math.round(worn * TOLL_FRAC));
+}
+
 function killPlayer(s: GameState) {
   const p = s.player;
   const now = s.tick * TICK_DT, last = p.recap[p.recap.length - 1];
@@ -340,6 +348,9 @@ function killPlayer(s: GameState) {
   setInCombat(s, false);
   p.y = 0; p.vy = 0; p.airborne = false;
   p.hp = 0;
+  const toll = repairToll(p);
+  p.gold -= toll;
+  clearBuffs(s);
   p.dead = true;
   p.action = null;
   s.interact = null;
@@ -347,7 +358,7 @@ function killPlayer(s: GameState) {
   p.queued = null;
   s.targetId = null;
   s.moveTarget = null;
-  s.events.push({ t: 'death', killer: last ? `${ENEMY_TYPES[last.src].name}: ${last.what}` : '', recap });
+  s.events.push({ t: 'death', killer: last ? `${ENEMY_TYPES[last.src].name}: ${last.what}` : '', toll, recap });
 }
 
 export function updatePlayerDeath(s: GameState, dt: number) {
@@ -355,13 +366,14 @@ export function updatePlayerDeath(s: GameState, dt: number) {
   p.respawnIn -= dt;
   if (p.respawnIn > 0) return;
   p.dead = false;
-  p.x = PLAYER_SPAWN.x; p.z = PLAYER_SPAWN.z; p.facing = Math.PI; p.moving = false;
+  const town = nearestTown(p.x, p.z); // W2.3: only towns whose flight master has been found
+  p.x = town.wake.x; p.z = town.wake.z; p.facing = Math.PI; p.moving = false;
   refreshPlayerStats(s, true);
   p.energy = p.maxEnergy;
   p.cd.fill(0);
   p.gcd = 0;
   p.outOfCombat = OOC_DELAY;
-  s.events.push({ t: 'respawn' });
+  s.events.push({ t: 'respawn', town: town.name });
 }
 
 /** An enemy that has come into a town square from outside it (its post is never inside one): the town turns it back. */
@@ -392,6 +404,7 @@ function hurtPlayer(s: GameState, e: Enemy, amount: number, what: string, heavy 
   p.hp = Math.max(0, p.hp - amount);
   p.outOfCombat = 0;
   p.action = null; // getting hit breaks concentration
+  breakFood(s);
   const now = s.tick * TICK_DT;
   p.recap = [...p.recap.filter(h => now - h.at <= RECAP_WINDOW), { src: e.type, what, amount, heavy, at: now }].slice(-RECAP_MAX);
   s.events.push({ t: 'hit', target: 'player', x: p.x, z: p.z, amount, crit: false, slot: -1, dot: false, heavy, src: e.id });

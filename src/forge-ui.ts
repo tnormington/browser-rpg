@@ -1,12 +1,11 @@
-// Forge panel (DOM): recipe list with inputs, level requirement and output. Reads GameState;
-// crafting goes out as a sim craft request only.
+// Station panel (DOM, the forge's and the cooking range's): the station's recipe list with inputs, level requirement and output.
+// Reads GameState; crafting goes out as a sim craft request only.
 import type { GameState } from './sim';
-import { RECIPES, bonusOutput, craftTime, hasInputs, nearForge, FORGE_REACH } from './sim/crafting';
+import { RECIPES, STATIONS, STATION_REACH, Station, bonusOutput, craftTime, hasInputs, nearStation, stationOf } from './sim/crafting';
 import { mastery } from './sim/mastery';
 import { SKILLS } from './sim/skills';
 import { ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { countItem } from './sim/inventory';
-import { LANDMARKS } from './sim/world';
 import { el } from './dom';
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
@@ -16,11 +15,13 @@ export class ForgeUi {
   private list: HTMLElement;
   private open = false;
   private sig = '';
+  private recipes;
 
-  constructor(root: HTMLElement, private craft: (recipe: string, count: number) => void) {
+  constructor(root: HTMLElement, private station: Station, title: string, private craft: (recipe: string, count: number) => void) {
+    this.recipes = RECIPES.filter(r => stationOf(r) === station);
     this.panel = el(root, 'panel forgepanel');
-    const title = el(this.panel, 'ptitle', 'Forge');
-    const close = el(title, 'pclose', '✕');
+    const head = el(this.panel, 'ptitle', title);
+    const close = el(head, 'pclose', '✕');
     close.addEventListener('click', () => this.setOpen(false));
     this.list = el(this.panel, 'recipes');
     this.panel.style.display = 'none';
@@ -33,14 +34,14 @@ export class ForgeUi {
   }
 
   update(s: GameState) {
-    if (this.open && (s.player.dead || !nearForgeWithSlack(s))) this.setOpen(false);
+    if (this.open && (s.player.dead || !this.nearWithSlack(s))) this.setOpen(false);
     if (!this.open) return;
     const p = s.player;
-    const sig = JSON.stringify([RECIPES.map(r => r.inputs.map(i => countItem(p.inventory, i.id))), p.skills.smithing.level, p.action?.k]);
+    const sig = JSON.stringify([this.recipes.map(r => r.inputs.map(i => countItem(p.inventory, i.id))), this.recipes.map(r => p.skills[r.skill].level), p.action?.k]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.list.textContent = '';
-    for (const r of RECIPES) {
+    for (const r of this.recipes) {
       const out = ITEMS[r.output.id];
       const lvlOk = p.skills[r.skill].level >= r.level, matsOk = hasInputs(s, r), can = lvlOk && matsOk;
       const row = el(this.list, `recipe${can ? '' : ' locked'}`);
@@ -67,7 +68,10 @@ export class ForgeUi {
       }
     }
   }
-}
 
-/** Panel stays open a little beyond crafting reach so it doesn't flicker at the edge. */
-const nearForgeWithSlack = (s: GameState) => nearForge(s) || Math.hypot(s.player.x - LANDMARKS.forge.x, s.player.z - LANDMARKS.forge.z) <= FORGE_REACH + 1.5;
+  /** The panel stays open a little beyond crafting reach so it doesn't flicker at the edge. */
+  private nearWithSlack(s: GameState) {
+    const at = STATIONS[this.station]!.at;
+    return nearStation(s, this.station) || Math.hypot(s.player.x - at.x, s.player.z - at.z) <= STATION_REACH + 1.5;
+  }
+}
