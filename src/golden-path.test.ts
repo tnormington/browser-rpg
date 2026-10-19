@@ -5,7 +5,7 @@ import { addItem, countItem, INVENTORY_SIZE } from './sim/inventory';
 import { ITEMS, DROP_TABLES, MITHRIL_SET, TIER_COLORS, deriveStats, emptyEquipment } from './sim/items';
 import {
   ABILITIES, ENEMY_TYPES, SPAWNS, aggroRadius, castName, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
-  FALL_GRAVITY, GRAVITY, JUMP_AIRTIME, JUMP_HEIGHT, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW,
+  FALL_GRAVITY, GRAVITY, JUMP_AIRTIME, JUMP_HEIGHT, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW, powerForLevel,
 } from './sim/data';
 import { xpForLevel, levelForXp, addXp, newTrack, levelProgress } from './sim/xp';
 import { SKILL_IDS, SKILLS, grantXp } from './sim/skills';
@@ -25,6 +25,11 @@ import { appearanceOf, TIER_LOOKS } from './gear-look';
 import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
 import { clearLine } from './sim/sight';
+import {
+  EXECUTE_BONUS, EXECUTE_UNDER, TALENTS, TALENT_START_LEVEL, TIER_COST, TREE_IDS,
+  deriveTalents, refreshTalents, spentIn, spentTotal, talentPoints,
+} from './sim/talents';
+import { reductionOf } from './sim/combat';
 
 let checks = 0;
 function assert(cond: unknown, msg: string): asserts cond {
@@ -2622,6 +2627,228 @@ section('HOM-38 ranged line of sight: a shot needs a line, and loses one mid-fli
   let marks = 0;
   for (let n = 0; n < Math.round(0.6 / TICK_DT); n++) { tick(seer.s); marks += seer.s.events.filter(ev => ev.t === 'telegraph' && ev.kind === 'ground').length; }
   assert(marks === 0, 'the Cave Seer does not call Withering Ground down on a spot it cannot see');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-38 talents: the rules of the trees');
+{
+  assert(talentPoints(1) === 0 && talentPoints(TALENT_START_LEVEL) === 1 && talentPoints(10) === 9, 'no points at level 1, then one a level from level 2');
+  assert(TALENTS.every(t => TREE_IDS.includes(t.tree) && t.ranks >= 1 && t.tier < TIER_COST.length), 'every talent sits in a real tree at a real tier');
+  assert(TREE_IDS.every(tree => TALENTS.filter(t => t.tree === tree).reduce((n, t) => n + t.ranks, 0) < talentPoints(10)),
+    'no tree can be filled before combat 10: depth costs breadth');
+
+  const buy = (s: GameState, id: string) => tick(s, { talent: id });
+  /** Read a rank through a function so TS does not narrow it across sim calls. */
+  const rank = (g: GameState, id: string): number => g.player.talents[id] ?? 0;
+  const s = quietState(700);
+  atLevel(s, 10);
+  assert(spentTotal(s.player.talents) === 0 && JSON.stringify(s.player.talentFx) === JSON.stringify(deriveTalents({})),
+    'a fresh character has spent nothing, and the derived effects are the neutral ones');
+
+  buy(s, 'execute');
+  assert(rank(s, 'execute') === 0 && hasEvent(s, e => e.t === 'talentfail' && e.reason === 'tier'), 'a tier-three talent is shut until the tree has been paid into');
+  buy(s, 'brutality'); buy(s, 'brutality');
+  assert(rank(s, 'brutality') === 2 && spentIn(s.player.talents, 'fury') === 2, 'two ranks of Brutality');
+  buy(s, 'frenzy');
+  assert(rank(s, 'frenzy') === 1, 'two points in Fury open its second tier');
+  buy(s, 'execute');
+  assert(rank(s, 'execute') === 0, 'three is still not the four the third tier asks for');
+  buy(s, 'brutality'); buy(s, 'execute');
+  assert(rank(s, 'execute') === 1 && spentIn(s.player.talents, 'fury') === 5, 'the fourth point in Fury opens Execute');
+  buy(s, 'brutality');
+  assert(rank(s, 'brutality') === 3 && hasEvent(s, e => e.t === 'talentfail' && e.reason === 'maxrank'), 'Brutality stops at its third rank');
+
+  const left = talentPoints(10) - spentTotal(s.player.talents);
+  for (let n = 0; n < left; n++) buy(s, 'toughened'), buy(s, 'serration');
+  assert(spentTotal(s.player.talents) === talentPoints(10), `every point is spendable and no more (${spentTotal(s.player.talents)} of ${talentPoints(10)})`);
+  buy(s, 'rally');
+  assert(hasEvent(s, e => e.t === 'talentfail' && e.reason === 'points'), 'and the next press says there are none left');
+
+  tick(s, { talentReset: true });
+  assert(spentTotal(s.player.talents) === 0 && hasEvent(s, e => e.t === 'talentreset') && s.player.talentFx.damage === 1,
+    'unlearning hands every point back and the effects go neutral with them');
+
+  // not mid-fight
+  const c = quietState(701);
+  atLevel(c, 10);
+  const boar = enemyOf(c, 'boar');
+  placeAt(boar, 0, 0); boar.state = 'chase';
+  c.player.x = 0; c.player.z = 2; c.player.outOfCombat = 0;
+  tick(c);
+  assert(c.player.inCombat, 'in combat');
+  buy(c, 'brutality');
+  assert(spentTotal(c.player.talents) === 0 && hasEvent(c, e => e.t === 'talentfail' && e.reason === 'combat'), 'talents cannot be changed in combat');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-38 talents: every one of them changes an ability you already have');
+{
+  /** Grant ranks outright: the purchase rules are tested above, these checks are about what the ranks do. */
+  const give = (s: GameState, ranks: Record<string, number>) => { Object.assign(s.player.talents, ranks); refreshTalents(s); };
+  /**
+   * A dummy, a forged blade and `secs` of fighting. Strike spam for the damage read (one rounding per 30-point hit,
+   * so the percentages are legible); auto-attack alone for the swing count.
+   */
+  const bout = (seed: number, ranks: Record<string, number>, auto: boolean, secs = 30) => {
+    const a = arena(seed, 5);
+    a.s.player.equipment.weapon = 'forged_blade'; refreshGearStats(a.s);
+    give(a.s, ranks);
+    const hp0 = a.b.hp;
+    let swings = 0;
+    if (auto) tick(a.s, { attack: true });
+    for (let n = 0; n < Math.round(secs / TICK_DT); n++) {
+      const p = a.s.player;
+      tick(a.s, { ability: !auto && p.gcd === 0 && p.energy >= ABILITIES[SLOT.strike].cost ? SLOT.strike : null });
+      swings += a.s.events.filter(e => e.t === 'swing').length;
+    }
+    return { dealt: hp0 - a.b.hp, swings };
+  };
+
+  const plain = bout(600, {}, false), brutal = bout(600, { brutality: 3 }, false);
+  assert(Math.abs(brutal.dealt / plain.dealt - 1.15) < 0.01 && brutal.swings === plain.swings,
+    `Brutality 3 adds 15% to what you deal, and nothing else (${plain.dealt} -> ${brutal.dealt})`);
+
+  const base = bout(601, {}, true), quick = bout(601, { frenzy: 2 }, true);
+  assert(quick.swings >= Math.round(base.swings * 1.15) && quick.dealt > base.dealt,
+    `Frenzy 2 swings 20% faster, so the same weapon does more over the same stretch (${base.swings} -> ${quick.swings} swings)`);
+
+  // Toughened: armour's cap still applies, and a real blow lands softer
+  const tough = quietState(602);
+  atLevel(tough, 8);
+  give(tough, { toughened: 3 });
+  assert(Math.abs(reductionOf(tough.player) - 0.12) < 1e-9, 'Toughened 3 is 12% off everything that reaches you');
+  const hitFor = (ranks: Record<string, number>) => {
+    const g = quietState(603);
+    atLevel(g, 8);
+    give(g, ranks);
+    const w = enemyOf(g, 'wolf');
+    placeAt(w, 0, 0); w.state = 'chase'; w.attackCd = 0;
+    g.player.x = 1.5; g.player.z = 0;
+    let dmg = 0;
+    for (let n = 0; n < Math.round(3 / TICK_DT) && !dmg; n++) { tick(g); for (const e of g.events) if (e.t === 'hit' && e.target === 'player') dmg = e.amount; }
+    return dmg;
+  };
+  assert(hitFor({ toughened: 3 }) < hitFor({}) && hitFor({ toughened: 3 }) > 0, `a Dire Wolf's bite lands for ${hitFor({})} bare and ${hitFor({ toughened: 3 })} under Toughened 3`);
+
+  // Rally: a bigger Second Wind on a shorter leash
+  const heal = (ranks: Record<string, number>) => {
+    const g = quietState(604);
+    atLevel(g, 8);
+    give(g, ranks);
+    g.player.hp = 10;
+    tick(g, { ability: SLOT.wind });
+    const amount = g.events.reduce((n, e) => n + (e.t === 'heal' ? e.amount : 0), 0);
+    return { amount, cd: g.player.cd[SLOT.wind] };
+  };
+  const r0 = heal({}), r2 = heal({ rally: 2 });
+  assert(Math.abs(r2.amount / r0.amount - 1.5) < 0.03 && Math.abs(r2.cd - (r0.cd - 6)) < 1e-9,
+    `Rally 2 heals half again as much on a cooldown six seconds shorter (${r0.amount} / ${r0.cd}s -> ${r2.amount} / ${r2.cd}s)`);
+
+  // Counterstrike: half the cooldown, and the shutdown pays for itself
+  const pummel = (ranks: Record<string, number>) => {
+    const g = quietState(605);
+    atLevel(g, 8);
+    give(g, ranks);
+    const b = enemyOf(g, 'brute');
+    placeAt(b, 0, 0); b.state = 'chase'; b.heavyCd = 0; b.attackCd = 0;
+    g.player.x = 0; g.player.z = 2.5;
+    tick(g, { clickEnemy: b.id });
+    for (let n = 0; n < 300 && !b.cast; n++) tick(g);
+    g.player.energy = 40; // room for the refund to show: at full energy it would be capped away
+    const before = g.player.energy;
+    tick(g, { ability: SLOT.pummel });
+    return { cd: g.player.cd[SLOT.pummel], gained: g.player.energy - before, interrupted: hasEvent(g, e => e.t === 'interrupt') };
+  };
+  const p0 = pummel({}), p1 = pummel({ counterstrike: 1 });
+  assert(p0.interrupted && p1.interrupted && Math.abs(p1.cd - p0.cd / 2) < 1e-9 && p1.gained > p0.gained + 25,
+    `Counterstrike halves Pummel's cooldown (${p0.cd}s -> ${p1.cd}s) and gives energy back for the shutdown`);
+
+  // Serration: the bleed itself, not the throw
+  const bleedOf = (ranks: Record<string, number>) => {
+    const a = arena(606, 8);
+    give(a.s, ranks);
+    tick(a.s, { ability: SLOT.throw });
+    return a.b.bleed!.damage;
+  };
+  const perTick = (r: number) => Math.round(ABILITIES[SLOT.throw].dotDamage! * powerForLevel(8) * (1 + 0.25 * r));
+  assert(bleedOf({}) === perTick(0) && bleedOf({ serration: 3 }) === perTick(3) && perTick(3) > perTick(0),
+    `Serration 3 makes the bleed tick for 75% more (${bleedOf({})} -> ${bleedOf({ serration: 3 })} a tick)`);
+
+  // Whirling: a wider cone and a cheaper one
+  const sweep = (ranks: Record<string, number>) => {
+    const g = quietState(607);
+    atLevel(g, 8);
+    give(g, ranks);
+    const [front, wide] = g.enemies.filter(e => e.type === 'boar');
+    placeAt(front, 0, 3);
+    placeAt(wide, 3 * Math.sin(85 * Math.PI / 180), 3 * Math.cos(85 * Math.PI / 180)); // 85 degrees off the aim: outside the base 140-degree cone
+    g.player.x = 0; g.player.z = 0; g.player.facing = 0;
+    tick(g, { clickEnemy: front.id });
+    const before = g.player.energy;
+    tick(g, { ability: SLOT.cleave });
+    return { front: front.hp < front.maxHp, wide: wide.hp < wide.maxHp, spent: before - g.player.energy };
+  };
+  const narrow = sweep({}), wide = sweep({ whirling: 2 });
+  assert(narrow.front && !narrow.wide, 'bare, Cleave misses something 85 degrees off the line to your target');
+  assert(wide.front && wide.wide && wide.spent === narrow.spent - 10, `Whirling 2 widens the sweep to take it in, for ten energy less (${narrow.spent} -> ${wide.spent})`);
+
+  // Bloodscent: more crits, and a crit works the wound open
+  assert(Math.abs(deriveTalents({ bloodscent: 1 }).crit - 0.06) < 1e-9, 'Bloodscent is six points of crit');
+  const peak = (seed: number, ranks: Record<string, number>) => {
+    const a = arena(seed, 8);
+    give(a.s, ranks);
+    let most = 0;
+    tick(a.s, { attack: true });
+    for (let n = 0; n < Math.round(25 / TICK_DT); n++) {
+      const p = a.s.player;
+      tick(a.s, { ability: p.gcd === 0 && p.cd[SLOT.throw] === 0 && p.energy >= ABILITIES[SLOT.throw].cost ? SLOT.throw : null });
+      most = Math.max(most, a.b.bleed?.ticks ?? 0);
+    }
+    return most;
+  };
+  const SEEDS38 = [610, 611, 612, 613];
+  const bare = SEEDS38.map(n => peak(n, {})), scent = SEEDS38.map(n => peak(n, { bloodscent: 1 }));
+  assert(bare.every(n => n === ABILITIES[SLOT.throw].dotTicks!), `bare, a bleed never runs past the ${ABILITIES[SLOT.throw].dotTicks!} ticks the throw gave it (${bare.join('/')})`);
+  assert(scent.some(n => n > ABILITIES[SLOT.throw].dotTicks!), `with Bloodscent a crit adds ticks to it (${scent.join('/')})`);
+
+  // Execute: Crushing Blow finishes the wounded, and a kill hands the cooldown back
+  const crush = (ranks: Record<string, number>, hpFrac: number) => {
+    const a = arena(608, 8);
+    give(a.s, ranks);
+    a.b.maxHp = 400; a.b.hp = 400 * hpFrac;
+    const hp0 = a.b.hp;
+    tick(a.s, { ability: SLOT.crushing });
+    return { dealt: hp0 - a.b.hp, cd: a.s.player.cd[SLOT.crushing], dead: st(a.b) === 'dead' };
+  };
+  const healthy = crush({ execute: 1 }, 1), plainLow = crush({}, 0.3), execLow = crush({ execute: 1 }, 0.3);
+  assert(Math.abs(execLow.dealt / plainLow.dealt - (1 + EXECUTE_BONUS)) < 0.05,
+    `Execute adds half again to Crushing Blow below ${Math.round(EXECUTE_UNDER * 100)}% health (${plainLow.dealt} -> ${execLow.dealt})`);
+  assert(Math.abs(healthy.dealt / crush({}, 1).dealt - 1) < 1e-9, 'and nothing at all above it');
+  const finish = crush({ execute: 1 }, 0.05);
+  assert(finish.dead && finish.cd === 0 && crush({}, 0.3).cd > 0, 'a Crushing Blow that kills hands its cooldown straight back');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-38 talents: saved, and only if the build was legal');
+{
+  const s = quietState(710);
+  atLevel(s, 10);
+  Object.assign(s.player.talents, { brutality: 3, frenzy: 2, execute: 1, toughened: 2 });
+  refreshTalents(s);
+  const l = deserialize(serialize(s))!;
+  assert(l !== null && JSON.stringify(l.player.talents) === JSON.stringify(s.player.talents), 'the build survives a save');
+  assert(JSON.stringify(l.player.talentFx) === JSON.stringify(s.player.talentFx), 'and its effects are re-derived, not stored');
+
+  const raw = JSON.parse(serialize(s));
+  const old = structuredClone(raw); delete old.player.talents;
+  const loadedOld = deserialize(JSON.stringify(old));
+  assert(loadedOld !== null && spentTotal(loadedOld.player.talents) === 0, 'a save from before the trees loads with nothing spent, rather than being thrown away');
+
+  const bad = (edit: (f: any) => void) => { const f = structuredClone(raw); edit(f); return deserialize(JSON.stringify(f)); };
+  assert(bad(f => { f.player.talents.not_a_talent = 1; }) === null, 'an unknown talent id -> null');
+  assert(bad(f => { f.player.talents.brutality = 9; }) === null, 'more ranks than the talent has -> null');
+  assert(bad(f => { f.player.talents.serration = 3; f.player.talents.whirling = 2; f.player.talents.bloodscent = 1; }) === null, 'more points than the level ever handed out -> null');
+  assert(bad(f => { f.player.talents = { brutality: 3, frenzy: 2, execute: 1, bloodscent: 1 }; }) === null, 'a tier bought without paying into its tree -> null');
 }
 
 console.log(`\nAll ${checks} checks passed.`);

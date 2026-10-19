@@ -68,6 +68,19 @@ canvas{display:block}
 .skillspanel{left:12px;top:330px;width:220px}
 .skillrow{margin-bottom:7px}.skillhead{display:flex;justify-content:space-between;font-size:13px}.skilllvl{color:var(--gold);font-weight:bold}
 .skillbar{height:12px}.skillbar .fill{background:linear-gradient(#5a7a96,#3a566e)}.skillbar .label{line-height:12px;font-size:9px}
+.talentpanel{left:50%;top:90px;transform:translateX(-50%);width:570px;border-color:var(--edge-hi)}
+.tpoints{float:right;font-size:12px;font-weight:normal;color:var(--ink-dim);letter-spacing:0}.tpoints.ready{color:var(--gold)}
+.ttrees{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ttree{background:rgba(8,9,11,.5);border:1px solid #2e3034;border-radius:2px;padding:6px}
+.tthead{display:flex;justify-content:space-between;font-size:13px;font-weight:bold}.ttspent{color:var(--gold)}
+.ttblurb{font-size:11px;opacity:.6;margin:2px 0 6px;min-height:26px}
+.talent{position:relative;background:var(--iron-lift);border:2px solid #2e3034;border-radius:2px;padding:4px 6px;margin-bottom:5px;cursor:pointer}
+.talent:hover{border-color:var(--edge-hi)}
+.talent.taken{border-color:var(--gold)}
+.talent.shut{opacity:.45;cursor:default}.talent.shut:hover{border-color:#2e3034}
+.talent.taken.shut{opacity:.8}
+.tlname{font-size:12px;font-weight:bold}.tlrank{position:absolute;top:4px;right:6px;font-size:11px;color:var(--gold)}
+.treset{text-align:center;margin-top:8px}
 .forgepanel{left:50%;top:90px;transform:translateX(-50%);width:330px;border-color:#5a3a22}
 .pclose{float:right;cursor:pointer;color:var(--ink);opacity:.6}.pclose:hover{opacity:1}
 .recipe{background:var(--iron-lift);border:1px solid #34363a;border-radius:2px;padding:6px 8px;margin-bottom:6px}.recipe.locked{opacity:.8}

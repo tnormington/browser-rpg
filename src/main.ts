@@ -24,6 +24,7 @@ if (trace) (window as any).__frameTrace = trace, trace.attach(view.renderer);
 const pendingInv: InvAction[] = [];
 let pendingCraft: { recipe: string; count: number } | null = null;
 let pendingAdvance = false;
+let pendingTalent: string | null = null, pendingTalentReset = false;
 
 // --- save / load ---
 const AUTOSAVE_EVERY = 20; // seconds
@@ -31,6 +32,8 @@ let wiped = stress > 1, saveDirty = false, sinceSave = 0;
 function save(): boolean { return !wiped && saveGame(state); }
 const hud = new Hud((x, y, z) => view.project(x, y, z), () => view.yaw, {
   inv: a => { pendingInv.push(a); saveDirty = true; },
+  talent: id => { pendingTalent = id; saveDirty = true; },
+  talentReset: () => { pendingTalentReset = true; saveDirty = true; },
   craft: (recipe, count) => { pendingCraft = { recipe, count }; },
   questAdvance: () => { pendingAdvance = true; },
   quality: toggle => {
@@ -72,6 +75,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyI') hud.toggle('inv');
   else if (e.code === 'KeyC') hud.toggle('char');
   else if (e.code === 'KeyK') hud.toggle('skills');
+  else if (e.code === 'KeyN') hud.toggle('talents');
   else if (/^Digit[1-6]$/.test(e.code)) pendingAbility = Number(e.code.slice(5)) - 1;
 });
 addEventListener('keyup', e => keys.delete(e.code));
@@ -132,8 +136,10 @@ function readInput(): Input {
     interact: pendingInteract,
     craft: pendingCraft,
     questAdvance: pendingAdvance,
+    talent: pendingTalent,
+    talentReset: pendingTalentReset,
   };
-  pendingInteract = null; pendingCraft = null; pendingAdvance = false;
+  pendingInteract = null; pendingCraft = null; pendingAdvance = false; pendingTalent = null; pendingTalentReset = false;
   pendingClick = null; pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingAttack = false; pendingJump = false; pendingClear = false; pendingAbility = null;
   return input;
 }
@@ -152,7 +158,7 @@ function frame(now: number) {
     hud.onEvents(state.events, state);
     playEvents(state.events);
     trace?.tick(state.events);
-    if (state.events.some(ev => ev.t === 'levelup' || ev.t === 'quest' || ev.t === 'crafted' || ev.t === 'kill')) saveDirty = true;
+    if (state.events.some(ev => ev.t === 'levelup' || ev.t === 'quest' || ev.t === 'crafted' || ev.t === 'kill' || ev.t === 'talent' || ev.t === 'talentreset')) saveDirty = true;
     acc -= TICK_DT;
   }
   // autosave: soon after anything meaningful, otherwise on a timer

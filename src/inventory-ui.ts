@@ -4,6 +4,7 @@ import { ABILITIES } from './sim/data';
 import { powerForLevel } from './sim/data';
 import { INVENTORY_SIZE, InvAction } from './sim/inventory';
 import { EQUIP_SLOTS, EquipSlot, ITEMS, TIER_COLORS, describeStats } from './sim/items';
+import { reductionOf, swingInterval } from './sim/combat';
 
 const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖' };
 const SLOT_LABEL: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs' };
@@ -50,7 +51,7 @@ export class InventoryUi {
   update(s: GameState) {
     const p = s.player;
     // rebuild only when something changed so drag-and-drop and hover stay stable
-    const sig = JSON.stringify([p.inventory, p.equipment, p.combat.level]);
+    const sig = JSON.stringify([p.inventory, p.equipment, p.combat.level, p.talents]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.hideTip();
@@ -102,15 +103,16 @@ export class InventoryUi {
   }
 
   private renderStats(s: GameState) {
-    const p = s.player, st = p.stats, power = powerForLevel(p.combat.level);
+    const p = s.player, st = p.stats, power = powerForLevel(p.combat.level) * p.talentFx.damage;
     const strike = ABILITIES[0].damage + st.weaponDamage;
     const lines: [string, string][] = [
       ['Combat level', String(p.combat.level)],
       ['Max health', String(p.maxHp)],
       ['Weapon damage', `+${st.weaponDamage}`],
       ['Strike hits for', `${Math.round(strike * power * 0.9)}-${Math.round(strike * power * 1.1)}`],
+      ['Swing every', `${swingInterval(p).toFixed(1)}s`],
       ['Armour', String(st.armor)],
-      ['Damage reduction', `${Math.round(st.reduction * 100)}%`],
+      ['Damage reduction', `${Math.round(reductionOf(p) * 100)}%`],
     ];
     this.statsEl.textContent = '';
     for (const [k, v] of lines) { const r = div(this.statsEl, 'srow'); div(r, 'sk', k); div(r, 'sv', v); }

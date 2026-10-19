@@ -57,13 +57,15 @@ export interface AbilityDef {
   range: number;      // world units, center to center; 0 = self
   arc?: number;       // cleave: full width in degrees of the cone, centred on the line to the target
   offGcd?: boolean;   // interrupt: usable mid-GCD, so it can answer a wind-up the instant it starts
+  /** What a talent calls this ability by. `kind` already names the other five; only the two strikes need telling apart. */
+  tag?: 'crush';
 }
 
 export const ABILITIES: AbilityDef[] = [
   { name: 'Strike', desc: 'Cheap, reliable melee hit. Your GCD filler.',
     kind: 'strike', unlockLevel: 1, damage: 8, cost: 10, cooldown: 0, range: 3 },
   { name: 'Crushing Blow', desc: 'Heavy melee hit. Save energy for it.',
-    kind: 'strike', unlockLevel: 3, damage: 20, cost: 30, cooldown: 6, range: 3 },
+    kind: 'strike', unlockLevel: 3, damage: 20, cost: 30, cooldown: 6, range: 3, tag: 'crush' },
   { name: 'Serrated Throw', desc: 'Ranged opener that makes the target bleed.',
     kind: 'dot', unlockLevel: 2, damage: 3, dotDamage: 4, dotTicks: 6, cost: 20, cooldown: 9, range: 9 },
   { name: 'Second Wind', desc: 'Heal yourself. Long cooldown: pick your moment.',

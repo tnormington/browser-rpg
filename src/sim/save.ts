@@ -9,6 +9,7 @@ import { EQUIP_SLOTS, ITEMS } from './items';
 import { refreshPlayerStats } from './combat';
 import { PLAYER_SPAWN } from './data';
 import { QUEST2_STAGES, QUEST_STAGES, Quest2Stage, QuestStage } from './quest';
+import { legalTalents, refreshTalents, talentById } from './talents';
 import { resolveCollisions } from './world';
 
 export const SAVE_VERSION = 1;
@@ -24,6 +25,7 @@ interface SaveFile {
     xp: Record<string, number>;
     inventory: ({ id: string; qty: number } | null)[];
     equipment: Record<string, string | null>;
+    talents?: Record<string, number>; // absent in saves from before the trees: nobody had spent a point
   };
   quest: { stage: QuestStage; kills: Record<string, number>; second?: Quest2Stage }; // `second` is absent in saves from before the cave
   enemies: { id: number; type: string; deadIn: number }[]; // deadIn > 0: still respawning
@@ -46,6 +48,7 @@ export function serialize(s: GameState): string {
       xp: Object.fromEntries(SKILL_IDS.map(id => [id, p.skills[id].xp])),
       inventory: p.inventory.map(st => st && { id: st.id, qty: st.qty }),
       equipment: { ...p.equipment },
+      talents: { ...p.talents },
     },
     quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second },
     enemies: s.enemies.map(e => ({ id: e.id, type: e.type, deadIn: e.state === 'dead' ? Math.max(0, e.respawnIn) : 0 })),
@@ -94,6 +97,17 @@ export function deserialize(raw: string): GameState | null {
       if (typeof id !== 'string' || ITEMS[id]?.slot !== slot) throw new Error('bad equipment');
       p.equipment[slot] = id;
     }
+    // talents: validated against the level, so a hand-edited save cannot buy a tier it never paid for
+    if (fp.talents !== undefined) {
+      if (!isObj(fp.talents)) return null;
+      for (const [id, n] of Object.entries(fp.talents)) {
+        const def = talentById(id);
+        if (!def) throw new Error('bad talent');
+        p.talents[id] = num(n, 1, def.ranks, `talent.${id}`);
+      }
+      if (!legalTalents(p.talents, levelForXp(p.combat.xp))) throw new Error('impossible talent build');
+    }
+    refreshTalents(s);
     refreshGearStats(s);
     refreshPlayerStats(s, false);
     p.unlocked = p.combat.level; // abilities already earned are not announced again

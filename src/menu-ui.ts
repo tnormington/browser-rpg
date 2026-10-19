@@ -16,6 +16,7 @@ const CONTROLS: [string, string][] = [
   ['Click rock / tree', 'Mine or chop it (walks there first)'],
   ['Click the forge', 'Smith bars and weapons'],
   ['I   C   K', 'Inventory + equipment, Character, Skills'],
+  ['N', 'Talents: a point per combat level, spent in three trees, changing what your six abilities do. Out of combat only; unlearning is free.'],
   ['Click a drop', 'Walk over and pick it up'],
   ['H', 'This help'],
   ['M', 'Mute sound'],

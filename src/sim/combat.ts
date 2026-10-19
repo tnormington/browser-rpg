@@ -1,5 +1,7 @@
 // Combat rules: targeting, abilities, damage, enemy AI, death and respawn. Pure sim, no DOM/Three.
-import type { GameState, Enemy, EnemyState } from '../sim';
+import type { GameState, Enemy, EnemyState, Player } from '../sim';
+import { MAX_REDUCTION } from './items';
+import { EXECUTE_BONUS } from './talents';
 import { grantXp } from './skills';
 import { rollDrops } from './loot';
 import { questOnKill, questReached } from './quest';
@@ -33,6 +35,27 @@ export function refreshPlayerStats(s: GameState, fillHp: boolean) {
   p.maxEnergy = ENERGY_MAX;
   if (fillHp) p.hp = p.maxHp;
 }
+
+// Gear sets the baseline and talents bend it. These four are the only places anything reads the two together: the HUD
+// shows the same numbers through them, so what the player is told is what the rules use.
+
+/** Seconds between auto-attack swings: the weapon's rhythm, quickened by Frenzy. */
+export const swingInterval = (p: Player) => p.stats.swingInterval * p.talentFx.swingSpeed;
+/** Fraction of incoming damage removed: armour plus talents, under armour's own cap. */
+export const reductionOf = (p: Player) => Math.min(MAX_REDUCTION, p.stats.reduction + p.talentFx.reduction);
+/** An ability's cooldown after talents: Second Wind comes back sooner with Rally, Pummel with Counterstrike. */
+export function cooldownOf(p: Player, slot: number): number {
+  const a = ABILITIES[slot];
+  if (a.kind === 'heal') return Math.max(1, a.cooldown - p.talentFx.healCdCut);
+  if (a.kind === 'interrupt') return a.cooldown * p.talentFx.pummelCdMult;
+  return a.cooldown;
+}
+/** An ability's energy cost after talents: Whirling makes Cleave cheaper. */
+export const costOf = (p: Player, slot: number) =>
+  ABILITIES[slot].kind === 'cleave' ? Math.max(0, ABILITIES[slot].cost - p.talentFx.cleaveCost) : ABILITIES[slot].cost;
+
+/** Incoming damage after armour and talents. Never below 1: nothing that reaches you is free. */
+const takeDamage = (p: Player, raw: number) => Math.max(1, Math.round(raw * (1 - reductionOf(p))));
 
 // ---------- targeting ----------
 
@@ -135,17 +158,18 @@ export function toggleAutoAttack(s: GameState) {
  * target is in reach. With no live target auto-attack disarms (it never carries on to the next thing you tab to).
  */
 function updateAutoAttack(s: GameState, dt: number) {
-  const p = s.player;
-  p.swing = Math.min(Math.max(0, p.swing - dt), p.stats.swingInterval);
+  const p = s.player, interval = swingInterval(p);
+  p.swing = Math.min(Math.max(0, p.swing - dt), interval);
   if (!p.autoAttack) return;
   const t = enemyById(s, s.targetId);
   if (!t || !targetable(t)) return setAutoAttack(s, false);
   if (p.swing > 0 || dist(p, t) > AUTO_RANGE) return;
-  p.swing = p.stats.swingInterval;
+  p.swing = interval;
   p.action = null;
   p.facing = Math.atan2(t.x - p.x, t.z - p.z);
   s.events.push({ t: 'swing', target: t.id, x: t.x, z: t.z });
-  // speed sets the rhythm, not the damage per second: a quicker weapon hits proportionally lighter
+  // speed sets the rhythm, not the damage per second: a quicker weapon hits proportionally lighter. The weapon's own
+  // interval, not the talented one: Frenzy is meant to be a gain, and scaling by it here would hand the gain straight back
   const power = powerForLevel(p.combat.level) * p.stats.swingInterval / BARE_SWING;
   const { amount, crit } = rollDamage(s, AUTO_BASE, power, p.stats.weaponDamage * AUTO_WEAPON_SHARE);
   damageEnemy(s, t, amount, crit, AUTO_SLOT);
@@ -154,17 +178,20 @@ function updateAutoAttack(s: GameState, dt: number) {
 // ---------- damage ----------
 
 function rollDamage(s: GameState, base: number, power: number, bonus: number) {
-  const crit = rand(s) < CRIT_CHANCE;
-  const amount = Math.max(1, Math.round((base + bonus) * power * (0.9 + 0.2 * rand(s)) * (crit ? CRIT_MULT : 1)));
+  const fx = s.player.talentFx;
+  const crit = rand(s) < CRIT_CHANCE + fx.crit;
+  const amount = Math.max(1, Math.round((base + bonus) * power * fx.damage * (0.9 + 0.2 * rand(s)) * (crit ? CRIT_MULT : 1)));
   return { amount, crit };
 }
 
 function damageEnemy(s: GameState, e: Enemy, amount: number, crit: boolean, slot: number, dot = false) {
   if (!targetable(e)) return;
+  const fx = s.player.talentFx;
   e.hp = Math.max(0, e.hp - amount);
   e.hitFlash = 0.12;
   s.player.outOfCombat = 0;
   s.events.push({ t: 'hit', target: e.id, x: e.x, z: e.z, amount, crit, slot, dot });
+  if (crit && !dot && e.bleed) e.bleed.ticks += fx.critBleed; // Bloodscent: a crit works the wound open
   aggro(s, e);
   if (e.hp <= 0) killEnemy(s, e);
 }
@@ -207,7 +234,7 @@ export function pressAbility(s: GameState, slot: number) {
 }
 
 function tryUse(s: GameState, slot: number) {
-  const p = s.player, a = ABILITIES[slot];
+  const p = s.player, a = ABILITIES[slot], fx = p.talentFx, cost = costOf(p, slot);
   if (p.cd[slot] > 0) return fail(s, 'cooldown', slot);
   let target: Enemy | undefined;
   if (a.kind !== 'heal') {
@@ -216,12 +243,12 @@ function tryUse(s: GameState, slot: number) {
     if (dist(p, target) > a.range) return fail(s, 'range', slot);
     if (a.kind === 'interrupt' && !target.cast) return fail(s, 'nocast', slot); // costs nothing and does nothing
   }
-  if (p.energy < a.cost) return fail(s, 'energy', slot);
+  if (p.energy < cost) return fail(s, 'energy', slot);
 
-  p.energy -= a.cost;
+  p.energy -= cost;
   p.action = null; // fighting interrupts gathering/crafting
   if (!a.offGcd) p.gcd = GCD;
-  p.cd[slot] = a.cooldown;
+  p.cd[slot] = cooldownOf(p, slot);
   p.cast = 0.12;
   s.events.push({ t: 'cast', slot });
   const power = powerForLevel(p.combat.level);
@@ -230,7 +257,7 @@ function tryUse(s: GameState, slot: number) {
   if (target && (a.kind === 'strike' || a.kind === 'cleave')) setAutoAttack(s, true); // a melee ability on a target starts the swings, as in WoW
 
   if (a.kind === 'heal') {
-    const amount = Math.min(p.maxHp - p.hp, Math.round(a.damage * power));
+    const amount = Math.min(p.maxHp - p.hp, Math.round(a.damage * power * fx.healBonus));
     p.hp += amount;
     s.events.push({ t: 'heal', x: p.x, z: p.z, amount });
   } else if (target && a.kind === 'interrupt') {
@@ -240,11 +267,12 @@ function tryUse(s: GameState, slot: number) {
     target.attackCd = Math.max(target.attackCd, 1);
     if (def.heavy) target.heavyCd = Math.max(target.heavyCd, def.heavy.every * STAGGER_HEAVY_KEEP);
     if (def.hazard) target.hazardCd = Math.max(target.hazardCd, def.hazard.every * STAGGER_HEAVY_KEEP);
+    p.energy = Math.min(p.maxEnergy, p.energy + fx.pummelEnergy); // Counterstrike: the shutdown pays for itself
     p.outOfCombat = 0;
     s.events.push({ t: 'interrupt', id: target.id, x: target.x, z: target.z });
   } else if (target && a.kind === 'cleave') {
     // everything in front of the player, within reach and inside the arc centred on the line to the target (the target always qualifies)
-    const aim = Math.atan2(target.x - p.x, target.z - p.z), half = ((a.arc ?? 120) / 2) * Math.PI / 180;
+    const aim = Math.atan2(target.x - p.x, target.z - p.z), half = (((a.arc ?? 120) + fx.cleaveArc) / 2) * Math.PI / 180;
     const angleTo = (e: Enemy) => {
       const d = Math.atan2(e.x - p.x, e.z - p.z) - aim;
       return Math.abs(Math.atan2(Math.sin(d), Math.cos(d)));
@@ -256,9 +284,12 @@ function tryUse(s: GameState, slot: number) {
       damageEnemy(s, e, amount, crit, slot);
     }
   } else if (target) {
-    const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage);
-    if (a.kind === 'dot') target.bleed = { ticks: a.dotTicks!, timer: 1, damage: Math.round(a.dotDamage! * power) };
+    // Execute: Crushing Blow finishes a wounded target, and a kill hands the cooldown straight back
+    const exec = a.tag === 'crush' && fx.executeUnder > 0 && target.hp <= target.maxHp * fx.executeUnder;
+    const { amount, crit } = rollDamage(s, a.damage * (exec ? 1 + EXECUTE_BONUS : 1), power, p.stats.weaponDamage);
+    if (a.kind === 'dot') target.bleed = { ticks: a.dotTicks!, timer: 1, damage: Math.round(a.dotDamage! * power * fx.bleedBonus) };
     damageEnemy(s, target, amount, crit, slot);
+    if (exec && target.state === 'dead') p.cd[slot] = 0;
   }
 }
 
@@ -389,16 +420,16 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
     const h = def.hazard!;
     e.hazardCd = h.every;
     s.events.push({ t: 'slam', id: e.id, x: c.x!, z: c.z!, radius: h.radius });
-    if (!p.dead && dist({ x: c.x!, z: c.z! }, p) <= h.radius) hurtPlayer(s, e, Math.max(1, Math.round(h.damage * (1 - p.stats.reduction))), h.name, true);
+    if (!p.dead && dist({ x: c.x!, z: c.z! }, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage), h.name, true);
   } else if (c.kind === 'heavy') {
     const h = def.heavy!;
     e.heavyCd = h.every;
     s.events.push({ t: 'slam', id: e.id, x: e.x, z: e.z, radius: h.radius });
-    if (!p.dead && dist(e, p) <= h.radius) hurtPlayer(s, e, Math.max(1, Math.round(h.damage * (1 - p.stats.reduction))), h.name, true);
+    if (!p.dead && dist(e, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage), h.name, true);
   } else if (!p.dead && dist(e, p) <= def.ranged!.range + 2) { // a little slack: a pace back mid-cast does not dodge a bolt, leaving its reach does
     // ...and so does putting rock between you and it: the shot is loosed into the stone
     if (!clearLine(e, p)) s.events.push({ t: 'blocked', id: e.id, x: e.x, z: e.z });
-    else hurtPlayer(s, e, Math.max(1, Math.round(def.damage * (0.85 + 0.3 * rand(s)) * (1 - p.stats.reduction))), def.ranged!.name);
+    else hurtPlayer(s, e, takeDamage(p, def.damage * (0.85 + 0.3 * rand(s))), def.ranged!.name);
   }
 }
 
@@ -485,7 +516,7 @@ export function updateEnemies(s: GameState, dt: number) {
           else {
             e.attackCd = def.attackInterval;
             e.swing = 0.15;
-            hurtPlayer(s, e, Math.max(1, Math.round(def.damage * (0.85 + 0.3 * rand(s)) * (1 - p.stats.reduction))), 'Melee');
+            hurtPlayer(s, e, takeDamage(p, def.damage * (0.85 + 0.3 * rand(s))), 'Melee');
           }
         }
       }

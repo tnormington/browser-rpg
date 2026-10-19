@@ -6,6 +6,7 @@ import { DerivedStats, Equipment, deriveStats, emptyEquipment } from './sim/item
 import { Inventory, InvAction, applyInvAction, newInventory } from './sim/inventory';
 import { GroundDrop, updateDrops } from './sim/loot';
 import { SkillId, Skills, newSkills } from './sim/skills';
+import { TalentEffects, TalentFail, Talents, deriveTalents, learnTalent, newTalents, resetTalents } from './sim/talents';
 import { ResourceNode, createNodes, updateNodes } from './sim/gathering';
 import { beginCraft } from './sim/crafting';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
@@ -81,6 +82,8 @@ export interface Player {
   inventory: Inventory;
   equipment: Equipment;
   stats: DerivedStats;     // always deriveStats(equipment); combat reads this, never the items
+  talents: Talents;        // ranks bought, by talent id
+  talentFx: TalentEffects; // always deriveTalents(talents); combat reads this, never the ranks
 }
 
 export type GameEvent =
@@ -88,6 +91,9 @@ export type GameEvent =
   | { t: 'heal'; x: number; z: number; amount: number }
   | { t: 'fail'; reason: 'range' | 'cooldown' | 'gcd' | 'energy' | 'target' | 'locked' | 'nocast'; slot: number }
   | { t: 'unlock'; slot: number; level: number }       // combat level handed over an ability: fires once per ability
+  | { t: 'talent'; id: string; rank: number }          // a talent point was spent, and the rank it bought
+  | { t: 'talentfail'; reason: TalentFail; id: string } // ...or could not be
+  | { t: 'talentreset' }                               // every point handed back
   | { t: 'telegraph'; id: number; kind: 'heavy' | 'bolt' | 'ground'; windup: number; x?: number; z?: number; radius?: number }  // an enemy starts a wind-up; a 'ground' one carries the spot it will land on
   | { t: 'interrupt'; id: number; x: number; z: number }  // a Pummel landed on a wind-up
   | { t: 'blocked'; id: number; x: number; z: number }    // a ranged wind-up finished with rock in the way: the shot is wasted
@@ -153,9 +159,11 @@ export interface Input {
   interact: Interact | null;                    // node or forge clicked this tick: walk there and use it
   craft: { recipe: string; count: number } | null; // forge recipe chosen this tick
   questAdvance: boolean;                        // the advancing dialogue option was chosen this tick
+  talent?: string | null;                       // talent id bought this tick
+  talentReset?: boolean;                        // every talent point handed back this tick
 }
 
-export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, pickup: null, inv: [], interact: null, craft: null, questAdvance: false };
+export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, pickup: null, inv: [], interact: null, craft: null, questAdvance: false, talent: null, talentReset: false };
 
 export function createState(seed = 1): GameState {
   const skills = newSkills();
@@ -169,6 +177,7 @@ export function createState(seed = 1): GameState {
       gcd: 0, cd: ABILITIES.map(() => 0), unlocked: 1, queued: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
       skills, combat: skills.combat, action: null, inventory: newInventory(), equipment: emptyEquipment(), stats: deriveStats(emptyEquipment()),
+      talents: newTalents(), talentFx: deriveTalents(newTalents()),
     },
     moveTarget: null,
     targetId: null,
@@ -204,6 +213,8 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
       s.interact = null;
       p.action = null;
     }
+    if (input.talent) learnTalent(s, input.talent);
+    if (input.talentReset) resetTalents(s);
     if (input.clearTarget) clearTarget(s);
     if (input.clickEnemy !== null) setTarget(s, input.clickEnemy);
     else if (input.clickTarget) s.moveTarget = clampToWorld(input.clickTarget);

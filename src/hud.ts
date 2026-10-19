@@ -5,11 +5,14 @@ import { levelProgress } from './sim/xp';
 import { ITEMS } from './sim/items';
 import { InvAction } from './sim/inventory';
 import { SKILLS } from './sim/skills';
+import { TALENTS, spentTotal, talentPoints, talentById } from './sim/talents';
 import { NODE_TYPES } from './sim/gathering';
 import { recipeById } from './sim/crafting';
 import { clearLine } from './sim/sight';
+import { cooldownOf, costOf, swingInterval } from './sim/combat';
 import { InventoryUi } from './inventory-ui';
 import { SkillsUi } from './skills-ui';
+import { TalentsUi } from './talents-ui';
 import { ForgeUi } from './forge-ui';
 import { QuestUi } from './quest-ui';
 import { MenuUi } from './menu-ui';
@@ -18,6 +21,8 @@ const PUMMEL = ABILITIES.findIndex(a => a.kind === 'interrupt');
 
 export interface HudActions {
   inv: (a: InvAction) => void;
+  talent: (id: string) => void;
+  talentReset: () => void;
   craft: (recipe: string, count: number) => void;
   questAdvance: () => void;
   save: () => void;
@@ -98,6 +103,7 @@ export class Hud {
   private hurt: HTMLElement;
   private invUi: InventoryUi;
   private skillsUi: SkillsUi;
+  private talentsUi: TalentsUi;
   private forgeUi: ForgeUi;
   private castBar: ReturnType<typeof bar>;
   /** A gather/craft is running (or was just requested): a hit while true is what broke it. */
@@ -143,14 +149,17 @@ export class Hud {
     this.log = el(this.root, 'msglog');
     this.invUi = new InventoryUi(this.root, actions.inv);
     this.skillsUi = new SkillsUi(this.root);
+    this.talentsUi = new TalentsUi(this.root, { learn: actions.talent, reset: actions.talentReset });
     this.forgeUi = new ForgeUi(this.root, (r, n) => { this.acting = true; actions.craft(r, n); });
     this.castBar = bar(this.root, 'castbar');
     this.questUi = new QuestUi(this.root, actions.questAdvance);
     this.menuUi = new MenuUi(this.root, actions);
   }
 
-  toggle(which: 'inv' | 'char' | 'skills') {
-    if (which === 'skills') this.skillsUi.toggle(); else this.invUi.toggle(which);
+  toggle(which: 'inv' | 'char' | 'skills' | 'talents') {
+    if (which === 'skills') this.skillsUi.toggle();
+    else if (which === 'talents') this.talentsUi.toggle();
+    else this.invUi.toggle(which);
   }
 
   toggleHelp() { this.menuUi.toggle(); }
@@ -233,6 +242,18 @@ export class Hud {
       } else if (ev.t === 'levelup') {
         this.popBanner(this.banner, `LEVEL UP!  ${SKILLS[ev.skill].name} ${ev.level}`);
         this.note(`Level up! ${SKILLS[ev.skill].name} is now level ${ev.level}`, 'log-lvl');
+        if (ev.skill === 'combat') this.noteUnspentPoints(s);
+      } else if (ev.t === 'talent') {
+        const def = talentById(ev.id)!;
+        this.say(`${def.name} rank ${ev.rank}`);
+        this.note(`Talent learned: ${def.name} (rank ${ev.rank}) - ${def.desc(ev.rank)}`, 'log-lvl');
+      } else if (ev.t === 'talentfail') {
+        this.say(ev.reason === 'combat' ? 'You cannot change talents in combat'
+          : ev.reason === 'points' ? 'No talent points left: gain a combat level'
+          : ev.reason === 'tier' ? 'Spend more points in that tree first'
+          : 'Already at full rank');
+      } else if (ev.t === 'talentreset') {
+        this.note('Every talent point handed back: spend them again (N).', 'log-lvl');
       } else if (ev.t === 'unlock') {
         this.unlock(ev.slot);
       } else if (ev.t === 'telegraph') {
@@ -303,6 +324,12 @@ export class Hud {
     this.warn.classList.add('show');
   }
 
+  /** A combat level hands over a talent point: say so, or the panel is never found. */
+  private noteUnspentPoints(s: GameState) {
+    const left = talentPoints(s.player.combat.level) - spentTotal(s.player.talents);
+    if (left > 0) this.note(`You have ${left} talent point${left > 1 ? 's' : ''} to spend: press N`, 'log-lvl');
+  }
+
   /** Red screen-edge flash when the player is hit; a longer one on death. */
   private hurtFlash(heavy: boolean) {
     this.hurt.classList.toggle('heavy', heavy);
@@ -338,7 +365,8 @@ export class Hud {
     }
 
     // swing timer: fills toward the next auto-attack; lit while armed, and full (waiting) when the target is out of reach
-    const swung = p.stats.swingInterval > 0 ? 1 - p.swing / p.stats.swingInterval : 1;
+    const interval = swingInterval(p);
+    const swung = interval > 0 ? 1 - p.swing / interval : 1;
     this.swingBar.fill.parentElement!.classList.toggle('on', p.autoAttack);
     this.swingBar.fill.parentElement!.classList.toggle('ready', p.autoAttack && p.swing <= 0);
     this.setBar(this.swingBar, swung, p.autoAttack ? (p.swing <= 0 ? 'AUTO-ATTACK  (waiting)' : 'AUTO-ATTACK') : 'Auto-attack off  [R]');
@@ -348,7 +376,7 @@ export class Hud {
       const slot = this.slots[i];
       const cd = p.cd[i];
       const remaining = Math.max(cd, p.gcd);
-      const total = cd > p.gcd ? a.cooldown : GCD;
+      const total = cd > p.gcd ? cooldownOf(p, i) : GCD;
       const frac = remaining > 0 ? remaining / total : 0;
       slot.sweep.style.background = frac > 0
         ? `conic-gradient(rgba(0,0,0,0.65) ${frac * 360}deg, transparent 0)` : 'none';
@@ -356,7 +384,7 @@ export class Hud {
       const locked = p.combat.level < a.unlockLevel;
       slot.root.classList.toggle('locked', locked);
       slot.lock.style.display = locked ? 'flex' : 'none';
-      const noEnergy = !locked && p.energy < a.cost;
+      const noEnergy = !locked && p.energy < costOf(p, i);
       const outOfRange = !locked && !!t && a.range > 0 && Math.hypot(t.x - p.x, t.z - p.z) > a.range;
       slot.root.classList.toggle('noenergy', noEnergy);
       slot.root.classList.toggle('outrange', outOfRange);
@@ -412,6 +440,7 @@ export class Hud {
 
     this.invUi.update(s);
     this.skillsUi.update(s);
+    this.talentsUi.update(s);
     this.questUi.update(s, this.yaw());
     this.forgeUi.update(s);
     this.updateCastBar(s);
