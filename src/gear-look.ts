@@ -47,6 +47,8 @@ export const TIER5_COLOR = 0x3ee0c0;
 const A: Partial<Appearance> = { tint: 0x58887a, trim: 0x2a4238, metal: 0.3, rough: 0.4, glow: 0x3ee0c0, glowI: 0.5, rung: 5, form: 'adamant', motes: 0x3ee0c0 };
 const S: Partial<Appearance> = { tint: 0x8c8aa8, trim: 0x5a5878, metal: 0.05, rough: 0.7, glow: 0xd0c8ff, glowI: 0.45, rung: 5, form: 'storm', motes: 0xd8d0ff };
 
+const B: Partial<Appearance> = { tint: 0xa87a4e, trim: 0x5c4230, metal: 0.4, rough: 0.55, rung: 2 };
+
 /** Per-item overrides, merged over the tier rung. Only where the tier look is not the whole story. */
 export const ITEM_LOOKS: Record<string, Partial<Appearance>> = {
   rusty_blade: { tint: 0x8c6446, rough: 1, metal: 0.15, scale: 0.85 }, // pitted rust, dull
@@ -54,6 +56,10 @@ export const ITEM_LOOKS: Record<string, Partial<Appearance>> = {
   forged_blade: { tint: 0xc8bcb0, scale: 1.3, glow: 0xb0602a, glowI: 0.15, motes: 0xff9a3c },
   // mithril folded round a Warden shard: brighter than the plate it goes with, so the blade is the first thing the eye lands on
   warden_edge: { tint: 0x9db4d8, rough: 0.18 },
+
+  // Smithed bronze, tier 1 but plated: copper-brown metal under iron's grey-blue, no glow. Rung 2 gives it the plate silhouette hide lacks.
+  bronze_helm: B, bronze_chestplate: B, bronze_greaves: B,
+  bronze_sword: { ...B, scale: 0.95 },
 
   // Tier 5, two metals that must not read as one. Adamant: dark jade-green, heavy and square, jade seams, a broad short blade. Stormiron: pale
   // matte slate, lean and spiked, white-lilac lightning veins, a long narrow blade. Colour, finish, glow hue AND silhouette all differ.
