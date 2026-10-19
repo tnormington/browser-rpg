@@ -2364,4 +2364,72 @@ section('HOM-30 the Cave Brute is a door guard, and it stays dead');
   assert(dist2(m.player, rock) < 6, `a click on a ridge rock from inside the throat walks all the way out to it (${dist2(m.player, rock).toFixed(1)} away)`);
 }
 
+// ---------------------------------------------------------------------------
+section('HOM-31 the delve: the first trip into the hollow is made before the set exists, and it is survivable');
+{
+  /**
+   * The whole delve as one life, with every cave enemy live where it stands: in through the throat, whatever wakes is fought,
+   * rest to full between fights (as a player would), then the three veins until nine ore is in the bag. The sentry archer at
+   * (-13,-47) wakes in the throat and backs off from melee; the Ogre and the Seer sleep 9-11u beyond it.
+   */
+  function delve(level: number, kit: string, seed: number) {
+    const s = quietState(seed);
+    for (const e of s.enemies) if (inCave(e.spawnX, e.spawnZ)) { e.state = 'idle'; e.respawnIn = 0; e.hp = e.maxHp; e.attackCd = 0; }
+    atLevel(s, level);
+    s.player.skills.mining.xp = xpForLevel(NODE_TYPES.mithril.level); s.player.skills.mining.level = NODE_TYPES.mithril.level;
+    const armour = kit === 'hide' ? { head: 'leather_cap', chest: 'hide_jerkin', legs: 'hide_leggings' } : { head: 'iron_helm', chest: 'iron_chestplate', legs: 'iron_greaves' };
+    Object.assign(s.player.equipment, { weapon: 'forged_blade', ...armour });
+    refreshGearStats(s);
+    s.quest.stage = 'done'; s.quest.second = 'delve';
+    s.player.x = -18; s.player.z = -24;
+    const sleepers = s.enemies.filter(e => ['ogre', 'seer'].includes(e.type) || (e.type === 'archer' && e.spawnZ < -60));
+    let woken = 0, low = 1;
+    const maxHp = s.player.maxHp;
+    for (let step = 0; step < 600 && !s.player.dead && secondStage(s) === 'delve'; step++) {
+      woken += sleepers.filter(e => st(e) !== 'idle').length;
+      const chaser = s.enemies.filter(e => st(e) === 'chase').sort((a, b) => dist2(a, s.player) - dist2(b, s.player))[0];
+      if (chaser) { fight(s, chaser, 60); low = Math.min(low, minHpSeen / maxHp); continue; }
+      if (s.player.hp < s.player.maxHp * 0.97) { run(s, 1); continue; }
+      const vein = nearestNode(s, 'mithril');
+      if (!vein) { run(s, 1); continue; }
+      tick(s, { interact: { k: 'node', id: vein.id } });
+      for (let n = 0; busy(s) && n < 4000 && !s.enemies.some(e => st(e) === 'chase'); n++) tick(s);
+    }
+    return { lived: !s.player.dead, stage: secondStage(s), ore: countOf(s, 'mithril_ore'), kills: s.quest.kills.ravager ?? 0, woken, low };
+  }
+  const trips = (level: number, kit: string) => [1, 2, 3, 4, 5, 6].map(n => delve(level, kit, 3100 + n));
+  const summary = (rs: ReturnType<typeof trips>) => `${rs.filter(r => r.lived && r.stage === 'armour').length}/6 done, worst trough ${Math.min(...rs.map(r => r.low)).toFixed(2)}, ${rs.reduce((m, r) => m + r.woken, 0)} sleeper-ticks awake`;
+  const hide = trips(RECOMMENDED_COMBAT_2, 'hide'), iron = trips(RECOMMENDED_COMBAT_2, 'iron');
+  console.log(`  Combat ${RECOMMENDED_COMBAT_2}, hide: ${summary(hide)}; iron: ${summary(iron)}`);
+  assert(hide.every(r => r.lived && r.stage === 'armour' && r.ore >= MITHRIL_PLAN.ore && r.kills === DELVE_GOALS.ravager),
+    `at the recommended Combat ${RECOMMENDED_COMBAT_2} in the hide set every delve takes nine ore and three Ravagers on the first life, with every enemy of the hollow live`);
+  assert(iron.every(r => r.lived && r.stage === 'armour'), '...and in iron too');
+  assert(hide.concat(iron).every(r => r.woken === 0), 'chasing the sentry never wakes the Ogres, the Seer or the far archer: the room is taken in pieces, not all at once');
+  assert(hide.every(r => r.low > 0.05), `and it is not a coin-flip: the worst moment is above 5% health (${Math.min(...hide.map(r => r.low)).toFixed(2)})`);
+  const high = trips(11, 'hide');
+  assert(high.every(r => r.lived && r.stage === 'armour' && r.low > 0.15), `Combat 11 in hide, the level the first quest can hand over, is comfortable (worst trough ${Math.min(...high.map(r => r.low)).toFixed(2)})`);
+  assert(ENEMY_TYPES.archer.leash * 0.8 < 6, 'the archers hold their post: they back off 5u at most, which is what keeps the sentry fight where it started');
+}
+
+// HOM-29: outdoor click-to-move routes round the ridge rocks instead of wedging in the pocket and giving up silently
+{
+  const r = quietState(975);
+  for (const [tx, tz] of [[-10.65, -27.09], [-5, -30], [-18, -22], [27.4, -25.1]] as [number, number][]) {
+    r.player.x = 0; r.player.z = 0;
+    tick(r, { clickTarget: { x: tx, z: tz } });
+    let stuck = false;
+    for (let n = 0; n < 30 * 40 && (r.moveTarget || r.player.moving); n++) { tick(r); stuck = stuck || r.events.some(e => e.t === 'stuck'); }
+    assert(!stuck && dist2(r.player, { x: tx, z: tz }) < 1.5, `a click at (${tx}, ${tz}) from the clearing walks there round the rocks (${dist2(r.player, { x: tx, z: tz }).toFixed(1)} away)`);
+  }
+  r.player.x = -10.65; r.player.z = -27.09;
+  tick(r, { interact: { k: 'node', id: r.nodes.find(n => n.type === 'coal' && n.x === -5)!.id } });
+  for (let n = 0; n < 30 * 30 && busy(r); n++) tick(r);
+  assert(dist2(r.player, { x: -5, z: -27.5 }) < 3.3, `from the pocket east of the mouth a click on the coal seam walks to it (${dist2(r.player, { x: -5, z: -27.5 }).toFixed(1)} away)`);
+  const w = quietState(976);
+  tick(w, { clickTarget: { x: -9, z: -27.5 } }); // dead centre of an iron rock: cannot be stood on
+  let said = false;
+  for (let n = 0; n < 30 * 20 && (w.moveTarget || w.player.moving); n++) { tick(w); said = said || w.events.some(e => e.t === 'stuck'); }
+  assert(said, 'a click that cannot be walked is acknowledged with a stuck event, not dropped silently');
+}
+
 console.log(`\nAll ${checks} checks passed.`);

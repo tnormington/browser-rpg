@@ -10,7 +10,8 @@ import { ResourceNode, createNodes, updateNodes } from './sim/gathering';
 import { beginCraft } from './sim/crafting';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
-import { PLAYER_RADIUS, clampToWorld, resolveCollisions, steerPoint } from './sim/world';
+import { PLAYER_RADIUS, clampToWorld, inCave, resolveCollisions, steerPoint } from './sim/world';
+import { Pt, routeOutdoors } from './sim/path';
 import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
 import {
   acquireFront, clearTarget, pressAbility, refreshPlayerStats, setTarget, tabTarget, toggleAutoAttack,
@@ -93,6 +94,7 @@ export type GameEvent =
   | { t: 'auto'; on: boolean }                              // auto-attack armed / disarmed: the HUD button and swing bar follow this
   | { t: 'untarget'; id: number; reason: 'dead' | 'evade' } // the target was taken from you, and why (the player's own Esc / retarget raise nothing)
   | { t: 'combat'; on: boolean }                            // the player entered / left combat
+  | { t: 'stuck' }                                          // a click-to-move walk could not go anywhere: the HUD says so
   | { t: 'jump' }                                           // left the ground
   | { t: 'land'; x: number; z: number }                     // back on the ground
   | { t: 'kill'; id: number; x: number; z: number }
@@ -223,6 +225,17 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
   updateQuest(s);
 }
 
+/** The outdoor route for the current walk, planned once per click (moveTarget is a fresh object each time) and consumed as the player passes each waypoint. */
+const routes = new WeakMap<GameState, { for: Pt; pts: Pt[] }>();
+function outdoorAim(s: GameState, aim: Pt): Pt {
+  const p = s.player;
+  if (inCave(p.x, p.z) || inCave(aim.x, aim.z)) return aim;
+  let r = routes.get(s);
+  if (!r || r.for !== aim) { r = { for: aim, pts: routeOutdoors(p, aim) ?? [aim] }; routes.set(s, r); }
+  while (r.pts.length > 1 && Math.hypot(r.pts[0].x - p.x, r.pts[0].z - p.z) < 0.3) r.pts.shift();
+  return r.pts[0];
+}
+
 function movePlayer(s: GameState, input: Input, dt: number) {
   const p = s.player;
   let dx = input.dirX, dz = input.dirZ;
@@ -230,7 +243,9 @@ function movePlayer(s: GameState, input: Input, dt: number) {
     s.moveTarget = null; // keyboard cancels click-to-move
   } else if (s.moveTarget) {
     // a walk that has to change room in the cave is aimed at the next junction; moveTarget itself is untouched
-    const aim = steerPoint(p, s.moveTarget), via = aim !== s.moveTarget;
+    let aim = steerPoint(p, s.moveTarget);
+    if (aim === s.moveTarget) aim = outdoorAim(s, aim);
+    const via = aim !== s.moveTarget;
     const tx = aim.x - p.x, tz = aim.z - p.z;
     const d = Math.hypot(tx, tz);
     if (!via && d < ARRIVE_DIST) {
@@ -254,7 +269,10 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   if (len > 1e-4) p.facing = Math.atan2(dx, dz);
   stepVertical(s, input.jump === true, dt);
   // click-to-move blocked by an obstacle: give up instead of pushing forever
-  if (s.moveTarget && len > 1e-4 && moved < len * MOVE_SPEED * dt * 0.1) s.moveTarget = null;
+  if (s.moveTarget && len > 1e-4 && moved < len * MOVE_SPEED * dt * 0.1) {
+    s.moveTarget = null;
+    s.events.push({ t: 'stuck' });
+  }
 }
 
 /**

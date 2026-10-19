@@ -217,6 +217,8 @@ export class Hud {
         const name = ITEMS[ev.item].name;
         this.float(`Smithed ${name}`, 'loot', s.player.x, 3.0, s.player.z);
         this.note(`Smithed ${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`, 'log-loot');
+      } else if (ev.t === 'stuck') {
+        this.say("Can't reach that");
       } else if (ev.t === 'invfull') {
         this.say('Inventory full');
       } else if (ev.t === 'levelup') {
