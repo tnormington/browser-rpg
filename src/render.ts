@@ -675,6 +675,25 @@ export class Renderer {
     const tint = ENEMY_TYPES[a.type].look?.tint;
     for (const m of a.mats) { if (tint !== undefined) m.color.lerp(new THREE.Color(tint), TINT_MIX); m.emissive.setHex(a.glow); }
     a.anim = new Animator(inst.root, inst.clips, SLOTS[slotOf(a.type) as 'boar'].anim);
+    if (a.type === 'shore_crab') this.crabify(a, inst.root);
+  }
+
+  /** The Shore Crab is the boar rig at 0.8 and reads as a small red pig: squash it low and wide, and add what says crab at a glance (raised pincers, side legs). */
+  private crabify(a: Actor, model: THREE.Object3D) {
+    model.scale.multiply(new THREE.Vector3(1.6, 0.5, 0.65));
+    const parts: THREE.BufferGeometry[] = [];
+    for (const side of [1, -1]) {
+      const arm = new THREE.BoxGeometry(0.16, 0.16, 0.8).translate(0, 0, 0.4);
+      const jaw = new THREE.ConeGeometry(0.2, 0.6, 4).rotateX(Math.PI / 2).translate(0.11, 0, 1.05);
+      for (const g of [arm, jaw, jaw.clone().translate(-0.22, 0, 0)]) parts.push(g.toNonIndexed().rotateY(side * 0.35).translate(side * 0.95, 0.6, 0.45));
+      for (const z of [-0.35, 0, 0.35]) parts.push(new THREE.BoxGeometry(0.8, 0.07, 0.07).rotateZ(side * -0.5).translate(side * 1.0, 0.22, z).toNonIndexed());
+    }
+    const m = new THREE.Mesh(mergeGeometries(parts)!, material(a.mats[0].color.getHex(), 'hide'));
+    m.material.emissive.setHex(a.glow);
+    m.castShadow = true;
+    m.raycast = () => {};
+    a.group.add(m);
+    a.mats.push(m.material);
   }
 
   private dressTrees(tree: Prepared, stump: Prepared) {
