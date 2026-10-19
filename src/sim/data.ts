@@ -292,6 +292,14 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     hazard: { name: 'Cannon Volley', windup: 1.5, every: 7, first: 6, damage: 105, radius: 3.5, range: 16 },
     ranged: { name: 'Harpoon', range: 14, keepAway: 0, windup: 0.9 },
     look: { model: 'brute', scale: 1.5, tint: 0x3a5a6a } },
+  // The Rotroot (levels 23 to 26, section 3.4): the cult's sentries and a Thorn Warden are the Thornwood's own rows, the Mother is the bible's. She is Marrow's pattern at a bigger
+  // size: the Root Slam under her feet, the Spore Cloud marked on the ground under you, and the Hex Bolt at anyone who stands off.
+  rotroot_mother: { name: 'The Rotroot Mother', level: 26, hp: 15205, damage: 46, attackInterval: 2.4, speed: 4.0,
+    aggroRadius: 12, leash: 24, attackRange: 3.6, radius: 1.9, xp: 460, respawn: 600,
+    heavy: { name: 'Root Slam', windup: 1.8, every: 10, first: 4, damage: 350, radius: 6.5 },
+    hazard: { name: 'Spore Cloud', windup: 1.5, every: 7, first: 6, damage: 150, radius: 3.5, range: 16 },
+    ranged: { name: 'Hex Bolt', range: 14, keepAway: 0, windup: 0.9 },
+    look: { model: 'brute', scale: 1.6, tint: 0x4a6a3a } },
 };
 
 /**

@@ -69,6 +69,7 @@ export const ITEMS: Record<string, ItemDef> = {
   mithril_ore: { name: 'Mithril Ore', stack: 50, dropWeight: 0, tier: 0, value: 10, desc: 'Blue-veined ore from deep in the cave. Smelts into mithril at the forge.' },
   warden_shard: { name: 'Warden Shard', stack: 50, dropWeight: 0, tier: 0, value: 40, desc: 'A splinter of the Hollow Warden. Forged with mithril, it makes a blade nothing else can.' },
   marrow_shard: { name: 'Marrow Shard', stack: 50, dropWeight: 0, tier: 0, value: 60, desc: "A barnacled splinter of Captain Marrow's anchor. Forged with adamant, it makes a blade nothing at the forge can." },
+  heartwood_shard: { name: 'Heartwood Shard', stack: 50, dropWeight: 0, tier: 0, value: 80, desc: 'A splinter of pale heartwood from the Rotroot Mother, still faintly warm. The forge has nothing yet that can use it.' },
   mithril_bar: { name: 'Mithril Bar', stack: 50, dropWeight: 0, tier: 0, value: 30, desc: 'Light, cold and harder than steel. Armour is smithed from it.' },
   adamant_ore: { name: 'Adamant Ore', stack: 50, dropWeight: 0, tier: 0, value: 19, desc: 'Green-black ore from the cliffs above the Strand. Smelts into adamant at the forge.' },
   adamant_bar: { name: 'Adamant Bar', stack: 50, dropWeight: 0, tier: 0, value: 55, desc: 'Dense and sea-dark. Armour and a blade are smithed from it.' },
@@ -216,6 +217,8 @@ export const DROP_TABLES: Record<string, DropTable> = {
   ] },
   // the Grotto's boss shard (6.1): 35 % a kill, one shard, three to a blade: about nine kills on a ten-minute respawn. The one roll, so nothing else competes with it.
   captain_marrow: { rolls: 1, nothing: 65, entries: [{ id: 'marrow_shard', weight: 35 }] },
+  // the Rotroot's: the same 35 % roll (6.1). The blade it is for waits on stormiron.
+  rotroot_mother: { rolls: 1, nothing: 65, entries: [{ id: 'heartwood_shard', weight: 35 }] },
 };
 
 export interface DerivedStats {

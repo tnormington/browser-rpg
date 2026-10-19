@@ -323,12 +323,22 @@ const thornLandmarks = {
 const THORN_ALEMBIC: Obstacle = { ...thornLandmarks.alembic, r: 1.3, kind: 'alembic' };
 const graveThorn: Pt = at(THORNWICK, -44, -50);
 const THORN_HEADSTONES = headstones(graveThorn);
-/** The Thornwood: thornoaks wherever there is room, which is most places outside the town. Deterministic, 5 apart, clear of camps, the gate and the town's own ground. */
+/**
+ * The Rotroot (bible 1.2): three rooms under the Thornwood's south edge, in Thornwick's frame (local coordinates). It is the Grotto's plan turned about
+ * (door at the south edge, rooms stepping west), so the same rules and the same hand-built fine routing grid serve it: each pair of rooms overlaps by a doorway and no more.
+ */
+const ROTROOT_DOOR = at(THORNWICK, 42.5, 69);
+const WARREN_DOOR = at(THORNWICK, 42.5, 89);
+const HEART_DOOR = at(THORNWICK, 27, 109);
+const WARREN_STONES: Obstacle[] = [at(THORNWICK, 40, 97), at(THORNWICK, 30, 94), at(THORNWICK, 36, 105)].map(p => ({ ...p, r: 1.4 }));
+const HEART_STONES: Obstacle[] = [at(THORNWICK, 26, 118), at(THORNWICK, 12, 118), at(THORNWICK, 26, 128), at(THORNWICK, 12, 128)].map(p => ({ ...p, r: 1.6 }));
+/** The Thornwood: thornoaks wherever there is room, which is most places outside the town. Deterministic, 5 apart, clear of camps, the gate, the Rotroot's mouth and the town's own ground. */
 function thornwood(): Obstacle[] {
   const out: Obstacle[] = [], sq = thornLandmarks.thornSquare;
   for (let k = 0; k < 400 && out.length < 70; k++) {
     const c = at(THORNWICK, (hash(k * 3 + 1) - 0.5) * 132, (hash(k * 5 + 2) - 0.5) * 132);
     if (Math.hypot(c.x - sq.x, c.z - sq.z) < 41 || Math.hypot(c.x - graveThorn.x, c.z - graveThorn.z) < 12 || Math.abs(c.x - THORNWICK.x) < 7 && c.z < THORNWICK.z - 20) continue;
+    if (Math.hypot(c.x - ROTROOT_DOOR.x, c.z - ROTROOT_DOOR.z) < 8) continue;
     if (thornSpawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 9) || Math.hypot(c.x - (THORNWICK.x + 63), c.z - THORNWICK.z) < 12) continue;
     if (out.some(o => Math.hypot(o.x - c.x, o.z - c.z) < 6)) continue;
     out.push({ ...c, r: 1.3, kind: 'thornoak' });
@@ -509,7 +519,7 @@ export const REGIONS: Region[] = [
     tall: [...THORN_HOUSES, ...THORNWOODS],
     trees: [], rocks: [],
     landmarks: thornLandmarks,
-    connections: [{ to: 'dunmere', at: { x: THORNWICK.x, z: 943 } }],
+    connections: [{ to: 'dunmere', at: { x: THORNWICK.x, z: 943 } }, { to: 'mouth', at: ROTROOT_DOOR }],
     safe: [{ ...thornLandmarks.thornSquare, r: 35 }, { ...graveThorn, r: GRAVE_SAFE_R }],
     spawns: thornSpawns,
     herbs: THORN_HERBS,
@@ -537,6 +547,28 @@ export const REGIONS: Region[] = [
     obstacles: HOLD_STONES, tall: [], trees: [], rocks: [], landmarks: {},
     connections: [{ to: 'galley', at: HOLD_DOOR }],
     spawns: worldSpawns(SALTMARROW, [['captain_marrow', -19, -126]]),
+  },
+  {
+    // The Rotroot (HOM-75), after the Grotto for the same reason. The mouth holds the cult's sentry, the warren a Thorn Warden and two more of them, the heart the Mother.
+    id: 'mouth', name: 'The Mouth', cave: true, dungeon: 'rotroot', zone: 'rotroot', cell: 0.25,
+    footprint: [rectAt(THORNWICK, 40, 45, 68, 90)],
+    obstacles: [], tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'thornwick', at: ROTROOT_DOOR }, { to: 'warren', at: WARREN_DOOR }],
+    spawns: worldSpawns(THORNWICK, [['rotwood_cultist', 42.5, 80]]),
+  },
+  {
+    id: 'warren', name: 'The Root Warren', cave: true, dungeon: 'rotroot', zone: 'rotroot', cell: 0.25,
+    footprint: [rectAt(THORNWICK, 24, 46, 88, 110)],
+    obstacles: WARREN_STONES, tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'mouth', at: WARREN_DOOR }, { to: 'heart', at: HEART_DOOR }],
+    spawns: worldSpawns(THORNWICK, [['thorn_warden', 31, 101], ['rotwood_cultist', 41, 108], ['rotwood_cultist', 34, 91]]),
+  },
+  {
+    id: 'heart', name: "The Mother's Heart", cave: true, dungeon: 'rotroot', zone: 'rotroot', cell: 0.25,
+    footprint: [rectAt(THORNWICK, 8, 30, 108, 134)],
+    obstacles: HEART_STONES, tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'warren', at: HEART_DOOR }],
+    spawns: worldSpawns(THORNWICK, [['rotroot_mother', 19, 126]]),
   },
 ];
 // the hollow's and hall's standing stones are tall (they break sight lines)
@@ -696,6 +728,9 @@ const DUNGEON_DEFS: Omit<Dungeon, 'rooms'>[] = [
   { id: 'grotto', name: 'The Drowned Grotto', parent: 'saltmarrow', fade: { from: SALTMARROW.z - 70, to: SALTMARROW.z - 82 },
     rock: rectAt(SALTMARROW, -48, -6, -136, -70),
     gate: { need: 'brine_and_bone', blurb: "The door in the cliff is barred from within. Harbourmaster Pell's work on the Strand would be what opens it." } },
+  { id: 'rotroot', name: 'The Rotroot', parent: 'thornwick', fade: { from: THORNWICK.z + 70, to: THORNWICK.z + 82 },
+    rock: rectAt(THORNWICK, 6, 48, 70, 136),
+    gate: { need: 'rotroot', blurb: 'Roots as thick as a man lie across the mouth, and something under them breathes. Only a fighter of combat level 22 or more would go in.' } },
 ];
 
 export const DUNGEONS: Dungeon[] = DUNGEON_DEFS.map(d => ({ ...d, rooms: caves.filter(r => r.dungeon === d.id).map(r => ({ name: r.id, rect: r.footprint[0] })) }));

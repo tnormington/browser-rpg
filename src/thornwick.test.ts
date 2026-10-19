@@ -4,7 +4,7 @@ import { createState, step, NO_INPUT, TICK_DT, Input, GameState } from './sim';
 import { ENEMY_TYPES, SPAWNS, xpParity } from './sim/data';
 import { DROP_TABLES, ITEMS } from './sim/items';
 import {
-  REGIONS, GATES, WITHERING, DUNMERE, THORNWICK, SALTMARROW, LANDMARKS, TOWNS, SAFE_ZONES, COLLIDERS, regionAt, regionById, inSafeZone, clampToWorld, nearestTown, PLAYER_RADIUS,
+  REGIONS, GATES, WITHERING, DUNMERE, THORNWICK, SALTMARROW, LANDMARKS, TOWNS, SAFE_ZONES, COLLIDERS, regionAt, regionById, dungeonAt, inSafeZone, clampToWorld, nearestTown, PLAYER_RADIUS,
 } from './sim/world';
 import { route, evictGrids, gridStats } from './sim/path';
 import { createNodes } from './sim/gathering';
@@ -97,7 +97,7 @@ section('the ten new enemies, by the retuned table (HOM-62)');
 // ---------------------------------------------------------------------------
 section('where the enemies stand');
 {
-  const count = (t: string) => SPAWNS.filter(sp => sp.type === t).length;
+  const count = (t: string) => SPAWNS.filter(sp => sp.type === t && dungeonAt(sp.x, sp.z) === null).length; // the Rotroot (HOM-75) reuses the Thornwood's cultists and a Warden behind its door: they are not the wood's
   assert(count('fen_stalker') === 10 && count('bog_witch') === 6 && count('mire_troll') === 4 && count('bogfather') === 1 && count('mother_mire') === 1, 'the fens hold 5 stalker pairs, 6 witches, 4 trolls, the Bogfather and Mother Mire');
   assert(count('thornback') === 3 && count('blight_stag') === 3 && count('rotwood_cultist') === 4 && count('thorn_warden') === 1 && count('elder_thornback') === 1, 'the Thornwood holds 3 boars, 3 stags, 4 cultists, the Warden and the Elder');
   const dunSpawns = SPAWNS.filter(sp => ENEMY_TYPES[sp.type].level >= 18 && ENEMY_TYPES[sp.type].level <= 21 && sp.z > 100 && sp.z < 940);

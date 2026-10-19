@@ -22,7 +22,7 @@ const spot = (x: number, z: number): Pt => ({ x, z });
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.z - b.z);
 
 console.log('\n# the world is region data');
-assert(REGIONS.map(r => r.id).join() === 'ridge,clearing,throat,hollow,neck,hall,greywater,saltmarrow,seams,wayside,dunmere,thornwick,gangway,galley,hold', 'the world is Hale (ridge, clearing, four cave rooms), then the road, then Saltmarrow, then the copper and tin seams (HOM-56), then the road\'s waysides (HOM-57), then the fens and Thornwick (HOM-63), then the Drowned Grotto\'s three rooms (HOM-64), in node-id order');
+assert(REGIONS.map(r => r.id).join() === 'ridge,clearing,throat,hollow,neck,hall,greywater,saltmarrow,seams,wayside,dunmere,thornwick,gangway,galley,hold,mouth,warren,heart', 'the world is Hale (ridge, clearing, four cave rooms), then the road, then Saltmarrow, then the copper and tin seams (HOM-56), then the road\'s waysides (HOM-57), then the fens and Thornwick (HOM-63), then the Drowned Grotto\'s three rooms (HOM-64), then the Rotroot\'s three (HOM-75), in node-id order');
 assert(REGIONS.every(r => r.connections.every(c => REGIONS.find(o => o.id === c.to)?.connections.some(b => b.to === r.id))), 'connections are symmetric and name real regions');
 assert(REGIONS.every(r => r.connections.every(c => {
   const there = REGIONS.find(o => o.id === c.to)!, snapped = clampToWorld(c.at);

@@ -5,7 +5,10 @@ import { Dungeon, dungeonAt } from './world';
 /** What each hard gate asks for, by the key a dungeon's `gate.need` names. A key with no entry here never opens: a typo fails shut, not open. */
 const GATES: Record<string, (s: GameState) => boolean> = {
   brine_and_bone: s => s.quest.fifth === 'cleared', // the Grotto: the Strand has to be quiet before the harbourmaster will say where the door is
+  rotroot: s => s.player.combat.level >= ROTROOT_COMBAT, // the Rotroot: combat 22 for now; Q5 (the Rotroot's chain) adds its own clause when it exists
 };
+
+const ROTROOT_COMBAT = 22;
 
 export const dungeonOpen = (s: GameState, d: Dungeon) => !d.gate || (GATES[d.gate.need]?.(s) ?? false);
 

@@ -14,7 +14,7 @@ import { MAX_BONUS, MAX_SPEEDUP, mastery } from './sim/mastery';
 import { RECIPES, FORGE_REACH, recipeById } from './sim/crafting';
 import {
   CAVE_DOOR_Z, CAVE_PILLARS, CAVE_ROCKS, CAVE_ROOMS, COLLIDERS, LANDMARKS, PLAYER_RADIUS, ROCKS, TREES, WORLD_HALF,
-  GREYWATER, REGIONS, SALTMARROW, TOWNS, caveDepth, caveWallPoints, clampToWorld, inCave, regionAt, resolveCollisions, sameSideOfDoor,
+  GREYWATER, REGIONS, SALTMARROW, THORNWICK, TOWNS, caveDepth, caveWallPoints, clampToWorld, inCave, regionAt, resolveCollisions, sameSideOfDoor,
   DUNGEONS, dungeonAt, dungeonById, mountsAllowed,
 } from './sim/world';
 import { dungeonOpen } from './sim/dungeon';
@@ -1921,9 +1921,9 @@ section('HOM-15 enemy mechanic: the ground mark punishes standing still');
   }
   assert(castName(ENEMY_TYPES.ogre, 'heavy') === 'Boulder Slam' && castName(seer, 'ground') === 'Withering Ground' && castName(seer, 'bolt') === 'Hex Bolt' && castName(ENEMY_TYPES.boar, 'ground') === 'Wild Boar',
     'castName gives the right name for every kind of wind-up and never throws, for any enemy');
-  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'bog_witch,bogfather,captain_marrow,mother_mire,seer,thorn_warden,tide_hag,warden', 'only the Seer, the Warden, (HOM-46) the Tide Hag and (HOM-63) the Bog Witch, Bogfather, Mother Mire Thorn Warden and (HOM-64) Captain Marrow mark the ground');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'bog_witch,bogfather,captain_marrow,mother_mire,rotroot_mother,seer,thorn_warden,tide_hag,warden', 'only the Seer, the Warden, (HOM-46) the Tide Hag and (HOM-63) the Bog Witch, Bogfather, Mother Mire Thorn Warden and (HOM-64) Captain Marrow and (HOM-75) the Rotroot Mother mark the ground');
   assert(Object.values(ENEMY_TYPES).every(d => !d.look || ['wolf', 'hexer', 'brute', 'boar', 'pup'].includes(d.look.model)), 'every cave look reuses a model that is already loaded: no new art');
-  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 26 && ['boar', 'wolf', 'brute', 'pup', 'hexer'].every(k => !ENEMY_TYPES[k].look), 'the five cave enemies, (HOM-46) the ten of the road and the Strand and (HOM-63) the ten of the fens and the Thornwood and (HOM-64) Captain Marrow say how to draw themselves, and the original five rigs do not');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 27 && ['boar', 'wolf', 'brute', 'pup', 'hexer'].every(k => !ENEMY_TYPES[k].look), 'the five cave enemies, (HOM-46) the ten of the road and the Strand and (HOM-63) the ten of the fens and the Thornwood and (HOM-64) Captain Marrow and (HOM-75) the Rotroot Mother say how to draw themselves, and the original five rigs do not');
 }
 
 // ---------------------------------------------------------------------------
@@ -3525,8 +3525,8 @@ section('HOM-64 dungeons as data: the Hollow is the first, the Drowned Grotto th
 {
   const hollow = dungeonById('hollow'), grotto = dungeonById('grotto');
   const isOpen = (s: GameState) => dungeonOpen(s, grotto);
-  assert(DUNGEONS.length === 2 && hollow.rooms.map(r => r.name).join() === 'throat,hollow,neck,hall' && grotto.rooms.map(r => r.name).join() === 'gangway,galley,hold', 'two dungeons: the Hollow is the four rooms it always was, the Grotto is three');
-  assert(CAVE_ROOMS.length === 7 && CAVE_ROOMS.every(r => DUNGEONS.some(d => d.id === r.dungeon)) && REGIONS.filter(r => r.cave).every(r => !!r.dungeon), 'every cave room belongs to a dungeon, and the flat list is all of them');
+  assert(DUNGEONS.length === 3 && hollow.rooms.map(r => r.name).join() === 'throat,hollow,neck,hall' && grotto.rooms.map(r => r.name).join() === 'gangway,galley,hold', 'two dungeons: the Hollow is the four rooms it always was, the Grotto is three, and the Rotroot (HOM-75) the third');
+  assert(CAVE_ROOMS.length === 10 && CAVE_ROOMS.every(r => DUNGEONS.some(d => d.id === r.dungeon)) && REGIONS.filter(r => r.cave).every(r => !!r.dungeon), 'every cave room belongs to a dungeon, and the flat list is all of them');
   assert(grotto.parent === 'saltmarrow' && grotto.rooms.every(r => r.rect.x0 >= SALTMARROW.x - 70 && r.rect.x1 <= SALTMARROW.x + 30), 'the Grotto sits in Saltmarrow\'s frame');
   const mid = (r: { x0: number; x1: number; z0: number; z1: number }) => ({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2 });
   assert(grotto.rooms.every(r => dungeonAt(mid(r.rect).x, mid(r.rect).z) === grotto && inCave(mid(r.rect).x, mid(r.rect).z)) && dungeonAt(-18, -80) === hollow && dungeonAt(0, 8) === null && dungeonAt(SALTMARROW.x - 25, SALTMARROW.z) === null, 'a point is in the dungeon whose floor it is on, and nowhere in a town');
@@ -3631,6 +3631,43 @@ section('HOM-64 dungeons as data: the Hollow is the first, the Drowned Grotto th
   atLevel(f2, 17); addItem(f2.player.inventory, 'marrows_edge', 1);
   tick(f2, { inv: [{ k: 'equip', slot: f2.player.inventory.findIndex(x => x?.id === 'marrows_edge') }] });
   assert(f2.player.equipment.weapon === null && hasEvent(f2, e => e.t === 'actionfail' && e.reason === 'req' && e.need === 18), 'at combat 17 it stays in the bag, and the refusal says why');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-75 the Rotroot: the third dungeon, in Thornwick\'s frame');
+{
+  const rr = dungeonById('rotroot');
+  assert(rr.parent === 'thornwick' && rr.rooms.map(r => r.name).join() === 'mouth,warren,heart' && rr.rooms.every(r => r.rect.x0 >= THORNWICK.x - 70 && r.rect.x1 <= THORNWICK.x + 70), 'three rooms, all in Thornwick\'s frame');
+  const mid = (r: { x0: number; x1: number; z0: number; z1: number }) => ({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2 });
+  assert(rr.rooms.every(r => dungeonAt(mid(r.rect).x, mid(r.rect).z) === rr && inCave(mid(r.rect).x, mid(r.rect).z)) && dungeonAt(THORNWICK.x, THORNWICK.z) === null, 'a point is in the Rotroot where its floor is, and nowhere in the town');
+  const dx = THORNWICK.x + 42.5, dz = THORNWICK.z;
+  assert(caveDepth(dx, dz + 60) === 0 && caveDepth(dx, dz + 66) === 0 && caveDepth(dx, dz + 76) > 0 && caveDepth(dx, dz + 76) < 1 && caveDepth(THORNWICK.x + 19, dz + 126) === 1, 'its own threshold, running south: daylight at the door, dusk in the mouth, dark in the heart');
+  assert(!mountsAllowed(THORNWICK.x + 19, dz + 126) && !sameSideOfDoor({ x: THORNWICK.x, z: dz + 40 }, { x: THORNWICK.x + 19, z: dz + 126 }), 'no mounts inside, and Tab from the town does not offer the Mother through the rock');
+  const spawnsIn = REGIONS.filter(r => r.dungeon === 'rotroot').flatMap(r => r.spawns ?? []);
+  assert(spawnsIn.map(sp => sp.type).sort().join() === 'rotroot_mother,rotwood_cultist,rotwood_cultist,rotwood_cultist,thorn_warden' && spawnsIn.every(sp => dungeonAt(sp.x, sp.z) === rr), 'a sentry, a warden and two cultists, and the Mother: every one on the Rotroot\'s floor');
+
+  // the door: combat 22
+  const s = quietState(7501);
+  const door = { x: dx, z: dz + 62 };
+  assert(!dungeonOpen(s, rr), 'a new game has it shut');
+  s.player.x = door.x; s.player.z = door.z;
+  for (let n = 0; n < 120; n++) tick(s, { dirZ: 1 });
+  assert(dungeonAt(s.player.x, s.player.z) === null && s.player.z < dz + 70, 'shut: walking south into the roots stops at the door');
+  atLevel(s, 22);
+  s.player.x = door.x; s.player.z = door.z;
+  const mother = s.enemies.find(e => e.type === 'rotroot_mother')!;
+  assert(dungeonOpen(s, rr) && walkTo(s, mother.x, mother.z - 10, 2, 90) && dungeonAt(s.player.x, s.player.z) === rr, 'at combat 22 a walk from the mouth to the heart is one click, through three rooms');
+  const s21 = quietState(7502); atLevel(s21, 21);
+  assert(!dungeonOpen(s21, rr), 'and at 21 it stays shut');
+
+  // the Mother
+  const T = ENEMY_TYPES.rotroot_mother;
+  assert(T.level === 26 && T.hp === 15205 && T.damage === 46 && T.attackInterval === 2.4 && T.xp === 460 && T.respawn === 600, 'the Rotroot Mother: level 26, 15205 HP, hit 46 every 2.4 s, 460 XP, a ten-minute respawn: the bible\'s row');
+  assert(T.heavy!.name === 'Root Slam' && T.heavy!.damage === 350 && T.hazard!.name === 'Spore Cloud' && T.hazard!.damage === 150 && T.ranged!.name === 'Hex Bolt' && T.look!.model === 'brute', 'Root Slam 350, Spore Cloud 150, Hex Bolt, on a rig that exists');
+  const D = DROP_TABLES.rotroot_mother;
+  assert(D.rolls === 1 && D.nothing === 65 && D.entries.length === 1 && D.entries[0].id === 'heartwood_shard' && D.entries[0].weight === 35 && !!ITEMS.heartwood_shard, 'a Heartwood shard 35 % of kills');
+  const rt = deserialize(serialize(quietState(7503)));
+  assert(rt !== null && rt.enemies.some(e => e.type === 'rotroot_mother'), 'a save round-trips with the Mother in it');
 }
 
 console.log(`\nAll ${checks} checks passed.`);
