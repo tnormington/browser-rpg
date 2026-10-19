@@ -1,23 +1,168 @@
-// Tiny synthesised sound effects (WebAudio, no asset files). Reads sim events; silent until the first user gesture,
-// and M mutes. Every sound is a handful of oscillator blips: enough feedback to feel like a game, nothing to ship.
+// Sound effects: CC0 ogg samples (assets/audio, see LICENSES.md) played through one shared AudioContext, plus two
+// synth blips kept on purpose (enemy telegraph, Second Wind). Reads sim events; silent until the first user gesture,
+// and M mutes. Samples are fetched and decoded lazily after the context exists; until decoded a sound is skipped.
 import type { GameEvent } from './sim';
 
+// ---- tuning table: change numbers here, by ear ----
+/** minGap ms between plays of a group, maxVoices simultaneously sounding in it. */
+const GROUPS = {
+  hitEnemy:  { minGap: 60,  maxVoices: 3 },
+  hurt:      { minGap: 120, maxVoices: 2 },
+  swing:     { minGap: 150, maxVoices: 2 },
+  slam:      { minGap: 200, maxVoices: 2 },
+  interrupt: { minGap: 100, maxVoices: 1 },
+  stinger:   { minGap: 500, maxVoices: 1 },
+  loot:      { minGap: 150, maxVoices: 2 },
+  smith:     { minGap: 800, maxVoices: 3 },
+};
+type Group = keyof typeof GROUPS;
+
+/** files: variants (random, never the same twice in a row); rate: fixed pitch multiplier; delay: seconds. */
+interface Layer { files: string[]; vol: number; jitter?: number; rate?: number; delay?: number }
+const SOUNDS = {
+  hitFlesh:  { files: ['hit-flesh-1', 'hit-flesh-2', 'hit-flesh-3'], vol: 0.55, jitter: 0.06 },
+  hitCrit:   { files: ['hit-crit'], vol: 0.6, jitter: 0.04 },
+  hurt:      { files: ['hurt-1', 'hurt-2'], vol: 0.6, jitter: 0.05 },
+  hurtHeavy: { files: ['slam'], vol: 0.8 },
+  swing:     { files: ['swing-1', 'swing-2'], vol: 0.4, jitter: 0.08 },
+  cast1:     { files: ['swing-1'], vol: 0.5, jitter: 0.04, rate: 0.8 },
+  cast2:     { files: ['swing-2'], vol: 0.45, jitter: 0.04, rate: 1.2 },
+  cast4:     { files: ['swing-2'], vol: 0.5, jitter: 0.04, rate: 0.85 },
+  slam:      { files: ['slam'], vol: 0.8, jitter: 0.03 },   // volume is scaled by radius, see slamVol
+  interrupt: { files: ['interrupt'], vol: 0.7, jitter: 0.04 },
+  levelup:   { files: ['levelup'], vol: 0.6 },
+  unlock:    { files: ['levelup'], vol: 0.4, rate: 1.25 },
+  accept:    { files: ['loot'], vol: 0.35 },
+  complete:  { files: ['quest-complete'], vol: 0.6 },
+  completeLv:{ files: ['levelup'], vol: 0.4 },
+  loot:      { files: ['loot'], vol: 0.4, jitter: 0.05 },
+  smith1:    { files: ['smith-1'], vol: 0.55, jitter: 0.04 },
+  smith2:    { files: ['smith-2'], vol: 0.55, jitter: 0.04 },
+  forge:     { files: ['smith-1'], vol: 0.4 },
+  death:     { files: ['death'], vol: 0.8 },
+} satisfies Record<string, Layer>;
+const slamVol = (radius: number) => Math.min(1, 0.5 + radius / 12);
+
+const MASTER_GAIN = 0.8;
+const DUCK_GAIN = 0.35, DUCK_HOLD = 1;   // death: master to DUCK_GAIN, linear ramp back over DUCK_HOLD seconds
+const GLOBAL_VOICES = 16, QUIET = 0.3;   // over the global cap, quiet sounds are dropped first
+const SMITH_STEP = 0.35;
+
+const FILES = import.meta.glob('../assets/audio/*.ogg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const URLS = new Map(Object.entries(FILES).map(([p, url]) => [p.split('/').pop()!.replace('.ogg', ''), url]));
+
 let ctx: AudioContext | null = null;
+let master: GainNode | null = null;
 let muted = false;
+const buffers = new Map<string, AudioBuffer>();
+const lastPick = new Map<string, string>();
+const lastPlay = new Map<Group, number>();
+interface Voice { group: Group; vol: number; src: AudioBufferSourceNode }
+let voices: Voice[] = [];
+
+function loadSamples() {
+  const c = ctx;
+  for (const [name, url] of URLS) {
+    fetch(url).then(r => r.arrayBuffer()).then(b => c!.decodeAudioData(b)).then(buf => buffers.set(name, buf)).catch(() => {});
+  }
+}
 
 /** Browsers only allow audio after a gesture: call from the first key/click. */
 export function unlockAudio() {
   try {
-    ctx ??= new AudioContext();
+    if (!ctx) {
+      ctx = new AudioContext();
+      master = ctx.createGain();
+      master.gain.value = muted ? 0 : MASTER_GAIN;
+      master.connect(ctx.destination);
+      setTimeout(loadSamples, 0);   // after the gesture handler returns, never in the initial load
+    }
     if (ctx.state === 'suspended') void ctx.resume();
-  } catch { ctx = null; }
+  } catch { ctx = null; master = null; }
 }
 
-export const toggleMute = () => (muted = !muted);
+export function toggleMute() {
+  muted = !muted;
+  if (ctx && master) {
+    master.gain.cancelScheduledValues(ctx.currentTime);
+    master.gain.setValueAtTime(muted ? 0 : MASTER_GAIN, ctx.currentTime);   // also silences queued smith strikes
+    if (muted) for (const v of voices) try { v.src.stop(); } catch { /* already ended */ }
+  }
+  return muted;
+}
 export const isMuted = () => muted;
 
+function duck() {
+  if (!ctx || !master) return;
+  const t = ctx.currentTime;
+  master.gain.cancelScheduledValues(t);
+  master.gain.setValueAtTime(DUCK_GAIN, t);
+  master.gain.setValueAtTime(DUCK_GAIN, t + DUCK_HOLD);
+  master.gain.linearRampToValueAtTime(MASTER_GAIN, t + DUCK_HOLD * 2);
+}
+
+const live = (g?: Group) => voices.filter(v => !g || v.group === g);
+
+function pick(files: string[]): string {
+  if (files.length === 1) return files[0];
+  const key = files.join('|'), last = lastPick.get(key);
+  const options = files.filter(f => f !== last);
+  const f = options[Math.floor(Math.random() * options.length)];
+  lastPick.set(key, f);
+  return f;
+}
+
+interface PlayOpts { steal?: boolean; exempt?: boolean; noGap?: boolean }   // steal: drop the oldest voice instead of self; exempt: the voice caps never drop it; noGap: skip the group gap
+
+/** Start one sound (all its layers) in a group, honouring the group gap, voice caps and mute. */
+function play(group: Group, layers: (Layer & { vol: number })[], opts: PlayOpts = {}) {
+  if (!ctx || !master || muted || ctx.state !== 'running') return;
+  const now = performance.now(), cfg = GROUPS[group];
+  if (!opts.noGap && now - (lastPlay.get(group) ?? -Infinity) < cfg.minGap) return;
+  let started = false;
+  for (const layer of layers) {
+    const buf = buffers.get(pick(layer.files));
+    if (!buf) continue;
+    if (!opts.exempt) {
+      if (live(group).length >= cfg.maxVoices) {
+        if (!opts.steal) continue;
+        stealOldest(group);
+      }
+    }
+    if (live().length >= GLOBAL_VOICES) {
+      const quiet = live().find(v => v.vol < QUIET);
+      if (quiet) quiet.src.stop();
+      else if (layer.vol < QUIET) continue;
+      else if (!opts.exempt && !opts.steal) continue;
+    }
+    startVoice(group, buf, layer);
+    started = true;
+  }
+  if (started) lastPlay.set(group, now);
+}
+
+function stealOldest(group: Group) {
+  const old = live(group)[0];
+  if (old) { try { old.src.stop(); } catch { /* ended */ } voices = voices.filter(v => v !== old); }
+}
+
+function startVoice(group: Group, buf: AudioBuffer, layer: Layer) {
+  const c = ctx!;
+  const src = c.createBufferSource(), g = c.createGain();
+  const j = layer.jitter ?? 0;
+  src.buffer = buf;
+  src.playbackRate.value = (layer.rate ?? 1) * (1 + (Math.random() * 2 - 1) * j);
+  g.gain.value = layer.vol;
+  src.connect(g).connect(master!);
+  const voice: Voice = { group, vol: layer.vol, src };
+  voices.push(voice);
+  src.onended = () => { voices = voices.filter(v => v !== voice); };
+  src.start(c.currentTime + (layer.delay ?? 0));
+}
+
+// ---- the two synth blips we kept ----
 function tone(freq: number, dur: number, type: OscillatorType, vol: number, slideTo = freq, delay = 0) {
-  if (!ctx || muted || ctx.state !== 'running') return;
+  if (!ctx || !master || muted || ctx.state !== 'running') return;
   const t = ctx.currentTime + delay;
   const o = ctx.createOscillator(), g = ctx.createGain();
   o.type = type;
@@ -25,7 +170,7 @@ function tone(freq: number, dur: number, type: OscillatorType, vol: number, slid
   o.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), t + dur);
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g).connect(ctx.destination);
+  o.connect(g).connect(master);
   o.start(t);
   o.stop(t + dur + 0.02);
 }
@@ -36,32 +181,39 @@ const arpeggio = (notes: number[], step: number, type: OscillatorType, vol: numb
 export function playEvents(events: GameEvent[]) {
   for (const ev of events) {
     switch (ev.t) {
-      case 'cast':
-        if (ev.slot === 0) tone(260, 0.07, 'square', 0.05, 120);
-        else if (ev.slot === 1) tone(160, 0.14, 'sawtooth', 0.07, 55);
-        else if (ev.slot === 2) tone(500, 0.16, 'triangle', 0.06, 1000);
-        else if (ev.slot === 4) tone(220, 0.18, 'sawtooth', 0.06, 90);
-        else if (ev.slot === 5) { tone(900, 0.05, 'square', 0.07, 400); tone(140, 0.12, 'sawtooth', 0.07, 60, 0.03); }
-        else arpeggio([392, 494, 587], 0.06, 'sine', 0.06);
-        break;
       case 'hit':
-        if (ev.dot) tone(300, 0.05, 'triangle', 0.03, 200);
-        else if (ev.target === 'player') tone(130, 0.16, 'sawtooth', 0.08, 50);
-        else { tone(ev.crit ? 240 : 190, 0.09, 'square', 0.06, 80); if (ev.crit) tone(900, 0.12, 'triangle', 0.04, 1500, 0.02); }
+        if (ev.dot) break;
+        if (ev.target === 'player') {
+          play('hurt', ev.heavy ? [SOUNDS.hurt, SOUNDS.hurtHeavy] : [SOUNDS.hurt], { exempt: true });
+        } else {
+          play('hitEnemy', ev.crit ? [SOUNDS.hitFlesh, SOUNDS.hitCrit] : [SOUNDS.hitFlesh], { steal: ev.crit });
+        }
         break;
-      case 'kill': arpeggio([330, 262, 196], 0.07, 'triangle', 0.07); break;
-      case 'unlock': arpeggio([392, 523, 659, 784], 0.07, 'sine', 0.07); tone(1568, 0.5, 'triangle', 0.04, 1400, 0.28); break;
+      case 'swing': play('swing', [SOUNDS.swing]); break;
+      case 'cast':
+        if (ev.slot === 1) play('swing', [SOUNDS.cast1]);
+        else if (ev.slot === 2) play('swing', [SOUNDS.cast2]);
+        else if (ev.slot === 4) play('swing', [SOUNDS.cast4]);
+        else if (ev.slot === 3) arpeggio([392, 494, 587], 0.06, 'sine', 0.06);   // Second Wind
+        break;
+      case 'slam': play('slam', [{ ...SOUNDS.slam, vol: slamVol(ev.radius) }], { exempt: true }); break;
+      case 'interrupt': play('interrupt', [SOUNDS.interrupt], { exempt: true }); break;
       case 'telegraph': tone(110, ev.windup, 'sawtooth', 0.05, 220); break;
-      case 'interrupt': tone(1200, 0.08, 'square', 0.07, 300); break;
-      case 'levelup': arpeggio([523, 659, 784, 1047], 0.09, 'triangle', 0.08); break;
+      case 'levelup': play('stinger', [SOUNDS.levelup]); break;
+      case 'unlock': play('stinger', [SOUNDS.unlock]); break;
       case 'quest':
-        if (ev.what === 'complete') arpeggio([523, 659, 784, 1047, 784, 1047, 1319], 0.11, 'triangle', 0.09);
-        else arpeggio([659, 880], 0.1, 'sine', 0.07);
+        if (ev.what === 'accept') play('stinger', [SOUNDS.accept]);
+        else if (ev.what === 'complete') play('stinger', [SOUNDS.complete, SOUNDS.completeLv]);
         break;
-      case 'loot': tone(880, 0.07, 'sine', 0.05, 1320); break;
-      case 'crafted': tone(420, 0.06, 'square', 0.06, 380); tone(420, 0.06, 'square', 0.06, 380, 0.12); tone(1200, 0.4, 'sine', 0.05, 1100, 0.2); break;
-      case 'death': tone(220, 0.8, 'sawtooth', 0.09, 40); break;
-      case 'npc': tone(600, 0.08, 'sine', 0.04, 800); break;
+      case 'loot': play('loot', [SOUNDS.loot]); break;
+      case 'crafted':
+        play('smith', [SOUNDS.smith1, { ...SOUNDS.smith2, delay: SMITH_STEP }, { ...SOUNDS.smith1, delay: SMITH_STEP * 2 }]);
+        break;
+      case 'forge': play('smith', [SOUNDS.forge]); break;
+      case 'death':
+        play('stinger', [SOUNDS.death], { steal: true, noGap: true });
+        duck();
+        break;
     }
   }
 }
