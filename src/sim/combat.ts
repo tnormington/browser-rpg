@@ -14,6 +14,8 @@ import {
 } from './data';
 
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
+/** How far to one side of the player a blocked shooter aims while it works round the cover between them (see updateRanged). */
+const ROUND_OFFSET = 3;
 const rand = (s: GameState) => nextRandom(s);
 
 export const enemyById = (s: GameState, id: number | null): Enemy | undefined =>
@@ -394,14 +396,23 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
     s.events.push({ t: 'slam', id: e.id, x: e.x, z: e.z, radius: h.radius });
     if (!p.dead && dist(e, p) <= h.radius) hurtPlayer(s, e, Math.max(1, Math.round(h.damage * (1 - p.stats.reduction))), h.name, true);
   } else if (!p.dead && dist(e, p) <= def.ranged!.range + 2) { // a little slack: a pace back mid-cast does not dodge a bolt, leaving its reach does
-    hurtPlayer(s, e, Math.max(1, Math.round(def.damage * (0.85 + 0.3 * rand(s)) * (1 - p.stats.reduction))), def.ranged!.name);
+    // ...and so does putting rock between you and it: the shot is loosed into the stone
+    if (!clearLine(e, p)) s.events.push({ t: 'blocked', id: e.id, x: e.x, z: e.z });
+    else hurtPlayer(s, e, Math.max(1, Math.round(def.damage * (0.85 + 0.3 * rand(s)) * (1 - p.stats.reduction))), def.ranged!.name);
   }
 }
 
-/** Ranged AI: close to firing range, back away from melee, shoot on cooldown. */
+/** Ranged AI: round the rock if the shot is blocked, else close to firing range, back away from melee, shoot on cooldown. */
 function updateRanged(s: GameState, e: Enemy, dt: number) {
   const p = s.player, def = ENEMY_TYPES[e.type], r = def.ranged!, d = dist(e, p);
   e.facing = Math.atan2(p.x - e.x, p.z - e.z);
+  // No line, no shot: it works round the rock instead of firing through it, so cover buys you the gap, not the fight.
+  // It aims a few units to one side of the player rather than straight at them: walking at a pillar it is squarely
+  // behind only wedges it there, and the sideways component is what carries it past. Side by id, so it stays deterministic.
+  if (!clearLine(e, p)) {
+    const ax = -(p.z - e.z), az = p.x - e.x, n = Math.hypot(ax, az) || 1, side = e.id % 2 ? ROUND_OFFSET : -ROUND_OFFSET;
+    return stepToward(e, p.x + (ax / n) * side, p.z + (az / n) * side, def.speed, dt, 0);
+  }
   if (d > r.range * 0.9) stepToward(e, p.x, p.z, def.speed, dt, r.range * 0.8);
   else if (d < r.keepAway && dist(e, { x: e.spawnX, z: e.spawnZ }) < def.leash * 0.8) {
     // back off along the line away from the player; cornered or at the end of its leash it stands and shoots
@@ -463,7 +474,7 @@ export function updateEnemies(s: GameState, dt: number) {
         e.stagger = Math.max(0, e.stagger - dt); // stunned by a Pummel
       } else if (e.cast) {
         updateCast(s, e, dt);
-      } else if (def.hazard && e.hazardCd <= 0 && dp <= def.hazard.range) {
+      } else if (def.hazard && e.hazardCd <= 0 && dp <= def.hazard.range && clearLine(e, p)) { // it marks ground it can see you standing on
         startGroundCast(s, e);
       } else if (def.ranged) {
         updateRanged(s, e, dt);

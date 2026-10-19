@@ -242,6 +242,11 @@ export class Hud {
         this.float('INTERRUPTED', 'interrupt', ev.x, 3.4, ev.z);
         this.note(`${e ? ENEMY_TYPES[e.type].name : 'Enemy'} interrupted`, 'log-xp');
         this.warn.classList.remove('show');
+      } else if (ev.t === 'blocked') {
+        const e = s.enemies.find(x => x.id === ev.id);
+        this.float('BLOCKED', 'interrupt', ev.x, 3.4, ev.z);
+        this.note(`${e ? ENEMY_TYPES[e.type].name : 'Enemy'}'s shot hit the rock: you broke its line`, 'log-xp');
+        this.warn.classList.remove('show');
       } else if (ev.t === 'kill') {
         const e = s.enemies.find(x => x.id === ev.id);
         if (e) this.note(`${ENEMY_TYPES[e.type].name} slain`, 'log-kill');

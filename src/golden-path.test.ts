@@ -2572,4 +2572,53 @@ section('HOM-38 aggro: nothing wakes to what it cannot see, and the notice radiu
   assert(near > notice + 1, `and the nearest Ravager is a clear ${(near - notice).toFixed(1)} units outside its notice radius (${near.toFixed(1)} away, notices at ${notice.toFixed(1)})`);
 }
 
+// ---------------------------------------------------------------------------
+section('HOM-38 ranged line of sight: a shot needs a line, and loses one mid-flight');
+{
+  const stone = CAVE_PILLARS[0]; // (-14.5, -50): the archer stands north of it, the player south
+  const NORTH = { x: stone.x, z: stone.z + 6 };      // where the shooter posts
+  const OPEN = { x: stone.x - 8.5, z: stone.z };     // clear line, inside range, outside keepAway
+  const COVER = { x: stone.x, z: stone.z - 6 };      // dead behind the stone
+  /** An archer awake and at its post, the player wherever they are standing. */
+  const shooter = (seed: number, at: { x: number; z: number }, type = 'archer') => {
+    const s = quietState(seed);
+    atLevel(s, 10);
+    const e = enemyOf(s, type);
+    placeAt(e, NORTH.x, NORTH.z);
+    e.state = 'chase'; e.attackCd = 0;
+    s.player.x = at.x; s.player.z = at.z;
+    return { s, e };
+  };
+  const hits = (s: GameState) => s.events.filter(ev => ev.t === 'hit' && ev.target === 'player').length;
+
+  const open = shooter(560, OPEN);
+  let tookOne = 0;
+  for (let n = 0; n < Math.round(4 / TICK_DT); n++) { tick(open.s); tookOne += hits(open.s); }
+  assert(tookOne >= 1, `in the open the Gloom Archer shoots the player (${tookOne} arrows in four seconds)`);
+
+  const hid = shooter(561, COVER);
+  let telegraphs = 0, took = 0;
+  for (let n = 0; n < Math.round(0.8 / TICK_DT); n++) { tick(hid.s); telegraphs += hid.s.events.filter(ev => ev.t === 'telegraph').length; took += hits(hid.s); }
+  assert(telegraphs === 0 && took === 0, 'behind the stone it does not loose a single arrow');
+  assert(Math.hypot(hid.e.x - hid.s.player.x, hid.e.z - hid.s.player.z) < 12 - 0.5, 'it walks for a line instead of standing there: cover buys the gap, not the fight');
+  let cameRound = -1;
+  for (let n = 0; n < Math.round(8 / TICK_DT) && cameRound < 0; n++) { tick(hid.s); if (hid.s.events.some(ev => ev.t === 'telegraph')) cameRound = n; }
+  assert(cameRound >= 0, `and it comes round the stone and fires, ${((cameRound + 24) * TICK_DT).toFixed(1)}s after the player took cover`);
+
+  // a line broken while the arrow is being drawn: the shot spends itself on the rock
+  const duck = shooter(562, OPEN);
+  for (let n = 0; n < 300 && !duck.e.cast; n++) tick(duck.s);
+  assert(duck.e.cast?.kind === 'bolt', 'the archer starts a Gloom Arrow');
+  duck.s.player.x = COVER.x; duck.s.player.z = COVER.z; // step behind the stone mid-draw
+  let blocked = 0, landed = 0;
+  for (let n = 0; n < Math.round(1.2 / TICK_DT); n++) { tick(duck.s); blocked += duck.s.events.filter(ev => ev.t === 'blocked').length; landed += hits(duck.s); }
+  assert(blocked === 1 && landed === 0, `stepping behind the stone mid-draw blocks the arrow instead of taking it (${blocked} blocked, ${landed} hits)`);
+
+  // the Seer marks ground it can see you standing on, and no other
+  const seer = shooter(563, COVER, 'seer');
+  let marks = 0;
+  for (let n = 0; n < Math.round(0.6 / TICK_DT); n++) { tick(seer.s); marks += seer.s.events.filter(ev => ev.t === 'telegraph' && ev.kind === 'ground').length; }
+  assert(marks === 0, 'the Cave Seer does not call Withering Ground down on a spot it cannot see');
+}
+
 console.log(`\nAll ${checks} checks passed.`);

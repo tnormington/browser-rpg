@@ -90,6 +90,7 @@ export type GameEvent =
   | { t: 'unlock'; slot: number; level: number }       // combat level handed over an ability: fires once per ability
   | { t: 'telegraph'; id: number; kind: 'heavy' | 'bolt' | 'ground'; windup: number; x?: number; z?: number; radius?: number }  // an enemy starts a wind-up; a 'ground' one carries the spot it will land on
   | { t: 'interrupt'; id: number; x: number; z: number }  // a Pummel landed on a wind-up
+  | { t: 'blocked'; id: number; x: number; z: number }    // a ranged wind-up finished with rock in the way: the shot is wasted
   | { t: 'slam'; id: number; x: number; z: number; radius: number }  // a heavy attack resolved (hit or miss: the ground shakes either way)
   | { t: 'cast'; slot: number }
   | { t: 'swing'; target: number; x: number; z: number }   // an auto-attack swing left the player's hand (a 'hit' with slot AUTO_SLOT follows on the same tick)
