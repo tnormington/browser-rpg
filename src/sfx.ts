@@ -14,6 +14,8 @@ const GROUPS = {
   stinger:   { minGap: 500, maxVoices: 1 },
   loot:      { minGap: 150, maxVoices: 2 },
   smith:     { minGap: 800, maxVoices: 3 },
+  step:      { minGap: 250, maxVoices: 2 },   // footfalls land every ~450 ms running; the gap only guards a burst
+  gather:    { minGap: 400, maxVoices: 2 },   // strikes land every 1.1 s
 };
 type Group = keyof typeof GROUPS;
 
@@ -40,6 +42,10 @@ const SOUNDS = {
   smith2:    { files: ['smith-2'], vol: 0.55, jitter: 0.04 },
   forge:     { files: ['smith-1'], vol: 0.4 },
   death:     { files: ['death'], vol: 0.8 },
+  stepGrass: { files: ['step-grass-1', 'step-grass-2', 'step-grass-3'], vol: 0.3, jitter: 0.08 },
+  stepCave:  { files: ['step-cave-1', 'step-cave-2'], vol: 0.3, jitter: 0.08 },
+  mine:      { files: ['mine-1', 'mine-2', 'mine-3'], vol: 0.55, jitter: 0.05 },
+  chop:      { files: ['chop'], vol: 0.55, jitter: 0.06 },
 } satisfies Record<string, Layer>;
 const slamVol = (radius: number) => Math.min(1, 0.5 + radius / 12);
 
@@ -210,6 +216,8 @@ export function playEvents(events: GameEvent[]) {
         play('smith', [SOUNDS.smith1, { ...SOUNDS.smith2, delay: SMITH_STEP }, { ...SOUNDS.smith1, delay: SMITH_STEP * 2 }]);
         break;
       case 'forge': play('smith', [SOUNDS.forge]); break;
+      case 'step': play('step', [ev.surface === 'cave' ? SOUNDS.stepCave : SOUNDS.stepGrass]); break;
+      case 'gather': play('gather', [ev.skill === 'mining' ? SOUNDS.mine : SOUNDS.chop]); break;
       case 'death':
         play('stinger', [SOUNDS.death], { steal: true, noGap: true });
         duck();
