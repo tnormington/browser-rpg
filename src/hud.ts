@@ -100,6 +100,8 @@ export class Hud {
   private skillsUi: SkillsUi;
   private forgeUi: ForgeUi;
   private castBar: ReturnType<typeof bar>;
+  /** A gather/craft is running (or was just requested): a hit while true is what broke it. */
+  private acting = false;
   private nodePlates = new Map<number, { root: HTMLElement; sub: HTMLElement }>();
 
   constructor(private project: Project, private yaw: () => number, actions: HudActions) {
@@ -141,7 +143,7 @@ export class Hud {
     this.log = el(this.root, 'msglog');
     this.invUi = new InventoryUi(this.root, actions.inv);
     this.skillsUi = new SkillsUi(this.root);
-    this.forgeUi = new ForgeUi(this.root, actions.craft);
+    this.forgeUi = new ForgeUi(this.root, (r, n) => { this.acting = true; actions.craft(r, n); });
     this.castBar = bar(this.root, 'castbar');
     this.questUi = new QuestUi(this.root, actions.questAdvance);
     this.menuUi = new MenuUi(this.root, actions);
@@ -189,7 +191,14 @@ export class Hud {
         const toPlayer = ev.target === 'player';
         const cls = toPlayer ? 'dmg-in' : ev.dot ? 'dmg-dot' : ev.crit ? 'dmg-crit' : 'dmg-out';
         this.float(`${ev.amount}${ev.crit ? '!' : ''}`, cls, ev.x, toPlayer ? 2.6 : 2.4, ev.z);
-        if (toPlayer) this.hurtFlash(false);
+        if (toPlayer) {
+          this.hurtFlash(false);
+          if (this.acting) { // the sim drops the action on any hit; say so instead of failing silently
+            this.acting = false;
+            this.say('Interrupted: you were hit');
+            this.note('Interrupted: you were hit', 'log-info');
+          }
+        }
       } else if (ev.t === 'untarget') {
         this.say(ev.reason === 'dead' ? 'Target defeated' : 'Target evaded');
       } else if (ev.t === 'heal') {
@@ -413,6 +422,7 @@ export class Hud {
   /** Progress bar for the current gather/craft. */
   private updateCastBar(s: GameState) {
     const a = s.player.action;
+    this.acting = !!a;
     this.castBar.fill.parentElement!.style.display = a ? 'block' : 'none';
     if (!a) return;
     let label: string;
