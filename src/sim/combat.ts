@@ -5,10 +5,11 @@ import { rollDrops } from './loot';
 import { questOnKill, questReached } from './quest';
 import { nextRandom } from './rng';
 import { resolveCollisions, sameSideOfDoor } from './world';
+import { clearLine } from './sight';
 import {
   ABILITIES, ENEMY_TYPES, GCD, QUEUE_WINDOW, CRIT_CHANCE, CRIT_MULT, ENERGY_MAX, ENERGY_REGEN,
   RESPAWN_DELAY, OOC_DELAY, OOC_REGEN_FRAC, TAB_RANGE, PLAYER_SPAWN, maxHpForLevel, powerForLevel,
-  STAGGER_TIME, STAGGER_HEAVY_KEEP, ACQUIRE_RANGE, ACQUIRE_BEHIND_RANGE, FRONT_HALF_ARC,
+  STAGGER_TIME, STAGGER_HEAVY_KEEP, ACQUIRE_RANGE, ACQUIRE_BEHIND_RANGE, FRONT_HALF_ARC, aggroRadius,
   AUTO_RANGE, AUTO_BASE, AUTO_WEAPON_SHARE, AUTO_SLOT, BARE_SWING, RECAP_WINDOW, RECAP_MAX, TICK_DT,
 } from './data';
 
@@ -338,7 +339,7 @@ function startReturn(e: Enemy) {
   e.stagger = 0;
 }
 
-/** Wake an idle enemy (and its pack-mates). */
+/** Wake an idle enemy (and the pack-mates that can see it: the cry does not carry through a standing stone). */
 function aggro(s: GameState, e: Enemy) {
   if (e.state !== 'idle') return;
   const def = ENEMY_TYPES[e.type];
@@ -346,7 +347,7 @@ function aggro(s: GameState, e: Enemy) {
   e.attackCd = Math.max(e.attackCd, 0.6);
   if (def.heavy) e.heavyCd = Math.max(e.heavyCd, def.heavy.first);
   if (def.hazard) e.hazardCd = Math.max(e.hazardCd, def.hazard.first);
-  if (def.pack) for (const o of s.enemies) if (o !== e && o.type === e.type && o.state === 'idle' && dist(o, e) <= def.pack) aggro(s, o);
+  if (def.pack) for (const o of s.enemies) if (o !== e && o.type === e.type && o.state === 'idle' && dist(o, e) <= def.pack && clearLine(o, e)) aggro(s, o);
 }
 
 function hurtPlayer(s: GameState, e: Enemy, amount: number, what: string, heavy = false) {
@@ -453,7 +454,7 @@ export function updateEnemies(s: GameState, dt: number) {
     const dp = dist(e, p);
 
     if (e.state === 'idle') {
-      if (!p.dead && dp <= def.aggroRadius) aggro(s, e);
+      if (!p.dead && dp <= aggroRadius(def, p.combat.level) && clearLine(e, p)) aggro(s, e);
     } else if (e.state === 'chase') {
       if (p.dead || dist(e, { x: e.spawnX, z: e.spawnZ }) > def.leash) {
         startReturn(e);

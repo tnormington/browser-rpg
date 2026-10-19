@@ -4,7 +4,7 @@ import { createState, step, NO_INPUT, TICK_DT, Input, GameState, Enemy } from '.
 import { addItem, countItem, INVENTORY_SIZE } from './sim/inventory';
 import { ITEMS, DROP_TABLES, MITHRIL_SET, TIER_COLORS, deriveStats, emptyEquipment } from './sim/items';
 import {
-  ABILITIES, ENEMY_TYPES, SPAWNS, castName, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
+  ABILITIES, ENEMY_TYPES, SPAWNS, aggroRadius, castName, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
   GRAVITY, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW,
 } from './sim/data';
 import { xpForLevel, levelForXp, addXp, newTrack, levelProgress } from './sim/xp';
@@ -1961,10 +1961,11 @@ section('HOM-15 the contract: the cave is unfair without the mithril set and fai
   type Scene = { name: string; level: number; groups: [string, number][]; start: { x: number; z: number } };
   const WARDEN: Scene = { name: 'Hollow Warden', level: 10, groups: [['warden', 1]], start: { x: -18, z: -72 } };
   const OGRE: Scene = { name: 'Hollow Ogre', level: 9, groups: [['ogre', 1]], start: { x: -14, z: -50 } };
-  const PACK: Scene = { name: 'Ravager pack', level: 10, groups: [['ravager', 3]], start: { x: -22, z: -44 } };
+  const PACK: Scene = { name: 'Ravager pack', level: 10, groups: [['ravager', 3]], start: { x: -24, z: -44 } }; // the same approach to the pack, which now posts two units west on the seam it guards
   const ROOM: Scene = { name: 'ogre+archer+seer', level: 10, groups: [['ogre', 1], ['archer', 1], ['seer', 1]], start: { x: -18, z: -45 } };
   const wins = (sc: Scene, kit: string, smart = true) => SEEDS.filter(n => caveFight(sc.level, kit, sc.groups, sc.start, 940 + n, smart).won).length;
-  const PAIR: Scene = { name: 'archer+seer', level: 10, groups: [['archer', 1], ['seer', 1]], start: { x: -16, z: -54 } };
+  // start with a clear line to both: the old spot sat in the shadow of the standing stone at (-14.5,-50), where the Archer never saw the player at all
+  const PAIR: Scene = { name: 'archer+seer', level: 10, groups: [['archer', 1], ['seer', 1]], start: { x: -12, z: -54 } };
   const BRUISER: Scene = { name: 'ogre+archer', level: 10, groups: [['ogre', 1], ['archer', 1]], start: { x: -11, z: -52 } };
   for (const sc of [WARDEN, OGRE, PACK, PAIR, BRUISER, ROOM]) console.log(`  L${sc.level} ${sc.name.padEnd(17)} ${Object.keys(KITS).map(k => `${k} ${wins(sc, k)}/6`).join('   ')}`);
   assert(wins(WARDEN, 'mithril') === 6 && wins(WARDEN, 'iron') <= 1 && wins(WARDEN, 'blade') === 0, 'the Warden: with the set and the blade every run wins; in iron almost none; with no armour none');
@@ -2506,6 +2507,69 @@ section('HOM-38 sight: cover breaks a line, waist-high ore does not');
   assert(clearLine({ x: ore.x - 5, z: ore.z }, { x: ore.x + 5, z: ore.z }), 'an ore seam is waist-high: you can see over it');
   assert(!clearLine({ x: 0, z: 0 }, { x: -18, z: -50 }), 'the clearing cannot see into the cave');
   assert(clearLine({ x: -18, z: -32 }, { x: -18, z: -44 }), 'but the throat can see along itself');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-38 aggro: nothing wakes to what it cannot see, and the notice radius follows the level gap');
+{
+  const tree = TREES[0];
+  // an idle boar on the far side of a trunk, well inside its notice radius
+  const hidden = (px: number, pz: number) => {
+    const s = quietState(520);
+    const b = enemyOf(s, 'boar');
+    placeAt(b, tree.x + 3, tree.z);
+    s.player.x = px; s.player.z = pz;
+    run(s, 0.5);
+    return st(b) === 'chase';
+  };
+  assert(!hidden(tree.x - 3, tree.z), 'a boar three units the far side of a tree does not wake, trunk in the way');
+  assert(hidden(tree.x - 3, tree.z + 4), 'and wakes as soon as the player steps where it can see them');
+
+  // the pack cry does not carry through the trunk either
+  const pack = (bx: number, bz: number) => {
+    const s = quietState(521);
+    const [a, b] = s.enemies.filter(e => e.type === 'pup');
+    placeAt(a, tree.x + 3, tree.z);
+    placeAt(b, bx, bz);
+    s.player.x = tree.x + 5; s.player.z = tree.z;
+    run(s, 0.5);
+    return { a: st(a), b: st(b) };
+  };
+  const blind = pack(tree.x - 3, tree.z);
+  assert(blind.a === 'chase' && blind.b === 'idle', 'waking one pup does not wake a pack-mate it cannot see');
+  const seen = pack(tree.x - 2, tree.z + 3);
+  assert(seen.a === 'chase' && seen.b === 'chase', 'with a clear line between them the pack still comes as one');
+
+  const w = ENEMY_TYPES.warden;
+  assert(aggroRadius(w, 1) === w.aggroRadius && aggroRadius(w, w.level) === w.aggroRadius && aggroRadius(w, w.level + 3) < w.aggroRadius,
+    `the notice radius is the hand-placed one until the player outgrows the enemy, then shrinks (${aggroRadius(w, 1)} / ${w.aggroRadius} / ${aggroRadius(w, w.level + 3).toFixed(1)})`);
+  assert(Object.values(ENEMY_TYPES).every(d => aggroRadius(d, 99) >= d.aggroRadius * 0.55 - 1e-9 && aggroRadius(d, 1) <= d.aggroRadius),
+    'it never grows past the hand-placed radius, and never falls below 55% of it');
+
+  const noticed = (level: number) => {
+    const s = quietState(522 + level);
+    atLevel(s, level);
+    const b = enemyOf(s, 'boar');
+    placeAt(b, 0, 0);
+    s.player.x = 6; s.player.z = 0;
+    run(s, 0.5);
+    return st(b) === 'chase';
+  };
+  assert(noticed(1) && !noticed(10), 'a boar six units off notices a level-1 adventurer and ignores one who has outgrown it');
+}
+{
+  // the complaint: one careless step into the hollow used to wake the Ravager pack and the Archer together
+  const s = createState(540);
+  atLevel(s, 9);
+  s.player.x = -18; s.player.z = -46; // one step out of the throat, where the hollow opens up
+  run(s, 3);
+  const woke = s.enemies.filter(e => st(e) === 'chase');
+  assert(woke.length === 1 && woke[0].type === 'archer',
+    `stepping into the hollow wakes the Archer sentry and nothing else (${woke.map(e => ENEMY_TYPES[e.type].name).join(', ') || 'none'})`);
+  // not by a hair: the pack's post has to stay outside its own notice radius from the doorway, or this is luck
+  const near = Math.min(...s.enemies.filter(e => e.type === 'ravager').map(e => Math.hypot(e.x + 18, e.z + 46)));
+  const notice = aggroRadius(ENEMY_TYPES.ravager, RECOMMENDED_COMBAT_2);
+  assert(near > notice + 1, `and the nearest Ravager is a clear ${(near - notice).toFixed(1)} units outside its notice radius (${near.toFixed(1)} away, notices at ${notice.toFixed(1)})`);
 }
 
 console.log(`\nAll ${checks} checks passed.`);

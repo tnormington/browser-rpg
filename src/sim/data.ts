@@ -69,6 +69,14 @@ export const ABILITIES: AbilityDef[] = [
 export const STAGGER_TIME = 2.2;
 export const STAGGER_HEAVY_KEEP = 0.7;
 
+// Aggro, WoW's way round. Two things keep a careless step from waking half a room:
+//  - an enemy notices nothing it cannot see (sim/sight.ts), so a pack behind a standing stone sleeps until you round it;
+//  - once you outgrow something it stops looking up, so a route that was a gauntlet at level 4 is a walk at level 10.
+// The radius only ever shrinks: every one below is hand-placed against the scenery around it (the ore ridge sits
+// outside the Cave Brute's, the hollow's groups sit outside each other's), so it is the ceiling, not a starting point.
+export const AGGRO_PER_LEVEL = 0.6;  // units of notice radius lost per level the player is above the enemy
+export const AGGRO_MIN_FRAC = 0.55;  // ...down to this fraction of the enemy's own radius
+
 export interface EnemyDef {
   name: string;
   level: number;
@@ -100,6 +108,12 @@ export interface EnemyDef {
   look?: { model: string; scale: number; tint: number };
 }
 
+/** How far this enemy notices a player of that combat level from: its own radius, less what the player has outgrown. */
+export function aggroRadius(def: EnemyDef, playerLevel: number): number {
+  const shrink = AGGRO_PER_LEVEL * Math.max(0, playerLevel - def.level);
+  return Math.max(def.aggroRadius * AGGRO_MIN_FRAC, def.aggroRadius - shrink);
+}
+
 /** The name of the wind-up an enemy is casting, for cast bars and the telegraph line. One place, so a new kind cannot crash a HUD that guessed. */
 export function castName(def: EnemyDef, kind: 'heavy' | 'bolt' | 'ground'): string {
   return (kind === 'heavy' ? def.heavy?.name : kind === 'ground' ? def.hazard?.name : def.ranged?.name) ?? def.name;
@@ -122,6 +136,9 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
   // The cave. Every one of these is a level above anything outside, and built around one tell the player must read:
   // the Ravagers come in a pack (Cleave), the Archers shoot from range, the Seer punishes standing still, the Ogre slams,
   // and the Warden does the last two at once. They are tuned against the mithril set (see sim/cave balance checks in verify).
+  // The hollow holds seven of them in one room. The radii below are what each group needs to guard its own ground; what
+  // keeps them from arriving together is aggroRadius(), which pares the radius back as the player outgrows them: the
+  // nearest Ravager sits 7.8 units from the doorway, and at the recommended combat 9 their 7-unit radius leaves it asleep.
   ravager: { name: 'Cave Ravager', level: 7, hp: 320, damage: 11, attackInterval: 1.6, speed: 5.6,
     aggroRadius: 9, leash: 20, attackRange: 1.9, radius: 0.65, xp: 60, respawn: 75, pack: 8,
     look: { model: 'wolf', scale: 1.15, tint: 0x4a5a7a } },
@@ -154,7 +171,9 @@ export const SPAWNS: { type: string; x: number; z: number }[] = [
   { type: 'pup', x: -5, z: 15 }, { type: 'pup', x: -3.5, z: 16.2 }, { type: 'pup', x: -6.2, z: 16.6 },
   { type: 'hexer', x: 19, z: 19 },
   // inside the cave (see CAVE_ROOMS): the vein guards, the ranged pair, the seer, the ogres, and the Warden at the end
-  { type: 'ravager', x: -25, z: -50 }, { type: 'ravager', x: -23.8, z: -51.2 }, { type: 'ravager', x: -26.2, z: -51.6 },
+  // the pack is posted on the mithril seam it guards (x -29.2), not out in the middle of the hollow: from the doorway at
+  // (-18,-46) the nearest of them is 9.4 units off, outside its own notice radius, so walking in is the Archer alone
+  { type: 'ravager', x: -27, z: -50 }, { type: 'ravager', x: -25.8, z: -51.2 }, { type: 'ravager', x: -27.6, z: -51.8 },
   { type: 'archer', x: -13, z: -47 }, { type: 'archer', x: -23, z: -63 },
   { type: 'seer', x: -14, z: -61 },
   { type: 'ogre', x: -8, z: -58 }, { type: 'ogre', x: -26, z: -62.5 },
