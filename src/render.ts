@@ -437,7 +437,13 @@ export class Renderer {
     this.rangeParts.push(
       add(mesh(new THREE.BoxGeometry(1.6, 0.9, 0.9), P.stone, 'stone'), r.x, 0.45, r.z),
       add(mesh(new THREE.BoxGeometry(0.5, 1.3, 0.5), P.stoneDark, 'stone'), r.x + 0.5, 1.55, r.z - 0.2),
-      add(coals, r.x - 0.1, 0.93, r.z));
+      add(coals, r.x - 0.1, 0.93, r.z),
+      // what makes it a range and not a second forge: forked posts with a spit across, an iron pot hanging over the coals, a hood on the chimney
+      add(mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.7, 5), P.bark, 'wood'), r.x - 0.95, 0.85, r.z + 0.1),
+      add(mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.7, 5), P.bark, 'wood'), r.x + 0.75, 0.85, r.z + 0.1),
+      add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.8, 5).rotateZ(Math.PI / 2), P.bark, 'wood'), r.x - 0.1, 1.6, r.z + 0.1),
+      add(mesh(new THREE.SphereGeometry(0.3, 7, 4, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2).rotateX(Math.PI), P.anvil, 'metal'), r.x - 0.1, 1.3, r.z + 0.1),
+      add(mesh(new THREE.ConeGeometry(0.55, 0.5, 4).rotateY(Math.PI / 4), P.stoneDark, 'stone'), r.x + 0.5, 2.4, r.z - 0.2));
     this.forgeLight = add(new THREE.PointLight(P.forgeLight, FORGE_LIGHT.intensity, FORGE_LIGHT.distance), f.x - 1, FORGE_LIGHT.y, f.z + 3.6) as THREE.PointLight;
 
     // cave mouth: the sim's four flank colliders, rock heaped over them and across the top; the way in is the gap between
@@ -725,6 +731,11 @@ export class Renderer {
       const jaw = new THREE.ConeGeometry(0.2, 0.6, 4).rotateX(Math.PI / 2).translate(0.11, 0, 1.05);
       for (const g of [arm, jaw, jaw.clone().translate(-0.22, 0, 0)]) parts.push(g.toNonIndexed().rotateY(side * 0.35).translate(side * 0.95, 0.6, 0.45));
       for (const z of [-0.35, 0, 0.35]) parts.push(new THREE.BoxGeometry(0.8, 0.07, 0.07).rotateZ(side * -0.5).translate(side * 1.0, 0.22, z).toNonIndexed());
+    }
+    // the carapace: a domed shell over the pig's back and brow, wider than it is long, so the boar's head and ears stop being the silhouette; and the eyes on stalks
+    parts.push(new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).scale(1.05, 0.55, 0.95).translate(0, 0.35, 0.1).toNonIndexed());
+    for (const side of [1, -1]) {
+      parts.push(new THREE.CylinderGeometry(0.03, 0.04, 0.35, 4).translate(side * 0.2, 0.85, 0.75).toNonIndexed(), new THREE.SphereGeometry(0.07, 5, 4).translate(side * 0.2, 1.05, 0.75).toNonIndexed());
     }
     const m = new THREE.Mesh(mergeGeometries(parts)!, material(a.mats[0].color.getHex(), 'hide'));
     m.material.emissive.setHex(a.glow);

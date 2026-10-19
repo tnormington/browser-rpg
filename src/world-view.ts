@@ -24,8 +24,11 @@ export const BUILD_RANGE = 80;
 /** Fog is total at 42 from the camera and the camera sits up to 20 behind the player: nothing further than this from them can be seen. */
 export const SHOW_RANGE = 62;
 /** The sea off Saltmarrow's shore, and the stand-in colours for what the clearing has no use for. */
-const SEA = 0x1b2c3a, SAND = 0x6b6654, DECK = 0x5a4a38, DECK_DARK = 0x3e3329, THATCH = 0x6a5b3c, PLASTER = 0x6c675c, ROOF = 0x3c4750, LANTERN = 0xff9a3c;
+const SEA = 0x1b2c3a, SAND = 0x6b6654, DECK = 0x5a4a38, DECK_DARK = 0x3e3329, PLASTER = 0x92948f, ROOF = 0x4e5b69, LANTERN = 0xff9a3c;
+/** Saltmarrow's value ladder: pale limewash walls over a dark stone footing, black timber, slate roofs, a weathered hull; the sea's foam is the palest thing in the frame. */
+const FOOTING = 0x59626b, TIMBER = 0x2c241e, HULL = 0x52483e, FOAM = 0xa9bcc6, STONE_MARK = 0x7d858c;
 
+let poolMaterial: THREE.MeshBasicMaterial | undefined;
 const hash = (n: number) => Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1;
 const flat = (g: THREE.BufferGeometry) => (g.index ? g.toNonIndexed() : g);
 const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), S = new THREE.Vector3(), V = new THREE.Vector3();
@@ -40,6 +43,60 @@ function place(g: THREE.BufferGeometry, x: number, y: number, z: number, rotY = 
 function headstone(o: Obstacle, ry: number, i: number): THREE.BufferGeometry[] {
   const lean = (hash(i + 5) - 0.5) * 0.25;
   return [place(new THREE.BoxGeometry(0.8, 1.2, 0.22).rotateZ(lean), o.x, 0.6, o.z, ry), place(new THREE.CylinderGeometry(0.4, 0.4, 0.22, 8).rotateX(Math.PI / 2).rotateZ(lean), o.x - lean * 0.6, 1.2, o.z, ry)];
+}
+
+type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool', THREE.BufferGeometry[]>;
+const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [] });
+
+/** A pool of lamplight on the ground: a warm disc fading to nothing at its rim. Unlit and faint (well under the forge's glow), no real light behind it; alpha, not additive, so the fog takes it back to the ground's own colour rather than to a pale blue. */
+function lampPool(x: number, z: number, r: number, strength = 0.3, y = 0.05): THREE.BufferGeometry {
+  const g = new THREE.CircleGeometry(r, 20).rotateX(-Math.PI / 2).translate(x, y, z), warm = new THREE.Color(LANTERN);
+  const col = new Float32Array(g.attributes.position.count * 4);
+  warm.toArray(col, 0); // vertex 0 is the centre; the rim stays clear
+  col[3] = strength;
+  g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+  return g;
+}
+/** A lamp post: a pole, a bracket and a lit lantern, with its pool on the ground. Parts go into the bag; `y` is the ground's height. */
+function lampPost(bag: Bag, x: number, z: number, y = 0, pool = 4.5) {
+  bag.wood.push(place(new THREE.CylinderGeometry(0.08, 0.12, 3.1, 5), x, y + 1.55, z), place(new THREE.BoxGeometry(0.5, 0.08, 0.08), x + 0.2, y + 3.05, z));
+  bag.glow.push(place(new THREE.OctahedronGeometry(0.26), x + 0.4, y + 2.85, z));
+  bag.pool.push(lampPool(x + 0.3, z, pool, 0.3, y + 0.05));
+}
+/** Rotate a local (x, z) offset about y by `rot`, as `place` does, giving the world offset. */
+const rotXZ = (lx: number, lz: number, rot: number): [number, number] => [lx * Math.cos(rot) + lz * Math.sin(rot), -lx * Math.sin(rot) + lz * Math.cos(rot)];
+
+/** A house or the inn, from the ground up: a stone footing, limewashed walls in a black timber frame, a steep slate roof, a chimney, a door and lit windows. */
+function building(o: Obstacle, rot: number, bag: Bag) {
+  const big = o.kind === 'inn', w = o.r * 1.45, d = w * (big ? 1.5 : 1.7), h = big ? 4.6 : 3, roofH = big ? 3.4 : 2.8, doorX = big ? w * 0.15 : 0;
+  const put = (list: THREE.BufferGeometry[], g: THREE.BufferGeometry, lx: number, ly: number, lz: number) => list.push(place(g.translate(lx, ly, lz), o.x, 0, o.z, rot));
+  put(bag.stone, new THREE.BoxGeometry(2 * w + 0.4, 0.9, d + 0.4), 0, 0.45, 0);
+  put(bag.wall, new THREE.BoxGeometry(2 * w, h - 0.9, d), 0, 0.9 + (h - 0.9) / 2, 0);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(bag.wood, new THREE.BoxGeometry(0.3, h, 0.3), sx * w, h / 2, sz * d / 2); // the frame's corner posts
+  put(bag.wood, new THREE.BoxGeometry(2 * w + 0.3, 0.28, d + 0.3), 0, h - 0.1, 0); // the eaves beam
+  if (big) put(bag.wood, new THREE.BoxGeometry(2 * w + 0.15, 0.2, d + 0.15), 0, 2.7, 0); // the jetty between storeys
+  put(bag.roof, new THREE.ConeGeometry(w * 1.65, roofH, 4).rotateY(Math.PI / 4).scale(1, 1, big ? 0.8 : 0.95), 0, h + roofH / 2, 0);
+  put(bag.stone, new THREE.BoxGeometry(0.9, 2.4, 0.9), w * 0.5, h + roofH * 0.45, -d * 0.12); // the chimney
+  put(bag.wood, new THREE.BoxGeometry(1, 1.9, 0.16), doorX, 0.95, d / 2 + 0.28); // the door, proud of the footing
+  const win = (lx: number, ly: number) => { put(bag.wood, new THREE.BoxGeometry(1, 1.1, 0.08), lx, ly, d / 2 + 0.03); put(bag.glow, new THREE.BoxGeometry(0.72, 0.82, 0.1), lx, ly, d / 2 + 0.07); };
+  if (big) { for (const lx of [-0.8, -0.45, 0.55, 0.85]) win(lx * w, 1.9); for (const lx of [-0.5, 0.5]) win(lx * w, 3.65); } else for (const lx of [-0.5, 0.5]) win(lx * w, 1.9);
+  if (big) { // the Gilded Gull's sign: a board on a bracket over the door
+    put(bag.wood, new THREE.BoxGeometry(1.5, 0.1, 0.1), doorX + 0.8, 3.3, d / 2 + 0.7);
+    put(bag.sign, new THREE.BoxGeometry(0.1, 0.75, 0.9), doorX + 1.35, 2.85, d / 2 + 0.7);
+  }
+  const [px, pz] = rotXZ(doorX, d / 2 + 2.4, rot); // lamplight spilling from the door onto the ground in front
+  bag.pool.push(lampPool(o.x + px, o.z + pz, big ? 6 : 4.2, 0.26));
+}
+
+/** A beached boat: a half-hull on its keel, listing, with a deck, a stem post and a broken mast. */
+function boat(o: Obstacle, rot: number, bag: Bag) {
+  const len = o.r * 1.6, beam = o.r * 0.6, depth = o.r * 0.8;
+  const put = (list: THREE.BufferGeometry[], g: THREE.BufferGeometry, lx = 0, ly = 0, lz = 0) => list.push(place(g.rotateZ(0.12).translate(lx, ly, lz), o.x, 0, o.z, rot));
+  put(bag.hull, new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2).scale(len, depth, beam), 0, depth * 0.95, 0);
+  put(bag.wood, new THREE.CylinderGeometry(1, 1, 0.08, 8).scale(len * 0.98, 1, beam * 0.98), 0, depth * 0.95, 0); // the deck seen from above
+  put(bag.hull, new THREE.ConeGeometry(0.28, 1.8, 4).rotateZ(-0.5), len - 0.1, depth + 0.6, 0); // the stem post, raised
+  put(bag.wood, new THREE.CylinderGeometry(0.1, 0.16, 3.6, 5), -len * 0.15, depth + 1.7, 0); // the mast, snapped
+  put(bag.wood, new THREE.CylinderGeometry(0.06, 0.07, 2.8, 4).rotateZ(1.25), -len * 0.15 + 1.1, depth + 1.8, 0); // the boom, hanging
 }
 
 /** The graveyard's stones as one draw. Saltmarrow's are drawn with its slabs; Hale's clearing is render.ts's own, so it asks for them here. */
@@ -110,7 +167,7 @@ export class WorldView {
 
     // scenery: the region's obstacles that stand in this slab
     const mine = r.obstacles.filter(o => o.x >= rect.x0 && o.x < rect.x1);
-    this.scenery(mine, add);
+    this.scenery(mine, rect, r, add);
 
     // the edge of the world: a wall of boulders where the floor ends and nothing else begins
     this.boundary(floors, rect, r, add);
@@ -143,58 +200,69 @@ export class WorldView {
     return m;
   }
 
-  /** Obstacles by what they are, merged into one draw per material. */
-  private scenery(obs: Obstacle[], add: (o: THREE.Object3D) => void) {
-    const { P, mesh } = this.kit;
-    const parts: Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow', THREE.BufferGeometry[]> = { rock: [], bark: [], wall: [], roof: [], wood: [], glow: [] };
+  /** Obstacles by what they are, merged into one draw per material; the road's waymarks ride with the slab they stand in. */
+  private scenery(obs: Obstacle[], rect: Rect, r: Region, add: (o: THREE.Object3D) => void) {
+    const bag = newBag();
     obs.forEach((o, i) => {
       const h = hash(o.x * 3.1 + o.z * 7.7), ry = h * Math.PI * 2;
       switch (o.kind) {
         case 'person': return;
-        case 'tree': { // a dead tree: a trunk and two bare limbs
-          parts.bark.push(place(new THREE.CylinderGeometry(0.14, 0.26, 3.2, 5), o.x, 1.6, o.z, ry),
-            place(new THREE.CylinderGeometry(0.05, 0.1, 1.6, 4).rotateZ(0.9), o.x + Math.cos(ry) * 0.5, 2.6, o.z - Math.sin(ry) * 0.5, ry),
-            place(new THREE.CylinderGeometry(0.04, 0.09, 1.3, 4).rotateZ(-1.0), o.x - Math.cos(ry) * 0.4, 2.2, o.z + Math.sin(ry) * 0.4, ry));
+        case 'tree': { // a dead tree, bent inland by the wind off the sea: a leaning trunk and two bare limbs
+          bag.bark.push(place(new THREE.CylinderGeometry(0.14, 0.26, 3.2, 5).rotateZ(0.14).translate(-0.22, 0, 0), o.x, 1.6, o.z),
+            place(new THREE.CylinderGeometry(0.05, 0.1, 1.6, 4).rotateZ(0.9), o.x + Math.cos(ry) * 0.5 - 0.35, 2.6, o.z - Math.sin(ry) * 0.5, ry),
+            place(new THREE.CylinderGeometry(0.04, 0.09, 1.3, 4).rotateZ(-1.0), o.x - Math.cos(ry) * 0.4 - 0.35, 2.2, o.z + Math.sin(ry) * 0.4, ry));
           return;
         }
-        case 'hut': case 'house': case 'inn': {
-          const big = o.kind === 'inn', w = o.r * 1.45, hgt = big ? 4.6 : 3, roofH = big ? 3 : 2.2;
-          parts.wall.push(place(new THREE.BoxGeometry(w * 2, hgt, w * (big ? 1.5 : 1.7)), o.x, hgt / 2, o.z, ry * 0.12));
-          parts.roof.push(place(new THREE.ConeGeometry(w * 1.65, roofH, 4).rotateY(Math.PI / 4), o.x, hgt + roofH / 2, o.z, ry * 0.12, 1, 1, big ? 0.8 : 0.95));
-          if (big) {
-            parts.wall.push(place(new THREE.BoxGeometry(1.2, 3.2, 1.2), o.x + w * 0.9, hgt + 1.4, o.z - 1));
-            parts.glow.push(place(new THREE.BoxGeometry(0.9, 0.9, 0.12), o.x - 1.6, 1.6, o.z + w * 0.75 + 0.05, ry * 0.12), place(new THREE.BoxGeometry(0.9, 0.9, 0.12), o.x + 1.8, 1.6, o.z + w * 0.75 + 0.05, ry * 0.12));
-          } else if (o.kind === 'house') parts.glow.push(place(new THREE.BoxGeometry(0.6, 0.7, 0.1), o.x, 1.5, o.z + w * 0.85 + 0.04, ry * 0.12));
-          return;
-        }
+        case 'hut': case 'house': case 'inn': building(o, ry * 0.12, bag); return;
         case 'cart': {
-          parts.wood.push(place(new THREE.BoxGeometry(2.6, 0.7, 1.4), o.x, 0.9, o.z, ry), place(new THREE.CylinderGeometry(0.55, 0.55, 0.15, 8).rotateX(Math.PI / 2), o.x, 0.55, o.z + 0.8, ry), place(new THREE.CylinderGeometry(0.55, 0.55, 0.15, 8).rotateX(Math.PI / 2), o.x, 0.55, o.z - 0.8, ry));
+          bag.wood.push(place(new THREE.BoxGeometry(2.6, 0.7, 1.4), o.x, 0.9, o.z, ry), place(new THREE.CylinderGeometry(0.55, 0.55, 0.15, 8).rotateX(Math.PI / 2), o.x, 0.55, o.z + 0.8, ry), place(new THREE.CylinderGeometry(0.55, 0.55, 0.15, 8).rotateX(Math.PI / 2), o.x, 0.55, o.z - 0.8, ry));
           return;
         }
-        case 'crate': parts.wood.push(place(new THREE.BoxGeometry(1.3, 1.1, 1.3), o.x, 0.55, o.z, ry)); return;
-        case 'hull': { // a beached boat: a long wedge on its side and a stub of mast
-          parts.wood.push(place(new THREE.ConeGeometry(o.r * 0.78, o.r * 3.1, 6).rotateX(Math.PI / 2), o.x, o.r * 0.55, o.z, ry, 1, 0.6, 1), place(new THREE.CylinderGeometry(0.1, 0.14, 3.4, 5), o.x, 2.3, o.z, ry));
-          return;
-        }
-        case 'grave': parts.rock.push(...headstone(o, ry, i)); return;
+        case 'crate': bag.wood.push(place(new THREE.BoxGeometry(1.3, 1.1, 1.3), o.x, 0.55, o.z, ry), place(new THREE.BoxGeometry(1.4, 0.12, 0.3), o.x, 1.15, o.z, ry), place(new THREE.BoxGeometry(0.3, 0.12, 1.4), o.x, 1.17, o.z, ry)); return;
+        case 'hull': boat(o, ry, bag); return;
+        case 'grave': bag.rock.push(...headstone(o, ry, i)); return;
         default: { // a rock: a faceted lump a little wider than the circle the sim collides with
           const s = o.r * (1.15 + hash(i + 3) * 0.3);
-          parts.rock.push(place(new THREE.DodecahedronGeometry(1), o.x, s * 0.5, o.z, ry, s, s * (0.7 + hash(i + 9) * 0.35), s));
+          bag.rock.push(place(new THREE.DodecahedronGeometry(1), o.x, s * 0.5, o.z, ry, s, s * (0.7 + hash(i + 9) * 0.35), s));
         }
       }
     });
-    const emit = (list: THREE.BufferGeometry[], color: number, cls: string, shadow: 'both' | 'cast' | 'none' = 'both') => {
-      if (!list.length) return;
-      add(mesh(mergeGeometries(list)!, color, cls, shadow));
-    };
-    emit(parts.rock, P.slate, 'rock');
-    emit(parts.bark, P.bark, 'wood');
-    emit(parts.wall, PLASTER, 'stone');
-    emit(parts.roof, ROOF, 'stone');
-    emit(parts.wood, DECK_DARK, 'wood');
-    if (parts.glow.length) { const m = mesh(mergeGeometries(parts.glow)!, LANTERN, 'glow', 'none'); (m.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.1; add(m); }
+    if (r.id === 'greywater') this.waymarks(bag, rect, (r.footprint.find(f => f === mainRect(r)) ?? rect));
+    this.emit(bag, add);
   }
 
+  /** A milestone every 80 units down the road, on its north verge: a squared post with a board pointing on to the sea. How far from home the player is, in a thing they pass. */
+  private waymarks(bag: Bag, rect: Rect, main: Rect) {
+    const roadZ = (main.z0 + main.z1) / 2;
+    for (let x = Math.ceil(rect.x0 / 80) * 80; x < rect.x1; x += 80) {
+      if (x < 100) continue; // Hale's gate has its own
+      const z = roadZ - 6.5;
+      bag.stone.push(place(new THREE.BoxGeometry(0.7, 1.6, 0.7), x, 0.8, z), place(new THREE.BoxGeometry(0.9, 0.2, 0.9), x, 1.7, z));
+      bag.wood.push(place(new THREE.BoxGeometry(1.5, 0.32, 0.08), x + 0.45, 1.25, z + 0.38), place(new THREE.ConeGeometry(0.2, 0.4, 3).rotateZ(-Math.PI / 2), x + 1.4, 1.25, z + 0.38));
+    }
+  }
+
+  /** One merged draw per material, for a bag of parts. The pools are unlit and additive, so they are not a material class of the renderer's. */
+  private emit(bag: Bag, add: (o: THREE.Object3D) => void) {
+    const { P, mesh } = this.kit, one = (list: THREE.BufferGeometry[], color: number, cls: string, shadow: 'both' | 'cast' | 'none' = 'both') => {
+      if (list.length) add(mesh(mergeGeometries(list)!, color, cls, shadow));
+    };
+    one(bag.rock, P.slate, 'rock');
+    one(bag.bark, P.bark, 'wood');
+    one(bag.wall, PLASTER, 'stone');
+    one(bag.stone, FOOTING, 'stone');
+    one(bag.roof, ROOF, 'stone');
+    one(bag.hull, HULL, 'stone');
+    one(bag.wood, TIMBER, 'wood');
+    one(bag.sign, P.gold, 'cloth', 'cast');
+    if (bag.glow.length) { const m = mesh(mergeGeometries(bag.glow)!, LANTERN, 'glow', 'none'); (m.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.1; add(m); }
+    if (bag.pool.length) {
+      poolMaterial ??= new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
+      const m = new THREE.Mesh(mergeGeometries(bag.pool)!, poolMaterial);
+      m.renderOrder = 1;
+      add(m);
+    }
+  }
   /** Boulders every 4 units along the edges of the floor that open onto nothing, as the clearing's ring does, in one instanced draw. */
   private boundary(floors: Rect[], rect: Rect, r: Region, add: (o: THREE.Object3D) => void) {
     const all = REGIONS.flatMap(x => x.footprint), pts: { x: number; z: number }[] = [], main = mainRect(r);
@@ -226,12 +294,20 @@ export class WorldView {
     const deck = mesh(new THREE.BoxGeometry(len, 0.4, wid).translate(cx, -0.2, cz), DECK, 'wood', 'both');
     t.ground.push(deck);
     add(deck);
-    const piles: THREE.BufferGeometry[] = [];
-    for (let x = q.x0 + 2; x <= q.x1 - 1; x += 6) for (const z of [q.z0 + 0.3, q.z1 - 0.3]) piles.push(place(new THREE.CylinderGeometry(0.22, 0.3, 2.6, 6), x, 0.7, z));
-    add(mesh(mergeGeometries(piles)!, DECK_DARK, 'wood'));
-    const lamp = mesh(place(new THREE.OctahedronGeometry(0.25), q.x1 - 0.8, 1.9, q.z0 + 0.3), LANTERN, 'glow', 'none');
-    (lamp.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.1;
-    add(lamp);
+    const bag = newBag(), foam: THREE.BufferGeometry[] = [];
+    for (let x = q.x0 + 2; x <= q.x1 - 1; x += 6) for (const z of [q.z0 + 0.3, q.z1 - 0.3]) bag.wood.push(place(new THREE.CylinderGeometry(0.22, 0.3, 2.6, 6), x, 0.7, z));
+    for (let x = q.x0 + 1.5; x < q.x1; x += 2) bag.wood.push(place(new THREE.BoxGeometry(0.07, 0.03, wid), x, 0.02, cz)); // the plank seams: scale and pace on a deck that is otherwise one slab
+    for (let x = q.x0 + 9; x < q.x1 - 4; x += 12) { // a bollard with its coil of rope, on the quay's south edge
+      bag.stone.push(place(new THREE.CylinderGeometry(0.26, 0.32, 0.6, 6), x, 0.3, q.z1 - 0.7));
+      bag.wood.push(place(new THREE.TorusGeometry(0.28, 0.07, 4, 8).rotateX(Math.PI / 2), x, 0.55, q.z1 - 0.7));
+    }
+    for (let x = q.x0 + 6; x < q.x1; x += 20) lampPost(bag, x, q.z0 + 0.5, 0, 5.5); // a lamp every twenty units down the north edge
+    bag.wood.push(...[0, 1, 2].map(i => place(new THREE.CylinderGeometry(0.4, 0.45, 0.9, 7), q.x0 + 3 + (i % 2) * 0.85, 0.45, q.z0 + 1 + (i >> 1) * 0.8))); // barrels at the root
+    this.emit(bag, add);
+    // the foam where the sea meets the shore: two ragged pale lines, the palest thing in the frame
+    const shore = SALTMARROW.x + 30;
+    for (const [dx, w, a] of [[0.4, 1.6, 0.0], [2.6, 0.7, 0.9]] as const) for (let z = -130; z < 130; z += 7) foam.push(place(new THREE.BoxGeometry(w, 0.03, 6 + hash(z + a) * 1.5), shore + dx + hash(z * 3 + a) * 0.8, -0.3, SALTMARROW.z + z + 3));
+    add(mesh(mergeGeometries(foam)!, FOAM, 'ground', 'none'));
   }
 
   /** The harbourmaster and the chandler: the clearing's two figures in the sea's colours (stand-ins, as theirs were). */
@@ -252,6 +328,9 @@ export class WorldView {
     person(LANDMARKS.harbourVendor, 0x6b4a2c, 'brim', t.picks.vendor);
     add(flightMasterFigure(this.kit, LANDMARKS.flightSalt, LANDMARKS.square, t.picks.flight));
     person(LANDMARKS.trainer, 0x7a2e2a, 'cap', t.picks.trainer);
+    const bag = newBag(); // lamps by the people who matter: the square, the gate, the stalls
+    for (const l of [LANDMARKS.harbourmaster, LANDMARKS.harbourVendor, LANDMARKS.trainer, LANDMARKS.flightSalt]) lampPost(bag, l.x + 1.4, l.z - 1.1, 0, 6);
+    this.emit(bag, add);
   }
 }
 
@@ -278,5 +357,13 @@ export function flightMasterFigure(kit: Kit, at: { x: number; z: number }, towar
   for (const side of [-1, 1]) part(new THREE.BoxGeometry(0.12, 1.5, 0.5), 0xd9ceb2, 'cloth', 1.55, side * 0.5, -0.55, side * -0.35); // wings
   part(new THREE.CylinderGeometry(0.05, 0.05, 2.9, 5), 0x4a3b2e, 'wood', 1.45, 0.85, 0.25);
   part(new THREE.BoxGeometry(0.9, 0.42, 0.05), P.gold, 'cloth', 2.55, 1.3, 0.25);
+  // the perch and the bird that carries the player: a gull-pale bird, wings folded, on a post and crossbar at the master's shoulder
+  part(new THREE.CylinderGeometry(0.07, 0.09, 1.7, 5), 0x4a3b2e, 'wood', 0.85, -1.4, 0.5);
+  part(new THREE.BoxGeometry(0.9, 0.08, 0.08), 0x4a3b2e, 'wood', 1.68, -1.4, 0.5);
+  part(new THREE.SphereGeometry(0.36, 6, 4).scale(0.8, 0.85, 1.35), 0xd7dde0, 'cloth', 2.05, -1.4, 0.5); // body
+  part(new THREE.SphereGeometry(0.19, 6, 4), 0xd7dde0, 'cloth', 2.42, -1.4, 0.78); // head
+  part(new THREE.ConeGeometry(0.07, 0.3, 4).rotateX(Math.PI / 2), P.gold, 'cloth', 2.4, -1.4, 0.99); // beak
+  for (const side of [-1, 1]) part(new THREE.BoxGeometry(0.07, 0.5, 0.95), 0x4a525a, 'cloth', 2.05, -1.4 + side * 0.28, 0.4); // folded wings, dark-tipped
+  part(new THREE.BoxGeometry(0.3, 0.06, 0.55), 0x4a525a, 'cloth', 1.92, -1.4, 0.05); // tail
   return grp;
 }
