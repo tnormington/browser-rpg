@@ -22,6 +22,7 @@ import { FlightUi, MapUi, MapView } from './flight-ui';
 import { QuestUi } from './quest-ui';
 import { MenuUi } from './menu-ui';
 import { SpellbookUi } from './spellbook-ui';
+import { Minimap } from './minimap';
 import { HudWindow } from './dom';
 import { loadBar, saveBar } from './storage';
 
@@ -100,7 +101,7 @@ function bar(parent: HTMLElement, cls: string) {
 }
 
 /** Opaque HUD panels that world-space plates must not draw over. */
-const PLATE_BLOCKERS = '.frame, .tracker, .panel, .actionbar, .msglog, .menubar, .xp';
+const PLATE_BLOCKERS = '.frame, .tracker, .panel, .actionbar, .msglog, .menubar, .xp, .minimap';
 const PLATE_HALF_W = 45, PLATE_H = 28; // generous footprint of a nameplate around its anchor
 const NODE_PLATE_W = 96, NODE_PLATE_H = 36; // two plates closer than this on screen overlap
 const PLATE_W = 96, PLATE_STACK_H = 40; // enemy plate footprint; a clustered plate is lifted one step per plate beneath it
@@ -145,6 +146,7 @@ export class Hud {
   private flightUi: FlightUi;
   private mapUi: MapUi;
   private bookUi: SpellbookUi;
+  private minimap: Minimap;
   /** Every panel Esc shuts, in the order they are built. */
   private windows: HudWindow[] = [];
   private goldEl: HTMLElement;
@@ -170,6 +172,7 @@ export class Hud {
     this.targetCast = bar(this.targetFrame, 'enemycast');
 
     this.xp = bar(this.root, 'xp');
+    this.minimap = new Minimap(this.root); // before the panels, so an open panel prints over it
 
     const ab = el(this.root, 'actionbar');
     BAR_KEYS.forEach((_, i) => {
@@ -613,6 +616,7 @@ export class Hud {
       return true;
     });
 
+    this.minimap.update(s);
     this.invUi.update(s);
     this.skillsUi.update(s);
     this.talentsUi.update(s);

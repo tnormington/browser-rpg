@@ -12,8 +12,13 @@
 html,body{margin:0;height:100%;overflow:hidden;background:#000}
 canvas{display:block}
 .hud{position:fixed;inset:0;pointer-events:none;font:13px/1.25 Georgia,'Palatino Linotype',serif;color:var(--ink);user-select:none;text-shadow:0 1px 2px #000}
-.frame{position:absolute;top:12px;width:230px;background:var(--iron);border:1px solid var(--edge);box-shadow:inset 0 0 0 1px #000,0 2px 6px rgba(0,0,0,.6);border-radius:2px;padding:6px}
-.frame.player{left:12px}.frame.target{left:260px;display:none;border-color:var(--blood-dark)}
+/* the unit frames sit above the action bar, centred on it: you, then what you are hitting. Both are anchored to the screen's
+   middle (not laid out as a pair) so the player's frame does not slide when the target's comes and goes. */
+.frame{position:absolute;bottom:134px;width:230px;background:var(--iron);border:1px solid var(--edge);box-shadow:inset 0 0 0 1px #000,0 2px 6px rgba(0,0,0,.6);border-radius:2px;padding:6px}
+.frame.player{right:50%;margin-right:8px}.frame.target{left:50%;margin-left:8px;display:none;border-color:var(--blood-dark)}
+.minimap{position:absolute;top:12px;right:12px;width:140px;height:140px;border-radius:50%;background:var(--iron-solid);border:2px solid var(--edge);box-shadow:inset 0 0 0 1px #000,0 2px 8px rgba(0,0,0,.6);overflow:hidden}
+.minimap canvas{display:block;width:140px;height:140px}
+.mmzone{position:absolute;left:0;right:0;bottom:5px;text-align:center;font-size:11px;color:var(--gold);letter-spacing:.04em}
 .name{font-weight:bold;margin-bottom:4px;letter-spacing:.03em}.name.hard{color:var(--blood)}
 .bar{position:relative;height:16px;background:#08090b;border:1px solid #000;box-shadow:0 0 0 1px var(--edge);border-radius:1px;overflow:hidden;margin-top:3px}
 .bar .fill{height:100%;width:100%}
@@ -53,6 +58,7 @@ canvas{display:block}
 .floater.loot{color:var(--moss);font-size:18px}.floater.dropname{color:#e8d9a0;font-size:13px}
 .panel{position:absolute;top:90px;background:var(--iron);border:1px solid var(--edge);box-shadow:inset 0 0 0 1px #000,0 4px 14px rgba(0,0,0,.7);border-radius:2px;padding:8px;pointer-events:auto;text-shadow:none}
 .invpanel{right:12px;width:268px}.charpanel{right:292px;width:210px}
+.invpanel,.charpanel{top:170px;max-height:calc(100vh - 278px);overflow-y:auto;scrollbar-width:thin} /* clear of the minimap above and the action bar below */
 .ptitle{font-weight:bold;margin-bottom:6px;color:var(--gold);letter-spacing:.05em}
 .grid{display:grid;grid-template-columns:repeat(4,60px);gap:4px}
 .cell{position:relative;width:60px;height:60px;box-sizing:border-box;background:var(--iron-lift);border:2px solid #2e3034;border-radius:2px;text-align:center;overflow:hidden;cursor:pointer}
@@ -101,13 +107,13 @@ canvas{display:block}
 .msglog{position:absolute;left:12px;bottom:34px;width:300px;max-height:150px;overflow-y:auto;pointer-events:auto;font-size:12px;padding:4px 6px;background:rgba(10,11,14,.6);border-radius:2px;scrollbar-width:thin}
 .msglog:empty{display:none}
 .logline{margin-top:2px;color:#c4bca6}.log-xp{color:#a995d6}.log-loot{color:var(--moss)}.log-drop{color:#e8d9a0}.log-kill{color:#a09a8a}.log-lvl{color:var(--gold);font-weight:bold}.log-quest{color:var(--arcane);font-weight:bold}.log-bad{color:#e0604f}
-.tracker{position:absolute;top:84px;left:12px;width:238px;background:var(--iron);border:1px solid var(--edge);border-left:3px solid var(--arcane);box-shadow:inset 0 0 0 1px #000,0 2px 6px rgba(0,0,0,.6);border-radius:2px;padding:8px 10px}
+.tracker{position:absolute;top:12px;left:12px;width:238px;background:var(--iron);border:1px solid var(--edge);border-left:3px solid var(--arcane);box-shadow:inset 0 0 0 1px #000,0 2px 6px rgba(0,0,0,.6);border-radius:2px;padding:8px 10px}
 .tracker.ready{border-left-color:var(--gold);animation:readypulse 1.4s ease-in-out infinite}
 @keyframes readypulse{50%{box-shadow:inset 0 0 0 1px #000,0 0 12px #b8601a}}
 .qtitle{font-weight:bold;color:var(--gold);margin-bottom:5px}.qline{font-size:13px;margin-top:3px}.qline.done{color:var(--moss);opacity:.8}
 .qnav{display:none;align-items:center;gap:8px;margin-top:8px;padding-top:6px;border-top:1px solid var(--edge);font-size:12px;color:var(--arcane)}
 .qarrow{display:inline-block;font-size:20px;color:var(--gold);transition:transform .1s}
-.panel.dialogue{left:50%;top:auto;bottom:130px;transform:translateX(-50%);width:520px;border-color:var(--edge-hi)}
+.panel.dialogue{left:50%;top:auto;bottom:250px;transform:translateX(-50%);width:520px;border-color:var(--edge-hi)} /* above the unit frames */
 .dhint{float:right;font-size:11px;font-weight:normal;color:var(--ink-dim)}
 .dline{margin-bottom:8px;font-size:14px;line-height:1.4}
 .dopt{margin-top:5px;padding:5px 8px;border-radius:2px;background:var(--iron-lift);border:1px solid #34363a;cursor:pointer;font-size:13px;color:#e8d9a0}.dopt:hover{background:#3a362c}
@@ -122,7 +128,7 @@ canvas{display:block}
 @keyframes hurt{0%{opacity:1}100%{opacity:0}}
 .questbanner{top:20%;color:var(--arcane);font-size:64px;text-shadow:0 0 22px #1a8fc0,0 3px 4px #000}.questbanner.show{animation:lvl 3.2s ease-out}
 /* the world map screen and the flight ride (flight-ui.ts): the map scene is drawn in place of the game, so the game's own overlays step aside */
-.hud.mapmode .tracker,.hud.mapmode .actionbar,.hud.mapmode .swing,.hud.mapmode .frame.target,.hud.mapmode .msglog,.hud.mapmode .panel,.hud.mapmode .menubar,.hud.mapmode .xp{display:none!important}
+.hud.mapmode .tracker,.hud.mapmode .actionbar,.hud.mapmode .swing,.hud.mapmode .frame.target,.hud.mapmode .msglog,.hud.mapmode .panel,.hud.mapmode .menubar,.hud.mapmode .xp,.hud.mapmode .minimap{display:none!important}
 .maplayer{position:absolute;inset:0;pointer-events:none}
 .maptitle{position:absolute;top:22px;left:0;right:0;text-align:center;font-size:30px;letter-spacing:.2em;color:var(--gold);text-shadow:0 0 14px #000,0 2px 3px #000}
 .maphint{position:absolute;bottom:22px;left:0;right:0;text-align:center;font-size:13px;color:var(--ink-dim)}
