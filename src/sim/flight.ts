@@ -13,7 +13,6 @@ export const masterById = (id: string) => FLIGHT_MASTERS.find(m => m.id === id);
 
 export const FLIGHT_REACH = 6;    // centre to centre, like the merchants
 export const DISCOVER_RADIUS = 14; // coming this close to a town's master puts it on the network
-export const SKIP_AFTER = 3;      // seconds of the ride you must watch before it may be skipped
 export const START_TOWN = 'hale'; // home: found from the start
 
 const round5 = (n: number) => Math.round(n / 5) * 5;
@@ -22,7 +21,7 @@ const townById = (id: string) => TOWNS.find(t => t.id === id)!;
 /** Straight-line world-map distance between two towns (design 1.2): the one number price and ride time come from. */
 export const mapDistance = (a: string, b: string) => Math.hypot(townById(a).map.x - townById(b).map.x, townById(a).map.z - townById(b).map.z);
 export const flightPrice = (a: string, b: string) => round5(25 + mapDistance(a, b) / 6);
-export const flightSeconds = (a: string, b: string) => 12 + mapDistance(a, b) / 60;
+export const flightSeconds = (a: string, b: string) => 6 + mapDistance(a, b) / 75;
 
 export const isFlying = (p: { action: GameState['player']['action'] }) => p.action?.k === 'flight';
 
@@ -74,16 +73,16 @@ export function landingSpot(to: string) {
   return at;
 }
 
-/** The ride: nothing else the player does counts until it lands, bar skipping it once SKIP_AFTER seconds have been watched. */
-export function updateFlight(s: GameState, skip: boolean, dt: number) {
+/** The ride: nothing else the player does counts until it lands. It cannot be cut short — the fare buys the whole ride. */
+export function updateFlight(s: GameState, dt: number) {
   const p = s.player, a = p.action;
   if (a?.k !== 'flight') return;
   a.t += dt;
-  if (a.t < a.duration && !(skip && a.t >= SKIP_AFTER)) return;
-  const m = masterById(a.to)!, skipped = a.t < a.duration;
+  if (a.t < a.duration) return;
+  const m = masterById(a.to)!;
   const at = landingSpot(a.to);
   p.x = at.x; p.z = at.z;
   p.facing = Math.atan2(m.x - p.x, m.z - p.z);
   p.action = null;
-  s.events.push({ t: 'flight', phase: 'land', from: a.from, to: a.to, price: 0, skipped });
+  s.events.push({ t: 'flight', phase: 'land', from: a.from, to: a.to, price: 0 });
 }

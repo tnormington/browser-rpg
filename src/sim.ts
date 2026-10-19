@@ -142,7 +142,7 @@ export type GameEvent =
   | { t: 'respawn'; town: string }                      // woke in this town
   | { t: 'flightmaster'; town: string }                 // player reached a flight master (a town id): open the destinations
   | { t: 'discover'; town: string }                     // a flight master was found for the first time (a town name)
-  | { t: 'flight'; phase: 'start' | 'land'; from: string; to: string; price: number; skipped?: boolean }; // a ride began (price paid) or ended (skipped: cut short); town ids
+  | { t: 'flight'; phase: 'start' | 'land'; from: string; to: string; price: number }; // a ride began (price paid) or ended; town ids
 
 export interface GameState {
   tick: number;
@@ -185,7 +185,6 @@ export interface Input {
   talent?: string | null;                       // talent id bought this tick
   talentReset?: boolean;                        // every talent point handed back this tick
   flight?: string | null;                       // town id to fly to this tick (from the master the player stands at)
-  skipFlight?: boolean;                         // cut the ride short (the sim holds it until the first SKIP_AFTER seconds have been watched)
   /** World angle the player is turned to this tick, whatever they are walking: the mouse steering the camera with the right button. */
   face?: number | null;
 }
@@ -236,7 +235,7 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
   if (p.dead) {
     updatePlayerDeath(s, dt);
   } else if (p.action?.k === 'flight') {
-    updateFlight(s, input.skipFlight === true, dt); // on the ride nothing else the player presses counts
+    updateFlight(s, dt); // on the ride nothing else the player presses counts
   } else {
     // any movement intent abandons the current gather/craft and any walk-to-use
     if (input.dirX !== 0 || input.dirZ !== 0 || input.clickTarget || input.clickEnemy !== null || input.pickup !== null) {

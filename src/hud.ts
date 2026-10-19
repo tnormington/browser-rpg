@@ -36,7 +36,6 @@ export interface HudActions {
   sell: (slot: number, qty: number) => void;
   buy: (item: string, qty: number) => void;
   fly: (to: string) => void;
-  skipFlight: () => void;
   map: MapView;
   learn: (slot: number) => void;
   questAdvance: () => void;
@@ -209,7 +208,7 @@ export class Hud {
     this.talentsUi = new TalentsUi(this.root, { learn: actions.talent, reset: actions.talentReset });
     this.shopUi = new ShopUi(this.root, actions.buy, actions.learn);
     this.flightUi = new FlightUi(this.root, actions.fly);
-    this.mapUi = new MapUi(this.root, actions.map, actions.skipFlight);
+    this.mapUi = new MapUi(this.root, actions.map);
     const craft = (r: string, n: number) => { this.acting = true; actions.craft(r, n); };
     this.forgeUi = new ForgeUi(this.root, 'forge', 'Forge', craft);
     this.rangeUi = new ForgeUi(this.root, 'range', 'Cooking Range', craft);
@@ -367,7 +366,7 @@ export class Hud {
         if (ev.phase === 'start') {
           this.float(`-${ev.price} gold`, 'loot', s.player.x, 3.0, s.player.z);
           this.note(`You pay ${ev.price} gold and take flight.`, 'log-loot');
-        } else this.note(ev.skipped ? 'You cut the flight short and land.' : 'You land.', 'log-info');
+        } else this.note('You land.', 'log-info');
       } else if (ev.t === 'learn') {
         this.float(`-${ev.gold} gold`, 'loot', s.player.x, 3.0, s.player.z);
         this.unlock(ev.slot);

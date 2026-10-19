@@ -1,8 +1,8 @@
-// Flight panels (DOM): the flight master's destination list, the world-map screen, and the ride's caption with its skip button.
-// Read GameState only; the one thing they ask of the sim is a flight (and a skip), through the callbacks main.ts gives them.
+// Flight panels (DOM): the flight master's destination list, the world-map screen, and the ride's caption.
+// Read GameState only; the one thing they ask of the sim is a flight, through the callbacks main.ts gives them.
 import type { GameState } from './sim';
 import { TOWNS } from './sim/world';
-import { FLIGHT_REACH, SKIP_AFTER, destinationsFrom, masterById } from './sim/flight';
+import { FLIGHT_REACH, destinationsFrom, masterById } from './sim/flight';
 import { el } from './dom';
 
 const secs = (n: number) => `${Math.round(n)} s`;
@@ -22,7 +22,7 @@ export class FlightUi {
     this.titleEl = el(this.panel, 'ptitle');
     el(this.titleEl, 'pclose', '✕').addEventListener('click', () => this.setOpen(false));
     this.goldEl = el(this.panel, 'shopgold');
-    el(this.panel, 'shophint', 'You can only fly to a town you have walked to. The ride can be skipped after a few seconds.');
+    el(this.panel, 'shophint', 'You can only fly to a town you have walked to.');
     this.list = el(this.panel, 'recipes');
     this.panel.style.display = 'none';
   }
@@ -70,7 +70,7 @@ export interface MapView {
   projectYou: () => { x: number; y: number } | null;
 }
 
-/** The world-map screen (the beacons' names over the map scene) and, during a ride, its caption and skip button. */
+/** The world-map screen (the beacons' names over the map scene) and, during a ride, its caption. */
 export class MapUi {
   private screen: HTMLElement;
   private labels = new Map<string, HTMLElement>();
@@ -78,10 +78,9 @@ export class MapUi {
   private ride: HTMLElement;
   private rideTitle: HTMLElement;
   private rideFill: HTMLElement;
-  private skipBtn: HTMLElement;
   private open = false;
 
-  constructor(private root: HTMLElement, private view: MapView, private skip: () => void) {
+  constructor(private root: HTMLElement, private view: MapView) {
     this.screen = el(root, 'maplayer');
     el(this.screen, 'maptitle', 'The Lands');
     el(this.screen, 'maphint', 'J or Esc to close');
@@ -93,8 +92,6 @@ export class MapUi {
     this.rideTitle = el(this.ride, 'ridetitle');
     const bar = el(this.ride, 'ridebar');
     this.rideFill = el(bar, 'ridefill');
-    this.skipBtn = el(this.ride, 'rideskip');
-    this.skipBtn.addEventListener('click', () => this.skip());
     this.ride.style.display = 'none';
   }
 
@@ -117,9 +114,6 @@ export class MapUi {
     if (a) {
       this.rideTitle.textContent = `Flying to ${TOWNS.find(t => t.id === a.to)?.name ?? a.to}`;
       this.rideFill.style.width = `${Math.min(100, (a.t / a.duration) * 100)}%`;
-      const wait = Math.ceil(SKIP_AFTER - a.t), ready = wait <= 0;
-      this.skipBtn.textContent = ready ? 'Skip  [Space]' : `Skip in ${wait}`;
-      this.skipBtn.classList.toggle('off', !ready);
     }
     if (!this.open) return;
     for (const t of TOWNS) {

@@ -1,7 +1,7 @@
 // HOM-49: flight masters, the price table, the ride and what it does to the player. Run with `npm run verify` (after the golden path).
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState } from './sim';
 import { TOWNS, SALTMARROW } from './sim/world';
-import { FLIGHT_MASTERS, SKIP_AFTER, destinationsFrom, flightPrice, flightSeconds, landingSpot, masterById } from './sim/flight';
+import { FLIGHT_MASTERS, destinationsFrom, flightPrice, flightSeconds, landingSpot, masterById } from './sim/flight';
 import { deserialize, serialize } from './sim/save';
 
 let checks = 0;
@@ -31,7 +31,7 @@ function atMaster(id: string, gold = 1000): GameState {
 section('HOM-49 the table is the formula on the world-map positions');
 {
   assert(flightPrice('hale', 'saltmarrow') === 175 && flightPrice('saltmarrow', 'hale') === 175, 'Hale <-> Saltmarrow is 175, both ways');
-  assert(flightSeconds('hale', 'saltmarrow') === 27, 'the first hop is a 27 second ride');
+  assert(flightSeconds('hale', 'saltmarrow') === 18, 'the first hop is an 18 second ride');
   // the design's other rows (5.2), through the same formula on the positions of the later towns (1.2)
   const pos = { hale: [0, 0], saltmarrow: [900, 0], thornwick: [900, 1000], highmoor: [1900, 1000], spire: [1900, 0] } as const;
   const price = (a: keyof typeof pos, b: keyof typeof pos) => Math.round((25 + Math.hypot(pos[a][0] - pos[b][0], pos[a][1] - pos[b][1]) / 6) / 5) * 5;
@@ -61,7 +61,7 @@ section('HOM-49 you can fly only to a master you have walked to');
 }
 
 // ---------------------------------------------------------------------------
-section('HOM-49 the ride: paid, skippable after 3 seconds, and nothing touches you');
+section('HOM-49 the ride: paid, run in full, and nothing touches you');
 {
   const s = atMaster('hale', 500);
   s.found.push('saltmarrow');
@@ -86,7 +86,7 @@ section('HOM-49 the ride: paid, skippable after 3 seconds, and nothing touches y
   tick(s, { flight: 'saltmarrow' });
   assert(kindOf(s) === 'flight' && s.player.gold === 325 && sawFlight(s, 'start'), 'paying 175 starts the ride');
   const a = s.player.action as Extract<NonNullable<GameState['player']['action']>, { k: 'flight' }>;
-  assert(a.duration === 27 && a.from === 'hale' && a.to === 'saltmarrow', 'a 27 second ride, Hale to Saltmarrow');
+  assert(a.duration === 18 && a.from === 'hale' && a.to === 'saltmarrow', 'an 18 second ride, Hale to Saltmarrow');
 
   // enemies: stand one right on top of the player, awake and angry
   const e = s.enemies[0];
@@ -96,19 +96,19 @@ section('HOM-49 the ride: paid, skippable after 3 seconds, and nothing touches y
   assert(s.player.hp === hp && e.state === 'idle', 'during the ride nothing aggroes and nothing hurts');
   assert(Math.abs(s.player.x - (m.x - 2)) < 0.01, 'movement keys and clicks do nothing on the ride');
 
-  run(s, SKIP_AFTER - 1.2, { skipFlight: true });
-  assert(kindOf(s) === 'flight', 'skipping before 3 seconds is held back');
-  run(s, 0.5, { skipFlight: true });
-  assert(kindOf(s) !== 'flight', 'skipping after 3 seconds lands you');
+  run(s, 16);
+  assert(kindOf(s) === 'flight', 'the ride cannot be cut short: at 17 seconds you are still in the air');
+  run(s, 1.5);
+  assert(kindOf(s) !== 'flight', 'and it lands you at 18');
   const end = landingSpot('saltmarrow'), mm = masterById('saltmarrow')!;
   assert(Math.hypot(s.player.x - end.x, s.player.z - end.z) < 0.01 && Math.hypot(s.player.x - mm.x, s.player.z - mm.z) < 4, 'you arrive beside the Saltmarrow flight master');
   assert(s.found.includes('saltmarrow') && destinationsFrom(s, 'saltmarrow').some(d => d.to === 'hale' && d.price === 175), 'and can fly straight back for 175');
 
-  // the full ride, unskipped
+  // the ride home
   s.player.gold = 500;
   tick(s, { flight: 'hale' });
-  run(s, 26.5);
-  assert(kindOf(s) === 'flight', 'an unskipped ride runs its 27 seconds');
+  run(s, 17.5);
+  assert(kindOf(s) === 'flight', 'a ride runs its full 18 seconds');
   run(s, 1);
   assert(kindOf(s) !== 'flight' && s.player.x < 100, 'and ends in Hale');
 }

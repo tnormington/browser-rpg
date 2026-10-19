@@ -29,7 +29,7 @@ const pendingShop: ShopAction[] = [];
 let pendingCraft: { recipe: string; count: number } | null = null;
 let pendingAdvance = false;
 let pendingTalent: string | null = null, pendingTalentReset = false;
-let pendingFlight: string | null = null, pendingSkip = false;
+let pendingFlight: string | null = null;
 
 // --- save / load ---
 const AUTOSAVE_EVERY = 20; // seconds
@@ -37,7 +37,6 @@ let wiped = stress > 1, saveDirty = false, sinceSave = 0;
 function save(): boolean { return !wiped && saveGame(state); }
 const hud = new Hud((x, y, z) => view.showingMap ? null : view.project(x, y, z), () => view.yaw, {
   fly: to => { pendingFlight = to; saveDirty = true; },
-  skipFlight: () => { pendingSkip = true; },
   map: { setScreen: on => view.setMapScreen(on), project: town => view.mapProject(town), projectYou: () => view.mapProjectYou() },
   inv: a => { pendingInv.push(a); saveDirty = true; },
   talent: id => { pendingTalent = id; saveDirty = true; },
@@ -83,10 +82,7 @@ addEventListener('keydown', e => {
   if (typing(e)) return;
   keys.add(e.code);
   unlockAudio();
-  if (state.player.action?.k === 'flight') { // on the ride the only keys are the ones that cut it short
-    if (e.code === 'Space' || e.code === 'Escape') { e.preventDefault(); pendingSkip = true; }
-    return;
-  }
+  if (state.player.action?.k === 'flight') return; // the ride owns the screen: no key does anything until it lands
   if (e.code === 'Space' && !hud.modalOpen) { e.preventDefault(); if (!e.repeat) pendingJump = true; return; } // latched here so a tap shorter than a tick still jumps; never scrolls or presses a focused button
   if (e.repeat) return;
   // the ability bar (1 2 3 4 Q E R F) comes first: it owns those keys, and what each one casts is the player's own layout
@@ -183,9 +179,8 @@ function readInput(): Input {
     talent: pendingTalent,
     talentReset: pendingTalentReset,
     flight: pendingFlight,
-    skipFlight: pendingSkip,
   };
-  pendingFlight = null; pendingSkip = false;
+  pendingFlight = null;
   pendingInteract = null; pendingCraft = null; pendingAdvance = false; pendingTalent = null; pendingTalentReset = false;
   pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingAttack = false; pendingJump = false; pendingClear = false; pendingAbility = null;
   return input;
