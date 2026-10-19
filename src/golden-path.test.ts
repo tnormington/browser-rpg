@@ -23,7 +23,7 @@ import {
   BLADE_PLAN, DELVE_GOALS, DIALOGUE, DIALOGUE2, HUNT_GOALS, MITHRIL_PLAN, NPC, QUEST2_NAME, QUEST2_STAGES, QUEST_STAGES,
   QUEST_NAME, RECOMMENDED_COMBAT, RECOMMENDED_COMBAT_2, REWARD, REWARD2, TALK_RANGE, activeDialogue, activeQuestView, npcMarker, questOnKill, questView,
 } from './sim/quest';
-import { appearanceOf, TIER_LOOKS } from './gear-look';
+import { appearanceOf, ITEM_LOOKS, TIER_LOOKS, TIER5_COLOR } from './gear-look';
 import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
 import { clearLine } from './sim/sight';
@@ -1910,7 +1910,15 @@ section('HOM-15 mithril: a Mining gate above coal, a Smithing ladder, and gear a
   const mith = deriveStats({ ...emptyEquipment(), head: 'mithril_helm', chest: 'mithril_chestplate', legs: 'mithril_greaves' });
   assert(mith.armor >= iron.armor * 2 && mith.reduction > iron.reduction + 0.15, `the set is ${mith.armor} armour (${(100 * mith.reduction).toFixed(0)}% off) against iron's ${iron.armor} (${(100 * iron.reduction).toFixed(0)}%)`);
   const top = TIER_LOOKS.length - 1;
-  assert(top === 4 && TIER_COLORS.length === top + 1, 'the worn-look ladder has a reserved tier 4 and every tier has a colour');
+  const warm = (hex: number) => ((hex >> 16) & 255) > ((hex & 255)) + 8;
+  assert(top === 5 && TIER_COLORS.length === top + 1 && TIER_COLORS[5] === TIER5_COLOR, 'the worn-look ladder runs to tier 5 and every tier has a colour');
+  // tier 5: adamant and stormiron share a tier and must not be one metal in two colours (colour, finish, glow hue and silhouette all differ)
+  const hueOf = (hex: number) => { const r = hex >> 16, g = (hex >> 8) & 255, b = hex & 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b); if (mx === mn) return 0; const d = mx - mn; return 60 * (mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4); };
+  const ad = { ...TIER_LOOKS[5], ...ITEM_LOOKS.adamant_chestplate }, st = { ...TIER_LOOKS[5], ...ITEM_LOOKS.stormiron_chestplate };
+  assert(ad.form === 'adamant' && st.form === 'storm' && ITEM_LOOKS.adamant_blade.width! > 1 && ITEM_LOOKS.stormiron_blade.width! < 1, 'adamant and stormiron have different silhouettes, broad blade against narrow');
+  assert(Math.abs(hueOf(ad.tint) - hueOf(st.tint)) > 60 && Math.abs(hueOf(ad.glow) - hueOf(st.glow)) > 40 && !warm(ad.glow) && !warm(st.glow), 'and different hues of metal and of glow, neither warm');
+  assert(ad.glow !== TIER_LOOKS[4].glow && TIER_LOOKS[5].glow !== TIER_LOOKS[4].glow && !warm(TIER_LOOKS[5].glow), 'tier 5 has a glow of its own: not epic blue, not rare orange');
+  for (const id of ['greywolf_hauberk', 'gutterhooks_cap']) assert(ITEM_LOOKS[id].form !== undefined && ITEM_LOOKS[id].rung === 5, `${id} has its own form`);
   for (const id of [...MITHRIL_SET, 'warden_edge']) {
     const look = appearanceOf(id);
     assert(ITEMS[id].tier === 4 && look.rung === TIER_LOOKS[4].rung && look.glow > 0 && look.motes !== 0 && look.scale >= TIER_LOOKS[3].scale, `${ITEMS[id].name} is tier 4 and gets the epic look: rung ${look.rung}, glow, motes`);
@@ -1919,7 +1927,6 @@ section('HOM-15 mithril: a Mining gate above coal, a Smithing ladder, and gear a
   assert(Object.entries(ITEMS).filter(([, d]) => d.slot).every(([id, d]) => d.tier < 3 || appearanceOf(id).glow !== 0), 'every rare-or-better piece glows: the better the gear, the better it looks');
   // the emissive budget (glow.ts): epic glow is cold, restrained, and under the bloom threshold, so it can never blow out to white or beat the forge
   assert(EMISSIVE_CAP < BLOOM_THRESHOLD, 'a lit emitter peaks under the bloom threshold');
-  const warm = (hex: number) => ((hex >> 16) & 255) > ((hex & 255)) + 8;
   for (const [id, d] of Object.entries(ITEMS)) {
     if (!d.slot || d.tier < 3) continue;
     const l = appearanceOf(id);

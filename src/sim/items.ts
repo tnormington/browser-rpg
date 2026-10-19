@@ -17,7 +17,7 @@ export interface ItemDef {
   stack: number;      // max per inventory slot (1 = unstackable)
   dropWeight: number; // default weight in any drop table that lists it
   value: number;      // base sell price in gold: what the vendor pays for one. Never an input to a recipe's profit: see the no-arbitrage test
-  tier: number;       // 0 material, 1 common, 2 good, 3 rare, 4 epic: drives ground/tooltip colour and the worn look (gear-look.ts)
+  tier: number;       // 0 material, 1 common, 2 good, 3 rare, 4 epic, 5 legendary: drives ground/tooltip colour and the worn look (gear-look.ts)
   desc: string;
 }
 
@@ -56,7 +56,7 @@ export const ITEMS: Record<string, ItemDef> = {
 /** The smithable set, in smithing order. Quests and verify read it from here. */
 export const MITHRIL_SET = ['mithril_helm', 'mithril_greaves', 'mithril_chestplate'] as const;
 
-export const TIER_COLORS = [0xc8c8c8, 0xe8e8e8, 0x4aa8ff, 0xffa030, 0xb48cff]; // material, common, good, rare, epic
+export const TIER_COLORS = [0xc8c8c8, 0xe8e8e8, 0x4aa8ff, 0xffa030, 0xb48cff, 0x3ee0c0]; // material, common, good, rare, epic, legendary (spectral jade; art's TIER5_COLOR in gear-look.ts)
 
 export interface DropEntry { id: string; qty?: [number, number]; weight?: number }
 export interface DropTable {

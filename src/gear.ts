@@ -161,6 +161,7 @@ export class PlayerGear {
     blade.root.matrixAutoUpdate = true;
     blade.root.scale.setScalar(ap.scale / hand.getWorldScale(this.tmp).x);
     blade.root.rotation.z = Math.PI * 0.75; // blade forward and up from the fist
+    if (ap.width) blade.root.scale.z *= ap.width; // broad adamant, narrow stormiron
     this.restyle(blade.materials, ap, ['Metal'], ['Gold', 'Red'], true);
     hand.add(blade.root);
     return { group: blade.root, materials: blade.materials };
@@ -170,7 +171,18 @@ export class PlayerGear {
     const ap = appearanceOf(id), g = new THREE.Group(), w = this.world(), mats: THREE.Material[] = [];
     const main = this.material(ap), trim = this.material(ap, true);
     mats.push(main, trim);
-    if (ap.rung <= 1 || !this.pieces.helmet) {
+    if (ap.form === 'gutterhook') {
+      // a salvaged cap with a gutting hook lashed over the brow: the hook is the silhouette, a single cold glint at its tip
+      const vein = this.inlay(ap);
+      mats.push(vein);
+      this.part(new THREE.SphereGeometry(0.3, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.95, 1.05), main, w, [0, -0.02, 0]);
+      this.part(new THREE.CylinderGeometry(0.31, 0.34, 0.07, 7), trim, w, [0, -0.04, 0]);
+      this.part(new THREE.CylinderGeometry(0.325, 0.325, 0.03, 7), trim, w, [0, 0.12, 0]); // lashing band
+      const hook = this.part(curvedSpike(0.05, 0.62, -0.1, 2.9, 5), trim, w, [0, 0.2, 0.22], [0, -Math.PI / 2, 0]); // up from the brow and over, point back down
+      hook.scale.setScalar(1);
+      this.part(new THREE.OctahedronGeometry(0.06), vein, w, [0, 0.42, 0.02]);
+      this.part(new THREE.BoxGeometry(0.5, 0.04, 0.04), vein, w, [0, -0.02, 0.32]); // a narrow eye slit's worth of light across the brim
+    } else if (ap.rung <= 1 || !this.pieces.helmet) {
       // leather cap: a low dome and a rolled brim, close to the skull
       this.part(new THREE.SphereGeometry(0.3, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.85, 1.05), main, w, [0, -0.02, 0]);
       this.part(new THREE.CylinderGeometry(0.31, 0.32, 0.06, 7), trim, w, [0, -0.04, 0]);
@@ -181,7 +193,27 @@ export class PlayerGear {
       this.restyle(helm.materials, ap, ['Grey'], ['DarkGrey']);
       mats.push(...helm.materials);
       g.add(helm.root);
-      if (ap.rung >= 3) { // a swept crest along the skull: the silhouette cue from behind
+      if (ap.form === 'adamant') {
+        // a heavy squared helm: brow slab, flat ridge, cheek slabs and a T of jade light. No horns, no crest: the mass is the read.
+        const vein = this.inlay(ap);
+        mats.push(vein);
+        helm.root.scale.setScalar(1.18);
+        this.part(new THREE.BoxGeometry(0.66, 0.1, 0.52), trim, w, [0, 0.14, 0.06]);
+        this.part(new THREE.BoxGeometry(0.2, 0.14, 0.74), main, w, [0, 0.32, -0.02]);
+        for (const s of [-1, 1]) this.part(new THREE.BoxGeometry(0.09, 0.34, 0.34), trim, w, [s * 0.31, -0.06, 0.04]);
+        this.part(new THREE.BoxGeometry(0.34, 0.04, 0.04), vein, w, [0, 0.04, 0.3]);
+        this.part(new THREE.BoxGeometry(0.04, 0.22, 0.04), vein, w, [0, -0.07, 0.3]);
+      } else if (ap.form === 'storm') {
+        // a lean helm under a fan of backswept spikes and two long cheek barbs: a jagged crown that reads from every side
+        const vein = this.inlay(ap);
+        mats.push(vein);
+        helm.root.scale.setScalar(1.05);
+        for (const [x, len, lift] of [[0, 0.8, 0.28], [-0.14, 0.62, 0.24], [0.14, 0.62, 0.24]] as const)
+          this.part(curvedSpike(0.06, len, 0.9, 0.4), trim, w, [x, lift, 0.1], [0, Math.PI / 2, 0]);
+        for (const s of [-1, 1]) this.part(curvedSpike(0.05, 0.4, 1.2, -0.5), trim, w, [s * 0.3, 0.02, 0.1]).scale.x = s;
+        this.part(new THREE.BoxGeometry(0.03, 0.4, 0.04), vein, w, [0, 0.4, 0.2], [0.9, 0, 0]);
+        this.part(new THREE.BoxGeometry(0.34, 0.03, 0.04), vein, w, [0, 0.04, 0.3]);
+      } else if (ap.rung >= 3) { // a swept crest along the skull: the silhouette cue from behind
         const h = ap.rung >= 4 ? 0.5 : 0.28;
         this.part(crestFin(h, 0.62, ap.rung >= 4 ? 0.07 : 0.05), trim, w, [0, 0.24, -0.02]);
         const vein = this.inlay(ap);
@@ -207,6 +239,7 @@ export class PlayerGear {
 
   private buildChest(id: string) {
     const ap = appearanceOf(id);
+    if (ap.form === 'greywolf') return this.buildHauberk(ap);
     if (ap.rung <= 1 || !this.pieces.pauldrons) return { group: null, materials: [] };
     const g = new THREE.Group(), w = this.world();
     const pads = spawn(this.pieces.pauldrons, true);
@@ -215,7 +248,23 @@ export class PlayerGear {
     this.restyle(pads.materials, ap, ['Grey'], []);
     const mats: THREE.Material[] = [...pads.materials];
     g.add(pads.root);
-    if (ap.rung >= 3) { // spikes on the shoulders: horizontal read at gathering distance
+    if (ap.form === 'adamant' || ap.form === 'storm') {
+      const trim = this.material(ap, true), main = this.material(ap), vein = this.inlay(ap);
+      mats.push(trim, main, vein);
+      pads.root.scale.setScalar(ap.form === 'adamant' ? 1.5 : 1.1);
+      for (const s of [-1, 1]) {
+        if (ap.form === 'adamant') { // square slab over each shoulder, a lit stud in it, and a gorget collar
+          this.part(new THREE.BoxGeometry(0.5, 0.1, 0.44), trim, w, [s * 0.38, 0.2, 0]);
+          this.part(new THREE.BoxGeometry(0.12, 0.12, 0.12), vein, w, [s * 0.38, 0.27, 0]);
+        } else { // two upswept barbs a side, and a lit root
+          this.part(curvedSpike(0.07, 0.75, 0.35, 0.5), trim, w, [s * 0.34, 0.1, 0]).scale.x = s;
+          this.part(curvedSpike(0.05, 0.5, 0.9, 0.3), trim, w, [s * 0.4, 0.06, -0.08]).scale.x = s;
+          this.part(new THREE.OctahedronGeometry(0.07), vein, w, [s * 0.34, 0.1, 0]);
+        }
+      }
+      if (ap.form === 'adamant') this.part(new THREE.CylinderGeometry(0.3, 0.38, 0.16, 6), main, w, [0, 0.16, 0]);
+      else for (const z of [0, 1, 2]) this.part(curvedSpike(0.045, 0.4 - z * 0.08, 2.6, 0.3, 2), trim, w, [0, 0.1 - z * 0.3, -0.3]); // dorsal barbs down the spine
+    } else if (ap.rung >= 3) { // spikes on the shoulders: horizontal read at gathering distance
       const trim = this.material(ap, true), vein = this.inlay(ap), h = ap.rung >= 4 ? 0.3 : 0.18;
       mats.push(trim, vein);
       for (const s of [-1, 1]) {
@@ -223,6 +272,27 @@ export class PlayerGear {
         this.part(new THREE.OctahedronGeometry(0.075), vein, w, [s * 0.34, 0.08, 0]); // a lit collar where the spike meets the plate
       }
     }
+    g.add(w);
+    this.mount('Torso', g, this.at('Torso').add(new THREE.Vector3(0, SHOULDER_LIFT, 0)));
+    return { group: g, materials: mats };
+  }
+
+  /** The Greywolf Hauberk: a wolfskin mantle in two flared tiers and a wolf's head on the left shoulder with a cold glint for each eye. */
+  private buildHauberk(ap: Appearance) {
+    const g = new THREE.Group(), w = this.world();
+    const fur = this.double(this.material(ap)), dark = this.material(ap, true), eye = this.inlay(ap);
+    const mats: THREE.Material[] = [fur, dark, eye];
+    this.part(new THREE.CylinderGeometry(0.34, 0.5, 0.2, 7, 1, true), fur, w, [0, 0.12, 0]);
+    this.part(new THREE.CylinderGeometry(0.46, 0.64, 0.2, 7, 1, true), fur, w, [0, -0.04, 0]);
+    // the head: snout forward and out over the left shoulder, ears up
+    this.part(new THREE.ConeGeometry(0.15, 0.4, 5), dark, w, [-0.4, 0.26, 0.2], [Math.PI / 2, 0, 0]);
+    this.part(new THREE.BoxGeometry(0.3, 0.2, 0.26), dark, w, [-0.4, 0.28, 0.02]);
+    for (const x of [-0.5, -0.3]) {
+      this.part(new THREE.ConeGeometry(0.07, 0.2, 4), dark, w, [x, 0.46, -0.04]);
+      this.part(new THREE.BoxGeometry(0.06, 0.04, 0.04), eye, w, [x, 0.32, 0.14]);
+    }
+    // a spiked fur ridge on the right so the mantle is not symmetrical from behind
+    this.part(curvedSpike(0.06, 0.34, 0.4, 0.6), dark, w, [0.4, 0.14, 0]);
     g.add(w);
     this.mount('Torso', g, this.at('Torso').add(new THREE.Vector3(0, SHOULDER_LIFT, 0)));
     return { group: g, materials: mats };
@@ -243,6 +313,8 @@ export class PlayerGear {
       this.part(new THREE.CylinderGeometry(0.16, 0.16, 0.05, 6), trim, w, [0, -len * 0.4, 0]);
       if (ap.rung >= 3) this.part(new THREE.OctahedronGeometry(ap.rung >= 4 ? 0.17 : 0.13), trim, w, [0, len * 0.4 + 0.05, 0.05]);
       if (ap.rung >= 4) this.part(new THREE.ConeGeometry(0.05, 0.22, 4), trim, w, [0, len * 0.4 + 0.05, 0.2], [Math.PI / 2, 0, 0]);
+      if (ap.form === 'adamant') this.part(new THREE.BoxGeometry(0.34, 0.12, 0.3), trim, w, [0, len * 0.4 + 0.1, 0.06]); // a squared knee guard over the cop
+      if (ap.form === 'storm') for (const s of [-1, 1]) this.part(curvedSpike(0.04, 0.3, 1.0, -0.4), trim, w, [s * 0.14, 0, 0], [0, 0, 0]).scale.x = s; // shin barbs
       g.add(w);
       this.mount(shin, g, a.clone().lerp(b, 0.5));
       root.add(g);
