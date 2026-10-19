@@ -113,7 +113,10 @@ export interface EnemyDef {
   respawn: number;     // seconds
   /** A telegraphed ground slam: stands still for `windup`, then hits everything within `radius` of itself for flat `damage`. Interruptible; or step out of the radius. */
   heavy?: { name: string; windup: number; every: number; first: number; damage: number; radius: number };
-  /** Attacks from a distance and backs away from melee: a short interruptible wind-up, then a bolt that lands if the player is still within `range`. */
+  /**
+   * Attacks from a distance and backs away from melee: a short interruptible wind-up, then a bolt that lands if the player is still within `range`.
+   * With a `heavy` as well it is a melee fighter that throws instead: it fights in reach, and throws only at a player standing off.
+   */
   ranged?: { name: string; range: number; keepAway: number; windup: number };
   /**
    * Marks the ground under the player and, `windup` seconds later, hits everything within `radius` of that spot for flat `damage`.
@@ -280,6 +283,15 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     aggroRadius: 10, leash: 22, attackRange: 3.2, radius: 1.5, xp: 258, respawn: 1800,
     heavy: { name: 'Rending Gore', windup: 1.6, every: 8, first: 3, damage: 295, radius: 5 },
     look: { model: 'boar', scale: 2.0, tint: 0x5a4a3a } },
+  // The Drowned Grotto (levels 16 to 19, section 3.4): its sentry, ogres and hag are the Strand's own rows, and the boss is the bible's: HP, hit, swing, heavy / ground and XP as
+  // written. Captain Marrow does all three of the cave's tells: the Anchor Slam under his feet (Pummel it, or step out), the Cannon Volley marked on the ground under you
+  // (keep moving), and the Harpoon thrown at anyone who stands off from him (the one tell he shares with no other melee: see updateEnemies). A boss is on a 10 minute respawn.
+  captain_marrow: { name: 'Captain Marrow', level: 19, hp: 8350, damage: 35, attackInterval: 2.4, speed: 4.0,
+    aggroRadius: 12, leash: 24, attackRange: 3.4, radius: 1.7, xp: 390, respawn: 600,
+    heavy: { name: 'Anchor Slam', windup: 1.8, every: 10, first: 4, damage: 235, radius: 6.5 },
+    hazard: { name: 'Cannon Volley', windup: 1.5, every: 7, first: 6, damage: 105, radius: 3.5, range: 16 },
+    ranged: { name: 'Harpoon', range: 14, keepAway: 0, windup: 0.9 },
+    look: { model: 'brute', scale: 1.5, tint: 0x3a5a6a } },
 };
 
 /**
@@ -293,7 +305,7 @@ export const SPAWNS: { type: string; x: number; z: number }[] = [
   // pack of pups (one wakes, all wake): the reason to Cleave
   { type: 'pup', x: -5, z: 15 }, { type: 'pup', x: -3.5, z: 16.2 }, { type: 'pup', x: -6.2, z: 16.6 },
   { type: 'hexer', x: 19, z: 19 },
-  // inside the cave (see CAVE_ROOMS): the vein guards, the ranged pair, the seer, the ogres, and the Warden at the end
+  // inside the Hollow (see DUNGEONS): the vein guards, the ranged pair, the seer, the ogres, and the Warden at the end
   // the pack is posted on the mithril seam it guards (x -29.2), not out in the middle of the hollow: from the doorway at
   // (-18,-46) the nearest of them is 9.4 units off, outside its own notice radius, so walking in is the Archer alone
   { type: 'ravager', x: -27, z: -50 }, { type: 'ravager', x: -25.8, z: -51.2 }, { type: 'ravager', x: -27.6, z: -51.8 },

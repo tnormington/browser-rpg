@@ -19,16 +19,22 @@ export type Quest2Stage = 'locked' | 'offer' | 'delve' | 'armour' | 'warden' | '
 export type Quest3Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
 /** The fourth chain is an errand, not a story beat: taken from the Warden in Hale at any time, worked on the Greywater Road, handed in to the harbourmaster. No lock. */
 export type Quest4Stage = 'offer' | 'carry' | 'report' | 'cleared';
-export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage; third: Quest3Stage; fourth: Quest4Stage }
+/**
+ * The bible's Q4, Brine and Bone (the code's `fourth` is the errand, which was built first): Saltmarrow's second story chain, given by the harbourmaster once the
+ * road is open, and the one that opens the Drowned Grotto's door. `locked` until the Salt Road is handed in.
+ */
+export type Quest5Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
+export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage; third: Quest3Stage; fourth: Quest4Stage; fifth: Quest5Stage }
 export const QUEST_STAGES: QuestStage[] = ['offer', 'hunt', 'report1', 'forge', 'brute', 'report2', 'done'];
 export const QUEST2_STAGES: Quest2Stage[] = ['locked', 'offer', 'delve', 'armour', 'warden', 'report', 'cleared'];
 export const QUEST3_STAGES: Quest3Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
 export const QUEST4_STAGES: Quest4Stage[] = ['offer', 'carry', 'report', 'cleared'];
+export const QUEST5_STAGES: Quest5Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
 
 /** True once the first quest has got as far as `stage`. */
 export const questReached = (s: GameState, stage: QuestStage) => QUEST_STAGES.indexOf(s.quest.stage) >= QUEST_STAGES.indexOf(stage);
 
-export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked', third: 'locked', fourth: 'offer' });
+export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked', third: 'locked', fourth: 'offer', fifth: 'locked' });
 
 export const QUEST_NAME = 'The Brute of the Cave Mouth';
 export const NPC = { name: 'Warden Hale', x: LANDMARKS.npc.x, z: LANDMARKS.npc.z, r: LANDMARKS.npc.r };
@@ -40,7 +46,7 @@ export type NpcId = 'hale' | 'harbour' | 'thorn';
 export const NPCS: { id: NpcId; name: string; x: number; z: number; r: number }[] = [{ id: 'hale', ...NPC }, { id: 'harbour', ...HARBOURMASTER }, { id: 'thorn', ...THORN_REEVE }];
 export const TALK_RANGE = 7;                       // centre to centre: advancing the quest needs this
 export const HUNT_GOALS: Record<string, number> = { boar: 4, wolf: 3 };
-const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves', ravager: 'Cave Ravagers', footpad: 'Footpads', toll_captain: 'Toll Captain' };
+const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves', ravager: 'Cave Ravagers', footpad: 'Footpads', toll_captain: 'Toll Captain', drowned_sailor: 'Drowned Sailors', tide_hag: 'Tide Hags', barnacle_ogre: 'Barnacle Ogre' };
 /**
  * What the Forgemaster's Blade costs in raw terms (see RECIPES): three steel bars, each an iron bar (two ore) and two coal, and a log. The plan is
  * padded past that (six iron bars, four steel) so the bars it asks for are also the practice the gates want (Steel Smithing 8, the blade Smithing 9).
@@ -85,6 +91,11 @@ export const ERRAND_GOODS: { item: string; node: string; n: number; name: string
   { item: 'logs', node: 'tree', n: 6, name: 'Logs' }, { item: 'copper_ore', node: 'copper', n: 6, name: 'Copper Ore' },
 ];
 export const REWARD4: { skill: SkillId; xp: number }[] = [{ skill: 'woodcutting', xp: 150 }, { skill: 'mining', xp: 150 }];
+export const QUEST5_NAME = 'Brine and Bone';
+/** The Strand's drowned, which Pell wants thinned before anyone is sent at the cliff door: the sailors, the hags behind them and the ogre on the shingle. */
+export const BRINE_GOALS: Record<string, number> = { drowned_sailor: 4, tide_hag: 2, barnacle_ogre: 1 };
+export const RECOMMENDED_COMBAT_5 = 16;
+export const REWARD5: { skill: SkillId; xp: number }[] = [{ skill: 'combat', xp: 900 }];
 const haveGoods = (s: GameState) => ERRAND_GOODS.every(g => countItem(s.player.inventory, g.item) >= g.n);
 
 /** Inventory plus what is worn: a piece you put on has not stopped being yours. */
@@ -103,8 +114,9 @@ const hasBlade = (s: GameState) =>
 // ---------- transitions ----------
 
 /** Which quest an event belongs to travels with it: both chains share stage 'done', so the HUD cannot work it out from state. */
-const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', chain: 1 | 2 | 3 | 4 = 1) =>
-  s.events.push({ t: 'quest', what, name: chain === 4 ? QUEST4_NAME : chain === 3 ? QUEST3_NAME : chain === 2 ? QUEST2_NAME : QUEST_NAME });
+const QUEST_NAMES = [QUEST_NAME, QUEST2_NAME, QUEST3_NAME, QUEST4_NAME, QUEST5_NAME];
+const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', chain: 1 | 2 | 3 | 4 | 5 = 1) =>
+  s.events.push({ t: 'quest', what, name: QUEST_NAMES[chain - 1] });
 
 /** Kill credit. Hunt counts boars/wolves; the Brute only counts once the quest says so. */
 export function questOnKill(s: GameState, type: string) {
@@ -129,6 +141,11 @@ export function questOnKill(s: GameState, type: string) {
     if (Object.entries(SALT_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n)) { q.third = 'report'; questEvent(s, 'stage', 3); }
     else questEvent(s, 'progress', 3);
   }
+  if (q.fifth === 'hunt' && BRINE_GOALS[type] && (q.kills[type] ?? 0) < BRINE_GOALS[type]) {
+    q.kills[type] = (q.kills[type] ?? 0) + 1;
+    if (Object.entries(BRINE_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n)) { q.fifth = 'report'; questEvent(s, 'stage', 5); }
+    else questEvent(s, 'progress', 5);
+  }
 }
 
 /** The player picked the "advance" dialogue option. Only meaningful at the NPC stages of either chain, and only in earshot. */
@@ -150,6 +167,11 @@ export function advanceQuest(s: GameState, what: boolean | 'road' = true) {
       q.third = 'cleared';
       for (const r of REWARD3) if (grantXp(s, r.skill, r.xp, HARBOURMASTER.x, HARBOURMASTER.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
       questEvent(s, 'complete', 3);
+    } else if (q.fifth === 'offer') { q.fifth = 'hunt'; questEvent(s, 'accept', 5); }
+    else if (q.fifth === 'report') {
+      q.fifth = 'cleared';
+      for (const r of REWARD5) if (grantXp(s, r.skill, r.xp, HARBOURMASTER.x, HARBOURMASTER.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
+      questEvent(s, 'complete', 5);
     }
     return;
   }
@@ -182,6 +204,7 @@ export function updateQuest(s: GameState) {
   if (q.fourth === 'carry' && haveGoods(s)) { q.fourth = 'report'; questEvent(s, 'stage', 4); }
   else if (q.fourth === 'report' && !haveGoods(s)) q.fourth = 'carry';
   if (q.second === 'cleared' && q.third === 'locked') q.third = 'offer'; // the road east opens once the Hollow is quiet: nothing is announced, the harbourmaster's mark is the news
+  if (q.third === 'cleared' && q.fifth === 'locked') q.fifth = 'offer'; // and the Strand's work, once the road is
 }
 
 // ---------- dialogue ----------
@@ -313,6 +336,33 @@ export const DIALOGUE3: Record<Exclude<Quest3Stage, 'locked'>, Dialogue> = {
   },
 };
 
+export const DIALOGUE5: Record<Exclude<Quest5Stage, 'locked'>, Dialogue> = {
+  offer: {
+    lines: [
+      'The road is open and the carters are happy, which leaves the Strand. The drowned are walking up out of the surf in numbers I have not seen, and the ones that carry harpoons are the worst.',
+      "There is a door in the cliff north of the town, behind the adamant seams. It has been shut since my grandmother's day, and something behind it has been pulling the dead out of the sea.",
+      'Thin the Strand first: four Drowned Sailors, two Tide Hags and the Barnacle Ogre that squats on the shingle. Do that, and I will tell you how the door is opened.',
+    ],
+    options: [
+      { label: "I'll clear the Strand.", advance: true,
+        reply: 'Sailors throw harpoons: close the gap, or Pummel the throw. The hags mark the ground and the tide comes up on it a moment later, so keep moving. The ogre slams the shingle: Pummel that too, or step out of the circle. Take them one at a time and rest between.' },
+      { label: 'Not yet.' },
+    ],
+  },
+  hunt: {
+    lines: ['The Strand is south and east of the town, along the shore. Four sailors, two hags and the ogre: the cliff door can wait until they are down.'],
+    options: [{ label: 'I am on it.' }],
+  },
+  report: {
+    lines: ['The sea is quiet for the first time in a month. You have done it.', 'Take this, and take the news that goes with it: the door in the cliff is not barred any more. The Drowned Grotto is open.'],
+    options: [{ label: 'Thank you.', advance: true, reply: 'Captain Marrow keeps the last room, and he fights like the ship he drowned with: an anchor, a cannon and a harpoon. If you can put him down, his anchor leaves shards behind, and a smith with adamant can make a blade of three.' }],
+  },
+  cleared: {
+    lines: ['The door in the cliff stands open, thanks to you. Captain Marrow is down there, and he comes back as the tide does. His anchor leaves shards behind, and three of them make a blade.'],
+    options: [{ label: 'Farewell.' }],
+  },
+};
+
 /** What the Warden's dialogue panel shows right now: the first chain until it is handed in, the second after. */
 export const activeDialogue = (s: GameState): Dialogue =>
   s.quest.stage === 'done' && s.quest.second !== 'locked' ? DIALOGUE2[s.quest.second] : DIALOGUE[s.quest.stage];
@@ -336,7 +386,7 @@ const THORN_DIALOGUE: Dialogue = {
 const harbourDialogue = (s: GameState): Dialogue =>
   s.quest.third === 'locked'
     ? { lines: ['Welcome to Saltmarrow, traveller. Mind the Strand after dark: the sea gives back what it takes, and not kindly.', 'Come and see me once you have dealt with whatever troubles Hale: there is work on the road.'], options: [{ label: 'Farewell.' }] }
-    : DIALOGUE3[s.quest.third];
+    : s.quest.third === 'cleared' && s.quest.fifth !== 'locked' ? DIALOGUE5[s.quest.fifth] : DIALOGUE3[s.quest.third];
 
 /** The fourth chain's two spoken parts: the ask, an option on the Warden's dialogue (see dialogueAt), and the hand-in at the quay. */
 const ERRAND_OFFER: DialogueOption = {
@@ -354,6 +404,8 @@ export const npcName = (who: string) => NPCS.find(n => n.id === who)?.name ?? NP
 export function harbourMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
   const t = s.quest.third;
   if (s.quest.fourth === 'report') return 'ready';
+  const f = s.quest.fifth; // the Strand's work follows the road's: once the road is cleared it is the one that speaks
+  if (t === 'cleared') return f === 'offer' ? 'offer' : f === 'report' ? 'ready' : f === 'hunt' ? 'wait' : null;
   return t === 'offer' ? 'offer' : t === 'report' ? 'ready' : t === 'hunt' ? 'wait' : null;
 }
 
@@ -471,6 +523,7 @@ export function activeQuestView(s: GameState): QuestView {
   const q = s.quest;
   if ((q.fourth === 'carry' || q.fourth === 'report') && s.player.x > EAST_OF_HALE) return errandView(s); // out on the road the errand is what you are doing
   if (q.stage !== 'done' || q.second === 'locked') return questView(s);
+  if (q.third === 'cleared' && q.fifth !== 'locked') return brineView(s);
   if (q.second === 'cleared' && q.third !== 'locked') return saltRoadView(s);
   const have = (id: string) => countItem(s.player.inventory, id);
   const stageNo = QUEST2_STAGES.indexOf(q.second); // 'offer' is 1: stage 0 is the lock
@@ -542,6 +595,29 @@ function saltRoadView(s: GameState): QuestView {
     }
     case 'report': return v([{ text: 'The toll camp is cleared', done: true }, talk(`Return to ${HARBOURMASTER.name} for your reward`)], target, true);
     case 'cleared': return v([{ text: 'Quest complete. The road is open.', done: true }], null);
+    default: return v([talk(`Speak to ${HARBOURMASTER.name} on the quay`)], target, true); // offer
+  }
+}
+
+/** The fifth chain's tracker (the bible's Q4): the Strand's drowned, then Pell, then the open door and the Captain behind it. */
+function brineView(s: GameState): QuestView {
+  const q = s.quest, lvl = s.player.combat.level, stageNo = QUEST5_STAGES.indexOf(q.fifth); // 'offer' is 1: stage 0 is the lock
+  const total = QUEST5_STAGES.indexOf('cleared') - 1;
+  const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
+  const target = { x: HARBOURMASTER.x, z: HARBOURMASTER.z, label: HARBOURMASTER.name };
+  const v = (lines: QuestLine[], t: QuestView['target'], ready = false): QuestView =>
+    ({ title: QUEST5_NAME, lines, target: t, ready, stageNo, progress: q.fifth === 'cleared' ? '' : `(${stageNo}/${total})` });
+  switch (q.fifth) {
+    case 'hunt': {
+      const open = Object.entries(BRINE_GOALS).find(([t, n]) => (q.kills[t] ?? 0) < n);
+      const lines: QuestLine[] = [
+        ...Object.entries(BRINE_GOALS).map(([t, n]) => ({ text: `${PLURAL[t]} slain: ${Math.min(n, q.kills[t] ?? 0)}/${n}`, done: (q.kills[t] ?? 0) >= n })),
+        ...(lvl < RECOMMENDED_COMBAT_5 ? [{ text: `Recommended Combat ${RECOMMENDED_COMBAT_5} (you are ${lvl})`, done: false }] : []),
+      ];
+      return v(lines, open ? enemyTarget(s, open[0]) : null);
+    }
+    case 'report': return v([{ text: 'The Strand is quiet', done: true }, talk(`Return to ${HARBOURMASTER.name} for your reward`)], target, true);
+    case 'cleared': return v([{ text: 'Quest complete. The door in the cliff stands open.', done: true }, { text: 'Captain Marrow holds the Drowned Grotto (north cliff of Saltmarrow)', done: false }], enemyTarget(s, 'captain_marrow'));
     default: return v([talk(`Speak to ${HARBOURMASTER.name} on the quay`)], target, true); // offer
   }
 }

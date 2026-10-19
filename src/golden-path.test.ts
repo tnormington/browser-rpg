@@ -15,7 +15,9 @@ import { RECIPES, FORGE_REACH, recipeById } from './sim/crafting';
 import {
   CAVE_DOOR_Z, CAVE_PILLARS, CAVE_ROCKS, CAVE_ROOMS, COLLIDERS, LANDMARKS, PLAYER_RADIUS, ROCKS, TREES, WORLD_HALF,
   GREYWATER, REGIONS, SALTMARROW, TOWNS, caveDepth, caveWallPoints, clampToWorld, inCave, regionAt, resolveCollisions, sameSideOfDoor,
+  DUNGEONS, dungeonAt, dungeonById, mountsAllowed,
 } from './sim/world';
+import { dungeonOpen } from './sim/dungeon';
 import { route } from './sim/path';
 import { refreshGearStats } from './sim/inventory';
 import { damagedGear, repairCost } from './sim/durability';
@@ -24,6 +26,7 @@ import {
   BLADE_PLAN, DELVE_GOALS, DIALOGUE, DIALOGUE2, HUNT_GOALS, MITHRIL_PLAN, NPC, QUEST2_NAME, QUEST2_STAGES, QUEST_STAGES,
   QUEST_NAME, RECOMMENDED_COMBAT, RECOMMENDED_COMBAT_2, REWARD, REWARD2, TALK_RANGE, activeDialogue, activeQuestView, npcMarker, questOnKill, questView,
   HARBOURMASTER, QUEST3_NAME, REWARD3, dialogueAt, harbourMarker, ERRAND_GOODS, QUEST4_NAME, REWARD4,
+  BRINE_GOALS, QUEST5_NAME, REWARD5,
 } from './sim/quest';
 import { appearanceOf, ITEM_LOOKS, TIER_LOOKS, TIER5_COLOR } from './gear-look';
 import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
@@ -1917,9 +1920,9 @@ section('HOM-15 enemy mechanic: the ground mark punishes standing still');
   }
   assert(castName(ENEMY_TYPES.ogre, 'heavy') === 'Boulder Slam' && castName(seer, 'ground') === 'Withering Ground' && castName(seer, 'bolt') === 'Hex Bolt' && castName(ENEMY_TYPES.boar, 'ground') === 'Wild Boar',
     'castName gives the right name for every kind of wind-up and never throws, for any enemy');
-  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'bog_witch,bogfather,mother_mire,seer,thorn_warden,tide_hag,warden', 'only the Seer, the Warden, (HOM-46) the Tide Hag and (HOM-63) the Bog Witch, Bogfather, Mother Mire and Thorn Warden mark the ground');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'bog_witch,bogfather,captain_marrow,mother_mire,seer,thorn_warden,tide_hag,warden', 'only the Seer, the Warden, (HOM-46) the Tide Hag and (HOM-63) the Bog Witch, Bogfather, Mother Mire Thorn Warden and (HOM-64) Captain Marrow mark the ground');
   assert(Object.values(ENEMY_TYPES).every(d => !d.look || ['wolf', 'hexer', 'brute', 'boar', 'pup'].includes(d.look.model)), 'every cave look reuses a model that is already loaded: no new art');
-  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 25 && ['boar', 'wolf', 'brute', 'pup', 'hexer'].every(k => !ENEMY_TYPES[k].look), 'the five cave enemies, (HOM-46) the ten of the road and the Strand and (HOM-63) the ten of the fens and the Thornwood say how to draw themselves, and the original five rigs do not');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 26 && ['boar', 'wolf', 'brute', 'pup', 'hexer'].every(k => !ENEMY_TYPES[k].look), 'the five cave enemies, (HOM-46) the ten of the road and the Strand and (HOM-63) the ten of the fens and the Thornwood and (HOM-64) Captain Marrow say how to draw themselves, and the original five rigs do not');
 }
 
 // ---------------------------------------------------------------------------
@@ -3137,7 +3140,7 @@ section('HOM-46 adamant: Mining 28 (HOM-56), a smithed set, and gear that asks f
 {
   const sets = ['adamant_helm', 'adamant_chestplate', 'adamant_greaves', 'adamant_blade'];
   assert(sets.every(id => ITEMS[id].req?.combat === 14 && ITEMS[id].tier === 5), 'every adamant piece is tier 5 and needs combat 14');
-  assert(Object.entries(ITEMS).filter(([id]) => !sets.includes(id)).every(([, d]) => d.req === undefined), 'nothing older has a requirement: no old save is touched');
+  assert(Object.entries(ITEMS).filter(([id]) => !sets.includes(id) && id !== 'marrows_edge').every(([, d]) => d.req === undefined), 'nothing older has a requirement (Marrow\'s Edge, HOM-64, is newer and asks for combat 18): no old save is touched');
   assert(deriveStats({ ...emptyEquipment(), head: 'adamant_helm', chest: 'adamant_chestplate', legs: 'adamant_greaves' }).armor === 68 && ITEMS.adamant_blade.stats!.damage === 40, 'the set is 16 + 30 + 22 = 68 armour, the blade 40: the bible\'s numbers');
   assert(deriveStats({ ...emptyEquipment(), weapon: 'adamant_blade' }).weaponDamage > deriveStats({ ...emptyEquipment(), weapon: 'warden_edge' }).weaponDamage, 'the Adamant Blade beats the Warden\'s Edge');
   assert(describeStatsHas('adamant_helm', 'Requires Combat 14'), 'and the tooltip says so');
@@ -3352,10 +3355,10 @@ section('HOM-46 Saltmarrow: its harbourmaster, its chandler, and the third quest
   s.player.x = pell.x + 2; s.player.z = pell.z;
   tick(s, { questAdvance: true });
   assert((s.quest.third as string) === 'cleared' && s.player.combat.xp - xp0 === REWARD3[0].xp && REWARD3[0].xp === 600 && hasEvent(s, e => e.t === 'quest' && e.what === 'complete'), 'handing in pays 600 combat XP, the bible\'s figure');
-  assert(harbourMarker(s) === null, 'and the mark is gone');
+  assert(harbourMarker(s) === 'offer' && (s.quest.fifth as string) === 'offer', 'and the mark does not go: it is the next chain (HOM-64, Brine and Bone), on offer from the same quay');
   const rt = deserialize(serialize(s))!;
   assert((rt.quest.third as string) === 'cleared' && rt.quest.kills.footpad === 4, 'the chain survives a save and load');
-  const old = JSON.parse(serialize(s)); delete old.quest.third;
+  const old = JSON.parse(serialize(s)); delete old.quest.third; delete old.quest.fifth; // a save from before the road is from before Brine and Bone too
   assert(deserialize(JSON.stringify(old))!.quest.third === 'offer', 'a save from before the road, with the Hollow cleared, finds the road on offer');
   const old2 = JSON.parse(serialize(quietState(4641))); delete old2.quest.third;
   assert(deserialize(JSON.stringify(old2))!.quest.third === 'locked', '...and one that has not cleared it finds it locked');
@@ -3417,7 +3420,8 @@ section('HOM-46 the road and the Strand: the bible\'s tables, as data');
   assert(T.toll_captain.heavy!.damage === 195 && T.old_grey.heavy!.damage === 180 && T.barnacle_ogre.heavy!.damage === 250 && T.gutterhook.heavy!.damage === 235 && T.tide_hag.hazard !== undefined && T.footpad.ranged !== undefined && T.drowned_sailor.ranged !== undefined && T.road_wolf.pack === 7, 'the heavies, the knife and harpoon throwers, the Undertow and the wolf pack are all there');
   const count = (type: string) => SPAWNS.filter(sp => sp.type === type).length;
   assert(count('marsh_hog') === 6 && count('road_wolf') === 6 && count('footpad') === 4 && count('toll_captain') === 1 && count('old_grey') === 1, 'the road holds 6 hogs, two wolf camps of 3, 4 footpads, the Captain and Old Grey');
-  assert(count('shore_crab') === 4 && count('drowned_sailor') === 3 && count('tide_hag') === 2 && count('barnacle_ogre') === 1 && count('gutterhook') === 1, 'the Strand holds its five kinds');
+  const strand = (type: string) => SPAWNS.filter(sp => sp.type === type && regionAt(sp.x, sp.z)?.id === 'saltmarrow').length; // the Grotto (HOM-64) reuses the Strand's hags and ogres behind its door: they are not the Strand's
+  assert(strand('shore_crab') === 4 && strand('drowned_sailor') === 3 && strand('tide_hag') === 2 && strand('barnacle_ogre') === 1 && strand('gutterhook') === 1, 'the Strand holds its five kinds');
   const at = (type: string) => SPAWNS.filter(sp => sp.type === type).map(sp => [Math.round(sp.x - GREYWATER.x), Math.round(sp.z - GREYWATER.z)]);
   assert(JSON.stringify(at('toll_captain')) === '[[60,0]]' && JSON.stringify(at('old_grey')) === '[[330,-45]]' && at('marsh_hog').slice(0, 4).every(([x, z]) => x >= -330 && x <= -260 && Math.abs(z) <= 30), 'the Captain stands on the road at 60, Old Grey at (330, -45), the first hogs in the pasture from -330 to -260');
   // everyone is reachable on foot from the gate
@@ -3512,6 +3516,119 @@ section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each w
   const back = deserialize(JSON.stringify(file));
   assert(back !== null && back.nodes.length === 42 + REGIONS.find(r => r.id === 'wayside')!.rocks.length + REGIONS.find(r => r.id === 'wayside')!.trees.length && back.nodes[0].charges === 1 && back.nodes.slice(36).every(n => n.charges === NODE_TYPES[n.type].charges), 'an old save still loads: its nodes keep their ids and state, and the six new ones stand full');
   assert(back !== null && back.player.skills.mining.level === 17 && back.player.skills.smithing.level === 19 && back.player.equipment.chest === 'mithril_chestplate' && back.player.equipment.weapon === 'warden_edge', 'a Mining 17, Smithing 19 character keeps both levels and the gear they wear: only the gates moved above them');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-64 dungeons as data: the Hollow is the first, the Drowned Grotto the second');
+{
+  const hollow = dungeonById('hollow'), grotto = dungeonById('grotto');
+  const isOpen = (s: GameState) => dungeonOpen(s, grotto);
+  assert(DUNGEONS.length === 2 && hollow.rooms.map(r => r.name).join() === 'throat,hollow,neck,hall' && grotto.rooms.map(r => r.name).join() === 'gangway,galley,hold', 'two dungeons: the Hollow is the four rooms it always was, the Grotto is three');
+  assert(CAVE_ROOMS.length === 7 && CAVE_ROOMS.every(r => DUNGEONS.some(d => d.id === r.dungeon)) && REGIONS.filter(r => r.cave).every(r => !!r.dungeon), 'every cave room belongs to a dungeon, and the flat list is all of them');
+  assert(grotto.parent === 'saltmarrow' && grotto.rooms.every(r => r.rect.x0 >= SALTMARROW.x - 70 && r.rect.x1 <= SALTMARROW.x + 30), 'the Grotto sits in Saltmarrow\'s frame');
+  const mid = (r: { x0: number; x1: number; z0: number; z1: number }) => ({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2 });
+  assert(grotto.rooms.every(r => dungeonAt(mid(r.rect).x, mid(r.rect).z) === grotto && inCave(mid(r.rect).x, mid(r.rect).z)) && dungeonAt(-18, -80) === hollow && dungeonAt(0, 8) === null && dungeonAt(SALTMARROW.x - 25, SALTMARROW.z) === null, 'a point is in the dungeon whose floor it is on, and nowhere in a town');
+  const gx = SALTMARROW.x - 42.5, gz = SALTMARROW.z;
+  assert(caveDepth(gx, gz - 60) === 0 && caveDepth(gx, gz - 66) === 0 && caveDepth(gx, gz - 72) > 0 && caveDepth(gx, gz - 72) < 1 && caveDepth(SALTMARROW.x - 19, gz - 120) === 1, 'the Grotto has its own threshold: daylight at the door, dusk in the gangway, dark in the hold');
+  assert(caveDepth(-18, -30) > 0 && caveDepth(-18, -30) < 1 && caveDepth(-18, -24) === 0, 'and the Hollow\'s is the one it had');
+  assert(!mountsAllowed(-18, -80) && !mountsAllowed(SALTMARROW.x - 19, gz - 120) && mountsAllowed(0, 8) && mountsAllowed(SALTMARROW.x - 25, gz), 'no mounts in a dungeon: one question, answered from the room list');
+  assert(!sameSideOfDoor({ x: SALTMARROW.x - 25, z: gz - 30 }, { x: SALTMARROW.x - 19, z: gz - 126 }) && sameSideOfDoor({ x: SALTMARROW.x - 19, z: gz - 110 }, { x: SALTMARROW.x - 19, z: gz - 126 }), 'Tab from the town does not offer Marrow through the cliff, and in the hold it does');
+  // the wall that cuts a line is a dungeon's own rock, not a half-plane across the map: Gutterhook, on Saltmarrow's north shore, can see
+  const gh = SPAWNS.find(sp => sp.type === 'gutterhook')!;
+  assert(clearLine(gh, { x: gh.x + 6, z: gh.z }), 'sight along open shore is clear (it was cut across the whole north of the map)');
+  assert(!clearLine({ x: SALTMARROW.x - 52, z: gz - 75 }, { x: SALTMARROW.x - 36, z: gz - 75 }) && clearLine({ x: -18, z: -40 }, { x: -18, z: -60 }), 'a line across solid rock beside the gangway is blocked, and one down the Hollow\'s throat is not');
+
+  // the door is hard-gated: shut until Brine and Bone is handed in
+  const door = { x: gx, z: gz - 62 };
+  const s = quietState(6401);
+  assert(!isOpen(s), 'a new game has it shut');
+  s.player.x = door.x; s.player.z = door.z;
+  for (let n = 0; n < 120; n++) tick(s, { dirZ: -1 });
+  assert(dungeonAt(s.player.x, s.player.z) === null && s.player.z > gz - 70, 'shut: walking north into the cliff stops at the door');
+  s.player.x = door.x; s.player.z = door.z; s.events.length = 0;
+  const said: string[] = [];
+  for (let n = 0; n < 120; n++) { tick(s, { dirZ: -1 }); for (const ev of s.events) if (ev.t === 'door') said.push(ev.blurb); }
+  assert(said.length >= 1 && said.length <= 3 && said[0] === grotto.gate!.blurb, `and the door says why, once in a while rather than every tick (${said.length} times in 4 s)`);
+  s.player.x = door.x; s.player.z = door.z;
+  tick(s, { clickTarget: { x: door.x, z: gz - 90 } });
+  run(s, 6);
+  assert(dungeonAt(s.player.x, s.player.z) === null && !s.moveTarget, 'a click inside is refused the same way');
+
+  s.quest.stage = 'done'; s.quest.second = 'cleared'; s.quest.third = 'cleared'; s.quest.fifth = 'cleared';
+  s.player.x = door.x; s.player.z = door.z;
+  const marrow = s.enemies.find(e => e.type === 'captain_marrow')!;
+  assert(isOpen(s) && walkTo(s, marrow.x, marrow.z + 10, 2, 90) && dungeonAt(s.player.x, s.player.z) === grotto, 'open: a walk from the cliff door to the hold is one click, through three rooms');
+
+  // Brine and Bone
+  const q = quietState(6402);
+  const pell = HARBOURMASTER;
+  q.player.x = pell.x + 2; q.player.z = pell.z;
+  assert((q.quest.fifth as string) === 'locked' && harbourMarker(q) === null, 'locked while the road is shut');
+  q.quest.stage = 'done'; q.quest.second = 'cleared'; q.quest.third = 'report';
+  tick(q, { questAdvance: true });
+  assert((q.quest.third as string) === 'cleared' && (q.quest.fifth as string) === 'offer' && harbourMarker(q) === 'offer' && activeQuestView(q).title === QUEST5_NAME, 'the Salt Road handed in, the next job is on offer from the same quay');
+  assert(dialogueAt(q, 'harbour').options.some(o => o.advance), 'and the harbourmaster\'s dialogue offers it');
+  tick(q, { questAdvance: true });
+  assert((q.quest.fifth as string) === 'hunt' && hasEvent(q, e => e.t === 'quest' && e.what === 'accept' && e.name === QUEST5_NAME), 'advancing at the quay accepts it');
+  const total = Object.values(BRINE_GOALS).reduce((a, b) => a + b, 0);
+  let kills = 0;
+  for (const [type, n] of Object.entries(BRINE_GOALS)) for (let k = 0; k < n; k++) {
+    assert((q.quest.fifth as string) === 'hunt', `still hunting after ${kills} of ${total}`);
+    questOnKill(q, type); kills++;
+  }
+  assert((q.quest.fifth as string) === 'report' && harbourMarker(q) === 'ready' && activeQuestView(q).ready, 'the last of them makes it a hand-in');
+  assert(!isOpen(q), 'the door is still shut until it is handed in');
+  const xp0 = q.player.combat.xp;
+  tick(q, { questAdvance: true });
+  assert((q.quest.fifth as string) === 'cleared' && q.player.combat.xp - xp0 === REWARD5[0].xp && REWARD5[0].xp === 900, 'handing in pays 900 combat XP, the bible\'s figure');
+  assert(isOpen(q) && activeQuestView(q).target !== null, 'and the door is open, with the Captain as the tracker\'s next mark');
+  const rt = deserialize(serialize(q))!;
+  assert((rt.quest.fifth as string) === 'cleared' && rt.quest.kills.drowned_sailor === 4, 'the chain survives a save and load');
+  const oldSave = JSON.parse(serialize(q)); delete oldSave.quest.fifth;
+  assert(deserialize(JSON.stringify(oldSave))!.quest.fifth === 'offer', 'a save from before it, with the road cleared, finds it on offer');
+  const badSave = JSON.parse(serialize(quietState(6403))); badSave.quest.fifth = 'hunt';
+  assert(deserialize(JSON.stringify(badSave)) === null, 'a save with it open before the road is cleared is refused');
+
+  // Captain Marrow
+  const T = ENEMY_TYPES.captain_marrow;
+  assert(T.level === 19 && T.hp === 8350 && T.damage === 35 && T.attackInterval === 2.4 && T.xp === 390 && T.respawn === 600, 'Captain Marrow: level 19, 8350 HP, hit 35 every 2.4 s, 390 XP, a ten-minute respawn: the retuned table');
+  assert(T.heavy!.name === 'Anchor Slam' && T.heavy!.damage === 235 && T.hazard!.name === 'Cannon Volley' && T.hazard!.damage === 105 && T.ranged!.name === 'Harpoon', 'Anchor Slam 235, Cannon Volley 105, Harpoon: the three tells he is built from');
+  assert(T.look!.model === 'brute', 'drawn with a rig that already exists');
+  const m = quietState(6404);
+  const mm = m.enemies.find(e => e.type === 'captain_marrow')!;
+  mm.state = 'idle'; mm.hp = mm.maxHp; mm.respawnIn = 0;
+  const seen = new Set<string>();
+  const watch = (sec: number) => { for (let n = 0; n < Math.round(sec / TICK_DT); n++) { m.player.hp = 1e9; tick(m); for (const ev of m.events) if (ev.t === 'telegraph' && ev.id === mm.id) seen.add(ev.kind); } };
+  m.player.x = mm.x; m.player.z = mm.z + 10;
+  watch(2.5);
+  assert(seen.has('bolt') && !seen.has('heavy'), 'stood off at ten units, he throws the Harpoon and does not slam');
+  m.player.x = mm.x; m.player.z = mm.z + 2.5; mm.attackCd = 0;
+  watch(16);
+  assert(seen.has('heavy') && seen.has('ground'), `in reach he slams and marks the ground (${[...seen].sort().join(', ')})`);
+  const D = DROP_TABLES.captain_marrow;
+  assert(D.rolls === 1 && D.nothing === 65 && D.entries.length === 1 && D.entries[0].id === 'marrow_shard' && D.entries[0].weight === 35, 'a shard 35 % of kills, one a kill: the bible\'s 6.1');
+
+  // Marrow's Edge
+  const r = recipeById('marrows_edge')!;
+  assert(r.skill === 'smithing' && r.level === 30 && r.inputs.length === 2 && r.inputs.some(i => i.id === 'marrow_shard' && i.qty === 3) && r.inputs.some(i => i.id === 'adamant_bar' && i.qty === 3), 'Marrow\'s Edge: Smithing 30, three adamant bars and three Marrow shards');
+  assert(ITEMS.marrows_edge.stats!.damage === 50 && ITEMS.marrows_edge.req?.combat === 18 && ITEMS.marrows_edge.tier === 5 && ITEMS.marrows_edge.stats!.damage > ITEMS.adamant_blade.stats!.damage, 'a 50-damage tier-5 blade that wants combat 18, above the Adamant Blade');
+  const f = quietState(6405);
+  atLevel(f, 18);
+  grantXp(f, 'smithing', xpForLevel(30), 0, 0);
+  addItem(f.player.inventory, 'adamant_bar', 3); addItem(f.player.inventory, 'marrow_shard', 2);
+  f.player.x = LANDMARKS.forge.x - 2; f.player.z = LANDMARKS.forge.z + 1;
+  tick(f, { craft: { recipe: 'marrows_edge', count: 1 } });
+  assert(hasEvent(f, e => e.t === 'actionfail' && e.reason === 'materials') && countOf(f, 'marrows_edge') === 0, 'two shards are not enough');
+  addItem(f.player.inventory, 'marrow_shard', 1);
+  tick(f, { craft: { recipe: 'marrows_edge', count: 1 } });
+  run(f, 20);
+  assert(countOf(f, 'marrows_edge') === 1 && countOf(f, 'marrow_shard') === 0 && countOf(f, 'adamant_bar') === 0, 'three of each make the blade');
+  tick(f, { inv: [{ k: 'equip', slot: f.player.inventory.findIndex(x => x?.id === 'marrows_edge') }] });
+  assert(f.player.equipment.weapon === 'marrows_edge' && f.player.stats.weaponDamage === 50, 'and it is worn at combat 18');
+  const f2 = quietState(6406);
+  atLevel(f2, 17); addItem(f2.player.inventory, 'marrows_edge', 1);
+  tick(f2, { inv: [{ k: 'equip', slot: f2.player.inventory.findIndex(x => x?.id === 'marrows_edge') }] });
+  assert(f2.player.equipment.weapon === null && hasEvent(f2, e => e.t === 'actionfail' && e.reason === 'req' && e.need === 18), 'at combat 17 it stays in the bag, and the refusal says why');
 }
 
 console.log(`\nAll ${checks} checks passed.`);

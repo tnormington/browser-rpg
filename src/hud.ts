@@ -391,8 +391,11 @@ export class Hud {
       } else if (ev.t === 'gate') {
         this.say(`${ev.keeper}: "${ev.text}"`);
         this.note(`${ev.keeper}: "${ev.text}" (combat ${ev.need} needed, you are ${s.player.combat.level})`, 'log-quest');
+      } else if (ev.t === 'door') {
+        this.say(ev.blurb);
+        this.note(ev.blurb, 'log-info');
       } else if (ev.t === 'stuck') {
-        if (!events.some(x => x.t === 'gate')) this.say("Can't reach that"); // a keeper turning you back has already said why
+        if (!events.some(x => x.t === 'gate' || x.t === 'door')) this.say("Can't reach that"); // a keeper turning you back has already said why
       } else if (ev.t === 'invfull') {
         this.say('Inventory full');
       } else if (ev.t === 'levelup') {

@@ -13,6 +13,7 @@ import { Buff, updateConsumables } from './sim/consumables';
 import { ShopAction, applyShopAction } from './sim/shop';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
+import { holdDoor } from './sim/dungeon';
 import { START_TOWN, discoverMasters, startFlight, updateFlight } from './sim/flight';
 import { holdAtGates } from './sim/gates';
 import { updateWithering } from './sim/hazards';
@@ -118,6 +119,7 @@ export type GameEvent =
   | { t: 'combat'; on: boolean }                            // the player entered / left combat
   | { t: 'stuck' }                                          // a click-to-move walk could not go anywhere: the HUD says so
   | { t: 'gate'; id: string; keeper: string; text: string; need: number } // a hard gate turned the player back: the keeper's line, and the combat level it asks for
+  | { t: 'door'; dungeon: string; blurb: string }           // a shut dungeon door turned the player back: blurb says what opens it (at most one every two seconds)
   | { t: 'jump' }                                           // left the ground
   | { t: 'land'; x: number; z: number }                     // back on the ground
   | { t: 'step'; surface: 'grass' | 'cave' }                // a foot came down: once per STRIDE_DIST walked on the ground, not while airborne
@@ -319,6 +321,7 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   p.z += dz * MOVE_SPEED * dt;
   resolveCollisions(p, PLAYER_RADIUS);
   holdAtGates(s, px, pz);
+  if (holdDoor(s, { x: px, z: pz })) s.moveTarget = null; // a click-to-move walk into a shut door ends there: the door has said why, "can't reach that" would say less
 
   const moved = Math.hypot(p.x - px, p.z - pz);
   p.moving = moved > 1e-4;

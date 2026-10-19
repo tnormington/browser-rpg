@@ -23,6 +23,8 @@ import {
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
 /** How far to one side of the player a blocked shooter aims while it works round the cover between them (see updateRanged). */
 const ROUND_OFFSET = 3;
+/** A melee fighter that also throws (a `ranged` and a `heavy`) throws at a player further off than its reach plus this. */
+const THROW_GAP = 3;
 const rand = (s: GameState) => nextRandom(s);
 
 export const enemyById = (s: GameState, id: number | null): Enemy | undefined =>
@@ -532,8 +534,10 @@ export function updateEnemies(s: GameState, dt: number) {
         updateCast(s, e, dt);
       } else if (def.hazard && e.hazardCd <= 0 && dp <= def.hazard.range && clearLine(e, p)) { // it marks ground it can see you standing on
         startGroundCast(s, e);
-      } else if (def.ranged) {
+      } else if (def.ranged && !def.heavy) {
         updateRanged(s, e, dt);
+      } else if (def.ranged && dp > def.attackRange + THROW_GAP && dp <= def.ranged.range && e.attackCd <= 0 && clearLine(e, p)) {
+        startCast(s, e, 'bolt', def.ranged.windup); // a melee fighter that also throws (Captain Marrow): at a player who stands off; one who stays in reach is hit, not shot
       } else {
         stepToward(e, p.x, p.z, def.speed, dt, def.attackRange * 0.9);
         if (dist(e, p) <= def.attackRange && e.attackCd <= 0) {

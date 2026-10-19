@@ -67,6 +67,9 @@ export const RECIPES: Recipe[] = [
     inputs: [{ id: 'adamant_bar', qty: 2 }], output: { id: 'adamant_helm', qty: 1 } },
   { id: 'adamant_blade', name: 'Adamant Blade', skill: 'smithing', level: 26, time: 13, xp: 395,
     inputs: [{ id: 'adamant_bar', qty: 3 }, { id: 'logs', qty: 1 }], output: { id: 'adamant_blade', qty: 1 } },
+  // the capstone: Smithing 30 is one past the chestplate's 29 (3.3), and the shards are the limit, not the forge. XP is 0.4 x the 1,470 from 30 to 31
+  { id: 'marrows_edge', name: "Marrow's Edge", skill: 'smithing', level: 30, time: 14, xp: 590,
+    inputs: [{ id: 'adamant_bar', qty: 3 }, { id: 'marrow_shard', qty: 3 }], output: { id: 'marrows_edge', qty: 1 } },
   { id: 'adamant_greaves', name: 'Adamant Greaves', skill: 'smithing', level: 27, time: 9, xp: 385,
     inputs: [{ id: 'adamant_bar', qty: 3 }], output: { id: 'adamant_greaves', qty: 1 } },
   { id: 'adamant_chestplate', name: 'Adamant Chestplate', skill: 'smithing', level: 29, time: 11, xp: 465,

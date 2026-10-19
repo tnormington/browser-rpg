@@ -43,6 +43,8 @@ export interface Region {
   name: string;
   /** Underground: dark, echoing, and walled by the footprint's edges. */
   cave: boolean;
+  /** A dungeon's room: the id of the DUNGEONS entry this region is one room of. Every `cave` region has one; the dungeon is read off these. */
+  dungeon?: string;
   /**
    * The floor, as rectangles whose union is walkable. Footprints may overlap: that is the seam between two regions, so the world is
    * one continuous coordinate space. Walls are the edges (a clamp, not colliders: no per-wall cost).
@@ -214,6 +216,17 @@ const SALT_SPOTS: NodeSpot[] = ([
   ['saltpike', 12, -30], ['saltpike', 15, -25.5],
 ] as const).map(([type, lx, lz]) => ({ type, ...at(SALTMARROW, lx, lz), r: 1 }));
 
+/**
+ * The Drowned Grotto (bible 1.2): three rooms in a cliff on Saltmarrow's north edge, in the town's own frame (local coordinates). The way in is a door
+ * at local (-42.5, -70), through the wall the town's floor ends in. The rooms step across so that each pair overlaps by a doorway and no more.
+ */
+const rectAt = (o: Pt, x0: number, x1: number, z0: number, z1: number): Rect => ({ x0: o.x + x0, x1: o.x + x1, z0: o.z + z0, z1: o.z + z1 });
+const GROTTO_DOOR = at(SALTMARROW, -42.5, -69);
+const GALLEY_DOOR = at(SALTMARROW, -42.5, -89);
+const HOLD_DOOR = at(SALTMARROW, -27, -109);
+const GALLEY_STONES: Obstacle[] = [at(SALTMARROW, -40, -97), at(SALTMARROW, -30, -94), at(SALTMARROW, -36, -105)].map(p => ({ ...p, r: 1.4 }));
+const HOLD_STONES: Obstacle[] = [at(SALTMARROW, -26, -118), at(SALTMARROW, -12, -118), at(SALTMARROW, -26, -128), at(SALTMARROW, -12, -128)].map(p => ({ ...p, r: 1.6 }));
+
 /** The road's waysides: [local x, side of the road, nodes from the road's edge outward along it]. Each stand is three or four nodes a few units apart. */
 const WAYSIDES: [number, 1 | -1, ('copper' | 'tin' | 'iron' | 'tree')[]][] = [
   [-350, 1, ['copper', 'copper', 'tree']], [-230, -1, ['tree', 'copper', 'tin', 'tree']], [-120, 1, ['copper', 'tin', 'tree']],
@@ -374,7 +387,7 @@ export const REGIONS: Region[] = [
   },
   {
     // The throat runs north from the mouth.
-    id: 'throat', name: 'The Throat', cave: true, zone: 'hale', cell: 0.25,
+    id: 'throat', name: 'The Throat', cave: true, dungeon: 'hollow', zone: 'hale', cell: 0.25,
     footprint: [{ x0: -20.5, x1: -15.5, z0: -46, z1: -24 }],
     obstacles: [], tall: [], trees: [], rocks: [], landmarks: {},
     connections: [{ to: 'ridge', at: { x: -18, z: -26 } }, { to: 'hollow', at: { x: -18, z: -44 } }],
@@ -383,7 +396,7 @@ export const REGIONS: Region[] = [
     // The hollow is the main cavern. Standing stones are cover, and something to circle. Its ore is kept apart from the ridge's
     // (the nodes are listed after the clearing's trees, see above). The first three veins make a seam along the south-west wall,
     // in reach of the Ravager pack that guards them and of nothing else; the coal is on the far side.
-    id: 'hollow', name: 'The Hollow', cave: true, zone: 'hale', cell: 0.25,
+    id: 'hollow', name: 'The Hollow', cave: true, dungeon: 'hollow', zone: 'hale', cell: 0.25,
     footprint: [{ x0: -33, x1: -5, z0: -64, z1: -42 }],
     obstacles: [{ x: -14.5, z: -50, r: 1.4 }, { x: -27, z: -57, r: 1.4 }, { x: -9, z: -55, r: 1.4 }],
     tall: [], trees: [],
@@ -396,13 +409,13 @@ export const REGIONS: Region[] = [
   },
   {
     // The neck leads on to the warden's hall.
-    id: 'neck', name: 'The Neck', cave: true, zone: 'hale', cell: 0.25,
+    id: 'neck', name: 'The Neck', cave: true, dungeon: 'hollow', zone: 'hale', cell: 0.25,
     footprint: [{ x0: -20.5, x1: -15.5, z0: -76, z1: -60 }],
     obstacles: [], tall: [], trees: [], rocks: [], landmarks: {},
     connections: [{ to: 'hollow', at: { x: -18, z: -62 } }, { to: 'hall', at: { x: -18, z: -73 } }],
   },
   {
-    id: 'hall', name: "The Warden's Hall", cave: true, zone: 'hale', cell: 0.25,
+    id: 'hall', name: "The Warden's Hall", cave: true, dungeon: 'hollow', zone: 'hale', cell: 0.25,
     footprint: [{ x0: -29, x1: -7, z0: -92, z1: -70 }],
     obstacles: [{ x: -24, z: -76, r: 1.6 }, { x: -12, z: -76, r: 1.6 }, { x: -24, z: -86, r: 1.6 }, { x: -12, z: -86, r: 1.6 }],
     tall: [], trees: [], rocks: [], landmarks: {},
@@ -435,7 +448,7 @@ export const REGIONS: Region[] = [
     rocks: [-14, -8, -2, 4, 10].map((lx, i) => ({ type: 'adamant' as const, ...at(SALTMARROW, lx, i % 2 ? -66 : -64), r: 1.2 })),
     spots: SALT_SPOTS,
     landmarks: saltLandmarks,
-    connections: [{ to: 'greywater', at: at(GREYWATER, 405, 0) }, { to: 'dunmere', at: { x: DUNMERE.x, z: 76 } }],
+    connections: [{ to: 'greywater', at: at(GREYWATER, 405, 0) }, { to: 'dunmere', at: { x: DUNMERE.x, z: 76 } }, { to: 'gangway', at: GROTTO_DOOR }],
     safe: [{ ...saltLandmarks.square, r: 35 }, { ...graveSalt, r: GRAVE_SAFE_R }],
     spawns: worldSpawns(SALTMARROW, STRAND_SPAWNS),
   },
@@ -499,6 +512,29 @@ export const REGIONS: Region[] = [
     spawns: thornSpawns,
     herbs: THORN_HERBS,
     gates: [THORN_GATE],
+  },
+  {
+    // The Drowned Grotto (HOM-64), listed last so every older node and enemy keeps its id. Its own routing zone at the cave's fine cell: the town's zone is coarse.
+    // The gangway holds the sentry hag, the galley the two ogres and a hag, the hold the Captain.
+    id: 'gangway', name: 'The Gangway', cave: true, dungeon: 'grotto', zone: 'grotto', cell: 0.25,
+    footprint: [rectAt(SALTMARROW, -45, -40, -90, -68)],
+    obstacles: [], tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'saltmarrow', at: GROTTO_DOOR }, { to: 'galley', at: GALLEY_DOOR }],
+    spawns: worldSpawns(SALTMARROW, [['tide_hag', -42.5, -80]]),
+  },
+  {
+    id: 'galley', name: 'The Galley', cave: true, dungeon: 'grotto', zone: 'grotto', cell: 0.25,
+    footprint: [rectAt(SALTMARROW, -46, -24, -110, -88)],
+    obstacles: GALLEY_STONES, tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'gangway', at: GALLEY_DOOR }, { to: 'hold', at: HOLD_DOOR }],
+    spawns: worldSpawns(SALTMARROW, [['barnacle_ogre', -31, -101], ['barnacle_ogre', -41, -108], ['tide_hag', -34, -91]]),
+  },
+  {
+    id: 'hold', name: "Marrow's Hold", cave: true, dungeon: 'grotto', zone: 'grotto', cell: 0.25,
+    footprint: [rectAt(SALTMARROW, -30, -8, -134, -108)],
+    obstacles: HOLD_STONES, tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'galley', at: HOLD_DOOR }],
+    spawns: worldSpawns(SALTMARROW, [['captain_marrow', -19, -126]]),
   },
 ];
 // the hollow's and hall's standing stones are tall (they break sight lines)
@@ -610,9 +646,6 @@ export const nodeSpots = (): (RockSpot | NodeSpot)[] =>
 export const FOOTPRINT: Rect[] = REGIONS.flatMap(r => r.footprint);
 const CAVE_RECTS: Rect[] = caves.flatMap(r => r.footprint);
 
-/** The old name for the cave's rooms, with the rect each is made of. */
-export const CAVE_ROOMS = caves.map(r => ({ name: r.id as 'throat' | 'hollow' | 'neck' | 'hall', rect: r.footprint[0] }));
-
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 /** The nearest spot on walkable floor to t for a circle of this radius: on any region's footprint. */
@@ -637,23 +670,65 @@ export const inCave = (x: number, z: number) => CAVE_RECTS.some(r => inRect(r, x
 /** The region a point is in: the first listed whose footprint holds it (so on a seam, the earlier region), or null off the map. */
 export const regionAt = (x: number, z: number): Region | null => REGIONS.find(r => r.footprint.some(f => inRect(f, x, z))) ?? null;
 
-/** Where daylight gives way to cave dark, as z along the throat: 0 at `from`, 1 at `to`. The threshold is the stretch between. */
-export const CAVE_FADE = { from: -24, to: -36 };
-/** 0 outdoors, 1 deep inside, smooth across the threshold. For lighting and sound to follow the player through the mouth. */
+// --- Dungeons (bible 1.2): a per-region list of rooms inside the parent's frame, not a region of their own. The Hollow is the first; every rule below
+// (is this cave floor, how dark is it, is the wall in the way, may a mount be ridden here) reads the list, and a second dungeon is one more entry. -----
+
+/** A dungeon is the cave's pattern: rooms of walkable floor that overlap, behind one door. */
+export interface Dungeon {
+  id: string;
+  name: string;
+  /** The region whose frame it sits in: the town or wilds the door opens off. */
+  parent: string;
+  /** Where daylight gives way to dark, as z along the way in: 0 at `from`, 1 at `to`. The threshold is the stretch between. */
+  fade: { from: number; to: number };
+  /** The solid stone round the rooms: a line that crosses it off the floor is cut by the wall (sim/sight.ts), and a creature behind it is not offered to a player outside (sameSideOfDoor). */
+  rock: Rect;
+  /** Hard-gated: the door does not let you in until `need` (a key into sim/dungeon.ts's DUNGEON_GATES) holds. Absent = always open. */
+  gate?: { need: string; blurb: string };
+  /** The rooms, in the order they are walked: the `cave` regions that name this dungeon. */
+  rooms: { name: string; rect: Rect }[];
+}
+
+const DUNGEON_DEFS: Omit<Dungeon, 'rooms'>[] = [
+  { id: 'hollow', name: 'The Hollow', parent: 'hale', fade: { from: -24, to: -36 }, rock: { x0: -34, x1: -4, z0: -94, z1: -30 } },
+  { id: 'grotto', name: 'The Drowned Grotto', parent: 'saltmarrow', fade: { from: SALTMARROW.z - 70, to: SALTMARROW.z - 82 },
+    rock: rectAt(SALTMARROW, -48, -6, -136, -70),
+    gate: { need: 'brine_and_bone', blurb: "The door in the cliff is barred from within. Harbourmaster Pell's work on the Strand would be what opens it." } },
+];
+
+export const DUNGEONS: Dungeon[] = DUNGEON_DEFS.map(d => ({ ...d, rooms: caves.filter(r => r.dungeon === d.id).map(r => ({ name: r.id, rect: r.footprint[0] })) }));
+export const dungeonById = (id: string): Dungeon => DUNGEONS.find(d => d.id === id)!;
+
+/** Every dungeon's rooms in one list, each with the rect it is made of and the dungeon it belongs to (what the renderer builds a floor and walls from). */
+export const CAVE_ROOMS = DUNGEONS.flatMap(d => d.rooms.map(r => ({ ...r, dungeon: d.id })));
+
+/** The dungeon whose floor a point is on, or null: outdoors, or any town. */
+export const dungeonAt = (x: number, z: number): Dungeon | null => DUNGEONS.find(d => d.rooms.some(r => inRect(r.rect, x, z))) ?? null;
+
+/**
+ * Mounts are not ridden in dungeons (bible 1.2). Nothing is mounted yet; the mount cast and the dismount-on-entry read this, so the rule has one home.
+ */
+export const mountsAllowed = (x: number, z: number) => dungeonAt(x, z) === null;
+
+/** 0 outdoors, 1 deep inside, smooth across the threshold. For lighting and sound to follow the player through the door. */
 export function caveDepth(x: number, z: number): number {
-  if (!inCave(x, z)) return 0;
-  const k = clamp((CAVE_FADE.from - z) / (CAVE_FADE.from - CAVE_FADE.to), 0, 1);
+  const d = dungeonAt(x, z);
+  if (!d) return 0;
+  const k = clamp((d.fade.from - z) / (d.fade.from - d.fade.to), 0, 1);
   return k * k * (3 - 2 * k);
 }
 
-/**
- * The line the cave's wall runs along at the mouth. Two creatures can only single each other out (Tab, forgiving click) when
- * they are on the same side of it or standing close: a ridge miner is not offered the Hexer behind forty units of rock.
- */
-export const CAVE_DOOR_Z = -30;
+/** The line the Hollow's wall runs along at the mouth (its rock begins here). */
+export const CAVE_DOOR_Z = dungeonById('hollow').rock.z1;
 export const DOOR_SIGHT = 12;
+/** The dungeon whose rock a point is in (on or off its floor), or null. */
+export const rockAt = (x: number, z: number): Dungeon | null => DUNGEONS.find(d => inRect(d.rock, x, z)) ?? null;
+/**
+ * Two creatures can only single each other out (Tab, forgiving click) when they are on the same side of a dungeon's wall or standing close:
+ * a ridge miner is not offered the Hexer behind forty units of rock.
+ */
 export const sameSideOfDoor = (a: { x: number; z: number }, b: { x: number; z: number }) =>
-  Math.hypot(a.x - b.x, a.z - b.z) <= DOOR_SIGHT || (a.z > CAVE_DOOR_Z) === (b.z > CAVE_DOOR_Z);
+  Math.hypot(a.x - b.x, a.z - b.z) <= DOOR_SIGHT || rockAt(a.x, a.z) === rockAt(b.x, b.z);
 
 /**
  * Points along the cave's walls, `step` apart, for the renderer to hang rock on: every room's edge except the stretches that open
