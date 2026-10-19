@@ -14,6 +14,7 @@ import { Weather } from './weather';
 import { SkyDome, Rain } from './sky';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
 import { Animator } from './anim';
+import { SILHOUETTES, Silhouette, mergeLayer } from './creatures';
 import { PlayerGear } from './gear';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
@@ -724,30 +725,36 @@ export class Renderer {
     const tint = ENEMY_TYPES[a.type].look?.tint;
     for (const m of a.mats) { if (tint !== undefined) m.color.lerp(new THREE.Color(tint), TINT_MIX); m.emissive.setHex(a.glow); }
     a.anim = new Animator(inst.root, inst.clips, SLOTS[slotOf(a.type) as 'boar'].anim);
-    if (a.type === 'shore_crab') this.crabify(a, inst.root);
+    const kit = SILHOUETTES[a.type];
+    if (kit) this.dressKit(a, inst.root, kit());
   }
 
-  /** The Shore Crab is the boar rig at 0.8 and reads as a small red pig: squash it low and wide, and add what says crab at a glance (raised pincers, side legs). */
-  private crabify(a: Actor, model: THREE.Object3D) {
-    model.scale.multiply(new THREE.Vector3(1.6, 0.5, 0.65));
-    const parts: THREE.BufferGeometry[] = [];
-    for (const side of [1, -1]) {
-      const arm = new THREE.BoxGeometry(0.16, 0.16, 0.8).translate(0, 0, 0.4);
-      const jaw = new THREE.ConeGeometry(0.2, 0.6, 4).rotateX(Math.PI / 2).translate(0.11, 0, 1.05);
-      for (const g of [arm, jaw, jaw.clone().translate(-0.22, 0, 0)]) parts.push(g.toNonIndexed().rotateY(side * 0.35).translate(side * 0.95, 0.6, 0.45));
-      for (const z of [-0.35, 0, 0.35]) parts.push(new THREE.BoxGeometry(0.8, 0.07, 0.07).rotateZ(side * -0.5).translate(side * 1.0, 0.22, z).toNonIndexed());
+  /** What makes a re-skinned rig a different creature (creatures.ts): squash and lean the rig, add its layers, hang a light from its hand. */
+  private dressKit(a: Actor, fit: THREE.Object3D, kit: Silhouette) {
+    // the Animator rewrites the fit wrapper's own scale and rotation every frame, so the squash goes on the model inside it; the extras ride the
+    // wrapper (they topple with the corpse) and share the hunch, but not the squash: they are drawn in rig units
+    const model = fit.children[0], dress = new THREE.Group();
+    if (kit.squash) model.scale.multiply(new THREE.Vector3(...kit.squash));
+    if (kit.lean) model.rotation.x = dress.rotation.x = kit.lean;
+    if (kit.squash && !kit.squashRig) dress.scale.set(...kit.squash);
+    fit.add(dress);
+    for (const l of kit.layers) {
+      const m = new THREE.Mesh(mergeLayer(l), material(l.color ?? a.mats[0].color.getHex(), l.lit ? 'glow' : 'hide'));
+      if (!l.lit) m.material.emissive.setHex(a.glow);
+      m.castShadow = !l.lit;
+      m.raycast = () => {}; // the click volume is the enemy's own
+      dress.add(m);
+      if (!l.lit) a.mats.push(m.material);
     }
-    // the carapace: a domed shell over the pig's back and brow, wider than it is long, so the boar's head and ears stop being the silhouette; and the eyes on stalks
-    parts.push(new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).scale(1.05, 0.55, 0.95).translate(0, 0.35, 0.1).toNonIndexed());
-    for (const side of [1, -1]) {
-      parts.push(new THREE.CylinderGeometry(0.03, 0.04, 0.35, 4).translate(side * 0.2, 0.85, 0.75).toNonIndexed(), new THREE.SphereGeometry(0.07, 5, 4).translate(side * 0.2, 1.05, 0.75).toNonIndexed());
+    const hand = kit.handLight && fit.getObjectByName(GEM_HAND);
+    if (hand && kit.handLight) {
+      a.group.updateMatrixWorld(true);
+      const orb = mesh(new THREE.OctahedronGeometry(kit.handLight.size), kit.handLight.color, 'glow', 'none');
+      orb.scale.setScalar(1 / hand.getWorldScale(new THREE.Vector3()).x); // bone space is rig-scaled: undo it so the light is in world units
+      orb.position.copy(hand.worldToLocal(hand.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, GEM_LIFT, 0))));
+      orb.raycast = () => {};
+      hand.add(orb);
     }
-    const m = new THREE.Mesh(mergeGeometries(parts)!, material(a.mats[0].color.getHex(), 'hide'));
-    m.material.emissive.setHex(a.glow);
-    m.castShadow = true;
-    m.raycast = () => {};
-    a.group.add(m);
-    a.mats.push(m.material);
   }
 
   private dressTrees(tree: Prepared, stump: Prepared) {
