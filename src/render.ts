@@ -10,6 +10,8 @@ import { HARBOURMASTER, NPC, harbourMarker as harbourMarkOf, npcMarker as marker
 import { VENDOR } from './sim/shop';
 import { Motes, Particles, Rings, Slashes } from './fx';
 import { PostStack, Quality } from './post';
+import { Weather } from './weather';
+import { SkyDome, Rain } from './sky';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
 import { Animator } from './anim';
 import { PlayerGear } from './gear';
@@ -229,6 +231,12 @@ export class Renderer {
   debugCam: { pos: number[]; at: number[] } | null = null;
   private sun = new THREE.DirectionalLight(P.moon, 3);
   post!: PostStack;
+  /** Random, self-changing weather (render-side only; the sim never sees it). `__debug.view.weather.set('rain', true)` pins it. */
+  readonly weather = new Weather();
+  private skyDome!: SkyDome;
+  private rain = new Rain();
+  private skyClock = 0;
+  private fogLift = new THREE.Color(0x3b4754);
 
   // orbit camera (render-side only; sim never sees it except via input direction)
   yaw = 0;
@@ -286,6 +294,7 @@ export class Renderer {
     this.curr.x = this.prev.x = s.player.x;
     this.curr.z = this.prev.z = s.player.z;
     this.post = new PostStack(this.renderer, this.scene, this.camera, quality);
+    this.skyDome.setQuality(quality); this.rain.setQuality(quality);
     addEventListener('resize', () => this.resize());
     this.resize();
     this.modelsReady = this.populate(s).then(() => this.warmUp());
@@ -302,7 +311,7 @@ export class Renderer {
     for (const [o, [v, f]] of saved) { o.visible = v; o.frustumCulled = f; }
   }
 
-  /** Gradient sky baked once through PMREM: background and image-based ambient light in one. */
+  /** The image-based ambient light, baked once through PMREM from a gradient (the visible sky is the live dome in sky.ts; re-baking this per frame is the cost). */
   private setupSky() {
     const horizon = P.horizon;
     this.scene.fog = new THREE.Fog(horizon, FOG.near, FOG.far);
@@ -328,9 +337,11 @@ export class Renderer {
     skyScene.add(sky);
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     const rt = pmrem.fromScene(skyScene);
-    this.scene.environment = this.scene.background = rt.texture;
+    this.scene.environment = rt.texture;
     this.scene.environmentIntensity = DAY.env;
-    this.scene.backgroundIntensity = 1.0;
+    this.skyDome = new SkyDome({ zenith: P.skyZenith, mid: P.skyMid, horizon, ground: P.skyGround, moon: P.moon }, SUN_OFFSET);
+    this.scene.add(this.skyDome.mesh, this.rain.lines);
+    this.rain.setQuality('high');
     pmrem.dispose();
   }
 
@@ -543,15 +554,18 @@ export class Renderer {
   /** Daylight to cave dark by `depth` (the sim's caveDepth at the player): sun, sky, ambient and fog fade, the lantern comes up. */
   private applyCaveLight(depth: number, x: number, z: number) {
     const mix = THREE.MathUtils.lerp;
-    this.sun.intensity = mix(DAY.sun, CAVE_LIGHT.sun, depth);
+    const w = this.weather.look;
+    this.sun.intensity = mix(DAY.sun * w.sun, CAVE_LIGHT.sun, depth);
     this.rim.intensity = mix(DAY.rim, CAVE_LIGHT.rim, depth);
-    this.hemi.intensity = mix(DAY.hemi, CAVE_LIGHT.hemi, depth);
-    this.scene.environmentIntensity = mix(DAY.env, CAVE_LIGHT.env, depth);
-    this.scene.backgroundIntensity = mix(DAY.sky, CAVE_LIGHT.sky, depth);
+    this.hemi.intensity = mix(DAY.hemi * w.hemi, CAVE_LIGHT.hemi, depth);
+    this.scene.environmentIntensity = mix(DAY.env * w.env, CAVE_LIGHT.env, depth);
     const fog = this.scene.fog as THREE.Fog;
-    fog.color.setHex(P.horizon).lerp(this.caveFogColor, depth);
-    fog.near = mix(FOG.near, CAVE_LIGHT.fog.near, depth);
-    fog.far = mix(FOG.far, CAVE_LIGHT.fog.far, depth);
+    fog.color.setHex(P.horizon).lerp(this.fogLift, w.lift).lerp(this.caveFogColor, depth);
+    fog.near = mix(w.fogNear, CAVE_LIGHT.fog.near, depth);
+    fog.far = mix(w.fogFar, CAVE_LIGHT.fog.far, depth);
+    // the sky and the rain go with the daylight: nothing of the weather reaches underground (rain is gone by the first few metres of cave)
+    this.skyDome.update(this.skyClock, w.cover, fog.color, mix(DAY.sky, CAVE_LIGHT.sky, depth), this.camera.position);
+    this.rain.update(this.skyClock, w.rain * (1 - THREE.MathUtils.clamp(depth * 5, 0, 1)), this.camera.position);
     this.lantern.intensity = CAVE_LIGHT.lantern.intensity * depth;
     this.lantern.position.set(x, CAVE_LIGHT.lantern.y, z);
     this.mithrilLight.intensity = MITHRIL_LIGHT.intensity * depth * this.veinGlow;
@@ -831,7 +845,7 @@ export class Renderer {
   }
 
   get quality() { return this.post.quality; }
-  setQuality(q: Quality) { this.post.setQuality(q); }
+  setQuality(q: Quality) { this.post.setQuality(q); this.skyDome.setQuality(q); this.rain.setQuality(q); }
 
   orbit(dx: number, dy: number) {
     this.yaw -= dx * 0.005;
@@ -1300,6 +1314,8 @@ export class Renderer {
     this.camera.lookAt(x, 1.5 + lift, z);
     if (this.debugCam) { this.camera.position.fromArray(this.debugCam.pos); this.camera.lookAt(...(this.debugCam.at as [number, number, number])); } // dev only: bench/look.mjs close-ups
     this.forgeLight.intensity = FORGE_LIGHT.intensity * (1 + 0.07 * Math.sin(nowMs / 90) + 0.05 * Math.sin(nowMs / 37));
+    this.weather.update(dtFx);
+    this.skyClock += dtFx;
     this.applyCaveLight(caveDepth(x, z), x, z);
     this.caveFlames.forEach(f => f.m.scale.set(1, 0.85 + 0.25 * Math.sin(nowMs / 110 + f.phase) + 0.1 * Math.sin(nowMs / 47 + f.phase), 1));
     if (this.hallLight) this.hallLight.intensity = BRAZIER_LIGHT.intensity * (1 + 0.08 * Math.sin(nowMs / 100) + 0.05 * Math.sin(nowMs / 41));
