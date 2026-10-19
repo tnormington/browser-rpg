@@ -49,6 +49,13 @@ const SOUNDS = {
 } satisfies Record<string, Layer>;
 const slamVol = (radius: number) => Math.min(1, 0.5 + radius / 12);
 
+/** Looping beds by region id (a region with no entry is silent), and the level each plays at. */
+const AMBIENCE: Record<string, { file: string; vol: number }> = {
+  greywater: { file: 'road-ambience', vol: 0.35 },
+  saltmarrow: { file: 'coast-ambience', vol: 0.4 },
+};
+const AMBIENCE_FADE = 1.5;   // seconds to cross between beds
+
 const MASTER_GAIN = 0.8;
 const DUCK_GAIN = 0.35, DUCK_HOLD = 1;   // death: master to DUCK_GAIN, linear ramp back over DUCK_HOLD seconds
 const GLOBAL_VOICES = 16, QUIET = 0.3;   // over the global cap, quiet sounds are dropped first
@@ -83,7 +90,8 @@ export function unlockAudio() {
       master.connect(ctx.destination);
       setTimeout(loadSamples, 0);   // after the gesture handler returns, never in the initial load
     }
-    if (ctx.state === 'suspended') void ctx.resume();
+    if (ctx.state === 'suspended') void ctx.resume().then(syncAmbience);
+    else syncAmbience();
   } catch { ctx = null; master = null; }
 }
 
@@ -105,6 +113,42 @@ function duck() {
   master.gain.setValueAtTime(DUCK_GAIN, t);
   master.gain.setValueAtTime(DUCK_GAIN, t + DUCK_HOLD);
   master.gain.linearRampToValueAtTime(MASTER_GAIN, t + DUCK_HOLD * 2);
+}
+
+// ---- ambience: one looping bed at a time, crossfaded as the player changes region ----
+interface Bed { file: string; src: AudioBufferSourceNode; gain: GainNode }
+let bed: Bed | null = null;
+let wantBed: string | null = null;   // region id asked for; kept so a bed asked for before decode or unlock still starts
+
+/** Call whenever the player's region changes (and once at start): fades the matching bed in and the old one out. */
+export function setAmbience(region: string | null) {
+  wantBed = region;
+  syncAmbience();
+}
+
+function syncAmbience() {
+  if (!ctx || !master || ctx.state !== 'running') return;
+  const cfg = wantBed ? AMBIENCE[wantBed] : undefined;
+  const buf = cfg && buffers.get(cfg.file);
+  if (cfg && !buf) { setTimeout(syncAmbience, 500); return; }   // still decoding
+  if (bed && bed.file === cfg?.file) return;
+  const t = ctx.currentTime;
+  if (bed) {
+    const old = bed;
+    old.gain.gain.cancelScheduledValues(t);
+    old.gain.gain.setValueAtTime(old.gain.gain.value, t);
+    old.gain.gain.linearRampToValueAtTime(0, t + AMBIENCE_FADE);
+    old.src.stop(t + AMBIENCE_FADE + 0.05);
+    bed = null;
+  }
+  if (!cfg || !buf) return;
+  const src = ctx.createBufferSource(), gain = ctx.createGain();
+  src.buffer = buf; src.loop = true;
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(cfg.vol, t + AMBIENCE_FADE);
+  src.connect(gain).connect(master);
+  src.start(t);
+  bed = { file: cfg.file, src, gain };
 }
 
 const live = (g?: Group) => voices.filter(v => !g || v.group === g);

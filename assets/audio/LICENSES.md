@@ -36,3 +36,12 @@ Packs:
 | chop.ogg | RPG Audio | chop.ogg | Kenney | CC0 | 2026-10-18 |
 | loot.ogg | RPG Audio | handleCoins.ogg | Kenney | CC0 | 2026-10-18 |
 | quest-complete.ogg | RPG Audio | handleCoins2.ogg | Kenney | CC0 | 2026-10-18 |
+
+## Ambience beds (not Kenney)
+
+Both are CC0, cut to a 20 s seamless loop (2 s triangle crossfade, mono, 32 kHz, loudness-normalised to -26 LUFS, Vorbis q2) with ffmpeg. Fetched 2026-10-19; the source recordings are not in the repo.
+
+| File | Source | Author | Licence | Fetched |
+|---|---|---|---|---|
+| coast-ambience.ogg | "Sea and river wave sounds", VistulaShort_0.mp3 (24 s from 1:00) — https://opengameart.org/content/sea-and-river-wave-sounds (file: https://opengameart.org/sites/default/files/VistulaShort_0.mp3) | RandomMind | CC0 | 2026-10-19 |
+| road-ambience.ogg | "Birds and wind - ambient", Birds and Wind - Ambient.ogg (24 s from 0:10) — https://opengameart.org/content/birds-and-wind-ambient-birds-wind-and-synth (file: https://opengameart.org/sites/default/files/Birds%20and%20Wind%20-%20Ambient_1.ogg) | Spring Spring | CC0 | 2026-10-19 |
