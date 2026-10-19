@@ -2432,4 +2432,65 @@ section('HOM-31 the delve: the first trip into the hollow is made before the set
   assert(said, 'a click that cannot be walked is acknowledged with a stuck event, not dropped silently');
 }
 
+// ---------------------------------------------------------------------------
+section('HOM-35 audio events: footfalls on the ground, strikes while a gather runs');
+{
+  type Ev = GameState['events'][number];
+  const steps = (s: GameState, secs: number, i: Partial<Input>) => {
+    const at: number[] = [], surf: string[] = [];
+    for (let n = 0; n < Math.round(secs / TICK_DT); n++) { tick(s, i); for (const ev of s.events) if (ev.t === 'step') { at.push(n * TICK_DT); surf.push(ev.surface); } }
+    return { at, surf };
+  };
+  const s = quietState(351);
+  s.player.x = 0; s.player.z = 0;
+  const idle = steps(s, 2, {});
+  assert(idle.at.length === 0, 'standing still makes no footfalls');
+  const walk = steps(s, 4, { dirX: 1, dirZ: 0 });
+  const gaps = walk.at.slice(1).map((t, i) => t - walk.at[i]);
+  assert(walk.at.length >= 8 && walk.at.length <= 9 && walk.at[0] < 0.3, `running makes a footfall about every 0.45s, the first within a quarter second (${walk.at.length} in 4s, first at ${walk.at[0]?.toFixed(2)}s)`);
+  assert(gaps.every(g => Math.abs(g - 0.45) < 0.07) && walk.surf.every(f => f === 'grass'), 'strides are evenly spaced and land on grass in the open');
+
+  const h = quietState(352);
+  h.player.x = 0; h.player.z = 0;
+  let hops = 0, footfallsInAir = 0;
+  for (let n = 0; n < 5 * 30; n++) { tick(h, { dirX: 1, dirZ: 0, jump: true }); if (h.player.airborne) footfallsInAir += h.events.filter(e => e.t === 'step').length; hops += h.events.filter(e => e.t === 'jump').length; }
+  assert(hops >= 4 && footfallsInAir === 0, `no footfall while airborne, even running and hopping (${hops} hops)`);
+
+  const c = quietState(353);
+  c.player.x = -18; c.player.z = -30;
+  const cave = steps(c, 3, { dirX: 0, dirZ: -1 });
+  assert(inCave(c.player.x, c.player.z) && cave.surf.length >= 5 && cave.surf.every(f => f === 'cave'), `inside the cave the footfalls are cave (${cave.surf.length} strides to z=${c.player.z.toFixed(0)})`);
+  const out = quietState(354);
+  out.player.x = -18; out.player.z = -20;
+  const mouth = steps(out, 3, { dirX: 0, dirZ: -1 });
+  assert(mouth.surf.includes('grass') && mouth.surf.includes('cave') && mouth.surf.indexOf('cave') > mouth.surf.indexOf('grass'), 'walking in from the clearing the surface turns from grass to cave at the mouth');
+
+  // gathering: a strike every 1.1s of the cycle, before the yield
+  const g = quietState(355);
+  const rock = nodesOf(g, 'iron')[0];
+  g.player.x = rock.x + rock.r + 1.2; g.player.z = rock.z;
+  tick(g, { interact: { k: 'node', id: rock.id } });
+  assert(g.player.action?.k === 'gather', 'in reach, the gather begins');
+  const strikes: number[] = [];
+  let yields = 0;
+  for (let n = 0; n < Math.round((NODE_TYPES.iron.time + 0.5) / TICK_DT); n++) {
+    tick(g);
+    for (const ev of g.events as Ev[]) {
+      if (ev.t === 'gather') { assert(ev.skill === 'mining' && ev.node === rock.id, 'a strike names the skill and the node'); strikes.push(n * TICK_DT); }
+      if (ev.t === 'xp') yields++;
+    }
+  }
+  assert(strikes.length === 3 && strikes.every((t, i) => Math.abs(t - 1.1 * (i + 1)) < 0.1), `a ${NODE_TYPES.iron.time}s iron mine strikes three times at about 1.1s, 2.2s, 3.3s (${strikes.map(t => t.toFixed(2)).join(', ')})`);
+  assert(yields === 1, 'one yield by the end of the first cycle, after the third strike');
+  const t2 = quietState(356);
+  const tree = nodesOf(t2, 'tree')[0];
+  t2.player.x = tree.x + tree.r + 1.2; t2.player.z = tree.z;
+  tick(t2, { interact: { k: 'node', id: tree.id } });
+  let chops = 0, treeSkill = '';
+  for (let n = 0; n < Math.round(NODE_TYPES.tree.time / TICK_DT) - 1; n++) { tick(t2); for (const ev of t2.events as Ev[]) if (ev.t === 'gather') { chops++; treeSkill = ev.skill; } }
+  assert(chops === 2 && treeSkill === 'woodcutting', `a ${NODE_TYPES.tree.time}s chop strikes twice with the woodcutting skill`);
+  tick(t2, { dirX: 1, dirZ: 0 });
+  assert(!hasEvent(t2, e => e.t === 'gather') && t2.player.action === null, 'walking away ends the strikes with the action');
+}
+
 console.log(`\nAll ${checks} checks passed.`);

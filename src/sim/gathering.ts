@@ -51,6 +51,14 @@ export function beginGather(s: GameState, node: ResourceNode) {
   p.action = { k: 'gather', nodeId: node.id, t: 0, duration: def.time };
 }
 
+/** The pick or axe falls every GATHER_STRIKE seconds of a cycle, so audio lands on a beat instead of once at the end. */
+export const GATHER_STRIKE = 1.1;
+export function strikeGather(s: GameState, a: Extract<Action, { k: 'gather' }>, before: number) {
+  if (Math.floor(a.t / GATHER_STRIKE) > Math.floor(before / GATHER_STRIKE)) {
+    s.events.push({ t: 'gather', skill: NODE_TYPES[nodeById(s, a.nodeId)!.type].skill, node: a.nodeId });
+  }
+}
+
 /** One gather cycle completed: yield, xp, charge use. Ends or continues the action. */
 export function finishGather(s: GameState, a: Extract<Action, { k: 'gather' }>) {
   const p = s.player, node = nodeById(s, a.nodeId);

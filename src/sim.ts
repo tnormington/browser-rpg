@@ -26,6 +26,7 @@ export type { QuestState } from './sim/quest';
 
 export { TICK_RATE, TICK_DT };
 const MOVE_SPEED = 6;
+export const STRIDE_DIST = 2.7; // one footfall: 0.45s of running at MOVE_SPEED (the audio request's cadence; not checked against the run clip's footfalls)
 const ARRIVE_DIST = 0.15;
 
 export type EnemyState = 'idle' | 'chase' | 'return' | 'dead';
@@ -58,6 +59,7 @@ export interface Player {
   x: number; z: number; facing: number; moving: boolean;
   /** Height above the (flat) ground, world units. 0 on the ground. Presentation only: no rule reads it. */
   y: number; vy: number;
+  stride: number;          // ground distance walked since the last footfall; starts at half a stride so the first foot lands quickly
   airborne: boolean;       // y > 0 after this tick's integration: what the renderer reads
   autoAttack: boolean;     // armed: swings at the target whenever the swing timer is up and the target is in reach
   swing: number;           // seconds until the next swing may land; counts down to 0 and waits there for the target to be in reach. Interval is stats.swingInterval
@@ -97,6 +99,8 @@ export type GameEvent =
   | { t: 'stuck' }                                          // a click-to-move walk could not go anywhere: the HUD says so
   | { t: 'jump' }                                           // left the ground
   | { t: 'land'; x: number; z: number }                     // back on the ground
+  | { t: 'step'; surface: 'grass' | 'cave' }                // a foot came down: once per STRIDE_DIST walked on the ground, not while airborne
+  | { t: 'gather'; skill: SkillId; node: number }           // a strike of a gather in progress (pick, axe): every GATHER_STRIKE seconds, before the yield
   | { t: 'kill'; id: number; x: number; z: number }
   | { t: 'xp'; skill: SkillId; amount: number; x: number; z: number }
   | { t: 'levelup'; skill: SkillId; level: number }
@@ -159,7 +163,7 @@ export function createState(seed = 1): GameState {
     rng: seed,
     player: {
       x: PLAYER_SPAWN.x, z: PLAYER_SPAWN.z, facing: Math.PI, moving: false,
-      y: 0, vy: 0, airborne: false, autoAttack: false, swing: 0, inCombat: false, recap: [],
+      y: 0, vy: 0, stride: STRIDE_DIST / 2, airborne: false, autoAttack: false, swing: 0, inCombat: false, recap: [],
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
       gcd: 0, cd: ABILITIES.map(() => 0), unlocked: 1, queued: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
@@ -268,11 +272,22 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   p.moving = moved > 1e-4;
   if (len > 1e-4) p.facing = Math.atan2(dx, dz);
   stepVertical(s, input.jump === true, dt);
+  stepStride(s, moved);
   // click-to-move blocked by an obstacle: give up instead of pushing forever
   if (s.moveTarget && len > 1e-4 && moved < len * MOVE_SPEED * dt * 0.1) {
     s.moveTarget = null;
     s.events.push({ t: 'stuck' });
   }
+}
+
+/** Footfalls: one `step` per STRIDE_DIST of ground covered, so the cadence follows speed. Airborne or standing resets to mid-stride. */
+function stepStride(s: GameState, moved: number) {
+  const p = s.player;
+  if (!p.moving || p.y > 0) { p.stride = STRIDE_DIST / 2; return; }
+  p.stride += moved;
+  if (p.stride < STRIDE_DIST) return;
+  p.stride -= STRIDE_DIST;
+  s.events.push({ t: 'step', surface: inCave(p.x, p.z) ? 'cave' : 'grass' });
 }
 
 /**

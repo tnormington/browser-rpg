@@ -1,7 +1,7 @@
 // The player's one timed action (gathering or crafting) and the click-to-interact walk that starts it.
 import type { GameState } from '../sim';
 import { PLAYER_RADIUS, LANDMARKS, OBSTACLES, clampToWorld } from './world';
-import { beginGather, finishGather, nodeById } from './gathering';
+import { beginGather, finishGather, nodeById, strikeGather } from './gathering';
 import { finishCraft } from './crafting';
 import { NPC } from './quest';
 
@@ -57,7 +57,8 @@ export function updateAction(s: GameState, dt: number) {
   const p = s.player, a = p.action;
   if (!a) return;
   if (p.dead || p.moving) { p.action = null; return; }
+  const before = a.t;
   a.t += dt;
-  if (a.t < a.duration) return;
+  if (a.t < a.duration) { if (a.k === 'gather') strikeGather(s, a, before); return; }
   if (a.k === 'gather') finishGather(s, a); else finishCraft(s, a);
 }
