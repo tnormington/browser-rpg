@@ -1,4 +1,4 @@
-﻿// Rendering only: reads GameState, never mutates it.
+// Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
@@ -125,7 +125,17 @@ const GROTTO = {
   floor: 0x26403f, floorAlt: 0x305250, wall: new THREE.Color(0.78, 1, 0.95), water: 0x2f6e74, timber: 0x6a5a48, lantern: 0x58d8c8,
   fog: new THREE.Color(0x04100f), light: { color: 0x58d8c8, intensity: 150, distance: 22, y: 5.2 },
 };
-const FLOORS: Record<string, [number, number]> = { hollow: [P.caveFloor, P.caveFloorAlt], grotto: [GROTTO.floor, GROTTO.floorAlt] };
+/**
+ * The Rotroot (bible 1.2): the Thornwood's roots grown through a hollow, fungal and organic. Dark loam floor, root-brown walls, great roots arching
+ * overhead, and the only light is a cold sickly green-violet from the fungus. No water; the Grotto's turned about.
+ */
+const ROTROOT = {
+  floor: 0x2a2a1e, floorAlt: 0x363322, wall: new THREE.Color(1, 0.72, 0.5), root: 0x4a3a2a, fungus: 0x9ae07a,
+  fog: new THREE.Color(0x0a0a06), light: { color: 0x8fd878, intensity: 120, distance: 20, y: 4.6 },
+};
+const FLOORS: Record<string, [number, number]> = { hollow: [P.caveFloor, P.caveFloorAlt], grotto: [GROTTO.floor, GROTTO.floorAlt], rotroot: [ROTROOT.floor, ROTROOT.floorAlt] };
+/** Per-dungeon rock tint and air; the Hollow is the default and falls through. */
+const DUNGEON_LOOK: Record<string, { wall: THREE.Color; fog: THREE.Color }> = { grotto: GROTTO, rotroot: ROTROOT };
 
 /**
  * Arcane crystal clusters: the cold emissive accents the art direction asks for (docs/art-direction.md), small bright shapes against large
@@ -554,6 +564,41 @@ export class Renderer {
     this.mithrilLight.position.set(MITHRIL_LIGHT.x, MITHRIL_LIGHT.y, MITHRIL_LIGHT.z);
     this.scene.add(this.lantern, this.mithrilLight);
     this.buildGrotto();
+    this.buildRotroot();
+  }
+
+  /** The Rotroot's dressing, one merged draw each for roots and fungus glow, and a light in each room: roots arch over the rooms, fungus clusters on them and the floor. */
+  private buildRotroot() {
+    const rooms = CAVE_ROOMS.filter(r => r.dungeon === 'rotroot');
+    const roots: THREE.BufferGeometry[] = [], glow: THREE.BufferGeometry[] = [];
+    let n = 0;
+    const rnd = () => this.jitter(900 + n++);
+    for (const { rect: r } of rooms) {
+      const w = r.x1 - r.x0, d = r.z1 - r.z0;
+      // roots: thick arches from each wall, closer together and more ragged than the Grotto's ribs, with a fungus bloom where each one meets the floor
+      const R = Math.min(5.5, w * 0.48);
+      for (let z = r.z0 + 2, i = 0; z < r.z1 - 1.5; z += 3.2, i++) {
+        for (const side of [1, -1] as const) {
+          const rad = R * (0.8 + rnd() * 0.4), arc = new THREE.TorusGeometry(rad, 0.22 + rnd() * 0.18, 5, 9, Math.PI * (0.35 + rnd() * 0.15));
+          if (side < 0) arc.rotateY(Math.PI);
+          const bx = side > 0 ? r.x1 - rad : r.x0 + rad, zz = z + (rnd() - 0.5) * 1.2;
+          roots.push(arc.translate(bx, 0, zz));
+          if ((i + (side > 0 ? 1 : 0)) % 2 === 0) glow.push(new THREE.ConeGeometry(0.28, 0.5, 5).translate(side > 0 ? r.x1 - 0.9 : r.x0 + 0.9, 0.25, zz + 0.4));
+        }
+      }
+      // standing roots and fungus on the floor: knuckled stumps, and clusters of caps, kept out of the doorways
+      for (let i = 0; i < Math.round(d / 2.5); i++) {
+        const x = r.x0 + 1.2 + rnd() * (w - 2.4), z = r.z0 + 4 + rnd() * (d - 8);
+        if (i % 2) roots.push(new THREE.CylinderGeometry(0.3, 0.6, 0.9 + rnd() * 0.8, 6).translate(x, 0.5, z));
+        else for (let k = 0; k < 3; k++) glow.push(new THREE.SphereGeometry(0.2 + rnd() * 0.18, 6, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(x + (rnd() - 0.5) * 1.1, 0.05, z + (rnd() - 0.5) * 1.1));
+      }
+    }
+    this.scene.add(mesh(mergeGeometries(roots)!, ROTROOT.root, 'wood', 'cast'), mesh(mergeGeometries(glow)!, ROTROOT.fungus, 'glow', 'none'));
+    for (const room of rooms) {
+      const l = new THREE.PointLight(ROTROOT.light.color, ROTROOT.light.intensity, ROTROOT.light.distance);
+      l.position.set((room.rect.x0 + room.rect.x1) / 2, ROTROOT.light.y, (room.rect.z0 + room.rect.z1) / 2);
+      this.scene.add(l);
+    }
   }
 
   /** The Grotto's own dressing, one merged draw each for standing water, timber and lantern glass, and a light in each room. */
@@ -612,8 +657,9 @@ export class Renderer {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(), pos = new THREE.Vector3();
     this.caveWallPts.forEach((p, i) => {
       const s = p.w / unit;
-      // the Hollow's rock goes dark past the threshold, so the way in reads as a way in; the Grotto's stays pale with barnacle, the one thing the lantern can find
-      im.setColorAt(i, dungeonAt(p.x, p.z)?.id === 'grotto' ? shade.copy(GROTTO.wall) : shade.setScalar(THREE.MathUtils.lerp(1, 0.3, THREE.MathUtils.clamp((-p.z - 30) / 10, 0, 1))));
+      // the Hollow's rock goes dark past the threshold, so the way in reads as a way in; the Grotto's stays pale with barnacle, the one thing the lantern can find, the Rotroot's is root-brown
+      const look = DUNGEON_LOOK[dungeonAt(p.x, p.z)?.id ?? ''];
+      im.setColorAt(i, look ? shade.copy(look.wall) : shade.setScalar(THREE.MathUtils.lerp(1, 0.3, THREE.MathUtils.clamp((-p.z - 30) / 10, 0, 1))));
       im.setMatrixAt(i, m.compose(pos.set(p.x, -0.2, p.z), q.setFromAxisAngle(up, p.r * 40), sc.set(s, s * WALL_HEIGHT, s)));
     });
     im.castShadow = im.receiveShadow = true;
@@ -661,7 +707,7 @@ export class Renderer {
     this.scene.environmentIntensity = mix(DAY.env * w.env, CAVE_LIGHT.env, depth);
     const fog = this.scene.fog as THREE.Fog;
     const air = this.zoneAir(x, z);
-    this.caveFogColor.lerp(dungeonAt(x, z)?.id === 'grotto' ? GROTTO.fog : this.caveFogHollow, 0.05); // the Grotto's dark is green-black, the Hollow's blue-black
+    this.caveFogColor.lerp((DUNGEON_LOOK[dungeonAt(x, z)?.id ?? ''] ?? { fog: this.caveFogHollow }).fog, 0.05); // the Grotto's dark is green-black, the Rotroot's loam-black, the Hollow's blue-black
     fog.color.setHex(P.horizon).lerp(this.fogLift, w.lift).lerp(FEN_AIR.color, air.fen * 0.5).lerp(WOOD_AIR.color, air.wood * 0.4).lerp(this.caveFogColor, depth);
     fog.near = mix(w.fogNear + air.fen * 2 - air.wood * 2, CAVE_LIGHT.fog.near, depth);
     fog.far = mix(w.fogFar + air.fen * 10 - air.wood * 7, CAVE_LIGHT.fog.far, depth);
