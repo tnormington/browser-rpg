@@ -5,7 +5,7 @@ import { addItem, countItem, INVENTORY_SIZE } from './sim/inventory';
 import { ITEMS, DROP_TABLES, MITHRIL_SET, TIER_COLORS, deriveStats, emptyEquipment } from './sim/items';
 import {
   ABILITIES, ENEMY_TYPES, SPAWNS, aggroRadius, castName, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
-  GRAVITY, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW,
+  FALL_GRAVITY, GRAVITY, JUMP_AIRTIME, JUMP_HEIGHT, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW,
 } from './sim/data';
 import { xpForLevel, levelForXp, addXp, newTrack, levelProgress } from './sim/xp';
 import { SKILL_IDS, SKILLS, grantXp } from './sim/skills';
@@ -1503,15 +1503,18 @@ section('HOM-16 jump: leaves the ground, lands, and changes nothing about reach 
   }
   assert(flagTracksY, 'the airborne flag is true on every tick between takeoff and landing');
   assert(landed && p.y === 0 && p.vy === 0 && !p.airborne && landEvents === 1, `lands: y 0, vy 0, not airborne, one land event (${air} ticks, ${(air * TICK_DT).toFixed(2)}s in the air)`);
-  assert(air * TICK_DT > 0.5 && air * TICK_DT < 1.0, 'the hop lasts between half a second and a second');
-  assert(peak > 1.0 && peak < 1.7 && Math.abs(peak - JUMP_VELOCITY ** 2 / (2 * GRAVITY)) < 0.25, `peak height ${peak.toFixed(2)}u matches v^2/2g (${(JUMP_VELOCITY ** 2 / (2 * GRAVITY)).toFixed(2)}u)`);
+  assert(air * TICK_DT > 0.45 && air * TICK_DT < 0.65, `the hop is quick: ${(air * TICK_DT).toFixed(2)}s in the air, between 0.45s and 0.65s`);
+  assert(Math.abs(air * TICK_DT - JUMP_AIRTIME) < 0.05, `and matches the JUMP_AIRTIME the jump clip is stretched over (${JUMP_AIRTIME.toFixed(2)}s)`);
+  assert(peak > 1.0 && peak < 1.5 && Math.abs(peak - JUMP_HEIGHT) < 0.25, `peak height ${peak.toFixed(2)}u matches v^2/2g (${JUMP_HEIGHT.toFixed(2)}u)`);
+  const up = JUMP_VELOCITY / GRAVITY;
+  assert(FALL_GRAVITY > GRAVITY && JUMP_AIRTIME - up < up, `and the fall is the quicker half, as in WoW: ${up.toFixed(2)}s up, ${(JUMP_AIRTIME - up).toFixed(2)}s down`);
 
   // one jump per takeoff; a held key hops again on landing; a jump in the air does nothing
   const h = quietState(402);
   const jumpTicks: number[] = [];
   for (let n = 0; n < 5 * 30; n++) { tick(h, { jump: true }); if (hasEvent(h, e => e.t === 'jump')) jumpTicks.push(n); }
   const gaps = jumpTicks.slice(1).map((t, i) => t - jumpTicks[i]);
-  assert(jumpTicks.length >= 4 && gaps.every(g => g >= 20), `no double jump: holding the key hops again only after landing (${jumpTicks.length} hops, gaps ${gaps.join('/')} ticks)`);
+  assert(jumpTicks.length >= 4 && gaps.every(g => g >= Math.floor(JUMP_AIRTIME / TICK_DT)), `no double jump: holding the key hops again only after landing (${jumpTicks.length} hops, gaps ${gaps.join('/')} ticks)`);
 
   // deterministic: same inputs, same arc, to the bit
   const arc = (seed: number) => { const g = quietState(seed); const ys: number[] = []; for (let n = 0; n < 60; n++) { tick(g, { jump: n === 3 || n === 40 }); ys.push(g.player.y); } return JSON.stringify(ys); };
@@ -1546,7 +1549,7 @@ section('HOM-16 jump: leaves the ground, lands, and changes nothing about reach 
   };
   const def = ENEMY_TYPES.brute.heavy!;
   const slams: { dmg: number; air: boolean }[] = [];
-  for (let seed = 405; seed < 413; seed++) { // a hop lasts ~0.7s: different seeds put the slam at different points of it
+  for (let seed = 405; seed < 413; seed++) { // a hop lasts about half a second: different seeds put the slam at different points of it
     const { s, b } = mk(seed);
     for (let i = 0; i < 400 && !b.cast; i++) tick(s, { jump: true });
     s.player.hp = s.player.maxHp;

@@ -160,10 +160,13 @@ export class Animator {
     if (c && !this.holding) this.play(this.def.jump!, { once: true, fade: 0.06, speed: c.getClip().duration / airtime });
   }
 
-  /** Touchdown: a squash that springs back, and the jump clip hands back to locomotion. */
+  /**
+   * Touchdown: a squash that springs back, and the jump clip hands back to locomotion. Short and shallow on purpose --
+   * the hop is only about half a second, and a long recovery under it is what made a quick jump still feel heavy.
+   */
   touchdown(weight = 1) {
     this.air = 0;
-    this.land = { t: 0, dur: 0.3, peak: 0.25, amp: weight, dir: 1 };
+    this.land = { t: 0, dur: 0.17, peak: 0.3, amp: weight * 0.6, dir: 1 };
     if (this.def.jump && this.current === this.actions.get(this.def.jump) && !this.holding) { this.oneShot = false; this.loop(); }
   }
 

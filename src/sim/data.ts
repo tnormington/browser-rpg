@@ -15,9 +15,18 @@ export const TAB_RANGE = 30;
 export const ACQUIRE_RANGE = 20;      // "attack with no target" / forgiving click: nearest hostile in front within this
 export const ACQUIRE_BEHIND_RANGE = 6; // ...and failing that, anything this close even behind you (the wolf biting your back)
 export const FRONT_HALF_ARC = 70;     // degrees either side of facing that count as "in front" (a generous 140-degree cone)
-// Jump: expression, not traversal. ~1.4u high for ~0.73s, in the air at the same speed you ran at (no change to reach).
-export const JUMP_VELOCITY = 8;
-export const GRAVITY = 22;
+/**
+ * Jump: expression, not traversal. WoW's hop, which is quick in both directions and quicker coming down than going up --
+ * you are off the ground on the frame you press, over the top before you can think about it, and planted again in about
+ * half a second, so it never reads as hanging. Gravity is asymmetric for exactly that: the rise is a push, the fall is a
+ * drop. ~1.2u high over ~0.53s, in the air at the same speed you ran at (no change to reach).
+ */
+export const JUMP_VELOCITY = 9;
+export const GRAVITY = 30;       // on the way up
+export const FALL_GRAVITY = 42;  // on the way down: 1.4x, so the descent is the snappy half
+export const JUMP_HEIGHT = JUMP_VELOCITY ** 2 / (2 * GRAVITY);
+/** Seconds a jump stays in the air, up at GRAVITY and down at FALL_GRAVITY. The jump clip is stretched over this. */
+export const JUMP_AIRTIME = JUMP_VELOCITY / GRAVITY + Math.sqrt((2 * JUMP_HEIGHT) / FALL_GRAVITY);
 export const PLAYER_SPAWN = { x: 0, z: 6 };
 
 // Auto-attack: a WoW-style melee swing on its own timer, off the GCD and free of energy. Rhythm, not power:

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
 import { CAVE_MOUTH, CAVE_ROCKS, CAVE_PILLARS, CAVE_ROOMS, caveDepth, caveWallPoints, clampToWorld, inCave } from './sim/world';
-import { ENEMY_TYPES, JUMP_VELOCITY, GRAVITY, AUTO_RANGE } from './sim/data';
+import { ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NPC, npcMarker as markerOf } from './sim/quest';
 import { Motes, Particles, Rings, Slashes } from './fx';
@@ -39,9 +39,6 @@ const PALETTE = {
   ash: 0xa8a49a, smoke: [0xbbbbbb, 0x888888] as number[],
 } as const;
 const P = PALETTE;
-/** Seconds a jump stays in the air (up and back down at the sim's gravity): the jump clip is stretched to this. */
-const JUMP_AIRTIME = (2 * JUMP_VELOCITY) / GRAVITY;
-
 type Mat = THREE.MeshStandardMaterial;
 /** Roughness / metalness per material class. */
 const MATERIALS = {

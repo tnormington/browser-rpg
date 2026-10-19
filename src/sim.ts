@@ -12,7 +12,7 @@ import { Action, Interact, requestInteract, updateAction, updateInteract } from 
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
 import { PLAYER_RADIUS, clampToWorld, inCave, resolveCollisions, steerPoint } from './sim/world';
 import { Pt, routeOutdoors } from './sim/path';
-import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
+import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
 import {
   acquireFront, clearTarget, pressAbility, refreshPlayerStats, setTarget, tabTarget, toggleAutoAttack,
   updateEnemies, updatePlayerCombat, updatePlayerDeath,
@@ -304,7 +304,7 @@ function stepVertical(s: GameState, wantsJump: boolean, dt: number) {
     s.events.push({ t: 'jump' });
   }
   if (p.y === 0 && p.vy === 0) { p.airborne = false; return; }
-  p.vy -= GRAVITY * dt;
+  p.vy -= (p.vy > 0 ? GRAVITY : FALL_GRAVITY) * dt; // the fall is the quicker half: see the note on GRAVITY
   p.y += p.vy * dt;
   if (p.y <= 0) {
     p.y = 0; p.vy = 0; p.airborne = false;
