@@ -24,6 +24,7 @@ import {
 import { appearanceOf, TIER_LOOKS } from './gear-look';
 import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
+import { clearLine } from './sim/sight';
 
 let checks = 0;
 function assert(cond: unknown, msg: string): asserts cond {
@@ -2491,6 +2492,20 @@ section('HOM-35 audio events: footfalls on the ground, strikes while a gather ru
   assert(chops === 2 && treeSkill === 'woodcutting', `a ${NODE_TYPES.tree.time}s chop strikes twice with the woodcutting skill`);
   tick(t2, { dirX: 1, dirZ: 0 });
   assert(!hasEvent(t2, e => e.t === 'gather') && t2.player.action === null, 'walking away ends the strikes with the action');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-38 sight: cover breaks a line, waist-high ore does not');
+{
+  const pillar = CAVE_PILLARS[0]; // a standing stone in the hollow
+  assert(!clearLine({ x: pillar.x - 4, z: pillar.z }, { x: pillar.x + 4, z: pillar.z }), 'a cave standing stone blocks the line straight through it');
+  assert(clearLine({ x: pillar.x - 4, z: pillar.z - 4 }, { x: pillar.x + 4, z: pillar.z - 4 }), 'and leaves a line four units clear of it alone');
+  const tree = TREES[0];
+  assert(!clearLine({ x: tree.x - 5, z: tree.z }, { x: tree.x + 5, z: tree.z }), 'a tree trunk blocks the line');
+  const ore = ROCKS.find(r => r.type === 'coal')!;
+  assert(clearLine({ x: ore.x - 5, z: ore.z }, { x: ore.x + 5, z: ore.z }), 'an ore seam is waist-high: you can see over it');
+  assert(!clearLine({ x: 0, z: 0 }, { x: -18, z: -50 }), 'the clearing cannot see into the cave');
+  assert(clearLine({ x: -18, z: -32 }, { x: -18, z: -44 }), 'but the throat can see along itself');
 }
 
 console.log(`\nAll ${checks} checks passed.`);

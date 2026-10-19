@@ -7,7 +7,7 @@ import { InvAction } from './sim/inventory';
 import { SKILLS } from './sim/skills';
 import { NODE_TYPES } from './sim/gathering';
 import { recipeById } from './sim/crafting';
-import { clearLine } from './sight';
+import { clearLine } from './sim/sight';
 import { InventoryUi } from './inventory-ui';
 import { SkillsUi } from './skills-ui';
 import { ForgeUi } from './forge-ui';

@@ -39,9 +39,12 @@ export const CAVE_PILLARS: Obstacle[] = [
   { x: -24, z: -76, r: 1.6 }, { x: -12, z: -76, r: 1.6 }, { x: -24, z: -86, r: 1.6 }, { x: -12, z: -86, r: 1.6 },
 ];
 
+/** The forge building: a collider, and the one outdoor thing big enough to hide behind (see SIGHT_BLOCKERS). */
+export const FORGE_BUILDING: Obstacle = { x: 20, z: -8, r: 2.6 };
+
 export const OBSTACLES: Obstacle[] = [
   // forge building
-  { x: 20, z: -8, r: 2.6 },
+  FORGE_BUILDING,
   // quest giver
   { x: 5, z: 2, r: 0.7 },
   // cave mouth: rock walls either side of a gap that is now the way in (see CAVE_ROOMS); the old back rock is gone
@@ -77,6 +80,13 @@ export const CAVE_ROCKS: RockSpot[] = [
 ];
 
 export const COLLIDERS = [...OBSTACLES, ...TREES, ...ROCKS, ...CAVE_PILLARS, ...CAVE_ROCKS];
+
+/**
+ * What stands tall enough to break a line of sight (see sim/sight.ts): the forge, the rocks either side of the cave
+ * mouth, tree trunks and the cave's standing stones. Ore seams are waist-high and the quest giver is a person:
+ * neither hides anything behind it, so neither is here.
+ */
+export const SIGHT_BLOCKERS: Obstacle[] = [FORGE_BUILDING, ...CAVE_MOUTH, ...TREES, ...CAVE_PILLARS];
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
