@@ -86,12 +86,14 @@ async function measure(level) {
     // renderer.info resets before the main pass, so shadow-pass draws are not in `calls`; count the whole frame separately.
     i.autoReset = false; i.reset(); render();
     const total = { calls: i.render.calls, triangles: i.render.triangles };
-    i.autoReset = true; render();
+    // Scene-only counts (shadow + main pass, no post passes): the composer's last pass is a fullscreen quad, so reading info after render() gives 1 / 1.
+    const scenePass = () => { i.reset(); r.render(d.scene, d.view.post.camera); return { calls: i.render.calls, triangles: i.render.triangles }; };
+    const scene = scenePass();
     const out = {
       total,
       entities: { enemies: sim.enemies.length, nodes: sim.nodes.length, objects, meshes },
       worldSide: 60 * Math.sqrt(d.stress),
-      calls: i.render.calls, triangles: i.render.triangles,
+      calls: scene.calls, triangles: scene.triangles,
       geometries: i.memory.geometries, textures: i.memory.textures, programs: i.programs.length,
       gpu: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown',
       heapMB: performance.memory ? performance.memory.usedJSHeapSize / 1048576 : null,
@@ -113,8 +115,8 @@ async function measure(level) {
     // Upper bound with frustum culling off: every object submitted.
     const fc = new Map();
     d.scene.traverse(o => { fc.set(o, o.frustumCulled); o.frustumCulled = false; });
-    render();
-    out.unculled = { calls: i.render.calls, triangles: i.render.triangles, renderCpuMs: time(10, render), renderGpuMs: time(10, () => { render(); gl.finish(); }) };
+    const un = scenePass();
+    out.unculled = { calls: un.calls, triangles: un.triangles, renderCpuMs: time(10, render), renderGpuMs: time(10, () => { render(); gl.finish(); }) };
     d.scene.traverse(o => { o.frustumCulled = fc.get(o); });
     return out;
   });
