@@ -132,6 +132,11 @@ const FISH_RIPPLE = 0x9fc8d8; // a fishing shoal's ripple and fins: cold, pale, 
 const openToWorld = (x: number, z: number) => REGIONS.some(r => r.zone !== 'hale' && r.footprint.some(f => x > f.x0 + 0.01 && x < f.x1 - 0.01 && z > f.z0 + 0.01 && z < f.z1 - 0.01));
 /** Adamant (Saltmarrow's cliff ore): sea-green flecks on a dark green-black rock. A stand-in look until the Artist's (W2.5). */
 const ADAMANT = { rock: 0x2c4a40, fleck: 0x5de0b0, glow: 0x0e3a2a };
+/** Starter ores: copper is warm orange-brown with verdigris flecks, tin is pale silver, so neither reads as iron (grey, orange flecks) or coal (black). */
+const STARTER_ORE = {
+  copper: { rock: 0x9a5a34, fleck: 0x4fc2a0, glow: 0x3a1c0c },
+  tin: { rock: 0xc4cad2, fleck: 0xf2f6fa, glow: 0x2a2e34 },
+};
 
 /** Enemy type -> the model slot that draws it: cave enemies are existing rigs (`look.model`), everyone else draws as itself. */
 const slotOf = (type: string): SlotId => (ENEMY_TYPES[type].look?.model ?? type) as SlotId;
@@ -656,7 +661,7 @@ export class Renderer {
       fill('warden', p => this.dressNpc(p)),
       ...[...slots].map(t => fill(t, p => { this.prepared.set(t, p); for (const a of this.actors.values()) if (slotOf(a.type) === t) this.dressActor(a, p); })),
       Promise.all([loadSlot('tree'), loadSlot('stump')]).then(([t, st]) => this.dressTrees(t, st)).catch(err => console.warn('model slot "tree" kept as a primitive:', err)),
-      fill('ironRock', p => { this.dressRocks('iron', p); this.dressRocks('mithril', p); this.dressRocks('adamant', p); }),
+      fill('ironRock', p => { for (const t of ['iron', 'copper', 'tin', 'mithril', 'adamant'] as const) this.dressRocks(t, p); }),
       fill('coalRock', p => this.dressRocks('coal', p)),
       fill('forge', p => this.dressForge(p)),
       fill('anvil', p => this.dressAnvil(p)),
@@ -763,7 +768,7 @@ export class Renderer {
     }
   }
 
-  private dressRocks(type: 'iron' | 'coal' | 'mithril' | 'adamant', p: Prepared) {
+  private dressRocks(type: 'iron' | 'coal' | 'copper' | 'tin' | 'mithril' | 'adamant', p: Prepared) {
     for (const v of this.nodes.values()) {
       if (v.type !== type) continue;
       const id = v.group.userData.nodeId as number, inst = spawn(p, true);
@@ -773,6 +778,7 @@ export class Renderer {
       v.group.add(inst.root);
       if (type === 'mithril') for (const m of inst.materials) { m.color.setHex(P.mithrilRock); m.emissive.setHex(P.mithrilGlow); }
       if (type === 'adamant') for (const m of inst.materials) { m.color.setHex(ADAMANT.rock); m.emissive.setHex(ADAMANT.glow); }
+      if (type === 'copper' || type === 'tin') for (const m of inst.materials) { m.color.setHex(STARTER_ORE[type].rock); m.emissive.setHex(STARTER_ORE[type].glow); }
       v.mats.push(...inst.materials);
       v.base.push(...inst.materials.map(m => m.color.getHex()));
     }
@@ -894,11 +900,12 @@ export class Renderer {
       crown = part(new THREE.ConeGeometry(1.4, 3.5, 6), P.pine, 'foliage', 3.5);
     } else {
       const coal = n.type === 'coal', mithril = n.type === 'mithril', adamant = n.type === 'adamant';
-      part(new THREE.DodecahedronGeometry(1.3), coal ? P.coalRock : mithril ? P.mithrilRock : adamant ? ADAMANT.rock : P.ironRock, 'rock', 0.9);
-      // ore flecks: rust for iron, glossy black for coal, cold arcane light for mithril
+      const starter = n.type === 'copper' || n.type === 'tin' ? STARTER_ORE[n.type] : undefined;
+      part(new THREE.DodecahedronGeometry(1.3), starter ? starter.rock : coal ? P.coalRock : mithril ? P.mithrilRock : adamant ? ADAMANT.rock : P.ironRock, 'rock', 0.9);
+      // ore flecks: rust for iron, verdigris for copper, bright silver for tin, glossy black for coal, cold arcane light for mithril
       for (const [dx, dy, dz] of [[0.7, 1.2, 0.6], [-0.6, 1.0, 0.8], [0.1, 1.6, -0.5]]) {
-        const fleck = part(new THREE.OctahedronGeometry(0.28), coal ? P.coalFleck : mithril ? P.arcane : adamant ? ADAMANT.fleck : P.ironFleck, coal ? 'coal' : mithril || adamant ? 'beacon' : 'ore', dy);
-        if (!coal && !mithril && !adamant) (fleck.material as Mat).emissive.setHex(P.ironFleck).multiplyScalar(0.35); // faint ember glint so a node reads at range
+        const fleck = part(new THREE.OctahedronGeometry(0.28), starter ? starter.fleck : coal ? P.coalFleck : mithril ? P.arcane : adamant ? ADAMANT.fleck : P.ironFleck, coal ? 'coal' : mithril || adamant ? 'beacon' : 'ore', dy);
+        if (!coal && !mithril && !adamant) (fleck.material as Mat).emissive.setHex(starter ? starter.fleck : P.ironFleck).multiplyScalar(0.35); // faint glint so a node reads at range
         fleck.position.x = dx; fleck.position.z = dz;
       }
     }
