@@ -47,7 +47,7 @@ export const DELVE_GOALS: Record<string, number> = { ravager: 3 };
  * and two coal. Nine ore is exactly three veins' worth; the coal is the same ridge as the first quest, or the seams in the cave.
  */
 export const MITHRIL_PLAN = { ore: 9, coal: 18, bars: 9 };
-export const RECOMMENDED_COMBAT_2 = 8;
+export const RECOMMENDED_COMBAT_2 = 9;
 export const REWARD2: { skill: SkillId; xp: number }[] = [
   { skill: 'combat', xp: 1000 }, { skill: 'mining', xp: 500 }, { skill: 'smithing', xp: 700 },
 ];
@@ -195,7 +195,7 @@ export const DIALOGUE2: Record<Exclude<Quest2Stage, 'locked'>, Dialogue> = {
   },
   delve: {
     lines: ['Three Ravagers and nine ore, that is all I ask of the first trip. The veins are in the hollow, south-west of the passage.',
-      'Cleave the pack, do not fight it one by one. And bring coal: the ridge has it, and so does the far wall of the hollow.'],
+      'A Gloom Archer stands sentry where the passage opens out: take it alone from the throat and rest before you go near the pack. Then Cleave the Ravagers, do not fight them one by one. Bring coal too: the ridge has it, and so does the far wall of the hollow.'],
     options: [
       { label: 'Where do I find mithril?', reply: 'Past the cave mouth, up the passage and into the big cavern: the blue-veined rocks in the south-west corner. Mining 9 to work them.' },
       CLOSE('Back to it.'),

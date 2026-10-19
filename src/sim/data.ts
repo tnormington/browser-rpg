@@ -125,8 +125,9 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
   ravager: { name: 'Cave Ravager', level: 7, hp: 320, damage: 11, attackInterval: 1.6, speed: 5.6,
     aggroRadius: 9, leash: 20, attackRange: 1.9, radius: 0.65, xp: 60, respawn: 75, pack: 8,
     look: { model: 'wolf', scale: 1.15, tint: 0x4a5a7a } },
+  // leash 6: it backs off 4.8 from its post at most (leash * 0.8), so the sentry at (-13,-47) cannot be chased across the hollow into the Ogre and the Seer
   archer: { name: 'Gloom Archer', level: 8, hp: 320, damage: 28, attackInterval: 2.4, speed: 5.2,
-    aggroRadius: 11, leash: 10, attackRange: 14, radius: 0.6, xp: 100, respawn: 90,
+    aggroRadius: 11, leash: 6, attackRange: 14, radius: 0.6, xp: 100, respawn: 90,
     ranged: { name: 'Gloom Arrow', range: 14, keepAway: 7, windup: 0.8 },
     look: { model: 'hexer', scale: 1.0, tint: 0x3a4a6a } },
   seer: { name: 'Cave Seer', level: 9, hp: 650, damage: 12, attackInterval: 3.0, speed: 4.2,
