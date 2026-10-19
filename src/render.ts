@@ -14,7 +14,8 @@ import { Weather } from './weather';
 import { SkyDome, Rain } from './sky';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
 import { Animator } from './anim';
-import { SILHOUETTES, Silhouette, mergeLayer } from './creatures';
+import { SILHOUETTES, Silhouette, mergeParts } from './creatures';
+import { PROPS, PropId } from './props';
 import { PlayerGear } from './gear';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
@@ -739,7 +740,7 @@ export class Renderer {
     if (kit.squash && !kit.squashRig) dress.scale.set(...kit.squash);
     fit.add(dress);
     for (const l of kit.layers) {
-      const m = new THREE.Mesh(mergeLayer(l), material(l.color ?? a.mats[0].color.getHex(), l.lit ? 'glow' : 'hide'));
+      const m = new THREE.Mesh(mergeParts(l.parts), material(l.color ?? a.mats[0].color.getHex(), l.lit ? 'glow' : 'hide'));
       if (!l.lit) m.material.emissive.setHex(a.glow);
       m.castShadow = !l.lit;
       m.raycast = () => {}; // the click volume is the enemy's own
@@ -755,6 +756,13 @@ export class Renderer {
       orb.raycast = () => {};
       hand.add(orb);
     }
+  }
+
+  /** A built prop (props.ts) as a group of one mesh per layer, ready to stand on a station or a node. Its materials are its own. */
+  buildProp(id: PropId): THREE.Group {
+    const g = new THREE.Group();
+    for (const l of PROPS[id]().layers) g.add(mesh(mergeParts(l.parts), l.color, l.cls, l.cls === 'glow' ? 'none' : 'both')).name = l.name;
+    return g;
   }
 
   private dressTrees(tree: Prepared, stump: Prepared) {

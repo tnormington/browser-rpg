@@ -19,24 +19,24 @@ export interface Silhouette {
 }
 
 // the creature palette: cold, drained, and dark enough that the rig's own tint still leads
-const BARK = 0x3a3027, THORN = 0x2a2520, HORN = 0x6e6552, BONE = 0xa59f8a, MOSS = 0x3d4d34, MUD = 0x2f3329, PALE = 0x8a9a86;
+export const BARK = 0x3a3027, THORN = 0x2a2520, HORN = 0x6e6552, BONE = 0xa59f8a, MOSS = 0x3d4d34, MUD = 0x2f3329, PALE = 0x8a9a86;
 const EYE = 0xa8e8c8, WITCH = 0x6ad8ff, HEX = 0xb070ff, SPORE = 0x9ad8a8;
 
 const flat = (g: THREE.BufferGeometry) => (g.index ? g.toNonIndexed() : g);
 const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(), V = new THREE.Vector3(), S = new THREE.Vector3();
 /** Place a geometry: position, then Euler turns (x, y, z) and a scale. Each part carries its own placement because the layer is merged. */
-function put(g: THREE.BufferGeometry, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx) {
+export function put(g: THREE.BufferGeometry, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx) {
   const out = flat(g);
   out.applyMatrix4(M.compose(V.set(x, y, z), Q.setFromEuler(E.set(rx, ry, rz)), S.set(sx, sy, sz)));
   return out;
 }
 /** A cone from its base: points up, `lean` tips it back (+) or forward (-), `splay` out to +x. */
-const spike = (x: number, y: number, z: number, len: number, r: number, lean = 0, splay = 0) =>
+export const spike = (x: number, y: number, z: number, len: number, r: number, lean = 0, splay = 0) =>
   put(new THREE.ConeGeometry(r, len, 4).translate(0, len / 2, 0), x, y, z, -lean, 0, -splay);
 /** A rough lump: an icosahedron, faceted and squashed. */
-const lump = (x: number, y: number, z: number, r: number, sy = 0.8) => put(new THREE.IcosahedronGeometry(r, 0), x, y, z, 0, (x + z) * 3, 0, 1, sy, 1);
+export const lump = (x: number, y: number, z: number, r: number, sy = 0.8) => put(new THREE.IcosahedronGeometry(r, 0), x, y, z, 0, (x + z) * 3, 0, 1, sy, 1);
 /** A tapering stick from its base, tilted: `tx` forward/back about x, `tz` out about z. */
-const stick = (x: number, y: number, z: number, len: number, r: number, tx = 0, tz = 0) =>
+export const stick = (x: number, y: number, z: number, len: number, r: number, tx = 0, tz = 0) =>
   put(new THREE.CylinderGeometry(r * 0.55, r, len, 4).translate(0, len / 2, 0), x, y, z, -tx, 0, tz);
 
 /**
@@ -63,14 +63,14 @@ function spineRow(z0: number, z1: number, y: number, n: number, len: number, r: 
 }
 
 /** A mantle: a ring of lumps draped over shoulders and back, for the things that wear the bog. */
-const mantle = (y: number, rx: number, rz: number, n: number, r: number, backBias = 0.35): THREE.BufferGeometry[] =>
+export const mantle = (y: number, rx: number, rz: number, n: number, r: number, backBias = 0.35): THREE.BufferGeometry[] =>
   Array.from({ length: n }, (_, i) => {
     const a = (i / n) * Math.PI * 2, wob = 0.8 + 0.4 * Math.abs(Math.sin(i * 2.3));
     return lump(Math.sin(a) * rx, y + Math.cos(i * 1.7) * 0.06, Math.cos(a) * rz - rz * backBias, r * wob);
   });
 
 /** Dangling reeds / vines: thin hanging blades, for cloaks and manes. */
-const hangers = (cx: number, cy: number, cz: number, spread: number, n: number, len: number): THREE.BufferGeometry[] =>
+export const hangers = (cx: number, cy: number, cz: number, spread: number, n: number, len: number): THREE.BufferGeometry[] =>
   Array.from({ length: n }, (_, i) => {
     const a = (i / n) * Math.PI * 2;
     return put(new THREE.ConeGeometry(0.035, len * (0.7 + 0.3 * Math.abs(Math.sin(i * 1.9))), 3).translate(0, -len / 2, 0).rotateX(Math.PI), cx + Math.sin(a) * spread, cy, cz + Math.cos(a) * spread * 0.8, 0, 0, Math.sin(a) * 0.12);
@@ -196,8 +196,8 @@ export const SILHOUETTES: Record<string, () => Silhouette> = {
   bog_witch: bogWitch, rotwood_cultist: rotwoodCultist,
 };
 
-/** Merge a layer's parts: all non-indexed and stripped to the same attributes, so one draw whatever the mix of primitives. */
-export function mergeLayer(l: Layer): THREE.BufferGeometry {
-  for (const g of l.parts) for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k);
-  return mergeGeometries(l.parts)!;
+/** Merge parts into one geometry: all non-indexed and stripped to the same attributes, so one draw whatever the mix of primitives. */
+export function mergeParts(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  for (const g of parts) for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k);
+  return mergeGeometries(parts)!;
 }
