@@ -12,8 +12,8 @@ import { beginCraft } from './sim/crafting';
 import { ShopAction, applyShopAction } from './sim/shop';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
-import { PLAYER_RADIUS, clampToWorld, inCave, resolveCollisions, steerPoint } from './sim/world';
-import { Pt, routeOutdoors } from './sim/path';
+import { PLAYER_RADIUS, clampToWorld, inCave, resolveCollisions } from './sim/world';
+import { Pt, route } from './sim/path';
 import { ABILITIES, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
 import {
   acquireFront, clearTarget, pressAbility, refreshPlayerStats, setTarget, tabTarget, toggleAutoAttack,
@@ -247,13 +247,12 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
   updateQuest(s);
 }
 
-/** The outdoor route for the current walk, planned once per click (moveTarget is a fresh object each time) and consumed as the player passes each waypoint. */
+/** The route for the current walk, planned once per click (moveTarget is a fresh object each time) and consumed as the player passes each waypoint. */
 const routes = new WeakMap<GameState, { for: Pt; pts: Pt[] }>();
-function outdoorAim(s: GameState, aim: Pt): Pt {
+function routedAim(s: GameState, aim: Pt): Pt {
   const p = s.player;
-  if (inCave(p.x, p.z) || inCave(aim.x, aim.z)) return aim;
   let r = routes.get(s);
-  if (!r || r.for !== aim) { r = { for: aim, pts: routeOutdoors(p, aim) ?? [aim] }; routes.set(s, r); }
+  if (!r || r.for !== aim) { r = { for: aim, pts: route(p, aim) ?? [aim] }; routes.set(s, r); }
   while (r.pts.length > 1 && Math.hypot(r.pts[0].x - p.x, r.pts[0].z - p.z) < 0.3) r.pts.shift();
   return r.pts[0];
 }
@@ -264,9 +263,8 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   if (dx !== 0 || dz !== 0) {
     s.moveTarget = null; // keyboard cancels click-to-move
   } else if (s.moveTarget) {
-    // a walk that has to change room in the cave is aimed at the next junction; moveTarget itself is untouched
-    let aim = steerPoint(p, s.moveTarget);
-    if (aim === s.moveTarget) aim = outdoorAim(s, aim);
+    // a walk that has to go round scenery or change room is aimed at the next waypoint; moveTarget itself is untouched
+    const aim = routedAim(s, s.moveTarget);
     const via = aim !== s.moveTarget;
     const tx = aim.x - p.x, tz = aim.z - p.z;
     const d = Math.hypot(tx, tz);

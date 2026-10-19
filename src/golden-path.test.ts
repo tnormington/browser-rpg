@@ -14,8 +14,9 @@ import { MAX_BONUS, MAX_SPEEDUP, mastery } from './sim/mastery';
 import { RECIPES, FORGE_REACH, recipeById } from './sim/crafting';
 import {
   CAVE_DOOR_Z, CAVE_PILLARS, CAVE_ROCKS, CAVE_ROOMS, COLLIDERS, LANDMARKS, PLAYER_RADIUS, ROCKS, TREES, WORLD_HALF,
-  caveDepth, caveRank, caveWallPoints, inCave, resolveCollisions, sameSideOfDoor, steerPoint,
+  caveDepth, caveWallPoints, inCave, resolveCollisions, sameSideOfDoor,
 } from './sim/world';
+import { route } from './sim/path';
 import { refreshGearStats } from './sim/inventory';
 import { refreshPlayerStats } from './sim/combat';
 import {
@@ -2292,12 +2293,11 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
 // ---------------------------------------------------------------------------
 section('HOM-15 getting around: one click gets you out of the cave, and nothing stays stuck on scenery');
 {
-  const rank = (x: number, z: number) => caveRank(x, z);
-  assert(rank(0, 6) === 0 && rank(-18, -25) === 0 && rank(-18, -35) === 1 && rank(-18, -55) === 2 && rank(-18, -67) === 3 && rank(-18, -85) === 4 && rank(-10, -28) === 0, 'caveRank tells outdoors, throat, hollow, neck and hall apart (and the ridge is outdoors)');
   const same = { x: -25, z: -50 };
-  assert(steerPoint({ x: -18, z: -55 }, same) === same && steerPoint({ x: 0, z: 6 }, { x: 10, z: 10 }).x === 10, 'within one stretch, and anywhere outdoors, a walk goes straight at its target: nothing changes outside the cave');
-  const hop = steerPoint({ x: -18, z: -85 }, { x: 5, z: 2 });
-  assert(caveRank(hop.x, hop.z) === 3, 'from the hall to the clearing the first aim is the neck, then the hollow, then the throat, then the mouth');
+  assert(route({ x: -18, z: -55 }, same)?.length === 1, 'within one room a walk goes straight at its target');
+  assert(route({ x: 0, z: 6 }, { x: 10, z: 10 })?.length === 1, 'anywhere in the open a walk goes straight at its target: nothing changes outside the cave');
+  const hop = route({ x: -18, z: -85 }, { x: 5, z: 2 })![0];
+  assert(inCave(hop.x, hop.z) && hop.z > -30 && Math.abs(hop.x + 18) < 3, 'from the hall to the clearing the first aim is the mouth: the rooms line up, so the walk runs the whole corridor in one leg');
 
   for (const [name, from, to] of [['the warden hall to the clearing', { x: -18, z: -85 }, { x: 0, z: 6 }], ['the clearing to the warden hall', { x: 0, z: 6 }, { x: -18, z: -85 }], ['the far corner of the hollow to the forge', { x: -30, z: -60 }, { x: LANDMARKS.forge.x - 4, z: LANDMARKS.forge.z + 4 }]] as const) {
     const s = quietState(960);

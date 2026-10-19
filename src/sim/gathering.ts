@@ -1,7 +1,7 @@
 // Gathering nodes: ore rocks and trees. Timed action -> item + skill XP; nodes deplete and respawn. Pure sim.
 import type { GameState } from '../sim';
 import type { Action } from './actions';
-import { CAVE_ROCKS, ROCKS, TREES } from './world';
+import { nodeSpots } from './world';
 import { SkillId, grantXp } from './skills';
 import { masteryTime, masteryYield } from './mastery';
 import { addItem, hasRoom } from './inventory';
@@ -33,9 +33,8 @@ export interface ResourceNode {
 }
 
 export function createNodes(): ResourceNode[] {
-  // ids are positions in this list: new ground goes last so every older node keeps its id (and its save)
-  const spots = [...ROCKS, ...TREES.map(t => ({ ...t, type: 'tree' })), ...CAVE_ROCKS];
-  return spots.map((sp, i) => ({
+  // ids are positions in this list (region order, see REGIONS): new ground goes last so every older node keeps its id (and its save)
+  return nodeSpots().map((sp, i) => ({
     id: i + 1, type: sp.type, x: sp.x, z: sp.z, r: sp.r, charges: NODE_TYPES[sp.type].charges, respawnIn: 0,
   }));
 }
