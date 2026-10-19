@@ -43,7 +43,8 @@ export class TalentsUi {
   }
 
   get isOpen() { return this.panel.style.display !== 'none'; }
-  toggle() { this.panel.style.display = this.isOpen ? 'none' : 'block'; this.sig = ''; }
+  setOpen(on: boolean) { this.panel.style.display = on ? 'block' : 'none'; this.sig = ''; }
+  toggle() { this.setOpen(!this.isOpen); }
 
   update(s: GameState) {
     if (!this.isOpen) return;

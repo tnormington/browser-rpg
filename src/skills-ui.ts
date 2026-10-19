@@ -22,10 +22,12 @@ export class SkillsUi {
     this.panel.style.display = 'none';
   }
 
-  toggle() { this.panel.style.display = this.panel.style.display === 'none' ? 'block' : 'none'; }
+  get isOpen() { return this.panel.style.display !== 'none'; }
+  setOpen(on: boolean) { this.panel.style.display = on ? 'block' : 'none'; }
+  toggle() { this.setOpen(!this.isOpen); }
 
   update(s: GameState) {
-    if (this.panel.style.display === 'none') return;
+    if (!this.isOpen) return;
     for (const r of this.rows) {
       const t = s.player.skills[r.id], prog = levelProgress(t);
       r.lvl.textContent = String(t.level);

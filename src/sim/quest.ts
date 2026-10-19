@@ -342,7 +342,7 @@ const nodeTarget = (s: GameState, type: string) => {
 export function questView(s: GameState): QuestView {
   const q = s.quest, have = (id: string) => countItem(s.player.inventory, id);
   const stageNo = QUEST_STAGES.indexOf(q.stage) + 1;
-  const talk = (what: string) => ({ text: `${what} (click or press E)`, done: false });
+  const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
   const npcTarget = { x: NPC.x, z: NPC.z, label: NPC.name };
   const progress = stageNo >= QUEST_STAGES.length ? '' : `(${stageNo}/${QUEST_STAGES.length - 1})`;
   const v = (lines: QuestLine[], target: QuestView['target'], ready = false): QuestView => ({ title: QUEST_NAME, lines, target, ready, stageNo, progress });
@@ -415,7 +415,7 @@ export function activeQuestView(s: GameState): QuestView {
   const advice = (n: number): QuestLine[] => lvl < n ? [{ text: `Recommended Combat ${n} (you are ${lvl})`, done: false }] : [];
 
   switch (q.second) {
-    case 'offer': return v([{ text: `${QUEST_NAME} complete`, done: true }, { text: `${NPC.name} has one more task (click or press E)`, done: false }], npcTarget, true);
+    case 'offer': return v([{ text: `${QUEST_NAME} complete`, done: true }, { text: `${NPC.name} has one more task (click or press V)`, done: false }], npcTarget, true);
     case 'delve': {
       const P = MITHRIL_PLAN, ore = Math.min(P.ore, mithrilOre(s)), locked = s.player.skills.mining.level < NODE_TYPES.mithril.level;
       const open = Object.entries(DELVE_GOALS).find(([t, n]) => (q.kills[t] ?? 0) < n);
@@ -450,7 +450,7 @@ export function activeQuestView(s: GameState): QuestView {
         { text: 'Slay the Hollow Warden (the deep hall, far end of the cave)', done: false },
         ...advice(RECOMMENDED_COMBAT_2 + 1),
       ], enemyTarget(s, 'warden'));
-    case 'report': return v([{ text: 'Hollow Warden slain', done: true }, { text: `Return to ${NPC.name} for your reward (click or press E)`, done: false }], npcTarget, true);
+    case 'report': return v([{ text: 'Hollow Warden slain', done: true }, { text: `Return to ${NPC.name} for your reward (click or press V)`, done: false }], npcTarget, true);
     case 'cleared': return v([{ text: 'Quest complete. The Hollow is quiet.', done: true }], null);
   }
 }
@@ -460,7 +460,7 @@ export function activeQuestView(s: GameState): QuestView {
 function saltRoadView(s: GameState): QuestView {
   const q = s.quest, lvl = s.player.combat.level, stageNo = QUEST3_STAGES.indexOf(q.third); // 'offer' is 1: stage 0 is the lock
   const total = QUEST3_STAGES.indexOf('cleared') - 1;
-  const talk = (what: string) => ({ text: `${what} (click or press E)`, done: false });
+  const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
   const target = { x: HARBOURMASTER.x, z: HARBOURMASTER.z, label: HARBOURMASTER.name };
   const v = (lines: QuestLine[], t: QuestView['target'], ready = false): QuestView =>
     ({ title: QUEST3_NAME, lines, target: t, ready, stageNo, progress: q.third === 'cleared' ? '' : `(${stageNo}/${total})` });

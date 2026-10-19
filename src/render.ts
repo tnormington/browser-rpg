@@ -1186,14 +1186,6 @@ export class Renderer {
     return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight };
   }
 
-  /** Ground point under a screen position, or null. */
-  pick(clientX: number, clientY: number): { x: number; z: number } | null {
-    this.raycaster.setFromCamera(
-      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
-    const hit = this.raycaster.intersectObjects([this.ground, this.caveFloor, ...this.world.grounds()])[0];
-    return hit ? { x: hit.point.x, z: hit.point.z } : null;
-  }
-
   /** Show the world map screen instead of the game (the ride shows the same map by itself, whatever this says). */
   setMapScreen(on: boolean) { this.mapScreen = on; }
   /** A town's beacon / the player's pin on the map screen, in CSS pixels (null before the map is first drawn or when off screen). */

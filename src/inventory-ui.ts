@@ -6,6 +6,7 @@ import { INVENTORY_SIZE, InvAction, ItemStack } from './sim/inventory';
 import { EQUIP_SLOTS, EquipSlot, ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { reductionOf, swingInterval } from './sim/combat';
 import { nearVendor } from './sim/shop';
+import { HudWindow, panelWindow } from './dom';
 
 const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖' };
 const SLOT_LABEL: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs' };
@@ -30,6 +31,8 @@ export class InventoryUi {
   private tip: HTMLElement;
   private menu: HTMLElement;
   private sig = '';
+  /** The two panels as HUD windows, so Esc can shut them like any other. */
+  readonly panels: Record<'inv' | 'char', HudWindow>;
 
   constructor(root: HTMLElement, private send: (a: InvAction) => void, private sell: (slot: number, qty: number) => void) {
     this.invPanel = div(root, 'panel invpanel');
@@ -43,15 +46,16 @@ export class InventoryUi {
     this.menu = div(root, 'ctxmenu');
     addEventListener('mousedown', e => { if (!this.menu.contains(e.target as Node)) this.menu.style.display = 'none'; });
     this.invPanel.style.display = this.charPanel.style.display = 'none';
+    this.panels = { inv: panelWindow(this.invPanel), char: panelWindow(this.charPanel) };
   }
 
   show(which: 'inv' | 'char') {
-    (which === 'inv' ? this.invPanel : this.charPanel).style.display = 'block';
+    this.panels[which].setOpen(true);
   }
 
   toggle(which: 'inv' | 'char') {
-    const p = which === 'inv' ? this.invPanel : this.charPanel;
-    p.style.display = p.style.display === 'none' ? 'block' : 'none';
+    const p = this.panels[which];
+    p.setOpen(!p.isOpen);
     this.hideTip();
   }
 
@@ -84,7 +88,11 @@ export class InventoryUi {
       this.fillCell(cell, st.id, st.qty);
       cell.draggable = true;
       cell.addEventListener('dragstart', e => { e.dataTransfer?.setData('text/plain', String(i)); this.hideTip(); });
-      cell.addEventListener('click', () => { if (def.slot) this.send({ k: 'equip', slot: i }); else if (def.use) this.send({ k: 'use', slot: i }); });
+      cell.addEventListener('click', e => {
+        // quick sell: shift-click at a merchant sells the whole stack outright, no menu and no confirmation
+        if (e.shiftKey && nearVendor(s)) return this.sell(i, st.qty);
+        if (def.slot) this.send({ k: 'equip', slot: i }); else if (def.use) this.send({ k: 'use', slot: i });
+      });
       cell.addEventListener('contextmenu', e => {
         e.preventDefault();
         this.openItemMenu(e.clientX, e.clientY, i, st, s);
@@ -155,8 +163,9 @@ export class InventoryUi {
       }
       div(this.tip, 'thint', 'Click to equip  ·  Right-click to drop or destroy');
     } else if (worn) div(this.tip, 'thint', 'Click to unequip');
-    else if (def.use) div(this.tip, 'thint', 'Click to eat (F eats the best food)  ·  Right-click to drop or destroy');
+    else if (def.use) div(this.tip, 'thint', 'Click to eat (G eats the best food)  ·  Right-click to drop or destroy');
     else div(this.tip, 'thint', 'Right-click to drop or destroy');
+    if (!worn && nearVendor(s)) div(this.tip, 'thint', `Shift-click to sell the stack (${def.value} gold each)`);
     this.tip.style.display = 'block';
     this.moveTip(e);
   }

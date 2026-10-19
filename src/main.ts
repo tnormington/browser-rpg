@@ -1,6 +1,6 @@
 import { createState, step, TICK_DT, Input } from './sim';
 import { Renderer } from './render';
-import { ABILITY_KEYS, Hud } from './hud';
+import { BAR_KEYS, Hud } from './hud';
 import type { InvAction } from './sim/inventory';
 import type { ShopAction } from './sim/shop';
 import type { Interact } from './sim';
@@ -68,7 +68,7 @@ if (debug && params.has('weather')) view.weather.set(params.get('weather') as We
 if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scene, view, sim: state, step: () => step(state, readInput()), stress, items: ITEMS };
 
 // --- input -> sim Input ---
-/** F: eat the best food the bag has and the moment allows. */
+/** G: eat the best food the bag has and the moment allows. */
 function eatBest() {
   const slot = bestFoodSlot(state.player);
   if (slot < 0) return hud.say('Nothing to eat');
@@ -89,38 +89,51 @@ addEventListener('keydown', e => {
   }
   if (e.code === 'Space' && !hud.modalOpen) { e.preventDefault(); if (!e.repeat) pendingJump = true; return; } // latched here so a tap shorter than a tick still jumps; never scrolls or presses a focused button
   if (e.repeat) return;
+  // the ability bar (1 2 3 4 Q E R F) comes first: it owns those keys, and what each one casts is the player's own layout
+  if (BAR_KEYS.includes(e.code)) { pendingAbility = hud.abilityAt(BAR_KEYS.indexOf(e.code)); return; }
   if (e.code === 'Tab') { e.preventDefault(); pendingTab = true; }
-  else if (e.code === 'Escape') { if (!hud.closeOverlay()) pendingClear = true; }
-  else if (e.code === 'KeyR') pendingAttack = true;
+  else if (e.code === 'Escape') { if (!hud.closeAll()) pendingClear = true; }
+  else if (e.code === 'KeyX') pendingAttack = true;
   else if (e.code === 'KeyH') hud.toggleHelp();
   else if (e.code === 'KeyJ') hud.toggleMap();
-  else if (e.code === 'KeyF') eatBest();
-  else if (e.code === 'KeyE') pendingInteract = { k: 'npc' };
+  else if (e.code === 'KeyG') eatBest();
+  else if (e.code === 'KeyV') pendingInteract = { k: 'npc' };
   else if (e.code === 'KeyM') hud.say(toggleMute() ? 'Sound off' : 'Sound on');
   else if (e.code === 'KeyI') hud.toggle('inv');
   else if (e.code === 'KeyC') hud.toggle('char');
   else if (e.code === 'KeyK') hud.toggle('skills');
   else if (e.code === 'KeyN') hud.toggle('talents');
-  else if (ABILITY_KEYS.includes(e.code)) pendingAbility = ABILITY_KEYS.indexOf(e.code);
+  else if (e.code === 'KeyP') hud.toggle('book');
 });
 addEventListener('keyup', e => keys.delete(e.code));
-addEventListener('blur', () => keys.clear());
+addEventListener('blur', () => { keys.clear(); held.clear(); });
 
-// Left-click without dragging = click-to-move; left-drag = orbit.
-let pendingClick: { x: number; z: number } | null = null;
+/**
+ * Mouse, WoW's way round. Nothing on the ground is clickable any more: the mouse is the camera.
+ *  - left drag  : swings the camera round the player, who keeps facing wherever they were
+ *  - right drag : swings the camera and turns the player with it
+ *  - both held  : the same, and the player runs the way the camera looks
+ * A left click that did not drag still picks what is under it (an enemy, a drop, an NPC, a node, the forge).
+ */
 let pendingEnemy: number | null = null;
 let pendingPickup: number | null = null;
 let pendingInteract: Interact | null = null;
-let dragging = false, dragMoved = 0;
+const held = new Set<number>();
+let dragMoved = 0;
+const DRAG_SLOP_PX = 5; // below this a press is a click, not a drag
 /** How far outside an enemy's silhouette a click still takes it, in screen pixels. */
 const CLICK_TOLERANCE_PX = 28;
 canvas.addEventListener('contextmenu', e => e.preventDefault());
-canvas.addEventListener('mousedown', () => { dragging = true; dragMoved = 0; unlockAudio(); });
+canvas.addEventListener('mousedown', e => {
+  if (!held.size) dragMoved = 0; // the first button down starts the gesture; the second joins it
+  held.add(e.button);
+  unlockAudio();
+});
 addEventListener('mouseup', e => {
-  if (dragging && e.button === 0 && dragMoved < 5) {
+  if (held.has(0) && e.button === 0 && dragMoved < DRAG_SLOP_PX) {
     // Precedence, most specific first: ground drop, then an enemy under the cursor itself, then the NPC, ore/tree node and
     // forge (all exact), and only then the forgiving enemy pick: a near miss takes the enemy, but never a click that was
-    // really aimed at something else. The ground (click-to-move) comes last.
+    // really aimed at something else. A click that hits none of them does nothing at all.
     pendingPickup = view.pickDrop(e.clientX, e.clientY);
     if (pendingPickup === null) pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
     if (pendingPickup === null && pendingEnemy === null) {
@@ -131,28 +144,30 @@ addEventListener('mouseup', e => {
       else if (vendor !== null) pendingInteract = { k: 'vendor', id: vendor };
       else if (view.pickForge(e.clientX, e.clientY)) pendingInteract = { k: 'forge' };
       else if (view.pickRange(e.clientX, e.clientY)) pendingInteract = { k: 'range' };
-      else if ((pendingEnemy = view.pickEnemy(e.clientX, e.clientY, CLICK_TOLERANCE_PX)) === null) pendingClick = view.pick(e.clientX, e.clientY);
+      else pendingEnemy = view.pickEnemy(e.clientX, e.clientY, CLICK_TOLERANCE_PX);
     }
   }
-  dragging = false;
+  held.delete(e.button);
 });
 addEventListener('mousemove', e => {
-  if (!dragging) return;
+  if (!held.size) return;
   dragMoved += Math.abs(e.movementX) + Math.abs(e.movementY);
-  if (dragMoved >= 5) view.orbit(e.movementX, e.movementY);
+  if (dragMoved >= DRAG_SLOP_PX) view.orbit(e.movementX, e.movementY);
 });
 canvas.addEventListener('wheel', e => { e.preventDefault(); view.zoom(e.deltaY); }, { passive: false });
 
 function readInput(): Input {
-  // WASD is camera-relative: W moves away from the camera.
-  const f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
+  // WASD is camera-relative: W moves away from the camera. Both mouse buttons held is a held W.
+  const steering = held.has(2), autorun = held.has(0) && steering;
+  const f = (keys.has('KeyW') || keys.has('ArrowUp') || autorun ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
   const r = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
   const sy = Math.sin(view.yaw), cy = Math.cos(view.yaw);
   // forward = (-sin, -cos), right = (cos, -sin)
   const input: Input = {
     dirX: -sy * f + cy * r,
     dirZ: -cy * f - sy * r,
-    clickTarget: pendingClick,
+    face: steering ? view.yaw + Math.PI : null, // facing is atan2(dx, dz) of the camera's forward, which is yaw turned round
+    clickTarget: null,
     clickEnemy: pendingEnemy,
     tab: pendingTab,
     attack: pendingAttack,
@@ -172,7 +187,7 @@ function readInput(): Input {
   };
   pendingFlight = null; pendingSkip = false;
   pendingInteract = null; pendingCraft = null; pendingAdvance = false; pendingTalent = null; pendingTalentReset = false;
-  pendingClick = null; pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingAttack = false; pendingJump = false; pendingClear = false; pendingAbility = null;
+  pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingAttack = false; pendingJump = false; pendingClear = false; pendingAbility = null;
   return input;
 }
 

@@ -186,6 +186,8 @@ export interface Input {
   talentReset?: boolean;                        // every talent point handed back this tick
   flight?: string | null;                       // town id to fly to this tick (from the master the player stands at)
   skipFlight?: boolean;                         // cut the ride short (the sim holds it until the first SKIP_AFTER seconds have been watched)
+  /** World angle the player is turned to this tick, whatever they are walking: the mouse steering the camera with the right button. */
+  face?: number | null;
 }
 
 export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, pickup: null, inv: [], interact: null, craft: null, questAdvance: false, talent: null, talentReset: false };
@@ -313,6 +315,7 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   const moved = Math.hypot(p.x - px, p.z - pz);
   p.moving = moved > 1e-4;
   if (len > 1e-4) p.facing = Math.atan2(dx, dz);
+  if (input.face != null) p.facing = input.face; // steering beats the walk: strafing with the mouse keeps you facing the camera
   stepVertical(s, input.jump === true, dt);
   stepStride(s, moved);
   // click-to-move blocked by an obstacle: give up instead of pushing forever

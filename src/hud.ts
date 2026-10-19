@@ -21,6 +21,9 @@ import { ShopUi } from './shop-ui';
 import { FlightUi, MapUi, MapView } from './flight-ui';
 import { QuestUi } from './quest-ui';
 import { MenuUi } from './menu-ui';
+import { SpellbookUi } from './spellbook-ui';
+import { HudWindow } from './dom';
+import { loadBar, saveBar } from './storage';
 
 const PUMMEL = ABILITIES.findIndex(a => a.kind === 'interrupt');
 
@@ -60,8 +63,20 @@ type Project = (x: number, y: number, z: number) => { x: number; y: number } | n
 
 const ICONS = ['⚔', '🔨', '🗡', '❤', '🌀', '✊', '🌪'];
 /** The key for each bar slot, in order: a longer bar is more entries here, and the bar lays itself out. */
-export const ABILITY_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'];
-export const keyLabel = (slot: number) => ABILITY_KEYS[slot].replace(/^Digit/, '').replace('Minus', '-').replace('Equal', '=');
+export const BAR_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'KeyQ', 'KeyE', 'KeyR', 'KeyF'];
+export const keyLabel = (barSlot: number) => BAR_KEYS[barSlot].replace(/^(Digit|Key)/, '');
+/** The layout a fresh player gets: every ability in order, and the rest of the bar left empty for the spell book. */
+const defaultBar = () => BAR_KEYS.map((_, i) => (i < ABILITIES.length ? i : null));
+/** A stored layout, or the default: anything that is not a bar of legal, unrepeated ability indices is thrown away. */
+function sanitizeBar(raw: unknown): (number | null)[] {
+  if (!Array.isArray(raw) || raw.length !== BAR_KEYS.length) return defaultBar();
+  const seen = new Set<number>();
+  return raw.map(v => {
+    if (!Number.isInteger(v) || v < 0 || v >= ABILITIES.length || seen.has(v)) return null;
+    seen.add(v);
+    return v as number;
+  });
+}
 const FAIL_TEXT = {
   range: 'Out of range', cooldown: 'Not ready yet', gcd: 'Not ready yet',
   energy: 'Not enough energy', target: 'No target', nocast: 'Nothing to interrupt',
@@ -103,7 +118,9 @@ export class Hud {
   private targetName: HTMLElement;
   private targetHp: ReturnType<typeof bar>;
   private targetCast: ReturnType<typeof bar>;
-  private slots: { root: HTMLElement; sweep: HTMLElement; cdText: HTMLElement; lock: HTMLElement; lockText: HTMLElement }[] = [];
+  /** One per bar slot (not per ability): `ability` is what it currently casts, null when the slot is empty. */
+  private slots: { root: HTMLElement; icon: HTMLElement; aname: HTMLElement; sweep: HTMLElement; cdText: HTMLElement; lock: HTMLElement; lockText: HTMLElement; ability: number | null }[] = [];
+  private bar = sanitizeBar(loadBar());
   private swingBar: ReturnType<typeof bar>;
   private msg: HTMLElement;
   private banner: HTMLElement;
@@ -127,6 +144,9 @@ export class Hud {
   private shopUi: ShopUi;
   private flightUi: FlightUi;
   private mapUi: MapUi;
+  private bookUi: SpellbookUi;
+  /** Every panel Esc shuts, in the order they are built. */
+  private windows: HudWindow[] = [];
   private goldEl: HTMLElement;
   private statusEl: HTMLElement;
   private castBar: ReturnType<typeof bar>;
@@ -152,18 +172,24 @@ export class Hud {
     this.xp = bar(this.root, 'xp');
 
     const ab = el(this.root, 'actionbar');
-    ABILITIES.forEach((a, i) => {
+    BAR_KEYS.forEach((_, i) => {
       const root = el(ab, 'slot');
-      root.title = `${a.name}: ${a.desc}`;
-      el(root, 'icon', ICONS[i]);
+      const icon = el(root, 'icon');
       el(root, 'key', keyLabel(i));
-      el(root, 'aname', a.name);
+      const aname = el(root, 'aname');
       const sweep = el(root, 'sweep');
       const cdText = el(root, 'cdtext');
       const lock = el(root, 'lock');
       el(lock, 'lockicon', '🔒');
-      const lockText = el(lock, 'locklvl', `Lv ${a.unlockLevel}`);
-      this.slots.push({ root, sweep, cdText, lock, lockText });
+      const lockText = el(lock, 'locklvl');
+      this.slots.push({ root, icon, aname, sweep, cdText, lock, lockText, ability: null });
+      root.addEventListener('dragstart', e => {
+        if (this.bar[i] === null) return e.preventDefault();
+        e.dataTransfer?.setData('text/plain', `bar:${i}`);
+      });
+      root.addEventListener('dragover', e => e.preventDefault());
+      root.addEventListener('drop', e => { e.preventDefault(); this.dropOnBar(i, e.dataTransfer?.getData('text/plain') ?? ''); });
+      root.addEventListener('contextmenu', e => { e.preventDefault(); this.assign(i, null); });
     });
 
     this.swingBar = bar(this.root, 'swing');
@@ -186,12 +212,17 @@ export class Hud {
     this.rangeUi = new ForgeUi(this.root, 'range', 'Cooking Range', craft);
     this.castBar = bar(this.root, 'castbar');
     this.questUi = new QuestUi(this.root, actions.questAdvance);
+    this.bookUi = new SpellbookUi(this.root, () => this.bar, a => this.keyForAbility(a), a => this.assign(this.bar.indexOf(a), null));
     this.menuUi = new MenuUi(this.root, actions);
+    this.windows = [this.mapUi, this.menuUi, this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi,
+      this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char];
+    this.renderBar();
   }
 
-  toggle(which: 'inv' | 'char' | 'skills' | 'talents') {
+  toggle(which: 'inv' | 'char' | 'skills' | 'talents' | 'book') {
     if (which === 'skills') this.skillsUi.toggle();
     else if (which === 'talents') this.talentsUi.toggle();
+    else if (which === 'book') this.bookUi.toggle();
     else this.invUi.toggle(which);
   }
 
@@ -201,12 +232,66 @@ export class Hud {
   /** A dialogue, the help screen or the map has focus: game keys (jump) must not act under it. */
   get modalOpen(): boolean { return this.menuUi.isOpen || this.questUi.isOpen || this.mapUi.isOpen; }
 
-  /** Esc: closes the topmost overlay (map, help, dialogue). Returns true if it closed something. */
-  closeOverlay(): boolean {
-    if (this.mapUi.isOpen) { this.mapUi.setOpen(false); return true; }
-    if (this.menuUi.isOpen) { this.menuUi.setOpen(false); return true; }
-    if (this.questUi.isOpen) { this.questUi.setOpen(false); return true; }
-    return false;
+  /** Esc: shuts every HUD window that is open, not just the topmost. Returns true if it closed something. */
+  closeAll(): boolean {
+    let closed = false;
+    for (const w of this.windows) if (w.isOpen) { w.setOpen(false); closed = true; }
+    return closed;
+  }
+
+  // ---------- action bar layout ----------
+
+  /** The ability a bar key casts, or null when that slot is empty. */
+  abilityAt(barSlot: number): number | null { return this.bar[barSlot] ?? null; }
+
+  /** Where an ability sits on the bar, as the key the player presses; null when it is not on the bar at all. */
+  private keyForAbility(ability: number): string | null {
+    const at = this.bar.indexOf(ability);
+    return at < 0 ? null : keyLabel(at);
+  }
+
+  /** Put an ability in a slot (or empty it). An ability lives in one slot only, so its old one is cleared. */
+  private assign(barSlot: number, ability: number | null) {
+    if (barSlot < 0 || barSlot >= this.bar.length) return;
+    if (ability !== null) {
+      const old = this.bar.indexOf(ability);
+      if (old >= 0) this.bar[old] = null;
+    }
+    this.bar[barSlot] = ability;
+    this.barChanged();
+  }
+
+  /** A drop on a bar slot: a spell from the book lands there, another slot's spell swaps with it. */
+  private dropOnBar(barSlot: number, data: string) {
+    const [kind, raw] = data.split(':');
+    const n = Number(raw);
+    if (!Number.isInteger(n)) return;
+    if (kind === 'spell') return this.assign(barSlot, n >= 0 && n < ABILITIES.length ? n : null);
+    if (kind !== 'bar' || n < 0 || n >= this.bar.length || n === barSlot) return;
+    [this.bar[barSlot], this.bar[n]] = [this.bar[n], this.bar[barSlot]];
+    this.barChanged();
+  }
+
+  private barChanged() {
+    saveBar(this.bar);
+    this.renderBar();
+    this.bookUi.invalidate();
+  }
+
+  /** The slot faces: icon, name and tooltip follow whatever each slot now holds. */
+  private renderBar() {
+    this.slots.forEach((slot, i) => {
+      const ability = this.bar[i];
+      slot.ability = ability;
+      const a = ability === null ? null : ABILITIES[ability];
+      slot.icon.textContent = a ? ICONS[ability!] : '';
+      slot.aname.textContent = a?.name ?? '';
+      slot.root.draggable = !!a;
+      slot.root.classList.toggle('empty', !a);
+      slot.root.title = a
+        ? `${a.name}: ${a.desc}\nDrag to move it, right-click to clear the slot.`
+        : 'Empty. Drag a spell here from the spell book (P).';
+    });
   }
 
   /** A line in the scrolling message log (and optionally the centre-screen message). */
@@ -358,17 +443,25 @@ export class Hud {
   /**
    * A new ability: banner in the level-up family, a log line, and the slot glows until it has been seen for a while.
    * One level can hand over several abilities: banners queue one after another rather than overwriting each other.
+   * A new ability takes the first free slot so it is never handed over with nowhere to press it.
    */
-  private unlock(slot: number) {
-    const a = ABILITIES[slot], at = this.unlockQueue++ * UNLOCK_BANNER_GAP_MS;
+  private unlock(ability: number) {
+    const a = ABILITIES[ability], at = this.unlockQueue++ * UNLOCK_BANNER_GAP_MS;
+    if (this.keyForAbility(ability) === null) {
+      const free = this.bar.indexOf(null);
+      if (free >= 0) this.assign(free, ability);
+    }
+    const key = this.keyForAbility(ability), where = key ? `press ${key}` : 'assign it in your spell book (P)';
+    const barSlot = this.bar.indexOf(ability);
     setTimeout(() => {
       this.unlockQueue = Math.max(0, this.unlockQueue - 1);
       this.popBanner(this.unlockBanner, `NEW ABILITY:  ${a.name}`);
-      this.unlockBanner.dataset.sub = `Press ${keyLabel(slot)}  -  ${a.desc}`;
-      this.slots[slot].root.classList.add('fresh');
-      setTimeout(() => this.slots[slot].root.classList.remove('fresh'), UNLOCK_GLOW_MS);
+      this.unlockBanner.dataset.sub = `${key ? `Press ${key}` : 'Assign it in your spell book (P)'}  -  ${a.desc}`;
+      if (barSlot < 0) return;
+      this.slots[barSlot].root.classList.add('fresh');
+      setTimeout(() => this.slots[barSlot].root.classList.remove('fresh'), UNLOCK_GLOW_MS);
     }, at);
-    this.note(`New ability unlocked: ${a.name} (press ${keyLabel(slot)})`, 'log-lvl');
+    this.note(`New ability unlocked: ${a.name} (${where})`, 'log-lvl');
   }
 
   /** An enemy begins a wind-up: tell the player exactly what it is and what answers it. */
@@ -377,12 +470,13 @@ export class Hud {
     if (!e || Math.hypot(e.x - p.x, e.z - p.z) > 16) return;
     const def = ENEMY_TYPES[e.type];
     const name = castName(def, ev.kind);
-    const canPummel = p.combat.level >= ABILITIES[PUMMEL].unlockLevel;
+    // only offer the Pummel answer when it is both learned and sitting on the bar: there is no key to name otherwise
+    const pk = p.combat.level >= ABILITIES[PUMMEL].unlockLevel ? this.keyForAbility(PUMMEL) : null;
     const answer = ev.kind === 'ground'
-      ? (canPummel ? `Pummel it (${keyLabel(PUMMEL)}), or keep moving: it lands where you stood.` : 'Keep moving: it lands where you stood.')
+      ? (pk ? `Pummel it (${pk}), or keep moving: it lands where you stood.` : 'Keep moving: it lands where you stood.')
       : ev.kind === 'heavy'
-      ? (canPummel ? `Pummel it (${keyLabel(PUMMEL)}) or step out of the circle!` : 'Step out of the circle!')
-      : (canPummel ? `Pummel it (${keyLabel(PUMMEL)}) or break line of fire!` : 'Close in and strike it down!');
+      ? (pk ? `Pummel it (${pk}) or step out of the circle!` : 'Step out of the circle!')
+      : (pk ? `Pummel it (${pk}) or break line of fire!` : 'Close in and strike it down!');
     this.warn.textContent = `${name.toUpperCase()}  -  ${answer}`;
     this.warn.style.animationDuration = `${ev.windup + 0.5}s`;
     this.warn.classList.remove('show');
@@ -441,11 +535,19 @@ export class Hud {
     const swung = interval > 0 ? 1 - p.swing / interval : 1;
     this.swingBar.fill.parentElement!.classList.toggle('on', p.autoAttack);
     this.swingBar.fill.parentElement!.classList.toggle('ready', p.autoAttack && p.swing <= 0);
-    this.setBar(this.swingBar, swung, p.autoAttack ? (p.swing <= 0 ? 'AUTO-ATTACK  (waiting)' : 'AUTO-ATTACK') : 'Auto-attack off  [R]');
+    this.setBar(this.swingBar, swung, p.autoAttack ? (p.swing <= 0 ? 'AUTO-ATTACK  (waiting)' : 'AUTO-ATTACK') : 'Auto-attack off  [X]');
 
     // action bar: cooldown sweeps (GCD shows on every slot), energy and range tint
-    ABILITIES.forEach((a, i) => {
-      const slot = this.slots[i];
+    for (const slot of this.slots) {
+      const i = slot.ability;
+      if (i === null) { // an empty slot shows nothing but its key
+        slot.sweep.style.background = 'none';
+        slot.cdText.textContent = '';
+        slot.lock.style.display = 'none';
+        slot.root.classList.remove('locked', 'noenergy', 'outrange', 'queued');
+        continue;
+      }
+      const a = ABILITIES[i];
       const cd = p.cd[i];
       const remaining = Math.max(cd, p.gcd);
       const total = cd > p.gcd ? cooldownOf(p, i) : GCD;
@@ -462,7 +564,7 @@ export class Hud {
       slot.root.classList.toggle('noenergy', noEnergy);
       slot.root.classList.toggle('outrange', outOfRange);
       slot.root.classList.toggle('queued', p.queued === i);
-    });
+    }
 
     // nameplates
     const blockers = this.visibleBlockers();
@@ -514,6 +616,7 @@ export class Hud {
     this.invUi.update(s);
     this.skillsUi.update(s);
     this.talentsUi.update(s);
+    this.bookUi.update(s);
     this.questUi.update(s, this.yaw());
     this.forgeUi.update(s);
     this.rangeUi.update(s);

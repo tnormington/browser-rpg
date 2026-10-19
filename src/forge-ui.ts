@@ -27,6 +27,8 @@ export class ForgeUi {
     this.panel.style.display = 'none';
   }
 
+  get isOpen() { return this.open; }
+
   setOpen(on: boolean) {
     this.open = on;
     this.panel.style.display = on ? 'block' : 'none';

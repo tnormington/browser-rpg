@@ -74,8 +74,6 @@ export class WorldView {
     }
   }
 
-  /** Floors a click can land on (the slabs in view). */
-  grounds(): THREE.Mesh[] { return this.tiles.flatMap(t => t.group?.visible ? t.ground : []); }
   /** The harbourmaster's and the chandler's pick proxies, when they are in view. */
   npcPicks(): THREE.Mesh[] { return this.tiles.flatMap(t => t.group?.visible ? t.picks.npc : []); }
   vendorPicks(): THREE.Mesh[] { return this.tiles.flatMap(t => t.group?.visible ? t.picks.vendor : []); }
