@@ -1,7 +1,7 @@
 // Dev-only scalability knob (?stress=N, debug builds only). Grows the zone by sqrt(N) per side and adds
 // (N-1)x the hand-placed enemies, trees and ore rocks in the new ring, so density stays at the original value.
 // Additive: factor <= 1 changes nothing. Pure sim, no DOM.
-import { ROCKS, TREES, WORLD_HALF, addScenery, setWorldHalf } from './world';
+import { ROCKS, TREES, WORLD_HALF, addScenery, regionAt, setWorldHalf } from './world';
 import { SPAWNS } from './data';
 import { nextRandom } from './rng';
 
@@ -18,12 +18,13 @@ export function* ringPoints(box: { rng: number }, half: number, inner: number, m
 
 export function applyStress(factor: number) {
   if (!(factor > 1)) return;
-  const base = { enemies: SPAWNS.length, trees: TREES.length, rocks: ROCKS.length, half: WORLD_HALF };
+  const hale = SPAWNS.filter(sp => regionAt(sp.x, sp.z)?.zone === 'hale'); // the knob scales Hale's density: the road and the Strand are not part of the clearing it grows
+  const base = { enemies: hale.length, trees: TREES.length, rocks: ROCKS.length, half: WORLD_HALF };
   setWorldHalf(base.half * Math.sqrt(factor));
   const box = { rng: 12345 };
   const pts = ringPoints(box, WORLD_HALF, base.half, 3);
   const extra = (n: number) => Math.round(n * (factor - 1));
-  const orig = SPAWNS.slice(), origRocks = ROCKS.slice();
+  const orig = hale, origRocks = ROCKS.slice();
   for (let i = 0, n = extra(base.enemies); i < n; i++) SPAWNS.push({ type: orig[i % orig.length].type, ...pts.next().value! });
   for (let i = 0, n = extra(base.trees); i < n; i++) { addScenery('clearing', { ...pts.next().value!, r: 1 }); }
   for (let i = 0, n = extra(base.rocks); i < n; i++) { addScenery('clearing', { ...origRocks[i % origRocks.length], ...pts.next().value! }); }

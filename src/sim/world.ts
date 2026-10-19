@@ -9,7 +9,9 @@
 
 export const PLAYER_RADIUS = 0.5;
 
-export interface Obstacle { x: number; z: number; r: number }
+/** What an obstacle is, for whatever draws it: the sim only ever reads the circle. Absent means a rock (or, in the clearing, whatever it always was). */
+export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person';
+export interface Obstacle { x: number; z: number; r: number; kind?: PropKind }
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 export interface Pt { x: number; z: number }
 // Ore rocks (gatherable, see sim/gathering.ts).
@@ -114,7 +116,7 @@ function verge(o: Pt, spawns: Pt[], extra: Obstacle[]): { obstacles: Obstacle[];
     const lz = (hash(k * 7 + 2) < 0.5 ? -1 : 1) * (12 + hash(k * 11 + 3) * 38);
     const tree = hash(k * 5 + 4) < 0.4, r = tree ? 0.9 : 1.2 + hash(k * 13 + 6) * 1.2, c = at(o, lx, lz);
     if (spawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 11) || extra.some(e => Math.hypot(e.x - c.x, e.z - c.z) < e.r + r + 2)) continue;
-    const ob = { x: c.x, z: c.z, r };
+    const ob: Obstacle = { x: c.x, z: c.z, r, kind: tree ? 'tree' : 'rock' };
     obstacles.push(ob);
     if (tree || r >= 1.8) tall.push(ob);
   }
@@ -123,22 +125,22 @@ function verge(o: Pt, spawns: Pt[], extra: Obstacle[]): { obstacles: Obstacle[];
 
 const roadSpawns = worldSpawns(GREYWATER, GREYWATER_SPAWNS);
 const roadProps: Obstacle[] = [
-  { ...at(GREYWATER, 66, -15), r: 2.6 },   // the toll hut, beside the road
-  { ...at(GREYWATER, 53, 12), r: 1.4 },    // the toll cart
+  { ...at(GREYWATER, 66, -15), r: 2.6, kind: 'hut' },   // the toll hut, beside the road
+  { ...at(GREYWATER, 53, 12), r: 1.4, kind: 'cart' },   // the toll cart
   { ...at(GREYWATER, 330, -38), r: 3.2 },  // the rock Old Grey lies behind, seen from the road
   { ...at(GREYWATER, 336, -52), r: 2.4 },
 ];
 const road = verge(GREYWATER, roadSpawns, roadProps);
 
 /** The town's buildings: the inn (The Gilded Gull) and the houses round the square. */
-const SALT_INN: Obstacle = { ...at(SALTMARROW, -10, -16), r: 4.6 };
+const SALT_INN: Obstacle = { ...at(SALTMARROW, -10, -16), r: 4.6, kind: 'inn' };
 const SALT_HOUSES: Obstacle[] = [
-  { ...at(SALTMARROW, -48, -24), r: 3.2 }, { ...at(SALTMARROW, -50, 22), r: 3.2 }, { ...at(SALTMARROW, -6, 26), r: 3.2 }, { ...at(SALTMARROW, -42, -42), r: 3 },
+  { ...at(SALTMARROW, -48, -24), r: 3.2, kind: 'house' }, { ...at(SALTMARROW, -50, 22), r: 3.2, kind: 'house' }, { ...at(SALTMARROW, -6, 26), r: 3.2, kind: 'house' }, { ...at(SALTMARROW, -42, -42), r: 3, kind: 'house' },
 ];
 /** Beached hulls, the quay's crates, and the cliff rock the Strand's rare lurks behind. */
 const SALT_PROPS: Obstacle[] = [
-  { ...at(SALTMARROW, 22, -20), r: 2.4 }, { ...at(SALTMARROW, 24, 28), r: 2.4 },
-  { ...at(SALTMARROW, 24, -5.5), r: 0.9 }, { ...at(SALTMARROW, 24, 5.5), r: 0.9 },
+  { ...at(SALTMARROW, 22, -20), r: 2.4, kind: 'hull' }, { ...at(SALTMARROW, 24, 28), r: 2.4, kind: 'hull' },
+  { ...at(SALTMARROW, 24, -5.5), r: 0.9, kind: 'crate' }, { ...at(SALTMARROW, 24, 5.5), r: 0.9, kind: 'crate' },
   { ...at(SALTMARROW, -58, -52), r: 2.6 }, { ...at(SALTMARROW, -30, 36), r: 1.6 }, { ...at(SALTMARROW, -2, -50), r: 1.8 },
   { ...at(SALTMARROW, 12, 40), r: 1.6 }, { ...at(SALTMARROW, -40, 62), r: 2 }, { ...at(SALTMARROW, 28, 8), r: 1.2 }, { ...at(SALTMARROW, 8, 66), r: 2.2 },
 ];
@@ -252,7 +254,7 @@ export const REGIONS: Region[] = [
       { x0: SALTMARROW.x - 70, x1: SALTMARROW.x + 30, z0: SALTMARROW.z - 70, z1: SALTMARROW.z + 70 },
       { x0: SALTMARROW.x + 16, x1: SALTMARROW.x + 62, z0: SALTMARROW.z - 3, z1: SALTMARROW.z + 3 },
     ],
-    obstacles: [SALT_INN, ...SALT_HOUSES, ...SALT_PROPS, { ...saltLandmarks.harbourmaster }, { ...saltLandmarks.harbourVendor }],
+    obstacles: [SALT_INN, ...SALT_HOUSES, ...SALT_PROPS, { ...saltLandmarks.harbourmaster, kind: 'person' }, { ...saltLandmarks.harbourVendor, kind: 'person' }],
     tall: [SALT_INN, ...SALT_HOUSES, SALT_PROPS[4]], trees: [],
     rocks: [-14, -8, -2, 4, 10].map((lx, i) => ({ type: 'adamant' as const, ...at(SALTMARROW, lx, i % 2 ? -66 : -64), r: 1.2 })),
     landmarks: saltLandmarks,

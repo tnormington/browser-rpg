@@ -21,7 +21,7 @@ const WINDOW_CAP_MS = 20000; // timing window ends at `frames` frames or this wa
 const VIEW = { width: 1280, height: 720 };
 const query = opt('query', ''); // extra URL params appended to the dev-server URL
 const quality = opt('quality', 'high'); // high | low
-const at = opt('at', '')?.split(',').map(Number); // x,z,yaw
+const at = opt('at', '') ? opt('at', '').split(',').map(Number) : null; // x,z,yaw
 const tag = opt('tag', '');     // suffix for output file names, e.g. --tag noshadow
 const shots = join(root, 'bench', 'shots');
 mkdirSync(shots, { recursive: true });

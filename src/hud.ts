@@ -239,7 +239,7 @@ export class Hud {
       } else if (ev.t === 'actionfail') {
         this.say(actionFailText(ev));
       } else if (ev.t === 'shop') {
-        this.shopUi.setOpen(true);
+        this.shopUi.setOpen(true, ev.vendor);
         this.invUi.show('inv'); // selling is done from the bag
       } else if (ev.t === 'trade') {
         const name = `${ITEMS[ev.item].name}`;
@@ -288,7 +288,7 @@ export class Hud {
         const e = s.enemies.find(x => x.id === ev.id);
         if (e) this.note(`${ENEMY_TYPES[e.type].name} slain`, 'log-kill');
       } else if (ev.t === 'npc') {
-        this.questUi.setOpen(true, s);
+        this.questUi.setOpen(true, s, ev.who);
       } else if (ev.t === 'quest') {
         if (ev.what === 'accept') this.note(`Quest accepted: ${ev.name}`, 'log-quest');
         else if (ev.what === 'stage') this.note('Quest updated: see the tracker', 'log-quest');

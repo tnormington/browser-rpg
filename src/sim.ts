@@ -115,7 +115,7 @@ export type GameEvent =
   | { t: 'xp'; skill: SkillId; amount: number; x: number; z: number }
   | { t: 'levelup'; skill: SkillId; level: number }
   | { t: 'actionfail'; reason: 'level' | 'req' | 'depleted' | 'full' | 'materials' | 'range' | 'gold'; skill?: SkillId; need: number; what: string } // skill: absent for a failed trade
-  | { t: 'npc' }                                        // player reached the quest giver: open dialogue
+  | { t: 'npc'; who: string }                           // player reached a quest giver: open their dialogue
   | { t: 'quest'; what: 'accept' | 'progress' | 'stage' | 'complete'; name: string }  // name: the quest it is about (both chains sit at stage 'done' at once)
   | { t: 'forge' }                                      // player reached the forge: open the recipe list
   | { t: 'crafted'; item: string; qty: number }
@@ -124,7 +124,7 @@ export type GameEvent =
   | { t: 'drop'; id: number; item: string; x: number; z: number }
   | { t: 'loot'; item: string; qty: number }
   | { t: 'invfull' }
-  | { t: 'shop' }                                       // player reached the merchant: open the shop
+  | { t: 'shop'; vendor: string }                       // player reached a merchant: open their shop
   | { t: 'trade'; sold: boolean; item: string; qty: number; gold: number } // a sale (gold earned) or a purchase (gold spent) went through
   | { t: 'death'; killer: string; recap: { src: string; what: string; amount: number; heavy: boolean; ago: number }[] } // killer: "Cave Brute: Crushing Slam"; recap: last hits, oldest first, `ago` seconds before death
   | { t: 'respawn' };

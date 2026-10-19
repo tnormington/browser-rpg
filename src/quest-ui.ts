@@ -1,7 +1,7 @@
 // Quest tracker (objective, live progress, arrow to the next place to go) and the NPC dialogue panel. Reads GameState only;
 // the one thing it can do is ask the sim to advance the quest.
 import type { GameState } from './sim';
-import { Dialogue, NPC, TALK_RANGE, activeDialogue, activeQuestView } from './sim/quest';
+import { Dialogue, NPCS, TALK_RANGE, activeQuestView, dialogueAt, npcName } from './sim/quest';
 import { el } from './dom';
 
 export class QuestUi {
@@ -12,6 +12,8 @@ export class QuestUi {
   private arrow: HTMLElement;
   private navText: HTMLElement;
   private panel: HTMLElement;
+  private titleEl: HTMLElement;
+  private who = 'hale';
   private text: HTMLElement;
   private opts: HTMLElement;
   private open = false;
@@ -30,8 +32,8 @@ export class QuestUi {
     this.navText = el(this.nav, 'qnavtext');
 
     this.panel = el(root, 'panel dialogue');
-    const head = el(this.panel, 'ptitle', NPC.name);
-    el(head, 'dhint', 'Esc to close');
+    this.titleEl = el(this.panel, 'ptitle');
+    el(this.titleEl, 'dhint', 'Esc to close');
     this.text = el(this.panel, 'dtext');
     this.opts = el(this.panel, 'dopts');
     this.panel.style.display = 'none';
@@ -39,12 +41,16 @@ export class QuestUi {
 
   get isOpen() { return this.open; }
 
-  setOpen(on: boolean, s?: GameState) {
+  setOpen(on: boolean, s?: GameState, who = 'hale') {
     this.open = on;
     this.reply = null;
     this.sig = '';
     this.panel.style.display = on ? 'block' : 'none';
-    if (on && s) this.dialogue = activeDialogue(s);
+    if (on && s) {
+      this.who = who;
+      this.dialogue = dialogueAt(s, who);
+      this.titleEl.firstChild?.nodeType === Node.TEXT_NODE ? (this.titleEl.firstChild.textContent = npcName(who)) : this.titleEl.prepend(npcName(who));
+    }
   }
 
   update(s: GameState, yaw: number) {
@@ -69,7 +75,8 @@ export class QuestUi {
     }
 
     if (this.open) {
-      if (p.dead || Math.hypot(p.x - NPC.x, p.z - NPC.z) > TALK_RANGE + 2) return this.setOpen(false);
+      const n = NPCS.find(x => x.id === this.who)!;
+      if (p.dead || Math.hypot(p.x - n.x, p.z - n.z) > TALK_RANGE + 2) return this.setOpen(false);
       this.renderDialogue();
     }
   }

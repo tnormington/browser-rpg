@@ -7,7 +7,7 @@ const CONTROLS: [string, string][] = [
   ['W A S D', 'Move (relative to the camera)'],
   ['Click ground', 'Walk there'],
   ['Drag / wheel', 'Orbit and zoom the camera'],
-  ['E or click NPC', 'Talk to Warden Hale'],
+  ['E or click NPC', 'Talk to a quest giver'],
   ['Tab / click enemy', 'Target an enemy (Esc clears)'],
   ['R', 'Auto-attack on / off (the bar above the action bar is your swing timer). Strike and Cleave start it too.'],
   ['Space', 'Jump (hold to keep hopping)'],

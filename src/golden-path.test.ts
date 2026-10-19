@@ -2,10 +2,10 @@
 // Exits non-zero on the first failed assertion. Extended every milestone.
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState, Enemy } from './sim';
 import { addItem, countItem, INVENTORY_SIZE } from './sim/inventory';
-import { ITEMS, DROP_TABLES, MITHRIL_SET, TIER_COLORS, deriveStats, emptyEquipment } from './sim/items';
+import { ITEMS, DROP_TABLES, MITHRIL_SET, TIER_COLORS, deriveStats, describeStats, emptyEquipment } from './sim/items';
 import {
   ABILITIES, ENEMY_TYPES, SPAWNS, aggroRadius, castName, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
-  FALL_GRAVITY, GRAVITY, JUMP_AIRTIME, JUMP_HEIGHT, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW, powerForLevel,
+  FALL_GRAVITY, GRAVITY, JUMP_AIRTIME, JUMP_HEIGHT, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW, powerForLevel, xpParity,
 } from './sim/data';
 import { xpForLevel, levelForXp, addXp, newTrack, levelProgress } from './sim/xp';
 import { SKILL_IDS, SKILLS, grantXp } from './sim/skills';
@@ -14,7 +14,7 @@ import { MAX_BONUS, MAX_SPEEDUP, mastery } from './sim/mastery';
 import { RECIPES, FORGE_REACH, recipeById } from './sim/crafting';
 import {
   CAVE_DOOR_Z, CAVE_PILLARS, CAVE_ROCKS, CAVE_ROOMS, COLLIDERS, LANDMARKS, PLAYER_RADIUS, ROCKS, TREES, WORLD_HALF,
-  caveDepth, caveWallPoints, inCave, resolveCollisions, sameSideOfDoor,
+  GREYWATER, REGIONS, SALTMARROW, caveDepth, caveWallPoints, clampToWorld, inCave, regionAt, resolveCollisions, sameSideOfDoor,
 } from './sim/world';
 import { route } from './sim/path';
 import { refreshGearStats } from './sim/inventory';
@@ -22,6 +22,7 @@ import { refreshPlayerStats } from './sim/combat';
 import {
   BLADE_PLAN, DELVE_GOALS, DIALOGUE, DIALOGUE2, HUNT_GOALS, MITHRIL_PLAN, NPC, QUEST2_NAME, QUEST2_STAGES, QUEST_STAGES,
   QUEST_NAME, RECOMMENDED_COMBAT, RECOMMENDED_COMBAT_2, REWARD, REWARD2, TALK_RANGE, activeDialogue, activeQuestView, npcMarker, questOnKill, questView,
+  HARBOURMASTER, QUEST3_NAME, REWARD3, dialogueAt, harbourMarker,
 } from './sim/quest';
 import { appearanceOf, ITEM_LOOKS, TIER_LOOKS, TIER5_COLOR } from './gear-look';
 import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
@@ -32,7 +33,7 @@ import {
   deriveTalents, refreshTalents, spentIn, spentTotal, talentPoints,
 } from './sim/talents';
 import { reductionOf } from './sim/combat';
-import { SHOP_STOCK, VENDOR, SHOP_REACH, BUY_MARKUP, buyPrice } from './sim/shop';
+import { SHOP_STOCK, VENDOR, SHOP_REACH, BUY_MARKUP, buyPrice, HARBOUR_STOCK, HARBOUR_VENDOR } from './sim/shop';
 
 let checks = 0;
 function assert(cond: unknown, msg: string): asserts cond {
@@ -2084,7 +2085,8 @@ section('HOM-15 second quest: it starts where the first ends, on the same machin
   assert(REWARD2[0].xp > REWARD[0].xp * 2 && REWARD2.length >= REWARD.length, 'and it is a bigger reward than the first quest paid');
   const xp1 = s.player.combat.xp;
   tick(s, { questAdvance: true });
-  assert(s.player.combat.xp === xp1 && activeQuestView(s).target === null && activeQuestView(s).progress === '' && npcMarker(s) === null, 'completing twice pays once, nothing is left to point at, and the marker is gone');
+  // HOM-46: the road east opens as the Hollow goes quiet, so the tracker carries on to The Salt Road instead of emptying: its arrow points at Saltmarrow's harbourmaster
+  assert(s.player.combat.xp === xp1 && activeQuestView(s).title === QUEST3_NAME && activeQuestView(s).target?.label === HARBOURMASTER.name && activeQuestView(s).progress === '(1/3)' && npcMarker(s) === null, 'completing twice pays once, the warden has nothing left to say (no marker), and the tracker moves on to the harbourmaster in Saltmarrow');
   assert(activeDialogue(s) === DIALOGUE2.cleared && QUEST2_STAGES.slice(1).every(stg => DIALOGUE2[stg as keyof typeof DIALOGUE2].lines.length > 0 && DIALOGUE2[stg as keyof typeof DIALOGUE2].options.length > 0), 'every stage of the second quest has something to say');
   assert(DIALOGUE2.offer.options.filter(o => o.advance).length === 1 && DIALOGUE2.report.options.filter(o => o.advance).length === 1 && QUEST2_STAGES.every(stg => stg === 'locked' || stg === 'offer' || stg === 'report' || !DIALOGUE2[stg].options.some(o => o.advance)), 'only the hand-in stages offer an advancing option: nowhere else could it do anything');
   assert(DIALOGUE.done.options.length > 0 && activeDialogue(createState()) === DIALOGUE.offer, 'the first quest\'s dialogue is untouched');
@@ -2260,7 +2262,7 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
   assert(s.player.combat.xp >= c0 + REWARD2[0].xp && s.player.skills.mining.xp === m0 + REWARD2[1].xp && s.player.skills.smithing.xp === sm0 + REWARD2[2].xp, 'rewards paid: combat, mining and smithing XP');
   milestone(`second quest complete, Combat ${s.player.combat.level}, Mining ${s.player.skills.mining.level}, Smithing ${s.player.skills.smithing.level}`);
   console.log(`  second quest: ${((clock() - firstQuestSeconds) / 60).toFixed(1)} min of game time on top of the first quest's ${(firstQuestSeconds / 60).toFixed(1)}; ${deathTally} bot deaths along the way`);
-  assert(npcMarker(s) === null && activeQuestView(s).target === null, 'nothing left on the tracker');
+  assert(npcMarker(s) === null && activeQuestView(s).title === QUEST3_NAME, 'nothing left for the warden to say, and the tracker moves on to the road east (HOM-46: it used to empty)');
 
   // 11. after the quest: the floor to stand on. The Warden returns; its shards make the best blade there is.
   const SHARDS = recipeById('warden_edge')!.inputs.find(i => i.id === 'warden_shard')!.qty;
@@ -3027,4 +3029,270 @@ section('HOM-42 economy: gold, item values and a merchant who buys your junk');
     assert(deserialize(JSON.stringify(f)) === null, `a save with gold ${String(bad)} is refused`);
   }
 }
+
+// ---------------------------------------------------------------------------
+section('HOM-46 XP parity: ground you have outgrown pays less');
+{
+  // a kill pays base x clamp(1 + 0.05 x (enemy level - player level), 0.1, 1.25), at the level the player is when it dies
+  const killXp = (level: number, type: string, seed: number) => {
+    const s = quietState(seed);
+    atLevel(s, level);
+    const e = enemyOf(s, type);
+    e.state = 'idle'; e.respawnIn = 0; e.maxHp = e.hp = 1; e.attackCd = 1e9;
+    standNear(s, e, 2); s.targetId = e.id;
+    tick(s, { ability: 0 });
+    assert(st(e) === 'dead', `${type} falls to one Strike at level ${level}`);
+    return (s.events.find(ev => ev.t === 'xp' && ev.skill === 'combat') as Extract<GameState['events'][number], { t: 'xp' }>).amount;
+  };
+  const warden = ENEMY_TYPES.warden, boar = ENEMY_TYPES.boar;
+  assert(killXp(11, 'warden', 4601) === warden.xp, `the Warden pays its full ${warden.xp} at its own level`);
+  assert(killXp(20, 'warden', 4602) === Math.round(warden.xp * 0.55), `...and ${Math.round(warden.xp * 0.55)} to a level 20 (5% a level below, 9 levels)`);
+  assert(killXp(1, 'warden', 4603) === Math.round(warden.xp * 1.25), `...and no more than +25% (${Math.round(warden.xp * 1.25)}) to a level 1 who somehow kills it`);
+  assert(killXp(40, 'warden', 4604) === Math.round(warden.xp * 0.1), 'a level 40 gets the 10% floor: it still pays, a little');
+  assert(killXp(1, 'boar', 4605) === boar.xp && killXp(5, 'boar', 4606) === Math.round(boar.xp * 0.8), 'a boar still pays a level 1 in full, and a level 5 four fifths');
+  assert(xpParity(10, 10) === 1 && xpParity(1, 99) === 0.1 && xpParity(99, 1) === 1.25 && Math.abs(xpParity(12, 10) - 1.1) < 1e-9, 'the rule itself: 1 at parity, +5% a level above, clamped to 0.1 .. 1.25');
+  // what it does to the farm: the Warden's 900 XP shrinks as the player grows past level 11, the more so the further they go
+  const pay = (level: number) => Math.round(warden.xp * xpParity(warden.level, level));
+  assert(pay(11) === 900 && pay(15) === 720 && pay(20) === 495 && pay(30) === 90 && pay(11) > pay(15) && pay(15) > pay(20) && pay(20) > pay(30), `the Warden pays ${pay(11)} at 11, ${pay(15)} at 15, ${pay(20)} at 20 and ${pay(30)} at 30: it stops being the best farm in the game`);
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-46 adamant: Mining 17, a smithed set, and gear that asks for a combat level');
+{
+  const sets = ['adamant_helm', 'adamant_chestplate', 'adamant_greaves', 'adamant_blade'];
+  assert(sets.every(id => ITEMS[id].req?.combat === 14 && ITEMS[id].tier === 5), 'every adamant piece is tier 5 and needs combat 14');
+  assert(Object.entries(ITEMS).filter(([id]) => !sets.includes(id)).every(([, d]) => d.req === undefined), 'nothing older has a requirement: no old save is touched');
+  assert(deriveStats({ ...emptyEquipment(), head: 'adamant_helm', chest: 'adamant_chestplate', legs: 'adamant_greaves' }).armor === 68 && ITEMS.adamant_blade.stats!.damage === 40, 'the set is 16 + 30 + 22 = 68 armour, the blade 40: the bible\'s numbers');
+  assert(deriveStats({ ...emptyEquipment(), weapon: 'adamant_blade' }).weaponDamage > deriveStats({ ...emptyEquipment(), weapon: 'warden_edge' }).weaponDamage, 'the Adamant Blade beats the Warden\'s Edge');
+  assert(describeStatsHas('adamant_helm', 'Requires Combat 14'), 'and the tooltip says so');
+
+  // the equip action reads it
+  const s = quietState(4610);
+  atLevel(s, 13);
+  addItem(s.player.inventory, 'adamant_blade', 1);
+  const slot = s.player.inventory.findIndex(x => x?.id === 'adamant_blade');
+  tick(s, { inv: [{ k: 'equip', slot }] });
+  assert(hasEvent(s, e => e.t === 'actionfail' && e.reason === 'req' && e.need === 14) && s.player.equipment.weapon === null && s.player.inventory[slot]?.id === 'adamant_blade', 'at combat 13 the blade stays in the bag, and the refusal says why');
+  atLevel(s, 14);
+  tick(s, { inv: [{ k: 'equip', slot }] });
+  assert(s.player.equipment.weapon === 'adamant_blade' && s.player.stats.weaponDamage === 40, 'at combat 14 it goes on and the damage follows');
+  const legacy = quietState(4611);
+  addItem(legacy.player.inventory, 'warden_edge', 1);
+  tick(legacy, { inv: [{ k: 'equip', slot: legacy.player.inventory.findIndex(x => x?.id === 'warden_edge') }] });
+  assert(legacy.player.equipment.weapon === 'warden_edge', 'the Warden\'s Edge still equips at level 1: legacy gear is unrestricted');
+
+  // the veins: five of them, after every older node, gated at Mining 17
+  const g = createState(4612);
+  const veins = nodesOf(g, 'adamant');
+  assert(veins.length === 5 && veins.every(n => n.id > 24) && g.nodes.slice(0, 24).every(n => n.type !== 'adamant') && NODE_TYPES.adamant.level === 17 && NODE_TYPES.adamant.item === 'adamant_ore', 'five adamant veins on the Strand\'s cliffs, ids after the old 24, Mining 17');
+  g.player.skills.mining.xp = xpForLevel(16); g.player.skills.mining.level = 16;
+  g.player.x = veins[0].x; g.player.z = veins[0].z + 3;
+  for (const e of g.enemies) { e.state = 'dead'; e.respawnIn = 1e9; }
+  tick(g, { interact: { k: 'node', id: veins[0].id } });
+  assert(hasEvent(g, e => e.t === 'actionfail' && e.reason === 'level' && e.need === 17), 'at Mining 16 a vein refuses you, naming the level');
+  g.player.skills.mining.xp = xpForLevel(17); g.player.skills.mining.level = 17;
+  tick(g, { interact: { k: 'node', id: veins[0].id } });
+  run(g, 7);
+  assert(countOf(g, 'adamant_ore') >= 1, 'at Mining 17 it yields adamant ore');
+  const cost = (L: number) => xpForLevel(L + 1) - xpForLevel(L);
+  assert(Math.abs(NODE_TYPES.adamant.xp - 0.42 * cost(17)) <= 2, `a swing pays 0.42 x the XP from level 17 to 18 (${NODE_TYPES.adamant.xp}), the bible's rule for a gathering action`);
+  for (const [id, L] of [['adamant_bar', 14], ['adamant_helm', 15], ['adamant_blade', 16], ['adamant_greaves', 17], ['adamant_chestplate', 19]] as const) {
+    const r = recipeById(id)!;
+    assert(r.level === L && Math.abs(r.xp - 0.6 * cost(L)) <= 5, `${r.name}: Smithing ${L}, ${r.xp} XP (0.6 x ${cost(L)} to the nearest 5)`);
+  }
+  assert(recipeById('adamant_bar')!.inputs.some(i => i.id === 'coal' && i.qty === 3) && recipeById('adamant_blade')!.inputs.some(i => i.id === 'adamant_bar' && i.qty === 3), 'a bar is one ore and three coal, a blade three bars and a log');
+
+  // and the whole chain at the forge
+  const f = quietState(4613);
+  f.player.skills.smithing.xp = xpForLevel(19); f.player.skills.smithing.level = 19;
+  addItem(f.player.inventory, 'adamant_ore', 12); addItem(f.player.inventory, 'coal', 36); addItem(f.player.inventory, 'logs', 1);
+  f.player.x = LANDMARKS.forge.x - 4; f.player.z = LANDMARKS.forge.z + 3;
+  craft(f, 'adamant_bar', 12);
+  for (const id of ['adamant_helm', 'adamant_greaves', 'adamant_chestplate', 'adamant_blade']) craft(f, id, 1);
+  assert(['adamant_helm', 'adamant_greaves', 'adamant_chestplate', 'adamant_blade'].every(id => countOf(f, id) === 1) && countOf(f, 'adamant_ore') >= 0 && countOf(f, 'coal') >= 0, 'twelve bars (one ore and three coal each) make the helm, greaves, chestplate and blade (mastery may leave a spare bar over: Smithing 19 is five levels past the bar)');
+}
+function describeStatsHas(id: string, line: string) { return describeStats(ITEMS[id]).includes(line); }
+
+// ---------------------------------------------------------------------------
+section('HOM-46 safe zones: nothing wakes in a town, and a chase that reaches one gives up');
+{
+  const sq = LANDMARKS.square;
+  const crab = (seed: number, ex: number, ez: number, px: number, pz: number) => {
+    const s = quietState(seed);
+    const c = enemyOf(s, 'shore_crab');
+    placeAt(c, ex, ez); c.attackCd = 0;
+    s.player.x = px; s.player.z = pz; s.player.hp = s.player.maxHp;
+    return { s, c };
+  };
+  {
+    const { s, c } = crab(4620, sq.x + 5, sq.z, sq.x + 2, sq.z);
+    run(s, 2);
+    assert(st(c) === 'idle', 'a crab three units from a player standing in the square does not wake');
+  }
+  {
+    const { s, c } = crab(4621, SALTMARROW.x + 10, SALTMARROW.z + 45, SALTMARROW.x + 8, SALTMARROW.z + 45);
+    run(s, 1);
+    assert(st(c) === 'chase', 'the same crab on the Strand, outside the square, does');
+  }
+  {
+    // chased out of the Strand and into the square: it gives up at the edge and resets
+    const { s, c } = crab(4622, SALTMARROW.x + 10, SALTMARROW.z + 45, sq.x, sq.z);
+    c.state = 'chase'; c.hp = 10;
+    let reset: number = -1;
+    for (let i = 0; i < 30 * 40 && reset < 0; i++) { tick(s); if (st(c) === 'return') reset = i / 30; }
+    assert(reset > 0 && reset < 20 && Math.hypot(c.x - sq.x, c.z - sq.z) > 33, `it turns back at the edge of the square, ${reset.toFixed(1)}s in, with the player untouched`);
+    assert(c.hp === c.maxHp && s.player.hp === s.player.maxHp, 'and resets to full health');
+  }
+  {
+    // Hale's own: the smithy's yard is safe ground
+    const yard = REGIONS.find(r => r.id === 'clearing')!.safe![0], s = quietState(4623), b = enemyOf(s, 'boar');
+    placeAt(b, yard.x + 6, yard.z); b.attackCd = 0;
+    s.player.x = yard.x; s.player.z = yard.z;
+    run(s, 1);
+    assert(st(b) === 'idle', 'a boar six units from the forge does not wake to a smith at it');
+    s.player.x = yard.x + 11; s.player.z = yard.z;
+    run(s, 1);
+    assert(st(b) === 'chase', '...but does to someone eleven units off, which is how the clearing always played');
+  }
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-46 the road east: Hale to Saltmarrow on foot, and back, with no transition');
+{
+  const s = createState(4630);
+  const sq = LANDMARKS.square, seen: string[] = [];
+  let leftFloor = 0, stuck = 0, woke = false, gateX = 0;
+  const gate = { z: null as number | null };
+  const walkTo = (x: number, z: number, limit: number) => {
+    tick(s, { clickTarget: { x, z } });
+    let t = 0;
+    while (t < limit && Math.hypot(s.player.x - x, s.player.z - z) > 1.2) {
+      s.player.hp = s.player.maxHp = 1e6; // this is about the ground, not the fight: every enemy on the road may chase
+      tick(s);
+      t += TICK_DT;
+      const c = clampToWorld(s.player);
+      if (Math.hypot(c.x - s.player.x, c.z - s.player.z) > 1e-6) leftFloor++;
+      if (hasEvent(s, e => e.t === 'stuck')) stuck++;
+      const r = regionAt(s.player.x, s.player.z)?.id ?? '?';
+      if (seen[seen.length - 1] !== r) seen.push(r);
+      if (gate.z === null && s.player.x >= 30) { gate.z = s.player.z; gateX = s.player.x; }
+      if (s.enemies.some(e => e.region === 'greywater' && st(e) === 'chase')) woke = true;
+    }
+    return t;
+  };
+  const out = walkTo(sq.x, sq.z, 220);
+  assert(Math.hypot(s.player.x - sq.x, s.player.z - sq.z) <= 1.2, `one click on Saltmarrow's square from the clearing walks there: ${out.toFixed(0)}s at 6 units a second`);
+  assert(out < 200, 'in under 200 seconds: the road is 800 long and runs straight');
+  assert(seen.includes('clearing') && seen.includes('greywater') && seen.includes('saltmarrow') && seen.indexOf('clearing') < seen.indexOf('greywater') && seen.indexOf('greywater') < seen.indexOf('saltmarrow'), `through the clearing, the road and the town in that order (${seen.join(' > ')})`);
+  assert(gate.z !== null && gate.z >= 5.5 - 1e-6 && gate.z <= 10.5 + 1e-6, `and out through the gate: it crossed the wall at x = ${gateX.toFixed(1)}, z = ${gate.z?.toFixed(2)}, inside the 6-unit gap`);
+  assert(leftFloor === 0 && stuck === 0, 'never off the floor, never stuck on scenery');
+  assert(woke, 'and it was not an empty road: the camps woke to a level 1 walking through (the walker could not die, so they chased and struck for nothing)');
+  const back = walkTo(0, 6, 220);
+  assert(Math.hypot(s.player.x, s.player.z - 6) <= 1.2 && stuck === 0 && leftFloor === 0, `and one click on the clearing walks all the way back: ${back.toFixed(0)}s`);
+  assert(s.enemies.filter(e => e.region === 'greywater').length === 18 && s.enemies.filter(e => e.region === 'saltmarrow').length === 11 && s.enemies.filter(e => e.region === 'clearing' || e.region === 'hollow' || e.region === 'hall').length === 20, 'every enemy is tagged with its region: 18 on the road, 11 on the Strand, Hale\'s 20');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-46 Saltmarrow: its harbourmaster, its chandler, and the third quest');
+{
+  const s = quietState(4640);
+  const pell = HARBOURMASTER;
+  s.player.x = pell.x + 2; s.player.z = pell.z;
+  assert((s.quest.third as string) === 'locked' && harbourMarker(s) === null && dialogueAt(s, 'harbour').options.every(o => !o.advance), 'before the Hollow is quiet the harbourmaster only greets you');
+  tick(s, { questAdvance: true });
+  assert((s.quest.third as string) === 'locked' && s.quest.stage === 'offer', 'and advancing does nothing');
+  s.quest.stage = 'done'; s.quest.second = 'cleared';
+  tick(s);
+  assert((s.quest.third as string) === 'offer' && harbourMarker(s) === 'offer' && activeQuestView(s).title === QUEST3_NAME, 'once the Warden is dead the road opens: a mark over his head and a tracker for The Salt Road');
+  assert(npcMarker(s) === null, 'while the warden in Hale has nothing more to say');
+  s.player.x = NPC.x; s.player.z = NPC.z + 1;
+  tick(s, { questAdvance: true });
+  assert((s.quest.third as string) === 'offer', 'the warden in Hale cannot hand it out');
+  s.player.x = pell.x + 2; s.player.z = pell.z;
+  tick(s, { questAdvance: true });
+  assert((s.quest.third as string) === 'hunt' && hasEvent(s, e => e.t === 'quest' && e.what === 'accept' && e.name === QUEST3_NAME), 'at the quay, advancing accepts it');
+  for (let k = 0; k < 4; k++) { assert((s.quest.third as string) === 'hunt', `three footpads or fewer: still hunting (${k})`); questOnKill(s, 'footpad'); }
+  assert((s.quest.third as string) === 'hunt' && activeQuestView(s).lines.length >= 2, 'four footpads are not the Captain');
+  questOnKill(s, 'toll_captain');
+  assert((s.quest.third as string) === 'report' && harbourMarker(s) === 'ready' && activeQuestView(s).ready, 'and the Captain makes it a hand-in');
+  s.player.x = NPC.x; s.player.z = NPC.z + 1;
+  tick(s, { questAdvance: true });
+  assert((s.quest.third as string) === 'report', 'which only the harbourmaster takes');
+  const xp0 = s.player.combat.xp;
+  s.player.x = pell.x + 2; s.player.z = pell.z;
+  tick(s, { questAdvance: true });
+  assert((s.quest.third as string) === 'cleared' && s.player.combat.xp - xp0 === REWARD3[0].xp && REWARD3[0].xp === 600 && hasEvent(s, e => e.t === 'quest' && e.what === 'complete'), 'handing in pays 600 combat XP, the bible\'s figure');
+  assert(harbourMarker(s) === null, 'and the mark is gone');
+  const rt = deserialize(serialize(s))!;
+  assert((rt.quest.third as string) === 'cleared' && rt.quest.kills.footpad === 4, 'the chain survives a save and load');
+  const old = JSON.parse(serialize(s)); delete old.quest.third;
+  assert(deserialize(JSON.stringify(old))!.quest.third === 'offer', 'a save from before the road, with the Hollow cleared, finds the road on offer');
+  const old2 = JSON.parse(serialize(quietState(4641))); delete old2.quest.third;
+  assert(deserialize(JSON.stringify(old2))!.quest.third === 'locked', '...and one that has not cleared it finds it locked');
+  const bad = JSON.parse(serialize(quietState(4642))); bad.quest.third = 'hunt';
+  assert(deserialize(JSON.stringify(bad)) === null, 'a save that has the road open before the Hollow is quiet is refused');
+
+  // clicking the harbourmaster walks over and opens his dialogue, naming him
+  const w = quietState(4643);
+  w.player.x = pell.x - 15; w.player.z = pell.z;
+  tick(w, { interact: { k: 'npc', id: 'harbour' } });
+  let who = '';
+  for (let n = 0; n < 300 && !who; n++) { tick(w); const ev = w.events.find(e => e.t === 'npc'); if (ev && ev.t === 'npc') who = ev.who; }
+  assert(who === 'harbour', 'clicking the harbourmaster walks the player over and opens his dialogue');
+  const e = quietState(4644);
+  e.player.x = NPC.x + 1; e.player.z = NPC.z;
+  tick(e, { interact: { k: 'npc' } });
+  assert(e.events.some(ev => ev.t === 'npc' && ev.who === 'hale'), 'pressing E in Hale still talks to the warden');
+
+  // the chandler
+  const v = quietState(4645);
+  v.player.gold = 1000;
+  v.player.x = HARBOUR_VENDOR.x + 2; v.player.z = HARBOUR_VENDOR.z;
+  tick(v, { shop: [{ k: 'buy', item: 'steel_sword', qty: 1 }] });
+  assert(countOf(v, 'steel_sword') === 1 && v.player.gold === 1000 - buyPrice('steel_sword'), `Tam Brine sells a steel sword for ${buyPrice('steel_sword')}`);
+  tick(v, { shop: [{ k: 'buy', item: 'rusty_blade', qty: 1 }] });
+  assert(countOf(v, 'rusty_blade') === 0, 'but not the rusty blade Hale sells: each stall has its own stock');
+  v.player.x = VENDOR.x + 2; v.player.z = VENDOR.z; v.player.gold = 1000;
+  tick(v, { shop: [{ k: 'buy', item: 'steel_sword', qty: 1 }] });
+  assert(countOf(v, 'steel_sword') === 1 && v.player.gold === 1000, 'and Brannoch in Hale has no steel sword for sale');
+  v.player.x = HARBOUR_VENDOR.x + 2; v.player.z = HARBOUR_VENDOR.z;
+  tick(v, { shop: [{ k: 'sell', slot: v.player.inventory.findIndex(x => x?.id === 'steel_sword'), qty: 1 }] });
+  assert(countOf(v, 'steel_sword') === 0 && v.player.gold === 1000 + ITEMS.steel_sword.value, 'selling to him pays an item\'s value');
+  const recipeIn = new Set(RECIPES.flatMap(r => r.inputs.map(i => i.id)));
+  assert(HARBOUR_STOCK.every(id => !recipeIn.has(id) && buyPrice(id) > ITEMS[id].value && RECIPES.every(r => r.output.id !== id)), 'nothing he sells is a crafting input or a crafted item: buy -> craft -> sell still cannot make gold');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-46 the road and the Strand: the bible\'s tables, as data');
+{
+  const T = ENEMY_TYPES;
+  const table: [string, number, number, number, number, number, 'trash' | 'elite' | 'rare'][] = [
+    ['marsh_hog', 10, 415, 35, 2, 30, 'trash'], ['road_wolf', 11, 470, 33, 1.8, 31, 'trash'], ['footpad', 12, 530, 46, 2.4, 32, 'trash'], ['toll_captain', 13, 1785, 54, 2.2, 99, 'elite'], ['old_grey', 12, 2120, 40, 1.6, 192, 'rare'],
+    ['shore_crab', 14, 665, 34, 1.6, 34, 'trash'], ['drowned_sailor', 15, 745, 59, 2.6, 35, 'trash'], ['tide_hag', 16, 840, 71, 3, 36, 'trash'], ['barnacle_ogre', 17, 2790, 71, 2.4, 111, 'elite'], ['gutterhook', 16, 3365, 55, 1.8, 216, 'rare'],
+  ];
+  const mult = { trash: 1, elite: 3, rare: 6 }, ev = (id: string) => {
+    const tb = DROP_TABLES[id], w = tb.entries.map(e => e.weight ?? ITEMS[e.id].dropWeight), tot = tb.nothing + w.reduce((a, b) => a + b, 0);
+    return tb.rolls * tb.entries.reduce((a, e, i) => a + (w[i] / tot) * (e.qty ? (e.qty[0] + e.qty[1]) / 2 : 1) * ITEMS[e.id].value, 0);
+  };
+  for (const [id, L, hp, hit, swing, xp, role] of table) {
+    const d = T[id];
+    assert(d.level === L && d.hp === hp && d.damage === hit && d.attackInterval === swing && d.xp === xp, `${d.name}: level ${L}, ${hp} HP, hit ${hit} every ${swing}s, ${xp} XP: as the table has it`);
+    assert(d.xp === (20 + L) * mult[role], `...and its XP is (20 + ${L}) x ${mult[role]} for a ${role}`);
+    assert(d.respawn === (role === 'trash' ? d.respawn : role === 'elite' ? 120 : 1800) && (role !== 'trash' || (d.respawn >= 30 && d.respawn <= 45)), `...respawning in ${d.respawn}s`);
+    const want = (0.6 * L + 3) * ({ trash: 1, elite: 3, rare: 4 })[role];
+    assert(Math.abs(ev(id) / want - 1) <= 0.15, `...and its drops are worth ${ev(id).toFixed(1)} gold a kill against the rule's ${want.toFixed(1)} (within 15%)`);
+    assert(d.look && ['wolf', 'hexer', 'brute', 'boar', 'pup'].includes(d.look.model), '...drawn with a rig that already exists');
+  }
+  assert(T.toll_captain.heavy!.damage === 195 && T.old_grey.heavy!.damage === 180 && T.barnacle_ogre.heavy!.damage === 250 && T.gutterhook.heavy!.damage === 235 && T.tide_hag.hazard !== undefined && T.footpad.ranged !== undefined && T.drowned_sailor.ranged !== undefined && T.road_wolf.pack === 7, 'the heavies, the knife and harpoon throwers, the Undertow and the wolf pack are all there');
+  const count = (type: string) => SPAWNS.filter(sp => sp.type === type).length;
+  assert(count('marsh_hog') === 6 && count('road_wolf') === 6 && count('footpad') === 4 && count('toll_captain') === 1 && count('old_grey') === 1, 'the road holds 6 hogs, two wolf camps of 3, 4 footpads, the Captain and Old Grey');
+  assert(count('shore_crab') === 4 && count('drowned_sailor') === 3 && count('tide_hag') === 2 && count('barnacle_ogre') === 1 && count('gutterhook') === 1, 'the Strand holds its five kinds');
+  const at = (type: string) => SPAWNS.filter(sp => sp.type === type).map(sp => [Math.round(sp.x - GREYWATER.x), Math.round(sp.z - GREYWATER.z)]);
+  assert(JSON.stringify(at('toll_captain')) === '[[60,0]]' && JSON.stringify(at('old_grey')) === '[[330,-45]]' && at('marsh_hog').slice(0, 4).every(([x, z]) => x >= -330 && x <= -260 && Math.abs(z) <= 30), 'the Captain stands on the road at 60, Old Grey at (330, -45), the first hogs in the pasture from -330 to -260');
+  // everyone is reachable on foot from the gate
+  const gate = { x: 29, z: 8 };
+  assert(SPAWNS.filter(sp => sp.x > 30).every(sp => route(gate, sp) !== null), 'every enemy on the road and the Strand can be walked to from Hale\'s gate');
+  assert(createState(4650).enemies.filter(e => e.id > 20).every((e, i) => e.type === SPAWNS[20 + i].type), 'new enemies take ids 21 on, after every older one');
+}
+
 console.log(`\nAll ${checks} checks passed.`);

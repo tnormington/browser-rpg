@@ -103,10 +103,10 @@ addEventListener('mouseup', e => {
     pendingPickup = view.pickDrop(e.clientX, e.clientY);
     if (pendingPickup === null) pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
     if (pendingPickup === null && pendingEnemy === null) {
-      const node = view.pickNode(e.clientX, e.clientY);
-      if (view.pickNpc(e.clientX, e.clientY)) pendingInteract = { k: 'npc' };
+      const node = view.pickNode(e.clientX, e.clientY), npc = view.pickNpc(e.clientX, e.clientY), vendor = view.pickVendor(e.clientX, e.clientY);
+      if (npc !== null) pendingInteract = { k: 'npc', id: npc };
       else if (node !== null) pendingInteract = { k: 'node', id: node };
-      else if (view.pickVendor(e.clientX, e.clientY)) pendingInteract = { k: 'vendor' };
+      else if (vendor !== null) pendingInteract = { k: 'vendor', id: vendor };
       else if (view.pickForge(e.clientX, e.clientY)) pendingInteract = { k: 'forge' };
       else if ((pendingEnemy = view.pickEnemy(e.clientX, e.clientY, CLICK_TOLERANCE_PX)) === null) pendingClick = view.pick(e.clientX, e.clientY);
     }

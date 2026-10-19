@@ -2,10 +2,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
-import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, caveDepth, caveWallPoints, clampToWorld, inCave } from './sim/world';
+import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, caveDepth, caveWallPoints, clampToWorld, inCave } from './sim/world';
 import { ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
-import { NPC, npcMarker as markerOf } from './sim/quest';
+import { HARBOURMASTER, NPC, harbourMarker as harbourMarkOf, npcMarker as markerOf } from './sim/quest';
 import { VENDOR } from './sim/shop';
 import { Motes, Particles, Rings, Slashes } from './fx';
 import { PostStack, Quality } from './post';
@@ -14,6 +14,7 @@ import { Animator } from './anim';
 import { PlayerGear } from './gear';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
+import { WorldView } from './world-view';
 
 /**
  * Every colour in the scene, in one place. Desaturated, cold and narrow: the world sits in a tight dark band so that
@@ -117,6 +118,15 @@ const CRYSTALS = [
   { x: -19.5, z: -33, s: 1 }, { x: -29, z: -48, s: 1.3 }, { x: -8, z: -45, s: 1.1 }, { x: -25, z: -62, s: 1 }, { x: -9.5, z: -82, s: 1.2 }, { x: -26, z: -74, s: 0.9 },
 ];
 
+/** Enemies are built (and their models dressed) once the player is within this of them: Hale's are built at the start, the road's and the Strand's as they come near. */
+const ACTOR_RANGE = FOG_CULL + 25;
+/** Ore, trees and other nodes are drawn only within this of the player (the fog has hidden them well before). */
+const NODE_RANGE = FOG_CULL + 25;
+/** A spot on the clearing's wall with another region's floor beyond it: the east gate. No boulder is set there. */
+const openToWorld = (x: number, z: number) => REGIONS.some(r => r.zone !== 'hale' && r.footprint.some(f => x > f.x0 + 0.01 && x < f.x1 - 0.01 && z > f.z0 + 0.01 && z < f.z1 - 0.01));
+/** Adamant (Saltmarrow's cliff ore): sea-green flecks on a dark green-black rock. A stand-in look until the Artist's (W2.5). */
+const ADAMANT = { rock: 0x2c4a40, fleck: 0x5de0b0, glow: 0x0e3a2a };
+
 /** Enemy type -> the model slot that draws it: cave enemies are existing rigs (`look.model`), everyone else draws as itself. */
 const slotOf = (type: string): SlotId => (ENEMY_TYPES[type].look?.model ?? type) as SlotId;
 const lookScale = (type: string) => ENEMY_TYPES[type].look?.scale ?? 1;
@@ -169,6 +179,11 @@ export class Renderer {
   private npcParts: THREE.Object3D[] = [];
   private vendorParts: THREE.Object3D[] = [];
   private npcMarker!: THREE.Sprite;
+  private harbourMarker!: THREE.Sprite;
+  private world!: WorldView;
+  private beyond!: THREE.Mesh;
+  /** Model slots that have loaded: an enemy built after its slot arrived is dressed at once. */
+  private prepared = new Map<string, Prepared>();
   private staffLight!: THREE.PointLight;
   private markerTex!: Record<'offer' | 'ready' | 'wait', THREE.Texture>;
   private particles = new Particles();
@@ -222,6 +237,7 @@ export class Renderer {
     this.ground = this.tintedGround();
     this.scene.add(this.ground);
     this.buildZone();
+    this.world = new WorldView(this.scene, { mesh: (g, c, cls, sh) => mesh(g, c, cls as MatClass, sh), P });
     this.rings = new Rings(this.scene);
     this.slashes = new Slashes(this.scene);
     this.scene.add(this.particles.points, this.motes.points);
@@ -245,7 +261,7 @@ export class Renderer {
     this.levelRing = mesh(new THREE.TorusGeometry(1, 0.1, 4, 28).rotateX(Math.PI / 2), P.gold, 'beacon', 'none');
     this.levelRing.visible = false;
     this.scene.add(this.levelRing);
-    for (const e of s.enemies) this.addActor(e);
+    for (const e of s.enemies) if (Math.hypot(e.x - s.player.x, e.z - s.player.z) <= ACTOR_RANGE) this.addActor(e);
     for (const n of s.nodes) this.addNode(n);
 
     this.marker = mesh(new THREE.TorusGeometry(0.5, 0.08, 4, 16).rotateX(Math.PI / 2), P.gold, 'beacon', 'none');
@@ -398,10 +414,13 @@ export class Renderer {
     // boundary: ring of boulders along the edge
     for (let i = -WORLD_HALF; i <= WORLD_HALF; i += 3) {
       for (const [x, z] of [[i, -WORLD_HALF], [i, WORLD_HALF], [-WORLD_HALF, i], [WORLD_HALF, i]]) {
-        if (inCave(x, z)) continue; // the throat opens through the boundary here
+        if (inCave(x, z) || openToWorld(x, z)) continue; // the throat opens through the boundary here, and so does the east gate
         this.boundary.push(add(mesh(new THREE.DodecahedronGeometry(1.6), P.boulder, 'rock'), x, 0.8, z) as THREE.Mesh);
       }
     }
+    // the east gate: two stone posts and a lintel across the 6-unit gap, so the way out reads as a way out
+    for (const z of [4.4, 11.6]) add(mesh(new THREE.CylinderGeometry(0.45, 0.6, 3.6, 6), P.stone, 'stone'), 30, 1.8, z);
+    add(mesh(new THREE.BoxGeometry(0.6, 0.45, 7.8), P.bark, 'wood'), 30, 3.6, 8);
     // dev stress only (?stress=N): scatter extra decorative boulders so boulder count scales with N like everything else
     if (WORLD_HALF > 30) {
       const factor = (WORLD_HALF / 30) ** 2, ring = Math.ceil(2 * WORLD_HALF / 3 + 1) * 4;
@@ -409,7 +428,7 @@ export class Renderer {
       for (let i = ring; i < Math.round(BOULDERS_PER_FACTOR * factor); i++) { const p = pts.next().value!; this.boundary.push(add(mesh(new THREE.DodecahedronGeometry(1.6), P.boulder, 'rock'), p.x, 0.8, p.z) as THREE.Mesh); }
     }
     // beyond the boundary: dark ground so the edge reads as the end of the world
-    add(mesh(new THREE.PlaneGeometry(Math.max(400, WORLD_HALF * 4), Math.max(400, WORLD_HALF * 4)).rotateX(-Math.PI / 2), P.beyond, 'ground', 'receive'), 0, -0.05, 0);
+    this.beyond = add(mesh(new THREE.PlaneGeometry(Math.max(400, WORLD_HALF * 4), Math.max(400, WORLD_HALF * 4)).rotateX(-Math.PI / 2), P.beyond, 'ground', 'receive'), 0, -0.05, 0) as THREE.Mesh; // follows the player: the world is no longer 400 across
   }
 
   /** Everything inside the cave that is not a rock model: floor, wall rock, standing stones, braziers and the lights they carry. */
@@ -554,6 +573,11 @@ export class Renderer {
     this.npcMarker.scale.set(1.1, 1.1, 1);
     this.npcMarker.renderOrder = 10;
     this.scene.add(this.npcMarker);
+    this.harbourMarker = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.markerTex.offer, depthTest: false }));
+    this.harbourMarker.scale.set(1.1, 1.1, 1);
+    this.harbourMarker.renderOrder = 10;
+    this.harbourMarker.visible = false;
+    this.scene.add(this.harbourMarker);
     this.buildVendor();
   }
 
@@ -586,9 +610,9 @@ export class Renderer {
     await Promise.all([
       fill('player', p => this.dressPlayer(p)),
       fill('warden', p => this.dressNpc(p)),
-      ...[...slots].map(t => fill(t, p => { for (const a of this.actors.values()) if (slotOf(a.type) === t) this.dressActor(a, p); })),
+      ...[...slots].map(t => fill(t, p => { this.prepared.set(t, p); for (const a of this.actors.values()) if (slotOf(a.type) === t) this.dressActor(a, p); })),
       Promise.all([loadSlot('tree'), loadSlot('stump')]).then(([t, st]) => this.dressTrees(t, st)).catch(err => console.warn('model slot "tree" kept as a primitive:', err)),
-      fill('ironRock', p => { this.dressRocks('iron', p); this.dressRocks('mithril', p); }),
+      fill('ironRock', p => { this.dressRocks('iron', p); this.dressRocks('mithril', p); this.dressRocks('adamant', p); }),
       fill('coalRock', p => this.dressRocks('coal', p)),
       fill('forge', p => this.dressForge(p)),
       fill('anvil', p => this.dressAnvil(p)),
@@ -671,7 +695,7 @@ export class Renderer {
     }
   }
 
-  private dressRocks(type: 'iron' | 'coal' | 'mithril', p: Prepared) {
+  private dressRocks(type: 'iron' | 'coal' | 'mithril' | 'adamant', p: Prepared) {
     for (const v of this.nodes.values()) {
       if (v.type !== type) continue;
       const id = v.group.userData.nodeId as number, inst = spawn(p, true);
@@ -680,6 +704,7 @@ export class Renderer {
       this.hide(v.group.children[0]);
       v.group.add(inst.root);
       if (type === 'mithril') for (const m of inst.materials) { m.color.setHex(P.mithrilRock); m.emissive.setHex(P.mithrilGlow); }
+      if (type === 'adamant') for (const m of inst.materials) { m.color.setHex(ADAMANT.rock); m.emissive.setHex(ADAMANT.glow); }
       v.mats.push(...inst.materials);
       v.base.push(...inst.materials.map(m => m.color.getHex()));
     }
@@ -792,12 +817,12 @@ export class Renderer {
       part(new THREE.CylinderGeometry(0.25, 0.35, 2, 5), P.bark, 'wood', 1);
       crown = part(new THREE.ConeGeometry(1.4, 3.5, 6), P.pine, 'foliage', 3.5);
     } else {
-      const coal = n.type === 'coal', mithril = n.type === 'mithril';
-      part(new THREE.DodecahedronGeometry(1.3), coal ? P.coalRock : mithril ? P.mithrilRock : P.ironRock, 'rock', 0.9);
+      const coal = n.type === 'coal', mithril = n.type === 'mithril', adamant = n.type === 'adamant';
+      part(new THREE.DodecahedronGeometry(1.3), coal ? P.coalRock : mithril ? P.mithrilRock : adamant ? ADAMANT.rock : P.ironRock, 'rock', 0.9);
       // ore flecks: rust for iron, glossy black for coal, cold arcane light for mithril
       for (const [dx, dy, dz] of [[0.7, 1.2, 0.6], [-0.6, 1.0, 0.8], [0.1, 1.6, -0.5]]) {
-        const fleck = part(new THREE.OctahedronGeometry(0.28), coal ? P.coalFleck : mithril ? P.arcane : P.ironFleck, coal ? 'coal' : mithril ? 'beacon' : 'ore', dy);
-        if (!coal && !mithril) (fleck.material as Mat).emissive.setHex(P.ironFleck).multiplyScalar(0.35); // faint ember glint so a node reads at range
+        const fleck = part(new THREE.OctahedronGeometry(0.28), coal ? P.coalFleck : mithril ? P.arcane : adamant ? ADAMANT.fleck : P.ironFleck, coal ? 'coal' : mithril || adamant ? 'beacon' : 'ore', dy);
+        if (!coal && !mithril && !adamant) (fleck.material as Mat).emissive.setHex(P.ironFleck).multiplyScalar(0.35); // faint ember glint so a node reads at range
         fleck.position.x = dx; fleck.position.z = dz;
       }
     }
@@ -809,10 +834,13 @@ export class Renderer {
     const now = performance.now() / 1000;
     const active = s.player.action?.k === 'gather' ? s.player.action.nodeId : -1;
     let vein = 0;
+    const p = s.player;
     for (const n of s.nodes) {
       const v = this.nodes.get(n.id)!;
+      if (n.type === 'mithril' && n.charges > 0) vein++;
+      v.group.visible = Math.hypot(n.x - p.x, n.z - p.z) <= NODE_RANGE; // far ore costs a scene object each: not drawn, not updated
+      if (!v.group.visible) continue;
       const depleted = n.charges <= 0;
-      if (n.type === 'mithril' && !depleted) vein++;
       if (v.crown) v.crown.visible = !depleted; // a felled tree leaves a stump
       else v.group.scale.setScalar(depleted ? 0.4 : 1);
       if (v.live) { v.live.visible = !depleted; v.stump!.visible = depleted; }
@@ -870,12 +898,22 @@ export class Renderer {
     return { root, fill, outline };
   }
 
+  /** Build an enemy's actor the first time the player comes within ACTOR_RANGE of it (and dress it if its model has already loaded). */
+  private ensureActor(e: Enemy, s: GameState): Actor | undefined {
+    if (Math.hypot(e.x - s.player.x, e.z - s.player.z) > ACTOR_RANGE) return undefined;
+    this.addActor(e);
+    const a = this.actors.get(e.id)!, p = this.prepared.get(slotOf(e.type));
+    if (p) this.dressActor(a, p);
+    return a;
+  }
+
   /** Called once per sim tick so we can interpolate between the last two states. */
   snapshot(s: GameState) {
     this.prev = this.curr;
     this.curr = { x: s.player.x, z: s.player.z };
     for (const e of s.enemies) {
-      const a = this.actors.get(e.id)!;
+      const a = this.actors.get(e.id) ?? this.ensureActor(e, s);
+      if (!a) continue;
       const jump = Math.hypot(e.x - a.cx, e.z - a.cz) > 4; // respawn teleport: don't slide
       a.px = jump ? e.x : a.cx; a.pz = jump ? e.z : a.cz;
       a.cx = e.x; a.cz = e.z;
@@ -992,18 +1030,20 @@ export class Renderer {
     this.shakeMag = Math.max(this.shakeMag, 0.12);
   }
 
-  /** True when the click lands on the merchant. */
-  pickVendor(clientX: number, clientY: number): boolean {
+  /** The merchant under the click ('hale' or 'harbour'), or null. */
+  pickVendor(clientX: number, clientY: number): string | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
-    return this.raycaster.intersectObjects(this.vendorParts, false).length > 0;
+    if (this.raycaster.intersectObjects(this.vendorParts, false).length > 0) return 'hale';
+    return this.raycaster.intersectObjects(this.world.vendorPicks(), false).length > 0 ? 'harbour' : null;
   }
 
-  /** True when the click lands on the quest giver. */
-  pickNpc(clientX: number, clientY: number): boolean {
+  /** The quest giver under the click ('hale' or 'harbour'), or null. */
+  pickNpc(clientX: number, clientY: number): string | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
-    return this.raycaster.intersectObjects([...this.npcParts, this.npcMarker], false).length > 0;
+    if (this.raycaster.intersectObjects([...this.npcParts, this.npcMarker], false).length > 0) return 'hale';
+    return this.raycaster.intersectObjects(this.world.npcPicks(), false).length > 0 ? 'harbour' : null;
   }
 
   /**
@@ -1038,7 +1078,7 @@ export class Renderer {
   pickNode(clientX: number, clientY: number): number | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
-    const hit = this.raycaster.intersectObjects([...this.nodes.values()].map(n => n.group), true)[0];
+    const hit = this.raycaster.intersectObjects([...this.nodes.values()].filter(n => n.group.visible).map(n => n.group), true)[0]; // a ray ignores `visible`: the far ones are left out here
     for (let o: THREE.Object3D | null = hit?.object ?? null; o; o = o.parent) if (o.userData.nodeId !== undefined) return o.userData.nodeId as number;
     return null;
   }
@@ -1069,7 +1109,7 @@ export class Renderer {
   pick(clientX: number, clientY: number): { x: number; z: number } | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
-    const hit = this.raycaster.intersectObjects([this.ground, this.caveFloor])[0];
+    const hit = this.raycaster.intersectObjects([this.ground, this.caveFloor, ...this.world.grounds()])[0];
     return hit ? { x: hit.point.x, z: hit.point.z } : null;
   }
 
@@ -1083,6 +1123,14 @@ export class Renderer {
     this.motes.update(dtFx);
     this.rings.update(dtFx);
     this.slashes.update(dtFx);
+    this.world.update(x, z);
+    this.beyond.position.set(x, -0.05, z);
+    const hm = harbourMarkOf(s);
+    this.harbourMarker.visible = !!hm && this.world.harbourShown();
+    if (hm && this.harbourMarker.visible) {
+      (this.harbourMarker.material as THREE.SpriteMaterial).map = this.markerTex[hm];
+      this.harbourMarker.position.set(HARBOURMASTER.x, 3.5 + 0.18 * Math.sin(nowMs / 250 + 1), HARBOURMASTER.z);
+    }
     const mk = markerOf(s);
     this.npcMarker.visible = !!mk;
     if (mk) {
@@ -1122,7 +1170,7 @@ export class Renderer {
     const target = s.targetId === null ? undefined : s.enemies.find(e => e.id === s.targetId);
     this.selection.visible = !!target;
     if (target) {
-      const a = this.actors.get(target.id)!;
+      const a = this.actors.get(target.id) ?? { px: target.x, pz: target.z, cx: target.x, cz: target.z };
       const r = ENEMY_TYPES[target.type].radius + 0.5 + 0.05 * Math.sin(performance.now() / 120);
       this.selection.position.set(a.px + (a.cx - a.px) * alpha, 0.12, a.pz + (a.cz - a.pz) * alpha);
       this.selection.scale.setScalar(r);
@@ -1205,12 +1253,13 @@ export class Renderer {
   }
 
   private drawActor(e: Enemy, alpha: number, dt: number) {
-    const a = this.actors.get(e.id)!;
+    const a = this.actors.get(e.id);
+    if (!a) return; // not built yet: it is further than ACTOR_RANGE from the player
     const g = a.group, an = a.anim, dead = e.state === 'dead';
     g.visible = !dead || e.deadFor < 2;
     g.position.set(a.px + (a.cx - a.px) * alpha, 0, a.pz + (a.cz - a.pz) * alpha);
     // past the fog a model is invisible but still costs a skinned draw and a mixer update: skip both
-    if (an && Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) > FOG_CULL) { g.visible = false; if (a.tele) a.tele.root.visible = false; if (a.ground) a.ground.root.visible = false; a.swing = e.swing; a.flash = e.hitFlash; return; }
+    if (Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) > FOG_CULL) { g.visible = false; if (a.tele) a.tele.root.visible = false; if (a.ground) a.ground.root.visible = false; a.swing = e.swing; a.flash = e.hitFlash; return; }
     g.rotation.y = e.facing;
     let lunge = 1 + e.swing * 2, shrink = Math.max(0.05, 1 - e.deadFor / 2), fall = dead;
     if (an) {

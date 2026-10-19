@@ -15,20 +15,27 @@ export type QuestStage = 'offer' | 'hunt' | 'report1' | 'forge' | 'brute' | 'rep
  * reward, a tracker, dialogue) beside it. `locked` until the first quest is handed in; `stage` stays at 'done' throughout.
  */
 export type Quest2Stage = 'locked' | 'offer' | 'delve' | 'armour' | 'warden' | 'report' | 'cleared';
-export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage }
+/** The third chain is Saltmarrow's: given by its harbourmaster once the Hollow is quiet, and handed in to them. */
+export type Quest3Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
+export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage; third: Quest3Stage }
 export const QUEST_STAGES: QuestStage[] = ['offer', 'hunt', 'report1', 'forge', 'brute', 'report2', 'done'];
 export const QUEST2_STAGES: Quest2Stage[] = ['locked', 'offer', 'delve', 'armour', 'warden', 'report', 'cleared'];
+export const QUEST3_STAGES: Quest3Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
 
 /** True once the first quest has got as far as `stage`. */
 export const questReached = (s: GameState, stage: QuestStage) => QUEST_STAGES.indexOf(s.quest.stage) >= QUEST_STAGES.indexOf(stage);
 
-export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked' });
+export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked', third: 'locked' });
 
 export const QUEST_NAME = 'The Brute of the Cave Mouth';
 export const NPC = { name: 'Warden Hale', x: LANDMARKS.npc.x, z: LANDMARKS.npc.z, r: LANDMARKS.npc.r };
+export const HARBOURMASTER = { name: 'Harbourmaster Pell', x: LANDMARKS.harbourmaster.x, z: LANDMARKS.harbourmaster.z, r: LANDMARKS.harbourmaster.r };
+export type NpcId = 'hale' | 'harbour';
+/** Everyone with something to say, by id. Hale's warden is the first: an interaction with no one named falls back to him. */
+export const NPCS: { id: NpcId; name: string; x: number; z: number; r: number }[] = [{ id: 'hale', ...NPC }, { id: 'harbour', ...HARBOURMASTER }];
 export const TALK_RANGE = 7;                       // centre to centre: advancing the quest needs this
 export const HUNT_GOALS: Record<string, number> = { boar: 4, wolf: 3 };
-const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves', ravager: 'Cave Ravagers' };
+const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves', ravager: 'Cave Ravagers', footpad: 'Footpads', toll_captain: 'Toll Captain' };
 /**
  * What the Forgemaster's Blade costs in raw terms (see RECIPES), padded to the XP the gates need: Steel wants Smithing 3
  * (five bars of practice, two more than the three the blade uses) and Coal wants Mining 4 (eight ore of XP, ten gathered).
@@ -53,6 +60,17 @@ export const REWARD2: { skill: SkillId; xp: number }[] = [
 ];
 
 export const nearNpc = (s: GameState) => Math.hypot(s.player.x - NPC.x, s.player.z - NPC.z) <= TALK_RANGE;
+/** Who the player is within earshot of (the nearest, if two are), or null. */
+export const npcNear = (s: GameState): NpcId | null => {
+  const d = (n: { x: number; z: number }) => Math.hypot(s.player.x - n.x, s.player.z - n.z);
+  return NPCS.filter(n => d(n) <= TALK_RANGE).sort((a, b) => d(a) - d(b))[0]?.id ?? null;
+};
+
+export const QUEST3_NAME = 'The Salt Road';
+/** Pell's carters will not take the road while the toll camp stands: the footpads who work it and the captain who runs it. */
+export const SALT_GOALS: Record<string, number> = { footpad: 4, toll_captain: 1 };
+export const RECOMMENDED_COMBAT_3 = 12;
+export const REWARD3: { skill: SkillId; xp: number }[] = [{ skill: 'combat', xp: 600 }];
 
 /** Inventory plus what is worn: a piece you put on has not stopped being yours. */
 const owned = (s: GameState, id: string) =>
@@ -70,8 +88,8 @@ const hasBlade = (s: GameState) =>
 // ---------- transitions ----------
 
 /** Which quest an event belongs to travels with it: both chains share stage 'done', so the HUD cannot work it out from state. */
-const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', second = false) =>
-  s.events.push({ t: 'quest', what, name: second ? QUEST2_NAME : QUEST_NAME });
+const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', chain: 1 | 2 | 3 = 1) =>
+  s.events.push({ t: 'quest', what, name: chain === 3 ? QUEST3_NAME : chain === 2 ? QUEST2_NAME : QUEST_NAME });
 
 /** Kill credit. Hunt counts boars/wolves; the Brute only counts once the quest says so. */
 export function questOnKill(s: GameState, type: string) {
@@ -85,17 +103,33 @@ export function questOnKill(s: GameState, type: string) {
     questEvent(s, 'stage');
   } else if (q.second === 'delve' && DELVE_GOALS[type] && (q.kills[type] ?? 0) < DELVE_GOALS[type]) {
     q.kills[type] = (q.kills[type] ?? 0) + 1;
-    questEvent(s, 'progress', true); // the stage itself ends in updateQuest, which also wants the ore
+    questEvent(s, 'progress', 2); // the stage itself ends in updateQuest, which also wants the ore
   } else if (q.second === 'warden' && type === 'warden') {
     q.second = 'report';
-    questEvent(s, 'stage', true);
+    questEvent(s, 'stage', 2);
+  }
+  // the third chain counts beside the others: a footpad is a footpad whoever asked
+  if (q.third === 'hunt' && SALT_GOALS[type] && (q.kills[type] ?? 0) < SALT_GOALS[type]) {
+    q.kills[type] = (q.kills[type] ?? 0) + 1;
+    if (Object.entries(SALT_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n)) { q.third = 'report'; questEvent(s, 'stage', 3); }
+    else questEvent(s, 'progress', 3);
   }
 }
 
 /** The player picked the "advance" dialogue option. Only meaningful at the NPC stages of either chain, and only in earshot. */
 export function advanceQuest(s: GameState) {
-  const q = s.quest;
-  if (s.player.dead || !nearNpc(s)) return;
+  const q = s.quest, who = npcNear(s);
+  if (s.player.dead || !who) return;
+  if (who === 'harbour') { // Saltmarrow's chain: only its own giver moves it
+    if (q.third === 'offer') { q.third = 'hunt'; questEvent(s, 'accept', 3); }
+    else if (q.third === 'report') {
+      q.third = 'cleared';
+      for (const r of REWARD3) if (grantXp(s, r.skill, r.xp, HARBOURMASTER.x, HARBOURMASTER.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
+      questEvent(s, 'complete', 3);
+    }
+    return;
+  }
+  if (!nearNpc(s)) return;
   if (q.stage === 'offer') { q.stage = 'hunt'; questEvent(s, 'accept'); }
   else if (q.stage === 'report1') { q.stage = 'forge'; questEvent(s, 'stage'); }
   else if (q.stage === 'report2') {
@@ -103,11 +137,11 @@ export function advanceQuest(s: GameState) {
     q.second = 'offer';
     for (const r of REWARD) if (grantXp(s, r.skill, r.xp, NPC.x, NPC.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
     questEvent(s, 'complete');
-  } else if (q.stage === 'done' && q.second === 'offer') { q.second = 'delve'; questEvent(s, 'accept', true); }
+  } else if (q.stage === 'done' && q.second === 'offer') { q.second = 'delve'; questEvent(s, 'accept', 2); }
   else if (q.stage === 'done' && q.second === 'report') {
     q.second = 'cleared';
     for (const r of REWARD2) if (grantXp(s, r.skill, r.xp, NPC.x, NPC.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
-    questEvent(s, 'complete', true);
+    questEvent(s, 'complete', 2);
   }
 }
 
@@ -117,9 +151,10 @@ export function updateQuest(s: GameState) {
   if (q.stage === 'forge' && hasBlade(s)) { q.stage = 'brute'; questEvent(s, 'stage'); }
   // the delve ends when the Ravagers are down and nine ore's worth is in hand (or already smelted); the smithing ends when the set exists
   if (q.second === 'delve' && Object.entries(DELVE_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n) && mithrilOre(s) >= MITHRIL_PLAN.ore) {
-    q.second = 'armour'; questEvent(s, 'stage', true);
+    q.second = 'armour'; questEvent(s, 'stage', 2);
   }
-  if (q.second === 'armour' && pieces(s) === MITHRIL_SET.length) { q.second = 'warden'; questEvent(s, 'stage', true); }
+  if (q.second === 'armour' && pieces(s) === MITHRIL_SET.length) { q.second = 'warden'; questEvent(s, 'stage', 2); }
+  if (q.second === 'cleared' && q.third === 'locked') q.third = 'offer'; // the road east opens once the Hollow is quiet: nothing is announced, the harbourmaster's mark is the news
 }
 
 // ---------- dialogue ----------
@@ -224,9 +259,52 @@ export const DIALOGUE2: Record<Exclude<Quest2Stage, 'locked'>, Dialogue> = {
   },
 };
 
-/** What the dialogue panel shows right now: the first chain until it is handed in, the second after. */
+export const DIALOGUE3: Record<Exclude<Quest3Stage, 'locked'>, Dialogue> = {
+  offer: {
+    lines: [
+      'You came by the Greywater Road? Then you walked past the toll camp, and you are luckier than my carters.',
+      'A man who calls himself the Toll Captain has the road shut. His footpads rob whoever he lets through, and Saltmarrow has not seen a wagon from Hale in a month.',
+      'Clear the camp. Four of his footpads and the Captain himself, west along the road. The first thing the sea-wives will do with the salt is buy your boots.',
+    ],
+    options: [
+      { label: "I'll open the road.", advance: true,
+        reply: 'The toll camp is a good way back along the road, where the Captain keeps his hut. Footpads throw knives: close the gap, or Pummel the throw. The Captain slams the ground with his cudgel: Pummel that too, or step out of the circle.' },
+      { label: 'Not yet.' },
+    ],
+  },
+  hunt: {
+    lines: ['Still no wagons. The toll camp is west of here, near the start of the road: four footpads and their Captain.'],
+    options: [{ label: 'I am on it.' }],
+  },
+  report: {
+    lines: ['The road is open? The carters are already harnessing. Take this: it is the least the harbour owes you.'],
+    options: [{ label: 'Thank you.', advance: true, reply: 'Come to the quay whenever you like. The adamant in the cliffs north of town wants a smith, and the Strand wants someone who can take a hit.' }],
+  },
+  cleared: {
+    lines: ['The wagons are rolling again, and the inn has not been so loud in a year. The Strand is yours to hunt, if you want it.'],
+    options: [{ label: 'Farewell.' }],
+  },
+};
+
+/** What the Warden's dialogue panel shows right now: the first chain until it is handed in, the second after. */
 export const activeDialogue = (s: GameState): Dialogue =>
   s.quest.stage === 'done' && s.quest.second !== 'locked' ? DIALOGUE2[s.quest.second] : DIALOGUE[s.quest.stage];
+
+/** What a given giver has to say: the Warden's two chains, or the harbourmaster's one (a plain greeting before the road opens). */
+export const dialogueAt = (s: GameState, who: string): Dialogue =>
+  who === 'harbour'
+    ? s.quest.third === 'locked'
+      ? { lines: ['Welcome to Saltmarrow, traveller. Mind the Strand after dark: the sea gives back what it takes, and not kindly.', 'Come and see me once you have dealt with whatever troubles Hale: there is work on the road.'], options: [{ label: 'Farewell.' }] }
+      : DIALOGUE3[s.quest.third]
+    : activeDialogue(s);
+
+export const npcName = (who: string) => NPCS.find(n => n.id === who)?.name ?? NPC.name;
+
+/** The mark over the harbourmaster: '!' there is work, '?' waiting for you, grey it is under way, none otherwise. */
+export function harbourMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
+  const t = s.quest.third;
+  return t === 'offer' ? 'offer' : t === 'report' ? 'ready' : t === 'hunt' ? 'wait' : null;
+}
 
 /** Which marker floats over the Warden: '!' he has something to offer, '?' he is waiting for you, grey he is not, none for nothing left to say. */
 export function npcMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
@@ -326,6 +404,7 @@ export function questView(s: GameState): QuestView {
 export function activeQuestView(s: GameState): QuestView {
   const q = s.quest;
   if (q.stage !== 'done' || q.second === 'locked') return questView(s);
+  if (q.second === 'cleared' && q.third !== 'locked') return saltRoadView(s);
   const have = (id: string) => countItem(s.player.inventory, id);
   const stageNo = QUEST2_STAGES.indexOf(q.second); // 'offer' is 1: stage 0 is the lock
   const total = QUEST2_STAGES.indexOf('cleared') - 1;
@@ -376,3 +455,26 @@ export function activeQuestView(s: GameState): QuestView {
   }
 }
 
+
+/** The third chain's tracker, once the Hollow is quiet: Saltmarrow's road. */
+function saltRoadView(s: GameState): QuestView {
+  const q = s.quest, lvl = s.player.combat.level, stageNo = QUEST3_STAGES.indexOf(q.third); // 'offer' is 1: stage 0 is the lock
+  const total = QUEST3_STAGES.indexOf('cleared') - 1;
+  const talk = (what: string) => ({ text: `${what} (click or press E)`, done: false });
+  const target = { x: HARBOURMASTER.x, z: HARBOURMASTER.z, label: HARBOURMASTER.name };
+  const v = (lines: QuestLine[], t: QuestView['target'], ready = false): QuestView =>
+    ({ title: QUEST3_NAME, lines, target: t, ready, stageNo, progress: q.third === 'cleared' ? '' : `(${stageNo}/${total})` });
+  switch (q.third) {
+    case 'hunt': {
+      const open = Object.entries(SALT_GOALS).find(([t, n]) => (q.kills[t] ?? 0) < n);
+      const lines: QuestLine[] = [
+        ...Object.entries(SALT_GOALS).map(([t, n]) => ({ text: `${PLURAL[t]} slain: ${Math.min(n, q.kills[t] ?? 0)}/${n}`, done: (q.kills[t] ?? 0) >= n })),
+        ...(lvl < RECOMMENDED_COMBAT_3 ? [{ text: `Recommended Combat ${RECOMMENDED_COMBAT_3} (you are ${lvl})`, done: false }] : []),
+      ];
+      return v(lines, open ? enemyTarget(s, open[0]) : null);
+    }
+    case 'report': return v([{ text: 'The toll camp is cleared', done: true }, talk(`Return to ${HARBOURMASTER.name} for your reward`)], target, true);
+    case 'cleared': return v([{ text: 'Quest complete. The road is open.', done: true }], null);
+    default: return v([talk(`Speak to ${HARBOURMASTER.name} on the quay`)], target, true); // offer
+  }
+}

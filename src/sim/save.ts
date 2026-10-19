@@ -8,12 +8,14 @@ import { INVENTORY_SIZE, refreshGearStats } from './inventory';
 import { EQUIP_SLOTS, ITEMS } from './items';
 import { refreshPlayerStats } from './combat';
 import { PLAYER_SPAWN } from './data';
-import { QUEST2_STAGES, QUEST_STAGES, Quest2Stage, QuestStage } from './quest';
+import { QUEST2_STAGES, QUEST3_STAGES, QUEST_STAGES, Quest2Stage, Quest3Stage, QuestStage } from './quest';
 import { legalTalents, refreshTalents, talentById } from './talents';
 import { resolveCollisions } from './world';
 import { MAX_GOLD } from './shop';
 
 export const SAVE_VERSION = 1;
+/** Nothing is further than this from the origin: the world is a few thousand units across at most (Saltmarrow ends near x = 970). */
+const WORLD_LIMIT = 10000;
 
 interface SaveFile {
   version: number;
@@ -29,7 +31,7 @@ interface SaveFile {
     talents?: Record<string, number>; // absent in saves from before the trees: nobody had spent a point
     gold?: number;                    // absent in saves from before the economy: nobody had any
   };
-  quest: { stage: QuestStage; kills: Record<string, number>; second?: Quest2Stage }; // `second` is absent in saves from before the cave
+  quest: { stage: QuestStage; kills: Record<string, number>; second?: Quest2Stage; third?: Quest3Stage }; // `second` is absent in saves from before the cave, `third` in saves from before the road
   enemies: { id: number; type: string; deadIn: number }[]; // deadIn > 0: still respawning
   nodes: { id: number; type: string; charges: number; respawnIn: number }[];
   drops: { id: number; item: string; qty: number; x: number; z: number; age: number }[];
@@ -53,7 +55,7 @@ export function serialize(s: GameState): string {
       talents: { ...p.talents },
       gold: p.gold,
     },
-    quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second },
+    quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second, third: s.quest.third },
     enemies: s.enemies.map(e => ({ id: e.id, type: e.type, deadIn: e.state === 'dead' ? Math.max(0, e.respawnIn) : 0 })),
     nodes: s.nodes.map(n => ({ id: n.id, type: n.type, charges: n.charges, respawnIn: n.respawnIn })),
     drops: s.drops.map(d => ({ id: d.id, item: d.item, qty: d.qty, x: d.x, z: d.z, age: d.age })),
@@ -115,7 +117,7 @@ export function deserialize(raw: string): GameState | null {
     refreshGearStats(s);
     refreshPlayerStats(s, false);
     p.unlocked = p.combat.level; // abilities already earned are not announced again
-    p.x = num(fp.x, -1000, 1000, 'x'); p.z = num(fp.z, -1000, 1000, 'z'); p.facing = num(fp.facing, -100, 100, 'facing');
+    p.x = num(fp.x, -WORLD_LIMIT, WORLD_LIMIT, 'x'); p.z = num(fp.z, -WORLD_LIMIT, WORLD_LIMIT, 'z'); p.facing = num(fp.facing, -100, 100, 'facing');
     resolveCollisions(p);
     p.hp = Math.min(p.maxHp, Math.max(1, num(fp.hp, 0, 1e6, 'hp')));
     p.energy = Math.min(p.maxEnergy, num(fp.energy, 0, 1e6, 'energy'));
@@ -127,6 +129,10 @@ export function deserialize(raw: string): GameState | null {
     if (fq.second !== undefined && !QUEST2_STAGES.includes(fq.second)) return null;
     s.quest.second = fq.second ?? (fq.stage === 'done' ? 'offer' : 'locked');
     if ((s.quest.second === 'locked') !== (s.quest.stage !== 'done')) return null; // the chains cannot disagree about whether the first is over
+    // an older save has no third chain: it is on offer if the Hollow was cleared, locked otherwise
+    if (fq.third !== undefined && !QUEST3_STAGES.includes(fq.third)) return null;
+    s.quest.third = fq.third ?? (s.quest.second === 'cleared' ? 'offer' : 'locked');
+    if (s.quest.third !== 'locked' && s.quest.second !== 'cleared') return null; // the road opens when the Hollow is quiet, and not before (a save made in the tick it opened still says locked, and the next tick opens it)
     for (const [type, n] of Object.entries(fq.kills)) s.quest.kills[type] = num(n, 0, 1000, 'kills');
 
     // enemies / nodes: matched by id and type, so a changed spawn table is ignored rather than mis-applied
@@ -145,7 +151,7 @@ export function deserialize(raw: string): GameState | null {
     for (const fd of f.drops) {
       if (!ITEMS[fd?.item]) continue;
       s.drops.push({ id: num(fd.id, 1, 1e9, 'drop id'), item: fd.item, qty: num(fd.qty, 1, 1e4, 'drop qty'),
-        x: num(fd.x, -1000, 1000, 'drop x'), z: num(fd.z, -1000, 1000, 'drop z'), age: num(fd.age, 0, 1e6, 'drop age'), blocked: true });
+        x: num(fd.x, -WORLD_LIMIT, WORLD_LIMIT, 'drop x'), z: num(fd.z, -WORLD_LIMIT, WORLD_LIMIT, 'drop z'), age: num(fd.age, 0, 1e6, 'drop age'), blocked: true });
     }
     s.events.length = 0;
     return s;
