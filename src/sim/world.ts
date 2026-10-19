@@ -15,7 +15,7 @@ export interface Obstacle { x: number; z: number; r: number; kind?: PropKind }
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 export interface Pt { x: number; z: number }
 // Ore rocks (gatherable, see sim/gathering.ts).
-export interface RockSpot extends Obstacle { type: 'iron' | 'coal' | 'mithril' | 'adamant' }
+export interface RockSpot extends Obstacle { type: 'copper' | 'tin' | 'iron' | 'coal' | 'mithril' | 'adamant' }
 
 /** A gathering spot you stand beside and cannot stand on: a shoal in the water. Unlike a rock it is not a collider. `type` is a NODE_TYPES key. */
 export interface NodeSpot extends Obstacle { type: string }
@@ -223,7 +223,7 @@ export const REGIONS: Region[] = [
     ],
     rocks: [],
     landmarks: clearingLandmarks,
-    connections: [{ to: 'ridge', at: { x: -18, z: -22 } }, { to: 'greywater', at: HALE_GATE }],
+    connections: [{ to: 'ridge', at: { x: -18, z: -22 } }, { to: 'greywater', at: HALE_GATE }, { to: 'seams', at: { x: 26, z: -12 } }],
     // Hale's safe ground is the smithy's yard, not the whole square: Hale's own enemies live in the clearing (the nearest boar is 8 from the forge)
     // and its golden-path fights are fought on the middle of it, so a town-sized circle here would be a different game. Saltmarrow's is the real thing.
     safe: [{ x: 20, z: -8, r: 4 }, { ...graveHale, r: GRAVE_SAFE_R }],
@@ -293,6 +293,20 @@ export const REGIONS: Region[] = [
     connections: [{ to: 'greywater', at: at(GREYWATER, 405, 0) }],
     safe: [{ ...saltLandmarks.square, r: 35 }, { ...graveSalt, r: GRAVE_SAFE_R }],
     spawns: worldSpawns(SALTMARROW, STRAND_SPAWNS),
+  },
+  {
+    // Copper and tin, the bottom of the metal ladder (HOM-56): rocks a level-1 character meets in the open. Three by the forge, in the clearing's
+    // north-east corner (the nearest enemy, the wolf at (14, -15), is ten away and aggroes at eight); three at the ridge's east end, past the coal, clear
+    // of the Cave Brute and the wolves, and out of the pocket the iron and coal are reached through. Listed last so every older node keeps its id and its save. A district of the clearing: it adds no floor of its own.
+    id: 'seams', name: 'The Seams', cave: false, zone: 'hale', cell: 0.25,
+    footprint: [{ x0: 22, x1: 30, z0: -20, z1: -8 }, { x0: 3, x1: 11, z0: -29.5, z1: -23 }],
+    obstacles: [], tall: [], trees: [],
+    rocks: [
+      { type: 'copper', x: 27, z: -13.5, r: 1.2 }, { type: 'copper', x: 24.5, z: -17.5, r: 1.2 }, { type: 'tin', x: 28, z: -9.5, r: 1.2 },
+      { type: 'copper', x: 4.5, z: -26.5, r: 1.2 }, { type: 'tin', x: 8, z: -24.5, r: 1.2 }, { type: 'tin', x: 7.5, z: -28, r: 1.2 },
+    ],
+    landmarks: {},
+    connections: [{ to: 'clearing', at: { x: 26, z: -12 } }],
   },
 ];
 // the hollow's and hall's standing stones are tall (they break sight lines)

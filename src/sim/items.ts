@@ -48,6 +48,9 @@ export const ITEMS: Record<string, ItemDef> = {
   // materials (M3 smithing uses iron_ore + coal; they come from mining nodes, not drops)
   boar_hide: { name: 'Boar Hide', stack: 50, dropWeight: 40, tier: 0, value: 2, desc: 'Coarse hide. Crafting material.' },
   wolf_pelt: { name: 'Wolf Pelt', stack: 50, dropWeight: 40, tier: 0, value: 3, desc: 'Thick grey fur. Crafting material.' },
+  copper_ore: { name: 'Copper Ore', stack: 50, dropWeight: 0, tier: 0, value: 3, desc: 'Soft red ore from the clearing. Smelted with tin it makes bronze.' },
+  tin_ore: { name: 'Tin Ore', stack: 50, dropWeight: 0, tier: 0, value: 5, desc: 'Pale, soft ore. On its own it is nothing: smelted with copper it makes bronze.' },
+  bronze_bar: { name: 'Bronze Bar', stack: 50, dropWeight: 0, tier: 0, value: 12, desc: 'Copper and tin, smelted together. The first metal a smith can shape into armour.' },
   iron_ore: { name: 'Iron Ore', stack: 50, dropWeight: 0, tier: 0, value: 3, desc: 'Smelts into iron at the forge.' },
   coal: { name: 'Coal', stack: 50, dropWeight: 0, tier: 0, value: 4, desc: 'Fuel for the forge.' },
   logs: { name: 'Logs', stack: 50, dropWeight: 0, tier: 0, value: 2, desc: 'Seasoned wood. Makes a good hilt.' },
@@ -61,6 +64,8 @@ export const ITEMS: Record<string, ItemDef> = {
   [SEA_SALT]: { name: 'Sea Salt', stack: 50, dropWeight: 0, tier: 0, value: 2, desc: 'Coarse grey salt from the Saltmarrow pans. A pie wants a pinch.' },
   ...fishItems(),
   // weapons
+  // the bronze set (HOM-56): the first armour and blade a new character can smith, a step above hide and below the iron the enemies drop
+  bronze_sword: { name: 'Bronze Sword', slot: 'weapon', stats: { damage: 3, speed: 2.3 }, stack: 1, dropWeight: 0, tier: 1, value: 20, desc: 'Cast at the forge from your first bars. Better than a rusty blade, not yet iron.' },
   rusty_blade: { name: 'Rusty Blade', slot: 'weapon', stats: { damage: 2, speed: 2.2 }, stack: 1, dropWeight: 10, tier: 1, value: 6, desc: 'Better than bare hands.' },
   iron_sword: { name: 'Iron Sword', slot: 'weapon', stats: { damage: 5, speed: 2.4 }, stack: 1, dropWeight: 6, tier: 2, value: 30, desc: 'A reliable soldier\'s sword.' },
   steel_sword: { name: 'Steel Sword', slot: 'weapon', stats: { damage: 9, speed: 2.2 }, stack: 1, dropWeight: 3, tier: 3, value: 90, desc: 'Keen, balanced, rare.' },
@@ -73,6 +78,9 @@ export const ITEMS: Record<string, ItemDef> = {
   leather_cap: { name: 'Leather Cap', slot: 'head', stats: { armor: 2 }, stack: 1, dropWeight: 10, tier: 1, value: 5, desc: 'Stitched hide.' },
   hide_jerkin: { name: 'Hide Jerkin', slot: 'chest', stats: { armor: 4 }, stack: 1, dropWeight: 8, tier: 1, value: 10, desc: 'Stitched hide.' },
   hide_leggings: { name: 'Hide Leggings', slot: 'legs', stats: { armor: 3 }, stack: 1, dropWeight: 10, tier: 1, value: 8, desc: 'Stitched hide.' },
+  bronze_helm: { name: 'Bronze Helm', slot: 'head', stats: { armor: 3 }, stack: 1, dropWeight: 0, tier: 1, value: 14, desc: 'Smithed from copper and tin.' },
+  bronze_chestplate: { name: 'Bronze Chestplate', slot: 'chest', stats: { armor: 6 }, stack: 1, dropWeight: 0, tier: 1, value: 28, desc: 'Smithed from copper and tin. Dull, soft and better than hide.' },
+  bronze_greaves: { name: 'Bronze Greaves', slot: 'legs', stats: { armor: 4 }, stack: 1, dropWeight: 0, tier: 1, value: 20, desc: 'Smithed from copper and tin.' },
   iron_helm: { name: 'Iron Helm', slot: 'head', stats: { armor: 5 }, stack: 1, dropWeight: 5, tier: 2, value: 25, desc: 'Dented but solid.' },
   iron_chestplate: { name: 'Iron Chestplate', slot: 'chest', stats: { armor: 9 }, stack: 1, dropWeight: 4, tier: 2, value: 45, desc: 'Heavy and protective.' },
   iron_greaves: { name: 'Iron Greaves', slot: 'legs', stats: { armor: 6 }, stack: 1, dropWeight: 5, tier: 2, value: 30, desc: 'Heavy and protective.' },
@@ -84,6 +92,9 @@ export const ITEMS: Record<string, ItemDef> = {
   adamant_chestplate: { name: 'Adamant Chestplate', slot: 'chest', stats: { armor: 30 }, stack: 1, dropWeight: 0, tier: 5, value: 350, req: { combat: 14 }, desc: 'Smithed from Strand adamant. Heavy, and worth the weight.' },
   adamant_greaves: { name: 'Adamant Greaves', slot: 'legs', stats: { armor: 22 }, stack: 1, dropWeight: 0, tier: 5, value: 260, req: { combat: 14 }, desc: 'Smithed from Strand adamant.' },
 };
+
+/** The bronze set, in smithing order: the sword, then the plate. */
+export const BRONZE_SET = ['bronze_sword', 'bronze_helm', 'bronze_greaves', 'bronze_chestplate'] as const;
 
 /** The smithable set, in smithing order. Quests and verify read it from here. */
 export const MITHRIL_SET = ['mithril_helm', 'mithril_greaves', 'mithril_chestplate'] as const;

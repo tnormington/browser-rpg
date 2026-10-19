@@ -24,39 +24,52 @@ export interface Recipe {
   xp: number;
 }
 
-// Forge ladder: smelt iron bars, harden them into steel bars (needs coal: Mining 4), forge the blade.
+// The metal ladder (docs/world-design.md 2.2, HOM-56). A bar's XP is 0.25 x the XP cost of its level (it is the action you repeat); a piece is 0.35 x,
+// a blade 0.4 x (made once, so worth more each). Mining and smithing climb together if you smelt what you mine: a player who does is
+// never more than a few bars short of a gate, but a player who skips the forge meets "needs Smithing N" at every rung.
 export const RECIPES: Recipe[] = [
-  { id: 'iron_bar', name: 'Iron Bar', skill: 'smithing', level: 1, time: 3, xp: 35,
+  // bronze: copper and tin, the first set a character can make
+  { id: 'bronze_bar', name: 'Bronze Bar', skill: 'smithing', level: 1, time: 3, xp: 20,
+    inputs: [{ id: 'copper_ore', qty: 1 }, { id: 'tin_ore', qty: 1 }], output: { id: 'bronze_bar', qty: 1 } },
+  { id: 'bronze_sword', name: 'Bronze Sword', skill: 'smithing', level: 2, time: 6, xp: 30,
+    inputs: [{ id: 'bronze_bar', qty: 3 }, { id: 'logs', qty: 1 }], output: { id: 'bronze_sword', qty: 1 } },
+  { id: 'bronze_helm', name: 'Bronze Helm', skill: 'smithing', level: 3, time: 6, xp: 35,
+    inputs: [{ id: 'bronze_bar', qty: 2 }], output: { id: 'bronze_helm', qty: 1 } },
+  { id: 'bronze_greaves', name: 'Bronze Greaves', skill: 'smithing', level: 4, time: 7, xp: 40,
+    inputs: [{ id: 'bronze_bar', qty: 3 }], output: { id: 'bronze_greaves', qty: 1 } },
+  { id: 'bronze_chestplate', name: 'Bronze Chestplate', skill: 'smithing', level: 5, time: 8, xp: 45,
+    inputs: [{ id: 'bronze_bar', qty: 4 }], output: { id: 'bronze_chestplate', qty: 1 } },
+  // iron: smelt iron bars, harden them into steel bars (needs coal: Mining 10), forge the blade
+  { id: 'iron_bar', name: 'Iron Bar', skill: 'smithing', level: 7, time: 3, xp: 40,
     inputs: [{ id: 'iron_ore', qty: 2 }], output: { id: 'iron_bar', qty: 1 } },
-  { id: 'steel_bar', name: 'Steel Bar', skill: 'smithing', level: 3, time: 4, xp: 70,
+  { id: 'steel_bar', name: 'Steel Bar', skill: 'smithing', level: 8, time: 4, xp: 45,
     inputs: [{ id: 'iron_bar', qty: 1 }, { id: 'coal', qty: 2 }], output: { id: 'steel_bar', qty: 1 } },
-  { id: 'forged_blade', name: "Forgemaster's Blade", skill: 'smithing', level: 4, time: 6, xp: 120,
+  { id: 'forged_blade', name: "Forgemaster's Blade", skill: 'smithing', level: 9, time: 6, xp: 75,
     inputs: [{ id: 'steel_bar', qty: 3 }, { id: 'logs', qty: 1 }], output: { id: 'forged_blade', qty: 1 } },
-  // The cave's ladder: mithril ore (Mining 9) smelted with coal, then the set. Each piece asks for more Smithing than the last,
-  // and the bars alone carry a smith past all the gates, so a player who does the chain in order is never made to grind a skill.
-  { id: 'mithril_bar', name: 'Mithril Bar', skill: 'smithing', level: 7, time: 5, xp: 70,
+  // The cave's ladder: mithril ore (Mining 18) smelted with coal, then the set. Each piece asks for one more Smithing than the last, and the nine
+  // bars and the pieces before it carry a smith to the chestplate's gate exactly: the set is never the grind, getting to the bar is.
+  { id: 'mithril_bar', name: 'Mithril Bar', skill: 'smithing', level: 15, time: 5, xp: 90,
     inputs: [{ id: 'mithril_ore', qty: 1 }, { id: 'coal', qty: 2 }], output: { id: 'mithril_bar', qty: 1 } },
-  { id: 'mithril_helm', name: 'Mithril Helm', skill: 'smithing', level: 8, time: 7, xp: 150,
+  { id: 'mithril_helm', name: 'Mithril Helm', skill: 'smithing', level: 16, time: 7, xp: 145,
     inputs: [{ id: 'mithril_bar', qty: 2 }], output: { id: 'mithril_helm', qty: 1 } },
-  { id: 'mithril_greaves', name: 'Mithril Greaves', skill: 'smithing', level: 9, time: 8, xp: 210,
+  { id: 'mithril_greaves', name: 'Mithril Greaves', skill: 'smithing', level: 17, time: 8, xp: 160,
     inputs: [{ id: 'mithril_bar', qty: 3 }], output: { id: 'mithril_greaves', qty: 1 } },
-  { id: 'mithril_chestplate', name: 'Mithril Chestplate', skill: 'smithing', level: 10, time: 10, xp: 300,
+  { id: 'mithril_chestplate', name: 'Mithril Chestplate', skill: 'smithing', level: 18, time: 10, xp: 155,
     inputs: [{ id: 'mithril_bar', qty: 4 }], output: { id: 'mithril_chestplate', qty: 1 } },
   // the reason to keep killing the Warden after the quest: shards drop at random, three make the best weapon in the game
-  { id: 'warden_edge', name: "Warden's Edge", skill: 'smithing', level: 11, time: 12, xp: 450,
+  { id: 'warden_edge', name: "Warden's Edge", skill: 'smithing', level: 20, time: 12, xp: 220,
     inputs: [{ id: 'mithril_bar', qty: 3 }, { id: 'warden_shard', qty: 3 }], output: { id: 'warden_edge', qty: 1 } },
-  // The Strand's ladder (docs/world-design.md 3.3): adamant ore (Mining 17) and three coal to a bar, then the set and the blade. Craft XP is
-  // the bible's rule, 0.6 x the XP from the recipe's level to the next, to the nearest 5. The blade takes plain logs: the bible's ash is a tree
-  // that does not exist yet (W2.2).
-  { id: 'adamant_bar', name: 'Adamant Bar', skill: 'smithing', level: 14, time: 6, xp: 180,
+  // The Strand's ladder (docs/world-design.md 3.3): adamant ore (Mining 28) and three coal to a bar, then the set and the blade. The blade takes
+  // plain logs: the bible's ash is a tree that does not exist yet (W2.2).
+  { id: 'adamant_bar', name: 'Adamant Bar', skill: 'smithing', level: 24, time: 6, xp: 205,
     inputs: [{ id: 'adamant_ore', qty: 1 }, { id: 'coal', qty: 3 }], output: { id: 'adamant_bar', qty: 1 } },
-  { id: 'adamant_helm', name: 'Adamant Helm', skill: 'smithing', level: 15, time: 8, xp: 200,
+  { id: 'adamant_helm', name: 'Adamant Helm', skill: 'smithing', level: 25, time: 8, xp: 315,
     inputs: [{ id: 'adamant_bar', qty: 2 }], output: { id: 'adamant_helm', qty: 1 } },
-  { id: 'adamant_blade', name: 'Adamant Blade', skill: 'smithing', level: 16, time: 13, xp: 220,
+  { id: 'adamant_blade', name: 'Adamant Blade', skill: 'smithing', level: 26, time: 13, xp: 395,
     inputs: [{ id: 'adamant_bar', qty: 3 }, { id: 'logs', qty: 1 }], output: { id: 'adamant_blade', qty: 1 } },
-  { id: 'adamant_greaves', name: 'Adamant Greaves', skill: 'smithing', level: 17, time: 9, xp: 245,
+  { id: 'adamant_greaves', name: 'Adamant Greaves', skill: 'smithing', level: 27, time: 9, xp: 385,
     inputs: [{ id: 'adamant_bar', qty: 3 }], output: { id: 'adamant_greaves', qty: 1 } },
-  { id: 'adamant_chestplate', name: 'Adamant Chestplate', skill: 'smithing', level: 19, time: 11, xp: 300,
+  { id: 'adamant_chestplate', name: 'Adamant Chestplate', skill: 'smithing', level: 29, time: 11, xp: 465,
     inputs: [{ id: 'adamant_bar', qty: 4 }], output: { id: 'adamant_chestplate', qty: 1 } },
   // the range: each fish cooked on its own, and a pie (2 fish and a pinch of salt) two levels up that also makes you Well Fed. Craft XP: fish.ts.
   ...FISH.flatMap((f): Recipe[] => [

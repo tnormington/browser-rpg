@@ -122,7 +122,7 @@ The vendor in each town sells the previous tier's dropped gear at the existing `
 
 All six are `SkillId` entries and `XpTrack`s on the shared curve. Gathering skills are `NODE_TYPES` entries (data in `gathering.ts`); crafting skills are `RECIPES` entries (data in `crafting.ts`). **The one structural change is that a recipe names a `station`** (`'forge' | 'range' | 'alembic' | 'rack' | 'circle'`, default `'forge'`) and `nearForge` becomes `nearStation(s, r.station)`. Mastery (`sim/mastery.ts`) applies to all of them unchanged: more levels above the requirement means quicker and, for stackables, a bonus yield.
 
-**XP rules of thumb** (so a builder can add a rung without asking): a gathering action gives `0.42 x cost(L)` XP, where `cost(L)` is the XP from level L to L+1 (this reproduces iron 35 and mithril 80 to within a few percent); a craft gives `0.6 x cost(L)`, rounded to 5, because it consumes gathered stock. Raw material value is `2 + L` gold. Time per gather 3 to 5 s, 3 to 5 charges, 20 to 45 s respawn, like the nodes already there.
+**XP rules of thumb** (so a builder can add a rung without asking): a gathering action gives `0.42 x cost(L)` XP, where `cost(L)` is the XP from level L to L+1 (this reproduces iron 35 and mithril 80 to within a few percent); a craft gives `0.6 x cost(L)`, rounded to 5, because it consumes gathered stock. **The metal ladder is the exception, on purpose** (HOM-56, see 2.3): ore pays `0.12 x cost(L)`, a bar `0.25 x`, an armour piece `0.35 x`, a blade `0.4 x`, so a level of Mining or Smithing there takes about 8 to 17 swings, not 2.4. Fishing, cooking and the skills still to come keep the rule above. Raw material value is `2 + L` gold. Time per gather 3 to 5 s, 3 to 5 charges, 20 to 45 s respawn, like the nodes already there.
 
 #### Fishing (Saltmarrow) — gathering, no tool
 
@@ -217,7 +217,22 @@ What enchanting feeds is **gear** and the long tail, not ability unlocks. Abilit
 
 ### 2.3 What stays in Hale's Rest
 
-Mining, smithing and woodcutting keep their ladders and extend them: new ore (**adamant**, Mining 17; **stormiron**, Mining 26; **starmetal**, Mining 35), new logs (ash, Woodcutting 12; thornoak, 24; elderwood, 36), all as `NODE_TYPES` rows. A rock a long way from the forge is why **bars are carried home**: smithing stays at the forge in Hale (and gains a forge in each later town in wave 4, so the loop does not need a 6-minute walk).
+Mining and smithing run a **metal ladder** that starts at the bottom of the world, the way WoW's does: copper from level 1, tin smelted with it into bronze, then iron and steel, mithril, adamant. It was too short: the first ladder gave a level in under three swings (`0.42 x cost(L)`), so a player went from the first rock to adamant in about 50 swings, five minutes, and no step was worn long enough to feel like anything. The ladder is now longer in the two ways that matter, more rungs at the bottom and **about 6 to 8 times the swings between rungs**:
+
+| Rock (`NODE_TYPES`) | Mining | XP a swing | Smelts into | Smithing: bar | Smithing: pieces |
+| --- | --- | --- | --- | --- | --- |
+| Copper Rock | 1 | 10 | Bronze Bar (1 copper + 1 tin) | 1 | sword 2, helm 3, greaves 4, chestplate 5 |
+| Tin Rock | 3 | 12 | (with copper) | | |
+| Iron Rock | 7 | 18 | Iron Bar (2 ore), Steel Bar (iron bar + 2 coal) | iron 7, steel 8 | Forgemaster's Blade 9 |
+| Coal Seam | 10 | 24 | (the fuel, from here on) | | |
+| Mithril Vein | 18 | 54 | Mithril Bar (1 ore + 2 coal) | 15 | helm 16, greaves 17, chestplate 18, Warden's Edge 20 |
+| Adamant Vein | 28 | 145 | Adamant Bar (1 ore + 3 coal) | 24 | helm 25, blade 26, greaves 27, chestplate 29 |
+
+**Levels in each tier** (Smithing, from a tier's bar to the next tier's bar): bronze 6, iron and steel 8, mithril 9, adamant 6 and on. **Swings** (Mining, mining the best rock open): Mining 7, where iron opens, is about 65 swings in; mithril at 18 is about 185 (it was 22 to Mining 9); adamant at 28 is about 320 (it was 49 to Mining 17). That is 6 to 8 times the swings at every rung. The chain as a whole is about 3 times longer, because fighting and walking did not move: a headless bot that never idles takes **11 minutes** from the first swing to the Forgemaster's Blade (it took 4), has the mithril set smithed at **28 minutes** (12), and hands in the second quest at **32** (18). A real player is slower than the bot. Mining and Smithing climb together if you smelt what you mine (a bar is about 0.25 x cost, ore about 0.12 x, and a bar eats one to two swings), so a character who uses the forge is never more than a few bars short of a gate; the **bronze set** (armour 3 / 6 / 4 = 13, Bronze Sword +3, tier 1) is the first armour they can make and is made from the 12 bars the gate to iron asks for anyway.
+
+The knob is one number, the `0.12`. If the ladder reads as too long, raise it; if it still reads as too short, lower it. **Not verified by play.**
+
+Below the metal ladder, woodcutting keeps its own and the metal ladder is extended with new ore (**stormiron**, Mining 40; **starmetal**, Mining 52: both pushed up to stay above adamant, and to be re-derived from the rule above by whoever builds them), new logs (ash, Woodcutting 12; thornoak, 24; elderwood, 36), all as `NODE_TYPES` rows. A rock a long way from the forge is why **bars are carried home**: smithing stays at the forge in Hale (and gains a forge in each later town in wave 4, so the loop does not need a 6-minute walk).
 
 ---
 
@@ -268,12 +283,14 @@ Weapons add flat `damage` to every direct hit; armour feeds `armor / (armor + 40
 
 | Set | Mining | Smithing (bar / pieces) | Equip combat | Armour (helm / chest / greaves) | Blade | Capstone blade | `tier` |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Mithril (exists) | 9 | 7 / 8, 9, 10 | 9 | 12 / 22 / 16 = 50 | Warden's Edge 28 (Smithing 11) | (that is the capstone) | 4 |
-| **Adamant** | 17 | 14 / 15, 17, 19 | 14 | 16 / 30 / 22 = 68 | Adamant Blade 40 (Smithing 16) | **Marrow's Edge 50** (Smithing 22, 3 Marrow shards) | 5 |
-| **Stormiron** | 26 | 23 / 24, 26, 28 | 23 | 20 / 38 / 28 = 86 | Stormiron Blade 58 (Smithing 24) | **Rotroot Edge 72** (Smithing 29, 3 Heartwood shards) | 5 |
-| **Starmetal** (wave 4) | 35 | 32 / 33, 35, 37 | 32 | 24 / 44 / 32 = 100 | Starmetal Blade 80 (Smithing 33) | **Crownbreaker 100** (Smithing 38, 3 Crown shards) | 6 |
+| **Bronze** (HOM-56) | 1 (copper), 3 (tin) | 1 / 3, 4, 5 | none | 3 / 6 / 4 = 13 | Bronze Sword +3 (Smithing 2) | none | 1 |
+| Iron and steel (the drops, and the Forgemaster's Blade) | 7 (iron), 10 (coal) | 7 (iron), 8 (steel) / the blade 9 | none | 5 / 9 / 6 = 20 dropped | Forgemaster's Blade 18 (Smithing 9) | none | 2 to 3 |
+| Mithril (exists) | 18 | 15 / 16, 17, 18 | 9 | 12 / 22 / 16 = 50 | Warden's Edge 28 (Smithing 20) | (that is the capstone) | 4 |
+| **Adamant** | 28 | 24 / 25, 27, 29 | 14 | 16 / 30 / 22 = 68 | Adamant Blade 40 (Smithing 26) | **Marrow's Edge 50** (Smithing 22, 3 Marrow shards) | 5 |
+| **Stormiron** | 40 | 36 / 37, 39, 41 | 23 | 20 / 38 / 28 = 86 | Stormiron Blade 58 (Smithing 37) | **Rotroot Edge 72** (Smithing 42, 3 Heartwood shards) | 5 |
+| **Starmetal** (wave 4) | 52 | 48 / 49, 51, 53 | 32 | 24 / 44 / 32 = 100 | Starmetal Blade 80 (Smithing 49) | **Crownbreaker 100** (Smithing 54, 3 Crown shards) | 6 |
 
-- A bar is one ore plus coal: adamant 1 ore + 3 coal, stormiron 1 + 4, starmetal 1 + 5. A helm is 2 bars, greaves 3, a chestplate 4, a blade 3 + 1 log (ash, thornoak, elderwood respectively). Smithing XP per craft follows the rule in 2.2.
+- A bar is one ore plus coal: adamant 1 ore + 3 coal, stormiron 1 + 4, starmetal 1 + 5. A helm is 2 bars, greaves 3, a chestplate 4, a blade 3 + 1 log (ash, thornoak, elderwood respectively). Smithing XP per craft follows the metal-ladder rule in 2.3. HOM-56 moved the Mining and Smithing columns up (mithril 9 to 18, adamant 17 to 28, stormiron and starmetal pushed past it); the combat requirement and the stats did not move, so a player can now be combat-ready for a set long before their Mining is, which is the pressure to mine that this column is for. The enemy tables were not touched: a player under-geared for a band is a little behind its line, as the last bullet below says.
 - **A new item field, `req: { combat?: number }`**, is read by the equip action. Legacy items have none (Warden's Edge and the mithril set stay unrestricted, so no old save breaks); every new set does.
 - **Tier 5 and tier 6 are new.** Today `TIER_COLORS` stops at 4 (epic, purple). The rule that rarer must look better means **tier 5 (legendary) and tier 6 (mythic)** need art and colours: 3D Artist's call, but I would not reuse orange (tier 3 already owns it). Adamant and stormiron sets share tier 5; they must still look like different metals, which is bespoke art, not tier fallback. **If the fallback is all that exists, stormiron will look the same as adamant, and that is unworthy of 12 levels of grind: say so rather than ship it.**
 - A full set at its band is a **power spike of roughly 20 to 25 %** in TTK terms over the previous set; the enemy tables are set on the line, so a crafted set puts the player a little *ahead* of it. A player who skips crafting and wears dropped iron (armour 20, blade 9 at level 20) is **far behind** and will die on elites. That is the pressure to mine and smith.
@@ -596,7 +613,7 @@ That is **above** the income, deliberately: **a player cannot buy everything by 
 
 ### 8.1 What each wave builds
 
-**Wave 2: the second town and travel.** The regions refactor (parallel). Hale's east gate. Greywater Road (all 4 trash + the Toll Captain + Old Grey). Saltmarrow town and Strand (shore crab, drowned sailor, tide hag, Barnacle Ogre, Gutterhook). **Fishing, cooking** and the `station` field. **Food** (not potions yet), Well Fed. Flight masters at Hale and Saltmarrow (175). The **world-map mesh** and ride. Safe zones. Death at the nearest found town's graveyard, with gear durability and repair (HOM-58; this replaced the gold repair toll). The XP-parity rule. Q3 The Salt Road. Whirlwind and the trainer. **Adamant** ore, bars and set (Mining 17, equip combat 14), tier 5. Named pieces: Greywolf Hauberk and Gutterhook's Cap.
+**Wave 2: the second town and travel.** The regions refactor (parallel). Hale's east gate. Greywater Road (all 4 trash + the Toll Captain + Old Grey). Saltmarrow town and Strand (shore crab, drowned sailor, tide hag, Barnacle Ogre, Gutterhook). **Fishing, cooking** and the `station` field. **Food** (not potions yet), Well Fed. Flight masters at Hale and Saltmarrow (175). The **world-map mesh** and ride. Safe zones. Death at the nearest found town's graveyard, with gear durability and repair (HOM-58; this replaced the gold repair toll). The XP-parity rule. Q3 The Salt Road. Whirlwind and the trainer. **Adamant** ore, bars and set (Mining 28 since HOM-56, equip combat 14), tier 5. Named pieces: Greywolf Hauberk and Gutterhook's Cap.
 
 **Wave 3: the climb to 30 and the mount** (large: ship as 3a and 3b).
 - **3a (to combat ~24):** Grotto, Dunmere Fens, Thornwick with **herbalism, alchemy**, potions, the Rotroot. Rupture, Guard (+ the `guard` kind and potion buffs). Talent tiers 3 and 4 and their cap. Stormiron. Q4 and Q5. Named pieces from Marrow, Mother Mire, Elder Thornback, the Rotroot Mother.

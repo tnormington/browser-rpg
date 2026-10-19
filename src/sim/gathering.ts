@@ -18,11 +18,15 @@ export interface NodeDef {
   respawn: number;  // seconds depleted
 }
 
+// The metal ladder (docs/world-design.md 2.2, HOM-56): copper from Mining 1, then tin, iron, coal, mithril, adamant, with real distance between the
+// rungs. Ore XP is 0.12 x the XP cost of the rock's own level, rounded: eight to seventeen swings a level where the first ladder took under three.
 export const NODE_TYPES: Record<string, NodeDef> = {
-  iron: { name: 'Iron Rock', skill: 'mining', level: 1, item: 'iron_ore', time: 3.5, xp: 35, charges: 3, respawn: 25 },
-  coal: { name: 'Coal Seam', skill: 'mining', level: 4, item: 'coal', time: 4.5, xp: 50, charges: 3, respawn: 30 },
-  mithril: { name: 'Mithril Vein', skill: 'mining', level: 9, item: 'mithril_ore', time: 5, xp: 80, charges: 3, respawn: 45 },
-  adamant: { name: 'Adamant Vein', skill: 'mining', level: 17, item: 'adamant_ore', time: 5.5, xp: 170, charges: 3, respawn: 45 },
+  copper: { name: 'Copper Rock', skill: 'mining', level: 1, item: 'copper_ore', time: 3.5, xp: 10, charges: 3, respawn: 25 },
+  tin: { name: 'Tin Rock', skill: 'mining', level: 3, item: 'tin_ore', time: 3.5, xp: 12, charges: 3, respawn: 25 },
+  iron: { name: 'Iron Rock', skill: 'mining', level: 7, item: 'iron_ore', time: 3.5, xp: 18, charges: 3, respawn: 25 },
+  coal: { name: 'Coal Seam', skill: 'mining', level: 10, item: 'coal', time: 4.5, xp: 24, charges: 3, respawn: 30 },
+  mithril: { name: 'Mithril Vein', skill: 'mining', level: 18, item: 'mithril_ore', time: 5, xp: 54, charges: 3, respawn: 45 },
+  adamant: { name: 'Adamant Vein', skill: 'mining', level: 28, item: 'adamant_ore', time: 5.5, xp: 145, charges: 3, respawn: 45 },
   tree: { name: 'Tree', skill: 'woodcutting', level: 1, item: 'logs', time: 3, xp: 25, charges: 2, respawn: 20 },
   // fishing spots, one per fish (fish.ts): five catches of four seconds, back after twenty. Only the first three have water placed (world.ts)
   ...Object.fromEntries(FISH.map((f): [string, NodeDef] => [f.id, { name: `${f.name} Shoal`, skill: 'fishing', level: f.level, item: f.id, time: 4, xp: f.xp, charges: 5, respawn: 20 }])),

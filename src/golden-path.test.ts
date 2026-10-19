@@ -2,7 +2,7 @@
 // Exits non-zero on the first failed assertion. Extended every milestone.
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState, Enemy } from './sim';
 import { addItem, countItem, INVENTORY_SIZE } from './sim/inventory';
-import { ITEMS, DROP_TABLES, MITHRIL_SET, TIER_COLORS, deriveStats, describeStats, emptyEquipment } from './sim/items';
+import { ITEMS, DROP_TABLES, BRONZE_SET, MITHRIL_SET, TIER_COLORS, deriveStats, describeStats, emptyEquipment } from './sim/items';
 import {
   ABILITIES, ENEMY_TYPES, SPAWNS, aggroRadius, castName, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
   FALL_GRAVITY, GRAVITY, JUMP_AIRTIME, JUMP_HEIGHT, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW, powerForLevel, xpParity,
@@ -511,6 +511,42 @@ function atForge(s: GameState) {
   }
   return false;
 }
+/** A new smith's road to iron, as a player takes it (HOM-56): copper and tin until Mining opens the iron rock, then bronze at the forge until Smithing opens the iron bar. */
+function bronzeToIron(s: GameState) {
+  const ironBar = recipeById('iron_bar')!.level;
+  for (let guard = 0; guard < 60 && (s.player.skills.mining.level < NODE_TYPES.iron.level || s.player.skills.smithing.level < ironBar); guard++) {
+    if (s.player.skills.mining.level < NODE_TYPES.iron.level || !countOf(s, 'copper_ore') || !countOf(s, 'tin_ore')) {
+      const tinOpen = s.player.skills.mining.level >= NODE_TYPES.tin.level;
+      for (const type of tinOpen ? ['copper', 'tin'] : ['copper']) gatherUntil(s, type, countOf(s, NODE_TYPES[type].item) + 3);
+    } else {
+      atForge(s);
+      craft(s, 'bronze_bar', countOf(s, 'bronze_bar') + Math.min(countOf(s, 'copper_ore'), countOf(s, 'tin_ore')));
+    }
+  }
+}
+/** The whole first forge stage as a player plays it: bronze, then the plan's iron, coal and a log, then the bars and the blade. */
+function smithTheBlade(s: GameState) {
+  bronzeToIron(s);
+  gatherUntil(s, 'iron', BLADE_PLAN.ore);
+  while (s.player.skills.mining.level < NODE_TYPES.coal.level) gatherUntil(s, 'iron', countOf(s, 'iron_ore') + 3);
+  gatherUntil(s, 'coal', BLADE_PLAN.coal); gatherUntil(s, 'tree', BLADE_PLAN.logs);
+  atForge(s);
+  craft(s, 'iron_bar', BLADE_PLAN.bars); craft(s, 'steel_bar', BLADE_PLAN.steel); craft(s, 'forged_blade', 1);
+}
+/**
+ * Smithing practice as a player does it once bronze is behind them: iron bars hardened into steel, with `keepCoal` held back for what the practice is for.
+ * It is the same coal and ore the Mining practice just brought home, which is why the two climb together.
+ */
+function practiseSmithing(s: GameState, level: number, keepCoal: number) {
+  for (let guard = 0; guard < 60 && s.player.skills.smithing.level < level; guard++) {
+    gatherUntil(s, 'iron', countOf(s, 'iron_ore') + 10);
+    const bars = Math.floor(countOf(s, 'iron_ore') / 2);
+    gatherUntil(s, 'coal', keepCoal + 2 * bars);
+    atForge(s);
+    craft(s, 'iron_bar', bars);
+    craft(s, 'steel_bar', Math.min(countOf(s, 'iron_bar'), Math.floor((countOf(s, 'coal') - keepCoal) / 2)));
+  }
+}
 function craft(s: GameState, recipe: string, count: number) {
   const out = RECIPES.find(r => r.id === recipe)!.output.id, want = countOf(s, out) + count;
   for (let tries = 0; tries < 8 && countOf(s, out) < want; tries++) {
@@ -570,11 +606,12 @@ section('M3 skills: parallel tracks on the RuneScape curve');
 section('M3 gathering: nodes, timing, depletion, respawn, interruption');
 {
   const s = quietState(2);
-  const def = NODE_TYPES.iron;
-  const rock = nodesOf(s, 'iron')[0];
+  const def = NODE_TYPES.copper;
+  const rock = nodesOf(s, 'copper')[0];
   assert(nodesOf(s, 'iron').length >= 3 && nodesOf(s, 'coal').length >= 2 && nodesOf(s, 'tree').length === TREES.length, 'iron rocks, coal seams and trees are placed in the zone');
   const cave = LANDMARKS.caveMouth;
-  assert(ROCKS.every(r => dist2(r, cave) < 20), 'ore is hand-placed near the cave mouth');
+  assert(ROCKS.filter(r => r.type === 'iron' || r.type === 'coal').every(r => dist2(r, cave) < 20), 'iron and coal are hand-placed near the cave mouth');
+  assert(nodesOf(s, 'copper').length >= 3 && nodesOf(s, 'tin').length >= 3, 'copper and tin are placed in the clearing and on the ridge, three of each or more');
   assert(ROCKS.every(r => dist2(r, enemyOf(s, 'brute')) > ENEMY_TYPES.brute.aggroRadius + 1), 'no ore node sits inside the Cave Brute aggro radius');
 
   const far = dist2(s.player, rock);
@@ -585,12 +622,12 @@ section('M3 gathering: nodes, timing, depletion, respawn, interruption');
   assert(actionKind(s) === 'gather' && dist2(s.player, rock) < rock.r + 2.5, 'player walks into reach, then the gather action begins');
   const a = s.player.action!;
   run(s, def.time / 2);
-  assert(s.player.action === a && countOf(s, 'iron_ore') === 0, 'gathering takes time: nothing yielded halfway');
+  assert(s.player.action === a && countOf(s, 'copper_ore') === 0, 'gathering takes time: nothing yielded halfway');
   run(s, def.time / 2 + TICK_DT * 2);
-  assert(countOf(s, 'iron_ore') === 1 && s.player.skills.mining.xp === def.xp, `first swing yields 1 Iron Ore and ${def.xp} Mining XP`);
+  assert(countOf(s, 'copper_ore') === 1 && s.player.skills.mining.xp === def.xp, `first swing yields 1 Copper Ore and ${def.xp} Mining XP`);
   assert(rock.charges === def.charges - 1 && s.player.action !== null, 'gathering continues automatically on the same node');
   untilIdle(s);
-  assert(countOf(s, 'iron_ore') === def.charges && rock.charges === 0 && rock.respawnIn > 0, `node depletes after ${def.charges} ore`);
+  assert(countOf(s, 'copper_ore') === def.charges && rock.charges === 0 && rock.respawnIn > 0, `node depletes after ${def.charges} ore`);
   tick(s, { interact: { k: 'node', id: rock.id } });
   assert(hasEvent(s, e => e.t === 'actionfail' && e.reason === 'depleted') && s.player.action === null, 'depleted node cannot be gathered');
   run(s, def.respawn - 2);
@@ -608,7 +645,7 @@ section('M3 gathering: nodes, timing, depletion, respawn, interruption');
   run(s, 1);
   assert(s.player.action !== null, 'gathering a third time');
   const w = enemyOf(s, 'wolf');
-  w.x = s.player.x + 1; w.z = s.player.z; w.hp = w.maxHp; w.state = 'chase'; w.attackCd = 0;
+  w.x = s.player.x + 1; w.z = s.player.z; w.spawnX = w.x; w.spawnZ = w.z; w.hp = w.maxHp; w.state = 'chase'; w.attackCd = 0; // its leash is from its own spawn: copper is a long way from where this wolf lives
   run(s, 0.3);
   assert(s.player.action === null, 'getting hit by an enemy cancels the gather');
   w.state = 'dead'; w.respawnIn = 1e9;
@@ -624,9 +661,9 @@ section('M3 gathering: nodes, timing, depletion, respawn, interruption');
   // full bag stops the gather instead of losing the ore
   const s2 = quietState(2);
   s2.player.inventory.fill({ id: 'boar_hide', qty: 50 });
-  tick(s2, { interact: { k: 'node', id: nodesOf(s2, 'iron')[0].id } });
+  tick(s2, { interact: { k: 'node', id: nodesOf(s2, 'copper')[0].id } });
   untilIdle(s2);
-  assert(hasEvent(s2, e => e.t === 'actionfail' && e.reason === 'full') && s2.player.action === null && nodesOf(s2, 'iron')[0].charges === 3, 'full inventory refuses to gather and tells the player');
+  assert(hasEvent(s2, e => e.t === 'actionfail' && e.reason === 'full') && s2.player.action === null && nodesOf(s2, 'copper')[0].charges === 3, 'full inventory refuses to gather and tells the player');
 }
 
 // ---------------------------------------------------------------------------
@@ -657,10 +694,13 @@ section('M3 level requirements: gated nodes and recipes');
   addItem(s.player.inventory, 'steel_bar', 3); addItem(s.player.inventory, 'logs', 1);
   tick(s, { craft: { recipe: 'forged_blade', count: 1 } });
   const lf = s.events.find(e => e.t === 'actionfail');
-  assert(lf && lf.t === 'actionfail' && lf.reason === 'level' && lf.skill === 'smithing' && lf.need === 4, 'Smithing 1 cannot forge the blade: told it needs Smithing 4');
+  assert(lf && lf.t === 'actionfail' && lf.reason === 'level' && lf.skill === 'smithing' && lf.need === recipeById('forged_blade')!.level, `Smithing 1 cannot forge the blade: told it needs Smithing ${recipeById('forged_blade')!.level}`);
   s.player.inventory.fill(null);
-  tick(s, { craft: { recipe: 'iron_bar', count: 1 } });
+  tick(s, { craft: { recipe: 'bronze_bar', count: 1 } });
   assert(hasEvent(s, e => e.t === 'actionfail' && e.reason === 'materials') && s.player.action === null, 'missing materials: refused');
+  addItem(s.player.inventory, 'iron_ore', 2);
+  tick(s, { craft: { recipe: 'iron_bar', count: 1 } });
+  assert(hasEvent(s, e => e.t === 'actionfail' && e.reason === 'level' && e.skill === 'smithing' && e.need === recipeById('iron_bar')!.level) && s.player.action === null, `a new smith has the ore and is still refused iron: it wants Smithing ${recipeById('iron_bar')!.level}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -668,23 +708,23 @@ section('M3 smithing: forge recipes');
 {
   assert(RECIPES.every(r => ITEMS[r.output.id] && r.inputs.every(i => ITEMS[i.id])), 'every recipe references real items');
   const s = quietState(4);
-  addItem(s.player.inventory, 'iron_ore', 4);
+  addItem(s.player.inventory, 'copper_ore', 4); addItem(s.player.inventory, 'tin_ore', 4);
   assert(atForge(s) && dist2(s.player, LANDMARKS.forge) <= FORGE_REACH, 'clicking the forge walks there and opens it');
-  tick(s, { craft: { recipe: 'iron_bar', count: 2 } });
-  assert(actionKind(s) === 'craft' && countOf(s, 'iron_bar') === 0, 'craft starts; nothing is produced instantly');
-  run(s, RECIPES[0].time + TICK_DT * 2);
-  assert(countOf(s, 'iron_bar') === 1 && countOf(s, 'iron_ore') === 2, 'crafting consumes 2 Iron Ore and produces 1 Iron Bar');
-  assert(s.player.skills.smithing.xp === RECIPES[0].xp, `crafting grants Smithing XP (${RECIPES[0].xp})`);
+  tick(s, { craft: { recipe: 'bronze_bar', count: 2 } });
+  assert(actionKind(s) === 'craft' && countOf(s, 'bronze_bar') === 0, 'craft starts; nothing is produced instantly');
+  run(s, recipeById('bronze_bar')!.time + TICK_DT * 2);
+  assert(countOf(s, 'bronze_bar') === 1 && countOf(s, 'copper_ore') === 3 && countOf(s, 'tin_ore') === 3, 'crafting consumes 1 Copper Ore and 1 Tin Ore and produces 1 Bronze Bar');
+  assert(s.player.skills.smithing.xp === recipeById('bronze_bar')!.xp, `crafting grants Smithing XP (${recipeById('bronze_bar')!.xp})`);
   untilIdle(s);
-  assert(countOf(s, 'iron_bar') === 2 && countOf(s, 'iron_ore') === 0, 'a batch of 2 runs to completion');
+  assert(countOf(s, 'bronze_bar') === 2 && countOf(s, 'copper_ore') === 2 && countOf(s, 'tin_ore') === 2, 'a batch of 2 runs to completion');
   const b = quietState(4);
   b.player.x = LANDMARKS.forge.x - 4; b.player.z = LANDMARKS.forge.z + 3;
-  addItem(b.player.inventory, 'iron_ore', 10);
-  tick(b, { craft: { recipe: 'iron_bar', count: 99 } });
+  addItem(b.player.inventory, 'copper_ore', 5); addItem(b.player.inventory, 'tin_ore', 6);
+  tick(b, { craft: { recipe: 'bronze_bar', count: 99 } });
   untilIdle(b);
-  assert(countOf(b, 'iron_bar') === 5, 'a "make all" batch stops when materials run out');
-  addItem(b.player.inventory, 'iron_ore', 2);
-  tick(b, { craft: { recipe: 'iron_bar', count: 1 } });
+  assert(countOf(b, 'bronze_bar') === 5 && countOf(b, 'tin_ore') === 1, 'a "make all" batch stops when materials run out');
+  addItem(b.player.inventory, 'copper_ore', 2);
+  tick(b, { craft: { recipe: 'bronze_bar', count: 1 } });
   tick(b, { dirX: 1, dirZ: 0 });
   assert(b.player.action === null, 'walking away cancels a craft');
 }
@@ -716,28 +756,34 @@ section('M3 golden path: fight, mine, smith, equip, beat the Cave Brute');
 
   // 3. the RuneScape loop, timed from the first swing to the blade in hand
   const t0 = s.tick;
+  bronzeToIron(s);
+  const bronzeSecs = (s.tick - t0) * TICK_DT;
+  assert(s.player.skills.mining.level >= NODE_TYPES.iron.level && s.player.skills.smithing.level >= recipeById('iron_bar')!.level, `copper, tin and bronze first: Mining ${s.player.skills.mining.level}, Smithing ${s.player.skills.smithing.level}, ${countOf(s, 'bronze_bar')} bronze bars (${(bronzeSecs / 60).toFixed(1)} min)`);
   gatherUntil(s, 'iron', 8);
+  while (s.player.skills.mining.level < NODE_TYPES.coal.level) gatherUntil(s, 'iron', countOf(s, 'iron_ore') + 3);
   assert(s.player.skills.mining.level >= NODE_TYPES.coal.level, `mined ${countOf(s, 'iron_ore')} iron ore: Mining is now level ${s.player.skills.mining.level}, Coal Seams unlocked`);
-  gatherUntil(s, 'iron', 10);
-  gatherUntil(s, 'coal', 6);
-  assert(countOf(s, 'coal') >= 6 && countOf(s, 'iron_ore') >= 10, `gathered ${countOf(s, 'iron_ore')} Iron Ore + ${countOf(s, 'coal')} Coal (nodes yield in threes)`);
+  gatherUntil(s, 'iron', BLADE_PLAN.ore);
+  gatherUntil(s, 'coal', BLADE_PLAN.coal);
+  assert(countOf(s, 'coal') >= BLADE_PLAN.coal && countOf(s, 'iron_ore') >= BLADE_PLAN.ore, `gathered ${countOf(s, 'iron_ore')} Iron Ore + ${countOf(s, 'coal')} Coal (nodes yield in threes)`);
   gatherUntil(s, 'tree', 1);
   const mineSecs = (s.tick - t0) * TICK_DT;
   assert(countOf(s, 'logs') >= 1 && s.player.skills.woodcutting.level >= 1, 'chopped Logs for the hilt');
 
   assert(atForge(s), 'walked to the forge');
-  craft(s, 'iron_bar', 5);
-  assert(countOf(s, 'iron_bar') === 5 && s.player.skills.smithing.level >= 3, `smelted 5 Iron Bars: Smithing ${s.player.skills.smithing.level}`);
-  craft(s, 'steel_bar', 3);
-  assert(countOf(s, 'steel_bar') === 3 && s.player.skills.smithing.level >= 4, `hardened 3 Steel Bars: Smithing ${s.player.skills.smithing.level}`);
+  craft(s, 'iron_bar', BLADE_PLAN.bars);
+  assert(countOf(s, 'iron_bar') >= BLADE_PLAN.bars && s.player.skills.smithing.level >= recipeById('steel_bar')!.level, `smelted ${BLADE_PLAN.bars} Iron Bars: Smithing ${s.player.skills.smithing.level} (steel wants ${recipeById('steel_bar')!.level})`);
+  craft(s, 'steel_bar', BLADE_PLAN.steel);
+  assert(countOf(s, 'steel_bar') >= BLADE_PLAN.steel && s.player.skills.smithing.level >= recipeById('forged_blade')!.level, `hardened ${BLADE_PLAN.steel} Steel Bars: Smithing ${s.player.skills.smithing.level} (the blade wants ${recipeById('forged_blade')!.level})`);
   craft(s, 'forged_blade', 1);
   const pathSecs = (s.tick - t0) * TICK_DT;
   assert(countOf(s, 'forged_blade') === 1, `forged the Forgemaster's Blade (ore-to-weapon ${pathSecs.toFixed(0)}s game time; gathering ${mineSecs.toFixed(0)}s)`);
   console.log(`  ore-to-weapon path: ${(pathSecs / 60).toFixed(1)} min (mining/chopping ${(mineSecs / 60).toFixed(1)} min, smithing ${((pathSecs - mineSecs) / 60).toFixed(1)} min, incl. walking)`);
-  assert(pathSecs >= 120 && pathSecs <= 480, 'path takes a few minutes of play (2 to 8 min)');
+  assert(pathSecs >= 480 && pathSecs <= 1500, `from the first swing to the blade is a stretch of play, not a few minutes (${(pathSecs / 60).toFixed(0)} min for a bot that never idles; 8 to 25 wanted)`);
 
   // 4. equip it; counterfactual at the same level without it
-  const noBlade = atLevel;
+  // (a few minutes of mining draw a few fights through the bot's self-defence, which has levelled it past the level this is about)
+  s.player.combat.xp = xpForLevel(combatLevel); s.player.combat.level = combatLevel; refreshPlayerStats(s, true);
+  const noBlade = structuredClone(s);
   noBlade.player.inventory.fill(null);
   s.player.hp = s.player.maxHp; s.player.energy = s.player.maxEnergy; s.player.cd.fill(0); s.player.outOfCombat = 99;
   tick(s, { inv: [{ k: 'equip', slot: s.player.inventory.findIndex(x => x?.id === 'forged_blade') }] });
@@ -839,7 +885,13 @@ section('M4 quest: NPC, dialogue gating, stage transitions, kill credit');
   assert(talkToNpc(s), 'walk back to the Warden');
   tick(s, { questAdvance: true });
   assert(stage(s) === 'forge', 'the Warden sends you to forge the blade');
-  assert(questView(s).lines.length === 3 && questView(s).target?.label === 'Iron Rock', 'tracker lists ore / coal / logs and points at iron: ' + lineTexts(s).join(' | '));
+  assert(questView(s).lines.length === 3 && questView(s).target?.label === 'Copper Rock' && lineTexts(s)[0].includes(`needs Mining ${NODE_TYPES.iron.level}`), 'tracker lists ore / coal / logs, and a new character under the iron gate is pointed at copper: ' + lineTexts(s).join(' | '));
+  addItem(s.player.inventory, 'copper_ore', 2);
+  grantXp(s, 'mining', xpForLevel(NODE_TYPES.tin.level) - s.player.skills.mining.xp, 0, 0);
+  assert(questView(s).target?.label === 'Tin Rock', 'with copper in the bag and tin open, the next practice is tin: the pairs come out even for the bars');
+  grantXp(s, 'mining', xpForLevel(NODE_TYPES.iron.level) - s.player.skills.mining.xp, 0, 0);
+  assert(questView(s).target?.label === 'Iron Rock' && !lineTexts(s)[0].includes('needs Mining'), 'at the iron gate the arrow moves to iron and the gate note goes');
+  s.player.inventory.fill(null); s.player.skills.mining.xp = 0; s.player.skills.mining.level = 1;
 
   // the stage ends the moment the blade exists, whatever route got it
   addItem(s.player.inventory, 'forged_blade', 1);
@@ -955,8 +1007,14 @@ section('M4 FULL GOLDEN PATH: one continuous run as a new character');
 
   // 4. the RuneScape loop, driven by the tracker's own numbers
   s.player.inventory = s.player.inventory.map(() => null); // keep loot from hunting out of the way of the counts below
+  assert(lineTexts(s)[0].includes(`needs Mining ${NODE_TYPES.iron.level}`) && questView(s).target?.label === 'Copper Rock', 'tracker: iron is out of reach, practise on copper first');
+  bronzeToIron(s); // what the tracker says: copper and tin, smelted to bronze, until iron opens
+  assert(!lineTexts(s)[0].includes('needs Mining'), 'tracker: the gate note is gone once Mining opens iron');
+  milestone(`bronze first: Mining ${s.player.skills.mining.level}, Smithing ${s.player.skills.smithing.level}, ${countOf(s, 'bronze_bar')} bronze bars`);
   gatherUntil(s, 'iron', BLADE_PLAN.ore);
   assert(lineTexts(s)[0] === `Mine Iron Ore: ${BLADE_PLAN.ore}/${BLADE_PLAN.ore}`, 'tracker: iron done (' + lineTexts(s)[0] + ')');
+  assert(lineTexts(s)[1].includes(`needs Mining ${NODE_TYPES.coal.level}`) === (s.player.skills.mining.level < NODE_TYPES.coal.level), 'tracker: coal says what it needs until Mining gets there');
+  while (s.player.skills.mining.level < NODE_TYPES.coal.level) gatherUntil(s, 'iron', countOf(s, 'iron_ore') + 3); // the arrow stays on iron: the seam is the next step up
   assert(s.player.skills.mining.level >= NODE_TYPES.coal.level, `Mining ${s.player.skills.mining.level}: coal unlocked by the iron`);
   gatherUntil(s, 'coal', BLADE_PLAN.coal);
   gatherUntil(s, 'tree', BLADE_PLAN.logs);
@@ -1608,7 +1666,7 @@ section('HOM-16 jump: leaves the ground, lands, and changes nothing about reach 
 
   // hopping breaks a gather, as moving does
   const g = quietState(410);
-  const node = g.nodes.find(n => n.type === 'iron')!;
+  const node = g.nodes.find(n => n.type === 'copper')!;
   tick(g, { interact: { k: 'node', id: node.id } });
   for (let n = 0; n < 2000 && g.interact; n++) tick(g);
   run(g, 0.5);
@@ -1762,10 +1820,11 @@ section('HOM-15 the cave stays out of the first quest');
 {
   const original = ['boar', 'boar', 'boar', 'wolf', 'wolf', 'wolf', 'brute', 'pup', 'pup', 'pup', 'hexer'];
   assert(SPAWNS.slice(0, original.length).map(x => x.type).join() === original.join(), 'the original eleven enemies keep their ids and places: the first 20 minutes are the same world');
-  assert(NODE_TYPES.mithril && ROCKS.every(r => r.type !== 'mithril') && ROCKS.length === 7, 'the ridge outside is unchanged: seven iron and coal rocks, no mithril');
+  const RIDGE = ROCKS.filter(r => r.type === 'iron' || r.type === 'coal'); // HOM-56: copper and tin were added to the surface after everything, so the ridge's own ore is the first seven nodes still
+  assert(NODE_TYPES.mithril && ROCKS.every(r => r.type !== 'mithril') && RIDGE.length === 7 && ROCKS.length === 13 && ROCKS.slice(0, 7).every(r => RIDGE.includes(r)), 'the ridge outside is unchanged: seven iron and coal rocks, no mithril, and copper and tin only after them');
   const s = createState(902);
   const kinds = s.nodes.map(n => n.type);
-  assert(kinds.slice(0, ROCKS.length + TREES.length).join() === [...ROCKS.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(ROCKS.length + TREES.length).every(t => t === 'mithril' || t === 'coal' || t === 'adamant' || NODE_TYPES[t].skill === 'fishing'), // HOM-46: Saltmarrow's adamant is added after the cave's, so it too leaves every older id alone; HOM-48: and its fishing spots after that
+  assert(kinds.slice(0, RIDGE.length + TREES.length).join() === [...RIDGE.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(RIDGE.length + TREES.length).every(t => t === 'mithril' || t === 'coal' || t === 'adamant' || t === 'copper' || t === 'tin' || NODE_TYPES[t].skill === 'fishing') && kinds.slice(-6).every(t => t === 'copper' || t === 'tin'), // HOM-46: Saltmarrow's adamant is added after the cave's, so it too leaves every older id alone; HOM-48: and its fishing spots after that; HOM-56: and copper and tin last of all
     'cave nodes are added after every existing node, so old node ids (and saves) keep meaning the same rock');
   const caveFolk = SPAWNS.filter(sp => inCave(sp.x, sp.z));
   const ridge = [...ROCKS, ...TREES, LANDMARKS.npc];
@@ -1869,17 +1928,17 @@ section('HOM-15 mithril: a Mining gate above coal, a Smithing ladder, and gear a
   assert(veins * NODE_TYPES.mithril.charges >= MITHRIL_PLAN.ore, `${veins} veins of ${NODE_TYPES.mithril.charges} give ${veins * NODE_TYPES.mithril.charges} ore without waiting on a respawn: the plan wants ${MITHRIL_PLAN.ore}`);
   assert(CAVE_ROCKS.some(r => r.type === 'coal'), 'there is coal inside the cave too');
 
-  // the gate: a level-8 miner is turned away, a level-9 one is not
+  // the gate: a miner one level short is turned away, one at the level is not
   const g = quietState(911);
   const vein = g.nodes.find(n => n.type === 'mithril')!;
-  g.player.skills.mining.xp = xpForLevel(8); g.player.skills.mining.level = 8;
+  g.player.skills.mining.xp = xpForLevel(NODE_TYPES.mithril.level - 1); g.player.skills.mining.level = NODE_TYPES.mithril.level - 1;
   g.player.x = vein.x + 2; g.player.z = vein.z;
   tick(g, { interact: { k: 'node', id: vein.id } });
-  assert(hasEvent(g, e => e.t === 'actionfail' && e.reason === 'level' && e.need === NODE_TYPES.mithril.level), `Mining 8 is refused (needs ${NODE_TYPES.mithril.level}) and told so`);
-  g.player.skills.mining.xp = xpForLevel(9); g.player.skills.mining.level = 9;
+  assert(hasEvent(g, e => e.t === 'actionfail' && e.reason === 'level' && e.need === NODE_TYPES.mithril.level), `Mining ${NODE_TYPES.mithril.level - 1} is refused (needs ${NODE_TYPES.mithril.level}) and told so`);
+  g.player.skills.mining.xp = xpForLevel(NODE_TYPES.mithril.level); g.player.skills.mining.level = NODE_TYPES.mithril.level;
   tick(g, { interact: { k: 'node', id: vein.id } });
   untilIdle(g);
-  assert(countOf(g, 'mithril_ore') >= 1 && g.player.skills.mining.xp > xpForLevel(9), 'Mining 9 gets ore and XP');
+  assert(countOf(g, 'mithril_ore') >= 1 && g.player.skills.mining.xp > xpForLevel(NODE_TYPES.mithril.level), `Mining ${NODE_TYPES.mithril.level} gets ore and XP`);
 
   // the ladder
   const rec = (id: string) => RECIPES.find(r => r.id === id)!;
@@ -1897,16 +1956,16 @@ section('HOM-15 mithril: a Mining gate above coal, a Smithing ladder, and gear a
   const f = quietState(912);
   f.player.x = LANDMARKS.forge.x - 4; f.player.z = LANDMARKS.forge.z + 2;
   addItem(f.player.inventory, 'mithril_ore', 9); addItem(f.player.inventory, 'coal', 18);
-  f.player.skills.smithing.xp = xpForLevel(6); f.player.skills.smithing.level = 6;
+  f.player.skills.smithing.xp = xpForLevel(bar.level - 1); f.player.skills.smithing.level = bar.level - 1;
   tick(f, { craft: { recipe: 'mithril_bar', count: 1 } });
-  assert(hasEvent(f, e => e.t === 'actionfail' && e.reason === 'level' && e.need === bar.level) && countOf(f, 'mithril_bar') === 0, `Smithing 6 cannot smelt a bar (needs ${bar.level})`);
+  assert(hasEvent(f, e => e.t === 'actionfail' && e.reason === 'level' && e.need === bar.level) && countOf(f, 'mithril_bar') === 0, `Smithing ${bar.level - 1} cannot smelt a bar (needs ${bar.level})`);
   grantXp(f, 'smithing', xpForLevel(bar.level) - f.player.skills.smithing.xp, 0, 0);
   const ore0 = countOf(f, 'mithril_ore'), coal0 = countOf(f, 'coal');
   craft(f, 'mithril_bar', 9);
   const bars = countOf(f, 'mithril_bar');
   assert(bars >= 9 && ore0 - countOf(f, 'mithril_ore') <= 9 && coal0 - countOf(f, 'coal') <= 18,
     `nine bars take no more than nine ore and eighteen coal (${bars} bars from ${ore0 - countOf(f, 'mithril_ore')} ore)`);
-  assert(f.player.skills.smithing.level >= rec('mithril_chestplate').level, `the bars alone carry Smithing to ${f.player.skills.smithing.level}: every piece is open without grinding`);
+  assert(f.player.skills.smithing.level >= rec('mithril_helm').level, `the bars carry Smithing to ${f.player.skills.smithing.level}: the helm is open, and each piece's own XP opens the next, so only getting to the bar is a grind`);
   for (const id of MITHRIL_SET) craft(f, id, 1);
   assert(MITHRIL_SET.every(id => countOf(f, id) === 1) && bars - countOf(f, 'mithril_bar') === MITHRIL_PLAN.bars, 'helm, greaves and chestplate smithed from the nine bars');
 
@@ -2046,10 +2105,14 @@ section('HOM-15 second quest: it starts where the first ends, on the same machin
   tick(s);
   assert(secondStage(s) === 'delve' && activeQuestView(s).lines.some(l => /Cave Ravagers slain: 3\/3/.test(l.text) && l.done), 'kills alone do not end the delve: it wants the ore too');
   let v = activeQuestView(s);
-  assert(v.lines[0].text.startsWith(`Mine Mithril Ore: 0/${MITHRIL_PLAN.ore} (needs Mining 9)`) && v.target?.label === 'Coal Seam', 'with Mining below the gate the tracker says so and sends you to practise on coal');
-  s.player.skills.mining.xp = xpForLevel(9); s.player.skills.mining.level = 9;
+  assert(v.lines[0].text.startsWith(`Mine Mithril Ore: 0/${MITHRIL_PLAN.ore} (needs Mining ${NODE_TYPES.mithril.level})`) && v.target?.label === 'Copper Rock', 'with Mining below the gate the tracker says so and sends a character with no rock open to copper');
+  s.player.skills.mining.xp = xpForLevel(NODE_TYPES.iron.level); s.player.skills.mining.level = NODE_TYPES.iron.level;
+  assert(activeQuestView(s).target?.label === 'Iron Rock', 'with iron open, practice is iron');
+  s.player.skills.mining.xp = xpForLevel(NODE_TYPES.coal.level); s.player.skills.mining.level = NODE_TYPES.coal.level;
+  assert(activeQuestView(s).target?.label === 'Coal Seam', 'with coal open, practice is coal: the veins are the next step up');
+  s.player.skills.mining.xp = xpForLevel(NODE_TYPES.mithril.level); s.player.skills.mining.level = NODE_TYPES.mithril.level;
   v = activeQuestView(s);
-  assert(v.target?.label === 'Mithril Vein' && !v.lines[0].text.includes('needs'), 'at Mining 9 it points at the veins');
+  assert(v.target?.label === 'Mithril Vein' && !v.lines[0].text.includes('needs'), `at Mining ${NODE_TYPES.mithril.level} it points at the veins`);
   addItem(s.player.inventory, 'mithril_ore', 4); addItem(s.player.inventory, 'mithril_bar', 5);
   tick(s);
   assert(secondStage(s) === 'armour' && sawQuest(s, 'stage'), 'three kills and nine ore (ore already smelted counts) hands the quest on to the forge');
@@ -2060,8 +2123,9 @@ section('HOM-15 second quest: it starts where the first ends, on the same machin
   s.player.inventory.forEach((_, i) => { s.player.inventory[i] = null; });
   addItem(s.player.inventory, 'mithril_helm', 1);
   assert(activeQuestView(s).lines[1].text.startsWith(`Smelt Mithril Bars at the forge: 2/`) && activeQuestView(s).lines[2].done && !activeQuestView(s).lines[3].done, 'a smithed piece counts for its bars and ticks its own line');
-  s.player.skills.smithing.xp = xpForLevel(7); s.player.skills.smithing.level = 7;
-  assert(/Greaves \(needs Smithing 9\)/.test(activeQuestView(s).lines[3].text) && /Chestplate \(needs Smithing 10\)/.test(activeQuestView(s).lines[4].text), 'pieces above your Smithing say what they need');
+  const helmLevel = recipeById('mithril_helm')!.level;
+  s.player.skills.smithing.xp = xpForLevel(helmLevel); s.player.skills.smithing.level = helmLevel;
+  assert(activeQuestView(s).lines[3].text.endsWith(`Greaves (needs Smithing ${recipeById('mithril_greaves')!.level})`) && activeQuestView(s).lines[4].text.endsWith(`Chestplate (needs Smithing ${recipeById('mithril_chestplate')!.level})`), 'pieces above your Smithing say what they need');
   addItem(s.player.inventory, 'mithril_greaves', 1);
   tick(s);
   assert(secondStage(s) === 'armour', 'two pieces of three is not the set');
@@ -2166,9 +2230,7 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
   for (const [type, goal] of Object.entries(HUNT_GOALS)) for (let guard = 0; (s.quest.kills[type] ?? 0) < goal && guard < 20; guard++) huntOne(s, type);
   assert(stage(s) === 'report1', 'hunt done');
   talkToNpc(s); tick(s, { questAdvance: true });
-  gatherUntil(s, 'iron', BLADE_PLAN.ore); gatherUntil(s, 'coal', BLADE_PLAN.coal); gatherUntil(s, 'tree', BLADE_PLAN.logs);
-  assert(atForge(s), 'at the forge');
-  craft(s, 'iron_bar', BLADE_PLAN.bars); craft(s, 'steel_bar', BLADE_PLAN.steel); craft(s, 'forged_blade', 1);
+  smithTheBlade(s);
   assert(stage(s) === 'brute', 'blade forged');
   dressAndTidy(s);
   const brute = enemyOf(s, 'brute');
@@ -2196,7 +2258,7 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
 
   // 4. the gate: a ridge miner has not earned the veins yet; practise on coal first, as the tracker says
   let guard = 0;
-  while (s.player.skills.mining.level < NODE_TYPES.mithril.level && guard++ < 30) { gatherUntil(s, 'coal', countOf(s, 'coal') + 3); }
+  while (s.player.skills.mining.level < NODE_TYPES.mithril.level && guard++ < 150) { gatherUntil(s, 'coal', countOf(s, 'coal') + 3); }
   assert(s.player.skills.mining.level >= NODE_TYPES.mithril.level, `Mining ${s.player.skills.mining.level} from coal: the veins are open`);
   milestone(`Mining ${s.player.skills.mining.level}`);
 
@@ -2218,15 +2280,13 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
   gatherUntil(s, 'coal', MITHRIL_PLAN.coal);
   assert(countOf(s, 'coal') >= MITHRIL_PLAN.coal, `${countOf(s, 'coal')} coal in hand`);
   assert(atForge(s), 'out of the cave and back at the forge');
-  if (s.player.skills.smithing.level < recipeById('mithril_bar')!.level) {
-    const sm0 = s.player.skills.smithing.level;
-    gatherUntil(s, 'iron', countOf(s, 'iron_ore') + 4); atForge(s); craft(s, 'iron_bar', countOf(s, 'iron_bar') + 2);
-    console.log(`  (Smithing ${sm0} was under the bar gate: two iron bars of practice first, now ${s.player.skills.smithing.level})`);
-  }
+  const smBefore = s.player.skills.smithing.level;
+  practiseSmithing(s, recipeById('mithril_bar')!.level, MITHRIL_PLAN.coal);
+  assert(s.player.skills.smithing.level >= recipeById('mithril_bar')!.level, `Smithing ${smBefore} was under the bar gate (${recipeById('mithril_bar')!.level}): steel bars of practice first, now ${s.player.skills.smithing.level}`);
   const saved = deserialize(serialize(s))!;
   assert(saved.quest.second === 'armour' && countOf(saved, 'mithril_ore') === countOf(s, 'mithril_ore'), 'saved at the forge door and reloaded');
   craft(s, 'mithril_bar', MITHRIL_PLAN.bars);
-  assert(countOf(s, 'mithril_bar') === MITHRIL_PLAN.bars, 'nine mithril bars');
+  assert(countOf(s, 'mithril_bar') >= MITHRIL_PLAN.bars, 'nine mithril bars');
   for (const id of MITHRIL_SET) craft(s, id, 1);
   assert(MITHRIL_SET.every(id => countOf(s, id) === 1) && secondStage(s) === 'warden', 'the set is smithed and the quest moves on to the Warden without any more talking');
   milestone(`mithril set smithed, Smithing ${s.player.skills.smithing.level}`);
@@ -2507,20 +2567,20 @@ section('HOM-35 audio events: footfalls on the ground, strikes while a gather ru
 
   // gathering: a strike every 1.1s of the cycle, before the yield
   const g = quietState(355);
-  const rock = nodesOf(g, 'iron')[0];
+  const rock = nodesOf(g, 'copper')[0];
   g.player.x = rock.x + rock.r + 1.2; g.player.z = rock.z;
   tick(g, { interact: { k: 'node', id: rock.id } });
   assert(g.player.action?.k === 'gather', 'in reach, the gather begins');
   const strikes: number[] = [];
   let yields = 0;
-  for (let n = 0; n < Math.round((NODE_TYPES.iron.time + 0.5) / TICK_DT); n++) {
+  for (let n = 0; n < Math.round((NODE_TYPES.copper.time + 0.5) / TICK_DT); n++) {
     tick(g);
     for (const ev of g.events as Ev[]) {
       if (ev.t === 'gather') { assert(ev.skill === 'mining' && ev.node === rock.id, 'a strike names the skill and the node'); strikes.push(n * TICK_DT); }
       if (ev.t === 'xp') yields++;
     }
   }
-  assert(strikes.length === 3 && strikes.every((t, i) => Math.abs(t - 1.1 * (i + 1)) < 0.1), `a ${NODE_TYPES.iron.time}s iron mine strikes three times at about 1.1s, 2.2s, 3.3s (${strikes.map(t => t.toFixed(2)).join(', ')})`);
+  assert(strikes.length === 3 && strikes.every((t, i) => Math.abs(t - 1.1 * (i + 1)) < 0.1), `a ${NODE_TYPES.copper.time}s copper mine strikes three times at about 1.1s, 2.2s, 3.3s (${strikes.map(t => t.toFixed(2)).join(', ')})`);
   assert(yields === 1, 'one yield by the end of the first cycle, after the third strike');
   const t2 = quietState(356);
   const tree = nodesOf(t2, 'tree')[0];
@@ -3071,7 +3131,7 @@ section('HOM-46 XP parity: ground you have outgrown pays less');
 }
 
 // ---------------------------------------------------------------------------
-section('HOM-46 adamant: Mining 17, a smithed set, and gear that asks for a combat level');
+section('HOM-46 adamant: Mining 28 (HOM-56), a smithed set, and gear that asks for a combat level');
 {
   const sets = ['adamant_helm', 'adamant_chestplate', 'adamant_greaves', 'adamant_blade'];
   assert(sets.every(id => ITEMS[id].req?.combat === 14 && ITEMS[id].tier === 5), 'every adamant piece is tier 5 and needs combat 14');
@@ -3098,27 +3158,27 @@ section('HOM-46 adamant: Mining 17, a smithed set, and gear that asks for a comb
   // the veins: five of them, after every older node, gated at Mining 17
   const g = createState(4612);
   const veins = nodesOf(g, 'adamant');
-  assert(veins.length === 5 && veins.every(n => n.id > 24) && g.nodes.slice(0, 24).every(n => n.type !== 'adamant') && NODE_TYPES.adamant.level === 17 && NODE_TYPES.adamant.item === 'adamant_ore', 'five adamant veins on the Strand\'s cliffs, ids after the old 24, Mining 17');
-  g.player.skills.mining.xp = xpForLevel(16); g.player.skills.mining.level = 16;
+  assert(veins.length === 5 && veins.every(n => n.id > 24) && g.nodes.slice(0, 24).every(n => n.type !== 'adamant') && NODE_TYPES.adamant.level === 28 && NODE_TYPES.adamant.item === 'adamant_ore', 'five adamant veins on the Strand\'s cliffs, ids after the old 24, Mining 28');
+  g.player.skills.mining.xp = xpForLevel(27); g.player.skills.mining.level = 27;
   g.player.x = veins[0].x; g.player.z = veins[0].z + 3;
   for (const e of g.enemies) { e.state = 'dead'; e.respawnIn = 1e9; }
   tick(g, { interact: { k: 'node', id: veins[0].id } });
-  assert(hasEvent(g, e => e.t === 'actionfail' && e.reason === 'level' && e.need === 17), 'at Mining 16 a vein refuses you, naming the level');
-  g.player.skills.mining.xp = xpForLevel(17); g.player.skills.mining.level = 17;
+  assert(hasEvent(g, e => e.t === 'actionfail' && e.reason === 'level' && e.need === 28), 'at Mining 27 a vein refuses you, naming the level');
+  g.player.skills.mining.xp = xpForLevel(28); g.player.skills.mining.level = 28;
   tick(g, { interact: { k: 'node', id: veins[0].id } });
   run(g, 7);
-  assert(countOf(g, 'adamant_ore') >= 1, 'at Mining 17 it yields adamant ore');
+  assert(countOf(g, 'adamant_ore') >= 1, 'at Mining 28 it yields adamant ore');
   const cost = (L: number) => xpForLevel(L + 1) - xpForLevel(L);
-  assert(Math.abs(NODE_TYPES.adamant.xp - 0.42 * cost(17)) <= 2, `a swing pays 0.42 x the XP from level 17 to 18 (${NODE_TYPES.adamant.xp}), the bible's rule for a gathering action`);
-  for (const [id, L] of [['adamant_bar', 14], ['adamant_helm', 15], ['adamant_blade', 16], ['adamant_greaves', 17], ['adamant_chestplate', 19]] as const) {
+  assert(Math.abs(NODE_TYPES.adamant.xp - 0.12 * cost(28)) <= 2, `a swing pays 0.12 x the XP from level 28 to 29 (${NODE_TYPES.adamant.xp}), the metal ladder's rule for a gathering action`);
+  for (const [id, L, f] of [['adamant_bar', 24, 0.25], ['adamant_helm', 25, 0.35], ['adamant_blade', 26, 0.4], ['adamant_greaves', 27, 0.35], ['adamant_chestplate', 29, 0.35]] as const) {
     const r = recipeById(id)!;
-    assert(r.level === L && Math.abs(r.xp - 0.6 * cost(L)) <= 5, `${r.name}: Smithing ${L}, ${r.xp} XP (0.6 x ${cost(L)} to the nearest 5)`);
+    assert(r.level === L && Math.abs(r.xp - f * cost(L)) <= 5, `${r.name}: Smithing ${L}, ${r.xp} XP (${f} x ${cost(L)} to the nearest 5)`);
   }
   assert(recipeById('adamant_bar')!.inputs.some(i => i.id === 'coal' && i.qty === 3) && recipeById('adamant_blade')!.inputs.some(i => i.id === 'adamant_bar' && i.qty === 3), 'a bar is one ore and three coal, a blade three bars and a log');
 
   // and the whole chain at the forge
   const f = quietState(4613);
-  f.player.skills.smithing.xp = xpForLevel(19); f.player.skills.smithing.level = 19;
+  f.player.skills.smithing.xp = xpForLevel(29); f.player.skills.smithing.level = 29;
   addItem(f.player.inventory, 'adamant_ore', 12); addItem(f.player.inventory, 'coal', 36); addItem(f.player.inventory, 'logs', 1);
   f.player.x = LANDMARKS.forge.x - 4; f.player.z = LANDMARKS.forge.z + 3;
   craft(f, 'adamant_bar', 12);
@@ -3308,6 +3368,94 @@ section('HOM-46 the road and the Strand: the bible\'s tables, as data');
   const gate = { x: 29, z: 8 };
   assert(SPAWNS.filter(sp => sp.x > 30).every(sp => route(gate, sp) !== null), 'every enemy on the road and the Strand can be walked to from Hale\'s gate');
   assert(createState(4650).enemies.filter(e => e.id > 20).every((e, i) => e.type === SPAWNS[20 + i].type), 'new enemies take ids 21 on, after every older one');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each with distance between the rungs');
+{
+  const MINING = ['copper', 'tin', 'iron', 'coal', 'mithril', 'adamant'];
+  const lv = (t: string) => NODE_TYPES[t].level, rec = (id: string) => recipeById(id)!;
+  assert(MINING.every(t => NODE_TYPES[t].skill === 'mining') && lv('copper') === 1, 'the ladder starts at copper, Mining 1');
+  assert(MINING.every((t, k) => k === 0 || lv(t) > lv(MINING[k - 1])), `and climbs: ${MINING.map(t => `${t} ${lv(t)}`).join(' < ')}`);
+  assert(MINING.every((t, k) => k < 2 || lv(t) - lv(MINING[k - 1]) >= 3), 'iron, coal, mithril and adamant are each at least three levels past the last');
+  const cost = (L: number) => xpForLevel(L + 1) - xpForLevel(L);
+  assert(MINING.every(t => Math.abs(NODE_TYPES[t].xp - 0.12 * cost(lv(t))) <= 2), `a swing pays 0.12 x the XP from its own level to the next: ${MINING.map(t => `${t} ${NODE_TYPES[t].xp}`).join(', ')}`);
+
+  // how many swings the climb takes, mining the best rock open at each level, against the ladder it replaces
+  type Rock = { level: number; xp: number };
+  const swingsTo = (target: number, rocks: Rock[]) => {
+    let xp = 0, swings = 0;
+    while (levelForXp(xp) < target && swings < 5000) { xp += rocks.filter(r => r.level <= levelForXp(xp)).reduce((a, b) => b.xp > a.xp ? b : a).xp; swings++; }
+    return swings;
+  };
+  const OLD: Rock[] = [{ level: 1, xp: 35 }, { level: 4, xp: 50 }, { level: 9, xp: 80 }, { level: 17, xp: 170 }];
+  const NEW: Rock[] = MINING.map(t => ({ level: lv(t), xp: NODE_TYPES[t].xp }));
+  const was = swingsTo(17, OLD), now = swingsTo(lv('adamant'), NEW);
+  console.log(`  Mining to the adamant veins: ${was} swings on the first ladder (Mining 17), ${now} now (Mining ${lv('adamant')}); to mithril ${swingsTo(9, OLD)} then, ${swingsTo(lv('mithril'), NEW)} now`);
+  assert(now >= 5 * was, `climbing to adamant is at least five times the swings it was (${now} against ${was})`);
+  assert(swingsTo(lv('mithril'), NEW) >= 4 * swingsTo(9, OLD), 'and to mithril at least four times');
+
+  // smithing: bronze first, then iron and steel, then mithril, then adamant, every gate above the last, and a set that is a stretch in itself
+  const SM = ['bronze_bar', 'bronze_sword', 'bronze_helm', 'bronze_greaves', 'bronze_chestplate', 'iron_bar', 'steel_bar', 'forged_blade', 'mithril_bar', 'mithril_helm', 'mithril_greaves', 'mithril_chestplate', 'warden_edge', 'adamant_bar', 'adamant_helm', 'adamant_blade', 'adamant_greaves', 'adamant_chestplate'];
+  assert(rec('bronze_bar').level === 1 && SM.every((id, k) => k === 0 || rec(id).level > rec(SM[k - 1]).level), `Smithing opens with bronze at 1 and every gate is above the last: ${SM.map(id => rec(id).level).join(' < ')}`);
+  const tiers = [['bronze', 'bronze_bar'], ['iron and steel', 'iron_bar'], ['mithril', 'mithril_bar'], ['adamant', 'adamant_bar']] as const;
+  const spans = tiers.map(([, id], k) => (k + 1 < tiers.length ? rec(tiers[k + 1][1]).level : rec('adamant_chestplate').level + 1) - rec(id).level);
+  console.log(`  Smithing levels in each tier: ${tiers.map(([n], k) => `${n} ${spans[k]}`).join(', ')} (the first ladder: iron and steel 6, mithril 7, adamant 6: the levels in a tier are about what they were, it is the XP each level costs, and so the swings, that went up)`);
+  assert(spans.every(n => n >= 5) && spans[0] >= 6 && spans[1] >= 8, 'every tier is worn across at least five Smithing levels, bronze six and iron eight');
+  assert(rec('bronze_chestplate').level < rec('iron_bar').level && lv('tin') < lv('iron'), 'the whole bronze set is open before the iron bar is');
+  assert(rec('bronze_bar').inputs.length === 2 && rec('bronze_bar').inputs.some(i => i.id === 'copper_ore') && rec('bronze_bar').inputs.some(i => i.id === 'tin_ore'), 'a bronze bar is one copper ore and one tin ore');
+  // the quest plan is the recipes, with the practice the gates want on top
+  const P = BLADE_PLAN;
+  assert(P.ore === 2 * P.bars && P.coal === 2 * P.steel && P.bars >= P.steel && P.steel >= 3 && P.logs === 1, 'the blade plan is whole recipes: two ore to a bar, two coal to a steel bar, three steel and a log to the blade, and spare bars to practise on');
+  assert(rec('steel_bar').inputs.some(i => i.id === 'coal' && i.qty === 2) && rec('iron_bar').inputs.some(i => i.id === 'iron_ore' && i.qty === 2), 'iron bars take two ore, steel two coal');
+
+  // gear: bronze is a step above hide and a step below the iron the enemies drop
+  const stats = (id: string) => ITEMS[id].stats!;
+  const bronzeArmor = deriveStats({ ...emptyEquipment(), head: 'bronze_helm', chest: 'bronze_chestplate', legs: 'bronze_greaves' }).armor;
+  const hideArmor = deriveStats({ ...emptyEquipment(), head: 'leather_cap', chest: 'hide_jerkin', legs: 'hide_leggings' }).armor;
+  const ironArmor = deriveStats({ ...emptyEquipment(), head: 'iron_helm', chest: 'iron_chestplate', legs: 'iron_greaves' }).armor;
+  assert(hideArmor < bronzeArmor && bronzeArmor < ironArmor, `a bronze set is ${bronzeArmor} armour: above hide (${hideArmor}) and below iron (${ironArmor})`);
+  assert(stats('rusty_blade').damage! < stats('bronze_sword').damage! && stats('bronze_sword').damage! < stats('iron_sword').damage!, 'a bronze sword hits harder than a rusty blade and softer than an iron sword');
+  assert(BRONZE_SET.map(id => ITEMS[id].slot).sort().join() === 'chest,head,legs,weapon' && BRONZE_SET.every(id => ITEMS[id].tier === 1 && ITEMS[id].req === undefined && ITEMS[id].dropWeight === 0 && rec(id)), 'one piece per slot, common tier, no requirement, made at the forge');
+  const bronzeIds: string[] = [...BRONZE_SET, 'copper_ore', 'tin_ore', 'bronze_bar'];
+  assert(!Object.values(DROP_TABLES).some(t => t.entries.some(e => bronzeIds.includes(e.id))) && ![...SHOP_STOCK, ...HARBOUR_STOCK].some(id => bronzeIds.includes(id)), 'bronze is only smithed: no enemy drops it and no merchant sells it');
+  assert(BRONZE_SET.every(id => appearanceOf(id).rung >= 1 && appearanceOf(id).tint > 0), 'every bronze piece resolves to a worn look (the tier fallback)');
+  console.log(`  bronze worn look is the tier-1 fallback, identical to hide: ${BRONZE_SET.every(id => appearanceOf(id).tint === appearanceOf('hide_jerkin').tint) ? 'yes, it needs a look of its own' : 'no'}`);
+
+  // where a level-1 character meets it
+  const s = quietState(5601), start = { x: s.player.x, z: s.player.z };
+  const nearest = (type: string) => nodesOf(s, type).reduce((a, b) => dist2(a, start) < dist2(b, start) ? a : b);
+  assert(nodesOf(s, 'copper').length >= 3 && nodesOf(s, 'tin').length >= 3 && dist2(nearest('copper'), start) <= 40 && dist2(nearest('tin'), start) <= 40, `copper and tin are in Hale's clearing and on the ridge, ${dist2(nearest('copper'), start).toFixed(0)} and ${dist2(nearest('tin'), start).toFixed(0)} units from where a new game starts`);
+  assert(nodesOf(s, 'copper').some(n => dist2(n, LANDMARKS.forge) < 15) && nodesOf(s, 'copper').some(n => n.z < -20 && n.x < 15) && nodesOf(s, 'tin').some(n => dist2(n, LANDMARKS.forge) < 15) && nodesOf(s, 'tin').some(n => n.z < -20 && n.x < 15), 'both by the forge and on the ridge');
+  const wake = (n: { x: number; z: number }) => SPAWNS.slice(0, 11).every(sp => dist2(sp, n) > aggroRadius(ENEMY_TYPES[sp.type], 1) + 1);
+  assert(nodesOf(s, 'copper').concat(nodesOf(s, 'tin')).every(wake), 'no copper or tin rock is inside the aggro radius of any of the clearing\'s enemies, a level-1 character\'s included');
+
+  // the whole bronze road, played: copper until tin opens, tin, smelt, make the set, put it on, with iron never touched
+  const g = quietState(5602);
+  for (let guard = 0; guard < 80 && (g.player.skills.smithing.level < rec('bronze_chestplate').level || countOf(g, 'bronze_bar') < 12); guard++) {
+    gatherUntil(g, 'copper', countOf(g, 'copper_ore') + 3);
+    if (g.player.skills.mining.level >= lv('tin')) gatherUntil(g, 'tin', countOf(g, 'tin_ore') + 3);
+    if (countOf(g, 'copper_ore') >= 6 && countOf(g, 'tin_ore') >= 6) { atForge(g); craft(g, 'bronze_bar', countOf(g, 'bronze_bar') + Math.min(countOf(g, 'copper_ore'), countOf(g, 'tin_ore'))); }
+  }
+  assert(countOf(g, 'iron_ore') === 0, 'with no iron ore ever mined');
+  gatherUntil(g, 'tree', 1);
+  atForge(g);
+  for (const id of BRONZE_SET) craft(g, id, 1);
+  assert(BRONZE_SET.every(id => countOf(g, id) === 1), `a character who has only ever mined copper and tin smelted bronze and made the sword, helm, greaves and chestplate (Mining ${g.player.skills.mining.level}, Smithing ${g.player.skills.smithing.level})`);
+  for (const id of BRONZE_SET) tick(g, { inv: [{ k: 'equip', slot: g.player.inventory.findIndex(x => x?.id === id) }] });
+  assert(BRONZE_SET.every(id => Object.values(g.player.equipment).includes(id)) && g.player.stats.armor === bronzeArmor && g.player.stats.weaponDamage === stats('bronze_sword').damage, `and wore it at combat 1: ${g.player.stats.armor} armour, +${g.player.stats.weaponDamage} damage`);
+
+  // saves: nothing is renamed or removed, XP is what is stored, and the new nodes arrive full
+  const old = createState(5603);
+  for (const e of old.enemies) { e.state = 'dead'; e.respawnIn = 1e9; }
+  grantXp(old, 'mining', xpForLevel(17), 0, 0); grantXp(old, 'smithing', xpForLevel(19), 0, 0);
+  old.player.equipment.chest = 'mithril_chestplate'; old.player.equipment.weapon = 'warden_edge';
+  old.nodes[0].charges = 1; old.nodes[0].respawnIn = 0;
+  const file = JSON.parse(serialize(old));
+  file.nodes = file.nodes.filter((n: { id: number }) => n.id <= 36); // a save from before copper and tin: the world had 36 nodes
+  const back = deserialize(JSON.stringify(file));
+  assert(back !== null && back.nodes.length === 42 && back.nodes[0].charges === 1 && back.nodes.slice(36).every(n => n.charges === NODE_TYPES[n.type].charges), 'an old save still loads: its nodes keep their ids and state, and the six new ones stand full');
+  assert(back !== null && back.player.skills.mining.level === 17 && back.player.skills.smithing.level === 19 && back.player.equipment.chest === 'mithril_chestplate' && back.player.equipment.weapon === 'warden_edge', 'a Mining 17, Smithing 19 character keeps both levels and the gear they wear: only the gates moved above them');
 }
 
 console.log(`\nAll ${checks} checks passed.`);

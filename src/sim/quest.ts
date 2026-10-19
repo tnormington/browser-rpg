@@ -37,10 +37,12 @@ export const TALK_RANGE = 7;                       // centre to centre: advancin
 export const HUNT_GOALS: Record<string, number> = { boar: 4, wolf: 3 };
 const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves', ravager: 'Cave Ravagers', footpad: 'Footpads', toll_captain: 'Toll Captain' };
 /**
- * What the Forgemaster's Blade costs in raw terms (see RECIPES), padded to the XP the gates need: Steel wants Smithing 3
- * (five bars of practice, two more than the three the blade uses) and Coal wants Mining 4 (eight ore of XP, ten gathered).
+ * What the Forgemaster's Blade costs in raw terms (see RECIPES): three steel bars, each an iron bar (two ore) and two coal, and a log. The plan is
+ * padded past that (six iron bars, four steel) so the bars it asks for are also the practice the gates want (Steel Smithing 8, the blade Smithing 9).
+ * What it cannot pad is Mining: iron wants 7 and coal 10, so a new character comes to it by way of copper and tin, and the bronze they smelt
+ * on the way is what carries Smithing up to the iron bar's gate.
  */
-export const BLADE_PLAN = { ore: 10, coal: 6, logs: 1, bars: 5, steel: 3 };
+export const BLADE_PLAN = { ore: 12, coal: 8, logs: 1, bars: 6, steel: 4 };
 export const RECOMMENDED_COMBAT = 4; // finishing the hunt gets you there, and level 4 is what hands over the Pummel the Brute fight is built around; the blade is still what beats it
 export const REWARD: { skill: SkillId; xp: number }[] = [
   { skill: 'combat', xp: 400 }, { skill: 'mining', xp: 150 }, { skill: 'smithing', xp: 150 },
@@ -185,19 +187,19 @@ export const DIALOGUE: Record<QuestStage, Dialogue> = {
     lines: [
       'Well fought! The pack is scattered.',
       'But the Cave Brute, in the cave mouth to the north-west, is another matter. It crushed the last hunter who tried, and plain weapons barely scratch it.',
-      "You need a better blade. Mine iron ore and coal on the ridge by the cave, chop a log for the hilt, and smith the Forgemaster's Blade at the forge to the east.",
+      "You need a better blade. Iron and coal on the ridge by the cave, a log for the hilt, and the Forgemaster's Blade smithed at the forge to the east. If you have never swung a pick, start with the copper and tin by the forge: smelt them into bronze, and wear what you make.",
       'And watch its fist. It raises it before every crushing slam: Pummel it (6) to break the swing, or step out of the circle on the ground.',
     ],
     options: [
       { label: "I'll forge the blade.", advance: true,
-        reply: 'Click an iron rock to mine it. Coal needs Mining 4, so iron first. At the forge, smelt Iron Bars, harden them into Steel Bars, then forge the blade. Equip it from your inventory (I) before you face the Brute.' },
+        reply: `Click a rock to mine it. Iron wants Mining ${NODE_TYPES.iron.level} and coal Mining ${NODE_TYPES.coal.level}: copper and tin will get you there. At the forge, smelt Bronze Bars and make yourself a set, then Iron Bars, then Steel Bars (Smithing ${recipeById('steel_bar')!.level}), then forge the blade (Smithing ${recipeById('forged_blade')!.level}). Equip it from your inventory (I) before you face the Brute.` },
       { label: 'Where is the forge?', reply: 'East of the clearing: the stone hut with the glowing furnace. Click it to open the forge.' },
     ],
   },
   forge: {
-    lines: ['How goes the forging? Iron ore and coal from the ridge by the cave, a log for the hilt, then the forge.'],
+    lines: ['How goes the forging? Iron ore and coal from the ridge by the cave, a log for the hilt, then the forge. Bronze first, if your arms are still soft.'],
     options: [
-      { label: 'Where do I find ore?', reply: 'The grey rocks with orange flecks are iron, the black seams are coal. Both lie along the ridge south-east of the cave mouth. Keep clear of the Brute itself.' },
+      { label: 'Where do I find ore?', reply: 'Copper and tin are the soft rocks by the forge, with a few more on the ridge. The grey rocks with orange flecks are iron, the black seams are coal: both lie along the ridge south-east of the cave mouth. Keep clear of the Brute itself.' },
       CLOSE('Back to work.'),
     ],
   },
@@ -224,7 +226,7 @@ export const DIALOGUE2: Record<Exclude<Quest2Stage, 'locked'>, Dialogue> = {
     ],
     options: [
       { label: "I'll go below.", advance: true,
-        reply: 'The cave mouth is north-west, and the passage runs on into the dark. Mithril needs Mining 9; the Ravagers that guard the veins will not let you work in peace. Smelt bars at the forge (Smithing 7), then smith the helm, greaves and chestplate, and wear them.' },
+        reply: `The cave mouth is north-west, and the passage runs on into the dark. Mithril needs Mining ${NODE_TYPES.mithril.level}, and the coal seams are the way up to it; the Ravagers that guard the veins will not let you work in peace. Smelt bars at the forge (Smithing ${recipeById('mithril_bar')!.level}), then smith the helm, greaves and chestplate, and wear them.` },
       CLOSE('Not yet.'),
     ],
   },
@@ -232,7 +234,7 @@ export const DIALOGUE2: Record<Exclude<Quest2Stage, 'locked'>, Dialogue> = {
     lines: ['Three Ravagers and nine ore, that is all I ask of the first trip. The veins are in the hollow, south-west of the passage.',
       'A Gloom Archer stands sentry where the passage opens out: take it alone from the throat and rest before you go near the pack. Then Cleave the Ravagers, do not fight them one by one. Bring coal too: the ridge has it, and so does the far wall of the hollow.'],
     options: [
-      { label: 'Where do I find mithril?', reply: 'Past the cave mouth, up the passage and into the big cavern: the blue-veined rocks in the south-west corner. Mining 9 to work them.' },
+      { label: 'Where do I find mithril?', reply: `Past the cave mouth, up the passage and into the big cavern: the blue-veined rocks in the south-west corner. Mining ${NODE_TYPES.mithril.level} to work them: if you are short, the seams on the ridge and in the hollow are practice.` },
       CLOSE('Back to it.'),
     ],
   },
@@ -339,6 +341,18 @@ const nodeTarget = (s: GameState, type: string) => {
   return n ? { x: n.x, z: n.z, label: NODE_TYPES[type].name } : null;
 };
 
+/** The best rock a player can already work, for practising Mining towards a gate that is still out of reach: coal, else iron, else copper and tin. */
+const practiceRock = (s: GameState) => {
+  const level = s.player.skills.mining.level;
+  return level >= NODE_TYPES.coal.level ? nodeTarget(s, 'coal') : level >= NODE_TYPES.iron.level ? nodeTarget(s, 'iron') : practiceTarget(s);
+};
+
+/** Where to practise Mining before iron opens: the rock whose ore the bag has fewer of, so the copper and the tin come out even for the bars. */
+const practiceTarget = (s: GameState) => {
+  const tinOpen = s.player.skills.mining.level >= NODE_TYPES.tin.level;
+  return nodeTarget(s, tinOpen && countItem(s.player.inventory, 'tin_ore') < countItem(s.player.inventory, 'copper_ore') ? 'tin' : 'copper');
+};
+
 export function questView(s: GameState): QuestView {
   const q = s.quest, have = (id: string) => countItem(s.player.inventory, id);
   const stageNo = QUEST_STAGES.indexOf(q.stage) + 1;
@@ -366,20 +380,23 @@ export function questView(s: GameState): QuestView {
       const logs = Math.min(P.logs, have('logs'));
       const coalLocked = s.player.skills.mining.level < NODE_TYPES.coal.level;
       const gathered = ore >= P.ore && coal >= P.coal && logs >= P.logs;
+      const ironLocked = s.player.skills.mining.level < NODE_TYPES.iron.level;
       const lines: QuestLine[] = [
-        { text: `Mine Iron Ore: ${ore}/${P.ore}`, done: ore >= P.ore },
+        { text: `Mine Iron Ore: ${ore}/${P.ore}${ore < P.ore && ironLocked ? ` (needs Mining ${NODE_TYPES.iron.level}: practise on copper and tin)` : ''}`, done: ore >= P.ore },
         { text: `Mine Coal: ${coal}/${P.coal}${coal < P.coal && coalLocked ? ` (needs Mining ${NODE_TYPES.coal.level})` : ''}`, done: coal >= P.coal },
         { text: `Chop Logs: ${logs}/${P.logs}`, done: logs >= P.logs },
       ];
       let target: QuestView['target'];
-      if (ore < P.ore || (coal < P.coal && coalLocked)) target = nodeTarget(s, 'iron');
+      if (ore < P.ore && ironLocked) target = practiceTarget(s);
+      else if (ore < P.ore || (coal < P.coal && coalLocked)) target = nodeTarget(s, 'iron');
       else if (coal < P.coal) target = nodeTarget(s, 'coal');
       else if (logs < P.logs) target = nodeTarget(s, 'tree');
       else target = { x: LANDMARKS.forge.x, z: LANDMARKS.forge.z, label: 'Forge' };
       if (gathered) {
         const b = Math.min(P.bars, bars), st = Math.min(P.steel, steel);
-        const steelLevel = recipeById('steel_bar')!.level, practice = s.player.skills.smithing.level < steelLevel;
-        lines.push({ text: `Smelt Iron Bars at the forge: ${b}/${P.bars}${b < P.bars && practice ? ` (Steel needs Smithing ${steelLevel})` : ''}`, done: b >= P.bars });
+        const ironLevel = recipeById('iron_bar')!.level, steelLevel = recipeById('steel_bar')!.level, smithing = s.player.skills.smithing.level;
+        const gate = smithing < ironLevel ? ` (needs Smithing ${ironLevel}: smelt Bronze Bars from copper and tin to practise)` : smithing < steelLevel ? ` (Steel needs Smithing ${steelLevel})` : '';
+        lines.push({ text: `Smelt Iron Bars at the forge: ${b}/${P.bars}${b < P.bars ? gate : ''}`, done: b >= P.bars });
         if (b >= P.bars) lines.push({ text: `Harden Steel Bars: ${st}/${P.steel}`, done: st >= P.steel });
         if (st >= P.steel) lines.push({ text: "Forge the Forgemaster's Blade", done: false });
       }
@@ -425,7 +442,7 @@ export function activeQuestView(s: GameState): QuestView {
         ...advice(RECOMMENDED_COMBAT_2),
       ];
       // practise on coal until the veins open; then the veins; then the pack
-      const target = ore < P.ore ? nodeTarget(s, locked ? 'coal' : 'mithril') : open ? enemyTarget(s, open[0]) : null;
+      const target = ore < P.ore ? locked ? practiceRock(s) : nodeTarget(s, 'mithril') : open ? enemyTarget(s, open[0]) : null;
       return v(lines, target);
     }
     case 'armour': {
@@ -434,7 +451,7 @@ export function activeQuestView(s: GameState): QuestView {
       const smithing = s.player.skills.smithing.level;
       const lines: QuestLine[] = [
         { text: `Mine Coal: ${coal}/${P.coal}`, done: coal >= P.coal },
-        { text: `Smelt Mithril Bars at the forge: ${Math.min(P.bars, bars)}/${P.bars}${bars < P.bars && smithing < barLevel ? ` (needs Smithing ${barLevel})` : ''}`, done: bars >= P.bars },
+        { text: `Smelt Mithril Bars at the forge: ${Math.min(P.bars, bars)}/${P.bars}${bars < P.bars && smithing < barLevel ? ` (needs Smithing ${barLevel}: smelt Steel Bars to practise)` : ''}`, done: bars >= P.bars },
         ...MITHRIL_SET.map(id => {
           const need = recipeById(id)!.level, has = owned(s, id) > 0;
           return { text: `Smith the ${ITEMS[id].name}${!has && smithing < need ? ` (needs Smithing ${need})` : ''}`, done: has };
