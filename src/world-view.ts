@@ -11,7 +11,7 @@
 // Looks here are stand-ins made of primitives in the clearing's palette: the 3D Artist dresses them (W2.5).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { LANDMARKS, REGIONS, Gate, Obstacle, Rect, Region, SALTMARROW, THORNWICK } from './sim/world';
+import { HIGHMOOR, LANDMARKS, REGIONS, Gate, Obstacle, Rect, Region, SALTMARROW, THORNWICK } from './sim/world';
 import { PROPS, PropId } from './props';
 import { mergeParts } from './creatures';
 
@@ -36,6 +36,10 @@ const SALT_PAL: Pal = { wall: PLASTER, roof: ROOF, foot: FOOTING }, THORN_PAL: P
 const FEN = { moss: 0x41584a, mossAlt: 0x364b3e, peat: 0x2f3329, stain: 0x6b6a2f, water: 0x4a7a80, reed: 0x9aa862, bone: 0x9a9680, mist: 0x8fa89c };
 const WOOD = { brush: 0x2e4a30, thorn: 0x4a3028, cap: 0x8a6a58 };
 const WOOD_FLOOR = { litter: 0x3a4630, litterAlt: 0x2f3a2a, loam: 0x3a3226 };
+/** The Barrowdowns' turf (cold grey-green grass, peat showing through) and Highmoor's (heath, with heather), and Highmoor's greystone buildings under dark slate. */
+const BARROW_FLOOR = { turf: 0x4a5640, turfAlt: 0x3d4833, peat: 0x2f3329 };
+const MOOR_FLOOR = { heath: 0x5a5840, heathAlt: 0x4b4a38, heather: 0x5e4a5a };
+const MOOR_PAL: Pal = { wall: 0x7d7a72, roof: 0x3d4650, foot: 0x4a4a48 };
 
 let poolMaterial: THREE.MeshBasicMaterial | undefined;
 const hash = (n: number) => Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1;
@@ -162,7 +166,7 @@ export class WorldView {
   constructor(private scene: THREE.Scene, kit: Kit) {
     this.kit = kit;
     for (const region of REGIONS) {
-      if (region.zone === 'hale') continue; // the clearing and the cave are render.ts's own
+      if (region.zone === 'hale' || region.district) continue; // the clearing and the cave are render.ts's own; a district has no floor to draw
       // the region's main floor (its biggest rect) is cut into slabs; the rest (the gate's corridor, the quay) ride with the slab they touch
       const rect = mainRect(region);
       const tile = (kind: Tile['kind'], rect: Rect, gate?: Gate): Tile => ({ kind, region, rect, gate, group: null, ground: [], picks: { npc: [], vendor: [], flight: [], trainer: [] } });
@@ -174,6 +178,7 @@ export class WorldView {
         this.tiles.push(tile('town', { x0: LANDMARKS.square.x - 40, x1: LANDMARKS.square.x + 40, z0: LANDMARKS.square.z - 40, z1: LANDMARKS.square.z + 40 }));
       }
       if (region.id === 'thornwick') this.tiles.push(tile('town', { x0: LANDMARKS.thornSquare.x - 40, x1: LANDMARKS.thornSquare.x + 40, z0: LANDMARKS.thornSquare.z - 40, z1: LANDMARKS.thornSquare.z + 40 }));
+      if (region.id === 'highmoor') this.tiles.push(tile('town', { x0: LANDMARKS.highSquare.x - 40, x1: LANDMARKS.highSquare.x + 40, z0: LANDMARKS.highSquare.z - 40, z1: LANDMARKS.highSquare.z + 40 }));
       for (const g of region.gates ?? []) {
         const c = g.axis === 'z' ? { x: (g.span[0] + g.span[1]) / 2, z: g.at } : { x: g.at, z: (g.span[0] + g.span[1]) / 2 };
         this.tiles.push(tile('gate', { x0: c.x - 16, x1: c.x + 16, z0: c.z - 16, z1: c.z + 16 }, g));
@@ -232,9 +237,10 @@ export class WorldView {
     const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color(), a = new THREE.Color(P.grass), b = new THREE.Color(P.grassAlt);
     const dirt = new THREE.Color(P.dirt).multiplyScalar(1.45), dirtAlt = new THREE.Color(P.dirtAlt).multiplyScalar(1.45), // the road reads as a road in the dark: lighter than the clearing's earth
       sand = new THREE.Color(SAND), stone = new THREE.Color(P.stone);
-    const road = r.road ?? null, square = r.safe?.[0], fen = r.id === 'dunmere', wood = r.id === 'thornwick';
+    const road = r.road ?? null, square = r.safe?.[0], fen = r.id === 'dunmere', wood = r.id === 'thornwick', barrow = r.id === 'barrowdowns', moor = r.id === 'highmoor';
     if (fen) { a.set(FEN.moss); b.set(FEN.mossAlt); } else if (wood) { a.set(WOOD_FLOOR.litter); b.set(WOOD_FLOOR.litterAlt); }
-    const peat = new THREE.Color(FEN.peat), stain = new THREE.Color(FEN.stain), loam = new THREE.Color(WOOD_FLOOR.loam);
+    else if (barrow) { a.set(BARROW_FLOOR.turf); b.set(BARROW_FLOOR.turfAlt); } else if (moor) { a.set(MOOR_FLOOR.heath); b.set(MOOR_FLOOR.heathAlt); }
+    const peat = new THREE.Color(barrow ? BARROW_FLOOR.peat : FEN.peat), stain = new THREE.Color(FEN.stain), loam = new THREE.Color(WOOD_FLOOR.loam), heather = new THREE.Color(MOOR_FLOOR.heather);
     for (let v = 0; v < pos.count; v++) {
       const x = pos.getX(v), z = pos.getZ(v), j = hash(x * 12.9898 + z * 78.233);
       c.copy(a).lerp(b, j);
@@ -242,6 +248,7 @@ export class WorldView {
         c.lerp(peat, THREE.MathUtils.clamp((hash(Math.floor(x / 7) * 3.7 + Math.floor(z / 7) * 9.1) - 0.55) * 2.2, 0, 0.7));
         for (const h of r.hazards ?? []) { const k = THREE.MathUtils.clamp((h.r + 2.2 - Math.hypot(x - h.x, z - h.z)) / 3, 0, 1); if (k > 0) c.lerp(stain, k * 0.85); }
       }
+      if (barrow) c.lerp(peat, THREE.MathUtils.clamp((hash(Math.floor(x / 9) * 3.1 + Math.floor(z / 9) * 7.3) - 0.5) * 1.6, 0, 0.5)); // peat in the low ground between the mounds
       if (road) {
         const off = road.axis === 'x' ? Math.abs(z - road.at) : Math.abs(x - road.at); // distance from the road's centre line
         const k = THREE.MathUtils.clamp((4.2 - off) / 2.4, 0, 1) + (r.id === 'greywater' && x < 52 ? 0.6 : 0); // the road, and the dirt of Hale's gate yard
@@ -250,6 +257,10 @@ export class WorldView {
         c.lerp(loam, hash(Math.floor(x / 5) * 5.3 + Math.floor(z / 5) * 2.9) * 0.35); // loam showing through the litter
         if (square) { const k = THREE.MathUtils.clamp((square.r - Math.hypot(x - square.x, z - square.z)) / 8, 0, 1); if (k > 0) c.lerp(stone.clone().lerp(dirtAlt, j * 0.6), k * 0.8); }
         if (Math.abs(x - THORNWICK.x) < 3.6 && z < square!.z) c.lerp(dirt, 0.9); // the road in from the north
+      } else if (moor) {
+        c.lerp(heather, THREE.MathUtils.clamp((hash(Math.floor(x / 6) * 4.3 + Math.floor(z / 6) * 8.1) - 0.45) * 1.4, 0, 0.55)); // heather in drifts across the heath
+        if (square) { const k = THREE.MathUtils.clamp((square.r - Math.hypot(x - square.x, z - square.z)) / 8, 0, 1); if (k > 0) c.lerp(stone.clone().lerp(dirtAlt, j * 0.6), k * 0.8); }
+        if (Math.abs(z - HIGHMOOR.z) < 3.6 && x < square!.x) c.lerp(dirt, 0.9); // the road in from the west
       } else {
         if (x > SALTMARROW.x + 6) c.lerp(sand, THREE.MathUtils.clamp((x - SALTMARROW.x - 6) / 10, 0, 1)); // the beach
         if (square) { const k = THREE.MathUtils.clamp((square.r - Math.hypot(x - square.x, z - square.z)) / 8, 0, 1); if (k > 0) c.lerp(stone.clone().lerp(dirtAlt, j * 0.6), k * 0.8); }
@@ -278,6 +289,13 @@ export class WorldView {
             place(new THREE.CylinderGeometry(0.04, 0.09, 1.3, 4).rotateZ(-1.0), o.x - Math.cos(ry) * 0.4 - 0.35, 2.2, o.z + Math.sin(ry) * 0.4, ry));
           return;
         }
+        case 'barrow': { // a grass mound with a pair of standing stones and a lintel at its mouth, which faces the road
+          const rz = (mainRect(r).z0 + mainRect(r).z1) / 2, dir = o.z > rz ? -1 : 1, mz = o.z + dir * o.r * 0.95;
+          bag.brush.push(place(new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), o.x, 0, o.z, ry, o.r * 1.15, o.r * 0.55, o.r * 1.15));
+          for (const s of [-1, 1]) bag.rock.push(place(new THREE.BoxGeometry(0.6, 2, 0.6), o.x + s * 1.1, 1, mz, 0.1 * s));
+          bag.rock.push(place(new THREE.BoxGeometry(3, 0.5, 0.7), o.x, 2.2, mz));
+          return;
+        }
         case 'hut': case 'house': case 'inn': building(o, ry * 0.12, bag); return;
         case 'cart': {
           bag.wood.push(place(new THREE.BoxGeometry(2.6, 0.7, 1.4), o.x, 0.9, o.z, ry), place(new THREE.CylinderGeometry(0.55, 0.55, 0.15, 8).rotateX(Math.PI / 2), o.x, 0.55, o.z + 0.8, ry), place(new THREE.CylinderGeometry(0.55, 0.55, 0.15, 8).rotateX(Math.PI / 2), o.x, 0.55, o.z - 0.8, ry));
@@ -295,7 +313,7 @@ export class WorldView {
     if (r.road) this.waymarks(bag, rect, mainRect(r), r.road.axis, r.id === 'greywater' ? 100 : 0);
     if (r.id === 'dunmere') this.fenDressing(bag, rect, r);
     if (r.id === 'thornwick') this.woodDressing(bag, rect, r);
-    this.emit(bag, add, r.id === 'thornwick' ? THORN_PAL : SALT_PAL);
+    this.emit(bag, add, r.id === 'thornwick' ? THORN_PAL : r.id === 'highmoor' ? MOOR_PAL : SALT_PAL);
   }
 
   /** A milestone every 80 units down the road, on its verge: a squared post with a board pointing on. How far from home the player is, in a thing they pass. `skip`: nearer than this to the origin Hale's gate has its own. */
@@ -488,6 +506,7 @@ export class WorldView {
 
   /** The people of a town square: Saltmarrow's harbourmaster, chandler, trainer and flight master, or Thornwick's reeve, provisioner and flight master. */
   private town(t: Tile, add: (o: THREE.Object3D) => void) {
+    if (t.region.id === 'highmoor') return this.highmoorTown(t, add);
     const thorn = t.region.id === 'thornwick', square = thorn ? LANDMARKS.thornSquare : LANDMARKS.square;
     const toward = (at: { x: number; z: number }) => Math.atan2(square.x - at.x, square.z - at.z + 0.01) + Math.PI; // turned toward the way in
     const tag = (g: THREE.Group, id: string) => { g.traverse(o => { o.userData.id = id; }); return g; };
@@ -509,6 +528,17 @@ export class WorldView {
     if (thorn) lampPost(bag, LANDMARKS.alembic.x - 1.8, LANDMARKS.alembic.z + 1.6, 0, 5); // the alchemist works late
     if (thorn) this.townDressing(bag);
     this.emit(bag, add);
+  }
+
+  /** Highmoor's square: its flight master by the road in, a cairn of grey stones in the middle, and a lamp every 13 units down the road from the west. (The keepers stand at their gates.) */
+  private highmoorTown(t: Tile, add: (o: THREE.Object3D) => void) {
+    const sq = LANDMARKS.highSquare, fm = LANDMARKS.flightHigh, bag = newBag();
+    add(((g: THREE.Group) => { g.traverse(o => { o.userData.id = 'highmoor'; }); return g; })(flightMasterFigure(this.kit, fm, sq, t.picks.flight)));
+    lampPost(bag, fm.x + 1.4, fm.z - 1.1, 0, 6);
+    bag.stone.push(place(new THREE.CylinderGeometry(2.4, 2.8, 0.5, 8), sq.x, 0.25, sq.z));
+    for (let n = 0; n < 4; n++) bag.stone.push(place(new THREE.DodecahedronGeometry(1.5 - n * 0.3), sq.x + n * 0.15, 0.9 + n * 1.1, sq.z, n * 0.7));
+    for (let n = 0, x = HIGHMOOR.x - 62; x < sq.x - 6; n++, x += 13) lampPost(bag, x, HIGHMOOR.z + (n % 2 ? 4.4 : -4.4), 0, 5.5);
+    this.emit(bag, add, MOOR_PAL);
   }
 
   /**

@@ -72,6 +72,8 @@ export const ITEMS: Record<string, ItemDef> = {
   heartwood_shard: { name: 'Heartwood Shard', stack: 50, dropWeight: 0, tier: 0, value: 80, desc: "A hard, red splinter of the Rotroot Mother's heartwood. Forged with adamant, it makes a blade nothing at the forge can." },
   adamant_ore: { name: 'Adamant Ore', stack: 50, dropWeight: 0, tier: 0, value: 19, desc: 'Green-black ore from the cliffs above the Strand. Smelts into adamant at the forge.' },
   adamant_bar: { name: 'Adamant Bar', stack: 50, dropWeight: 0, tier: 0, value: 55, desc: 'Dense and sea-dark. Armour and a blade are smithed from it.' },
+  stormiron_ore: { name: 'Stormiron Ore', stack: 50, dropWeight: 0, tier: 0, value: 32, desc: 'Pale, lilac-veined ore from the barrows and the Thornwood. It smelts into stormiron with four parts coal.' },
+  stormiron_bar: { name: 'Stormiron Bar', stack: 50, dropWeight: 0, tier: 0, value: 90, desc: 'Cold, light and pale as slate. Armour and a blade are smithed from it.' },
   [SEA_SALT]: { name: 'Sea Salt', stack: 50, dropWeight: 0, tier: 0, value: 2, desc: 'Coarse grey salt from the Saltmarrow pans. A pie wants a pinch.' },
   ...fishItems(),
   ...herbItems(),
@@ -91,6 +93,8 @@ export const ITEMS: Record<string, ItemDef> = {
   adamant_blade: { name: 'Adamant Blade', slot: 'weapon', stats: { damage: 40, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 320, req: { combat: 14 }, desc: "Three bars of adamant, a log for the hilt. A step above the Warden's Edge." },
   // the adamant capstone (3.3): three adamant bars folded round three Marrow shards. Damage 50 against the Adamant Blade's 40; it asks for combat 18, two under the player who is on schedule
   marrows_edge: { name: "Marrow's Edge", slot: 'weapon', stats: { damage: 50, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 560, req: { combat: 18 }, desc: "Adamant folded round three shards of Captain Marrow's anchor. The best blade a smith in Saltmarrow can make." },
+  // the stormiron set (3.3): tier 5 again, the next metal after adamant. A blade of 58 against Marrow's Edge 50; equip combat 23, one under the committed player's arrival
+  stormiron_blade: { name: 'Stormiron Blade', slot: 'weapon', stats: { damage: 58, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 480, req: { combat: 23 }, desc: 'Three bars of barrow stormiron and a log for the hilt. Narrow, pale and very sharp.' },
   // the Rotroot's capstone (3.3): damage 72, Smithing 42, equip combat 26 (one under the Mother's level; the committed player arrives at 27). Stormiron is not built yet: adamant stands in for its bars
   rotroot_edge: { name: 'Rotroot Edge', slot: 'weapon', stats: { damage: 72, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 760, req: { combat: 26 }, desc: "Metal folded round three shards of the Rotroot Mother's heartwood. The best blade a smith in Thornwick can make." },
   // armour
@@ -114,6 +118,9 @@ export const ITEMS: Record<string, ItemDef> = {
   adamant_helm: { name: 'Adamant Helm', slot: 'head', stats: { armor: 16 }, stack: 1, dropWeight: 0, tier: 5, value: 170, req: { combat: 14 }, desc: 'Smithed from Strand adamant.' },
   adamant_chestplate: { name: 'Adamant Chestplate', slot: 'chest', stats: { armor: 30 }, stack: 1, dropWeight: 0, tier: 5, value: 350, req: { combat: 14 }, desc: 'Smithed from Strand adamant. Heavy, and worth the weight.' },
   adamant_greaves: { name: 'Adamant Greaves', slot: 'legs', stats: { armor: 22 }, stack: 1, dropWeight: 0, tier: 5, value: 260, req: { combat: 14 }, desc: 'Smithed from Strand adamant.' },
+  stormiron_helm: { name: 'Stormiron Helm', slot: 'head', stats: { armor: 20 }, stack: 1, dropWeight: 0, tier: 5, value: 230, req: { combat: 23 }, desc: 'Smithed from barrow stormiron. Swept-back spikes, and light for its worth.' },
+  stormiron_chestplate: { name: 'Stormiron Chestplate', slot: 'chest', stats: { armor: 38 }, stack: 1, dropWeight: 0, tier: 5, value: 470, req: { combat: 23 }, desc: 'Smithed from barrow stormiron. Pale plate, and the best chest a smith in Thornwick can make.' },
+  stormiron_greaves: { name: 'Stormiron Greaves', slot: 'legs', stats: { armor: 28 }, stack: 1, dropWeight: 0, tier: 5, value: 340, req: { combat: 23 }, desc: 'Smithed from barrow stormiron.' },
 };
 
 /** The copper set, in smithing order: the bottom rung, made from Hale's own rock. */
@@ -127,6 +134,9 @@ export const STEEL_SET = ['steel_helm', 'steel_greaves', 'steel_chestplate'] as 
 
 /** The adamant set, in smithing order. */
 export const ADAMANT_SET = ['adamant_helm', 'adamant_greaves', 'adamant_chestplate'] as const;
+
+/** The stormiron set, in smithing order. */
+export const STORMIRON_SET = ['stormiron_helm', 'stormiron_greaves', 'stormiron_chestplate'] as const;
 
 export const TIER_COLORS = [0xc8c8c8, 0xe8e8e8, 0x4aa8ff, 0xffa030, 0xb48cff, 0x3ee0c0]; // material, common, good, rare, epic, legendary (spectral jade; art's TIER5_COLOR in gear-look.ts)
 
@@ -226,6 +236,34 @@ export const DROP_TABLES: Record<string, DropTable> = {
   ] },
   elder_thornback: { rolls: 3, nothing: 25, entries: [
     { id: 'boar_hide', qty: [3, 5], weight: 20 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_sword', weight: 6 }, { id: 'steel_sword', weight: 10 },
+  ] },
+  // the Barrowdowns and the Moor, the same rule (HOM-95): `nothing` solved to land within 1 % of 0.6 x level + 3 (an elite 3x, a rare 4x). Still nothing above steel is dropped.
+  barrow_wight: { rolls: 2, nothing: 57, entries: [
+    { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 4 }, { id: 'iron_greaves', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
+  ] },
+  grave_hound: { rolls: 2, nothing: 24, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 40 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
+  ] },
+  cairn_brute: { rolls: 2, nothing: 60, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 20 }, { id: 'iron_helm', weight: 5 }, { id: 'iron_greaves', weight: 5 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 4 }, { id: 'steel_sword', weight: 3 },
+  ] },
+  barrow_lord: { rolls: 3, nothing: 27, entries: [
+    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 7 },
+  ] },
+  hollow_knight: { rolls: 3, nothing: 21, entries: [
+    { id: 'wolf_pelt', qty: [3, 5], weight: 15 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 10 },
+  ] },
+  moor_ram: { rolls: 2, nothing: 22, entries: [
+    { id: 'boar_hide', qty: [1, 3], weight: 30 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 3 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 2 }, { id: 'steel_sword', weight: 2 },
+  ] },
+  moor_raider: { rolls: 2, nothing: 47, entries: [
+    { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 4 }, { id: 'iron_greaves', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
+  ] },
+  ridge_ogre: { rolls: 2, nothing: 51, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 20 }, { id: 'iron_helm', weight: 5 }, { id: 'iron_greaves', weight: 5 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 4 }, { id: 'steel_sword', weight: 3 },
+  ] },
+  stonehorn: { rolls: 3, nothing: 23, entries: [
+    { id: 'boar_hide', qty: [3, 5], weight: 15 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 7 },
   ] },
   // the Grotto's boss shard (6.1): 35 % a kill, one shard, three to a blade: about nine kills on a ten-minute respawn. The one roll, so nothing else competes with it.
   captain_marrow: { rolls: 1, nothing: 65, entries: [{ id: 'marrow_shard', weight: 35 }] },

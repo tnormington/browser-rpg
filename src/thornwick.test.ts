@@ -7,7 +7,7 @@ import {
   REGIONS, GATES, WITHERING, DUNMERE, THORNWICK, SALTMARROW, LANDMARKS, TOWNS, SAFE_ZONES, COLLIDERS, regionAt, regionById, dungeonAt, inSafeZone, clampToWorld, nearestTown, PLAYER_RADIUS,
 } from './sim/world';
 import { route, evictGrids, gridStats } from './sim/path';
-import { createNodes } from './sim/gathering';
+import { createNodes, NODE_TYPES } from './sim/gathering';
 import { flightPrice, flightSeconds, masterById, FLIGHT_MASTERS } from './sim/flight';
 import { VENDORS } from './sim/shop';
 import { NPCS, dialogueAt } from './sim/quest';
@@ -56,7 +56,7 @@ section('the regions: sizes, seams and where they stand');
   assert(open(DUNMERE.x - 60, 944) && open(DUNMERE.x + 60, 944), "Dunmere and Thornwick overlap across the whole width: the fen road's end is soft");
   const nodes = createNodes();
   const herbN = (dun.herbs?.length ?? 0) + (thorn.herbs?.length ?? 0);
-  assert(nodes.length === 33 + regionById('wayside').rocks.length + regionById('wayside').trees.length + herbN, 'the herb patches are nodes after every older one, and the thornoaks are not');
+  assert(nodes.slice(0, 33 + regionById('wayside').rocks.length + regionById('wayside').trees.length + herbN).slice(-herbN).every(n => NODE_TYPES[n.type].skill === 'herbalism'), 'the herb patches are nodes after every older one (the stormiron of HOM-95 comes after them), and the thornoaks are not');
   assert(thorn.trees.length === 0 && thorn.obstacles.filter(o => o.kind === 'thornoak').length >= 40, 'the thornoaks are scenery that stops you: Woodcutting has no rung for them');
   assert(COLLIDERS.filter(o => o.kind === 'thornoak').every(o => inRect(tmain, o)), 'every thornoak stands on Thornwick\'s floor');
 }
@@ -141,27 +141,27 @@ section('the hard gate south of Saltmarrow: combat 16');
   run(u, 3, { dirX: 0, dirZ: -1 });
   assert(u.player.z < line - 3 && !gateEvent(u), 'the way back is never refused: a level-1 player south of the gate walks north through it');
   // a dead player and a flight over it are not stopped (flights land on the far side whatever the level)
-  assert(GATES.length === 2 && GATES.every(g => g.keeper && g.refuse), 'there are two gates in the world, each with a keeper and a line');
+  assert(GATES.length === 4 && GATES.every(g => g.keeper && g.refuse), 'there are four gates in the world (HOM-95 added Highmoor\'s two), each with a keeper and a line');
 }
 
 // ---------------------------------------------------------------------------
-section('the gate on Thornwick\'s east edge: combat 22, nothing behind it yet');
+section('the gate on Thornwick\'s east edge: combat 22, and the Barrowdowns behind it (HOM-95)');
 {
   const x = EAST_GATE.at, z = EAST_GATE.span[0] + 3;
-  assert(EAST_GATE.combat === 22 && EAST_GATE.closed && EAST_GATE.from === -1, 'it asks combat 22 and is closed besides');
+  assert(EAST_GATE.combat === 22 && !EAST_GATE.closed && EAST_GATE.from === -1 && x > THORNWICK.x + 70, 'it asks combat 22 and is open to those who have it; it stands in the corridor past the town\'s floor, so nothing goes round it');
   const walk = (level: number) => {
     const s = quiet(level);
     s.player.x = x - 6; s.player.z = z;
     let said: ReturnType<typeof gateEvent>;
-    for (let i = 0; i < 90 && !said; i++) { tick(s, { dirX: 1, dirZ: 0 }); said = gateEvent(s); }
+    for (let i = 0; i < 90; i++) { tick(s, { dirX: 1, dirZ: 0 }); said ??= gateEvent(s); }
     return { s, said };
   };
   const low = walk(18), high = walk(24);
   assert(low.said && low.said.text === EAST_GATE.refuse && low.said.keeper === 'Gatewarden Hobb', `at 18 the keeper says: "${low.said?.text}"`);
-  assert(high.said && high.said.text === EAST_GATE.closed, `at 24 the road is still shut: "${high.said?.text}"`);
-  assert(low.s.player.x < x && high.s.player.x < x, 'neither gets past the line: there is no hole in the edge');
-  const wall = clampToWorld({ x: x + 30, z }, PLAYER_RADIUS);
-  assert(wall.x < THORNWICK.x + 70, 'and the edge itself holds');
+  assert(low.s.player.x < x, 'and a level-18 player is held this side of the line');
+  assert(!high.said && high.s.player.x > x + 2 && regionAt(high.s.player.x, high.s.player.z)?.id === 'barrowdowns', 'a level-24 player is told nothing and walks through into the Barrowdowns');
+  const wall = clampToWorld({ x: x - 8, z: z + 20 }, PLAYER_RADIUS);
+  assert(wall.x <= THORNWICK.x + 70 - PLAYER_RADIUS + 1e-6, 'and the rest of the edge holds: there is no way round the line');
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@ section('Thornwick\'s services: flight master, vendor, quest giver, alembic, saf
   assert(FLIGHT_MASTERS.some(f => f.id === 'thornwick') && TOWNS.every(t => FLIGHT_MASTERS.some(f => f.id === t.id)), 'and every town still has its master');
   assert(flightPrice('saltmarrow', 'thornwick') === 190 && Math.abs(flightSeconds('saltmarrow', 'thornwick') - 19.33) < 0.01 && flightPrice('hale', 'thornwick') === 250, 'Saltmarrow to Thornwick is 190 gold and a 19 second ride; from Hale 250');
   // a death at the south end of the fens wakes you at the nearest graveyard among the masters you have found
-  assert(TOWNS.length === 3 && nearestTown(DUNMERE.x, 880, ['hale', 'saltmarrow']).id === 'saltmarrow' && nearestTown(DUNMERE.x, 880, ['hale', 'saltmarrow', 'thornwick']).id === 'thornwick' && nearestTown(DUNMERE.x, 880).id === 'thornwick',
+  assert(TOWNS.length === 4 && nearestTown(DUNMERE.x, 880, ['hale', 'saltmarrow']).id === 'saltmarrow' && nearestTown(DUNMERE.x, 880, ['hale', 'saltmarrow', 'thornwick']).id === 'thornwick' && nearestTown(DUNMERE.x, 880).id === 'thornwick',
     'a death at the south end of the fens wakes you at Saltmarrow until you have found Thornwick\'s master, at Thornwick after');
 }
 

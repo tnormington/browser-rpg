@@ -90,6 +90,18 @@ export const RECIPES: Recipe[] = [
     inputs: [{ id: 'adamant_bar', qty: 3 }], output: { id: 'adamant_greaves', qty: 1 } },
   { id: 'adamant_chestplate', name: 'Adamant Chestplate', skill: 'smithing', level: 29, time: 11, xp: 465,
     inputs: [{ id: 'adamant_bar', qty: 4 }], output: { id: 'adamant_chestplate', qty: 1 } },
+  // stormiron (3.3, HOM-95): one ore and four coal to a bar (Smithing 36), the set at 37 to 41 and the blade at 37, XP by the ladder's rule (bar 0.25 x, piece 0.35 x, blade 0.4 x
+  // the cost of its level). The blade takes plain logs, as adamant's does.
+  { id: 'stormiron_bar', name: 'Stormiron Bar', skill: 'smithing', level: 36, time: 7, xp: 665,
+    inputs: [{ id: 'stormiron_ore', qty: 1 }, { id: 'coal', qty: 4 }], output: { id: 'stormiron_bar', qty: 1 } },
+  { id: 'stormiron_helm', name: 'Stormiron Helm', skill: 'smithing', level: 37, time: 9, xp: 1025,
+    inputs: [{ id: 'stormiron_bar', qty: 2 }], output: { id: 'stormiron_helm', qty: 1 } },
+  { id: 'stormiron_blade', name: 'Stormiron Blade', skill: 'smithing', level: 37, time: 14, xp: 1175,
+    inputs: [{ id: 'stormiron_bar', qty: 3 }, { id: 'logs', qty: 1 }], output: { id: 'stormiron_blade', qty: 1 } },
+  { id: 'stormiron_greaves', name: 'Stormiron Greaves', skill: 'smithing', level: 39, time: 10, xp: 1250,
+    inputs: [{ id: 'stormiron_bar', qty: 3 }], output: { id: 'stormiron_greaves', qty: 1 } },
+  { id: 'stormiron_chestplate', name: 'Stormiron Chestplate', skill: 'smithing', level: 41, time: 12, xp: 1525,
+    inputs: [{ id: 'stormiron_bar', qty: 4 }], output: { id: 'stormiron_chestplate', qty: 1 } },
   // the range: each fish cooked on its own, and a pie (2 fish and a pinch of salt) two levels up that also makes you Well Fed. Craft XP: fish.ts.
   ...FISH.flatMap((f): Recipe[] => [
     { id: cookedId(f), name: `Cooked ${f.name}`, skill: 'cooking', station: 'range', level: f.level, time: f.cookTime, xp: f.cookXp,

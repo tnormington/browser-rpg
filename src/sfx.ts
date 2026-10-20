@@ -75,8 +75,8 @@ const SOUNDS = {
 type Body = 'beast' | 'man' | 'big' | 'shell';
 const BODY: Record<string, Body> = {
   brute: 'big', ogre: 'big', warden: 'big', toll_captain: 'big', barnacle_ogre: 'big', gutterhook: 'big', mire_troll: 'big', bogfather: 'big',
-  mother_mire: 'big', thorn_warden: 'big', elder_thornback: 'big',
-  hexer: 'man', ravager: 'man', archer: 'man', seer: 'man', footpad: 'man', drowned_sailor: 'man', tide_hag: 'man', bog_witch: 'man', rotwood_cultist: 'man',
+  mother_mire: 'big', thorn_warden: 'big', elder_thornback: 'big', cairn_brute: 'big', barrow_lord: 'big', hollow_knight: 'big', ridge_ogre: 'big', stonehorn: 'big',
+  hexer: 'man', ravager: 'man', archer: 'man', seer: 'man', footpad: 'man', drowned_sailor: 'man', tide_hag: 'man', bog_witch: 'man', rotwood_cultist: 'man', barrow_wight: 'man', moor_raider: 'man',
   shore_crab: 'shell',
 };
 const bodyOf = (species: string): Body => BODY[species] ?? 'beast';
@@ -88,6 +88,8 @@ const AMBIENCE: Record<string, { file: string; vol: number }> = {
   saltmarrow: { file: 'coast-ambience', vol: 0.4 },
   dunmere: { file: 'fen-ambience', vol: 0.4 },
   thornwick: { file: 'forest-ambience', vol: 0.4 },
+  barrowdowns: { file: 'road-ambience', vol: 0.35 },
+  highmoor: { file: 'road-ambience', vol: 0.35 },
 };
 const AMBIENCE_FADE = 1.5;   // seconds to cross between beds
 

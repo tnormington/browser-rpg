@@ -439,7 +439,7 @@ export class Hud {
         this.note(ev.on ? `${BUFFS[ev.id].name}: ${BUFFS[ev.id].desc}` : `${BUFFS[ev.id].name} has worn off.`, 'log-info');
       } else if (ev.t === 'gate') {
         this.say(`${ev.keeper}: "${ev.text}"`);
-        this.note(`${ev.keeper}: "${ev.text}" (combat ${ev.need} needed, you are ${s.player.combat.level})`, 'log-quest');
+        this.note(`${ev.keeper}: "${ev.text}"${ev.need > 0 ? ` (combat ${ev.need} needed, you are ${s.player.combat.level})` : ''}`, 'log-quest'); // a gate that asks a quest, not a level, has need 0
       } else if (ev.t === 'door') {
         this.say(ev.blurb);
         this.note(ev.blurb, 'log-info');

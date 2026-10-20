@@ -29,6 +29,8 @@ export const NODE_TYPES: Record<string, NodeDef> = {
   iron: { name: 'Iron Rock', skill: 'mining', level: 7, item: 'iron_ore', time: 3.5, xp: 18, charges: 3, respawn: 25 },
   coal: { name: 'Coal Seam', skill: 'mining', level: 10, item: 'coal', time: 4.5, xp: 24, charges: 3, respawn: 30 },
   adamant: { name: 'Adamant Vein', skill: 'mining', level: 28, item: 'adamant_ore', time: 5.5, xp: 145, charges: 3, respawn: 45 },
+  // stormiron (3.3): Mining 40, 0.12 x the 3,950 from 40 to 41 a swing. The Thornwood's west and the barrows (HOM-95)
+  stormiron: { name: 'Stormiron Vein', skill: 'mining', level: 40, item: 'stormiron_ore', time: 6, xp: 475, charges: 3, respawn: 50 },
   tree: { name: 'Tree', skill: 'woodcutting', level: 1, item: 'logs', time: 3, xp: 25, charges: 2, respawn: 20 },
   // fishing spots, one per fish (fish.ts): five catches of four seconds, back after twenty. Only the first three have water placed (world.ts)
   ...Object.fromEntries(FISH.map((f): [string, NodeDef] => [f.id, { name: `${f.name} Shoal`, skill: 'fishing', level: f.level, item: f.id, time: 4, xp: f.xp, charges: 5, respawn: 20 }])),

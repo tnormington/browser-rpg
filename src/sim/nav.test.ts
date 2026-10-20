@@ -22,7 +22,7 @@ const spot = (x: number, z: number): Pt => ({ x, z });
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.z - b.z);
 
 console.log('\n# the world is region data');
-assert(REGIONS.map(r => r.id).join() === 'ridge,clearing,throat,hollow,neck,hall,greywater,saltmarrow,seams,wayside,dunmere,thornwick,gangway,galley,hold,mouth,warren,heart', 'the world is Hale (ridge, clearing, four cave rooms), then the road, then Saltmarrow, then the Seams (HOM-56), then the road\'s waysides (HOM-57), then the fens and Thornwick (HOM-63), then the Drowned Grotto\'s three rooms (HOM-64), then the Rotroot\'s three (HOM-75), in node-id order');
+assert(REGIONS.map(r => r.id).join() === 'ridge,clearing,throat,hollow,neck,hall,greywater,saltmarrow,seams,wayside,dunmere,thornwick,gangway,galley,hold,mouth,warren,heart,barrowdowns,highmoor,thornseam', 'the world is Hale (ridge, clearing, four cave rooms), then the road, then Saltmarrow, then the Seams (HOM-56), then the road\'s waysides (HOM-57), then the fens and Thornwick (HOM-63), then the Drowned Grotto\'s three rooms (HOM-64), then the Rotroot\'s three (HOM-75), then the Barrowdowns, Highmoor and the Thornwood\'s stormiron district (HOM-95), in node-id order');
 assert(REGIONS.every(r => r.connections.every(c => REGIONS.find(o => o.id === c.to)?.connections.some(b => b.to === r.id))), 'connections are symmetric and name real regions');
 assert(REGIONS.every(r => r.connections.every(c => {
   const there = REGIONS.find(o => o.id === c.to)!, snapped = clampToWorld(c.at);
@@ -32,8 +32,9 @@ assert(regionAt(0, 0)?.id === 'clearing' && regionAt(-18, -55)?.id === 'hollow' 
 const nodes = createNodes();
 const WAYSIDE_N = regionById('wayside').rocks.length + regionById('wayside').trees.length;
 const HERB_N = (regionById('dunmere').herbs?.length ?? 0) + (regionById('thornwick').herbs?.length ?? 0);
-assert(HERB_N > 0 && nodes.length === 33 + WAYSIDE_N + HERB_N && nodes.slice(33 + WAYSIDE_N).every(n => NODE_TYPES[n.type].skill === 'herbalism') && nodes.slice(0, 3).every(n => n.type === 'copper') && nodes.slice(3, 15).every(n => n.type === 'tree') && nodes.slice(15, 18).every(n => n.type === 'tin') && nodes.slice(18, 23).every(n => n.type === 'adamant') && nodes.slice(23, 30).every(n => ['silverfin', 'brine_trout', 'saltpike'].includes(n.type)) && nodes.slice(30, 33).every(n => n.type === 'copper'),
-  'node ids run in region order (3 ridge copper, 12 trees, 3 cave veins), with Saltmarrow\'s five adamant veins and its seven fishing spots after them, then the Seams\' three copper, then the road\'s waysides, then the herb patches of the Fens and the Thornwood last of all');
+const STORM_N = regionById('barrowdowns').rocks.length + regionById('thornseam').rocks.length;
+assert(HERB_N > 0 && STORM_N === 15 && nodes.length === 33 + WAYSIDE_N + HERB_N + STORM_N && nodes.slice(33 + WAYSIDE_N, 33 + WAYSIDE_N + HERB_N).every(n => NODE_TYPES[n.type].skill === 'herbalism') && nodes.slice(33 + WAYSIDE_N + HERB_N).every(n => n.type === 'stormiron') &&nodes.slice(0, 3).every(n => n.type === 'copper') && nodes.slice(3, 15).every(n => n.type === 'tree') && nodes.slice(15, 18).every(n => n.type === 'tin') && nodes.slice(18, 23).every(n => n.type === 'adamant') && nodes.slice(23, 30).every(n => ['silverfin', 'brine_trout', 'saltpike'].includes(n.type)) && nodes.slice(30, 33).every(n => n.type === 'copper'),
+  'node ids run in region order (3 ridge copper, 12 trees, 3 cave veins), with Saltmarrow\'s five adamant veins and its seven fishing spots after them, then the Seams\' three copper, then the road\'s waysides, then the herb patches of the Fens and the Thornwood, then the fifteen stormiron veins of the barrows and the Thornwood (HOM-95) last of all');
 assert(nodes[0].x === -10 && nodes[0].z === -25.5 && nodes[3].x === -12 && nodes[3].z === 10 && nodes[15].x === -29.2 && nodes[15].z === -45.5, 'and each kept node sits where it always did');
 assert(ROCKS.length === 6 && ROCKS.every(r => r.type === 'copper') && CAVE_ROCKS.length === 3 && CAVE_ROCKS.every(r => r.type === 'tin') && TREES.length === 12, 'HOM-77: Hale\'s six surface rocks are copper and nothing else, and (HOM-81) the Hollow is three tin veins, keeping their ids and their places');
 const SCENERY = REGIONS.reduce((n, r) => n + r.obstacles.length + r.trees.length + r.rocks.length, 0);
@@ -55,7 +56,7 @@ console.log('\n# Hale\'s east gate, the road and Saltmarrow');
 
 console.log('\n# safe zones');
 {
-  assert(SAFE_ZONES.length === 6 && inSafeZone(20, -8) && inSafeZone(SALTMARROW.x - 25, SALTMARROW.z) && !inSafeZone(0, 0) && !inSafeZone(0, -20) && !inSafeZone(GREYWATER.x, GREYWATER.z), 'Hale (the forge yard) and Saltmarrow (its square) have safe ground, and so does each graveyard; the middle of the clearing, the road and the Hollow do not');
+  assert(SAFE_ZONES.length === 8 && inSafeZone(20, -8) && inSafeZone(SALTMARROW.x - 25, SALTMARROW.z) && !inSafeZone(0, 0) && !inSafeZone(0, -20) && !inSafeZone(GREYWATER.x, GREYWATER.z), 'Hale (the forge yard) and Saltmarrow (its square) have safe ground, and so does each graveyard; the middle of the clearing, the road and the Hollow do not');
   assert(TOWNS.every(t => inSafeZone(t.grave.x, t.grave.z) && Math.hypot(t.grave.x - t.wake.x, t.grave.z - t.wake.z) > 25), 'every graveyard is safe ground to wake on and more than 25 units from where the town wakes you or lands a flight');
   assert(TOWNS.every(t => inFootprint(regionAt(t.grave.x, t.grave.z)!.footprint, t.grave) && collidersAt(t.grave.x, t.grave.z).every(o => Math.hypot(o.x - t.grave.x, o.z - t.grave.z) > o.r + PLAYER_RADIUS)), 'and each is on walkable ground with nothing standing on it');
   const zone = (r: string) => REGIONS.find(x => x.id === r)!.safe![0];

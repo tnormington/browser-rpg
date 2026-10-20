@@ -10,7 +10,7 @@
 export const PLAYER_RADIUS = 0.5;
 
 /** What an obstacle is, for whatever draws it: the sim only ever reads the circle. Absent means a rock (or, in the clearing, whatever it always was). */
-export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic';
+export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'barrow';
 export interface Obstacle { x: number; z: number; r: number; kind?: PropKind }
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 export interface Pt { x: number; z: number }
@@ -33,7 +33,7 @@ export interface Gate {
   closed?: string;
 }
 // Ore rocks (gatherable, see sim/gathering.ts).
-export interface RockSpot extends Obstacle { type: 'copper' | 'tin' | 'iron' | 'coal' | 'adamant' }
+export interface RockSpot extends Obstacle { type: 'copper' | 'tin' | 'iron' | 'coal' | 'adamant' | 'stormiron' }
 
 /** A gathering spot you stand beside and cannot stand on: a shoal in the water. Unlike a rock it is not a collider. `type` is a NODE_TYPES key. */
 export interface NodeSpot extends Obstacle { type: string }
@@ -79,6 +79,8 @@ export interface Region {
   /** Herb patches: gathering nodes (after the region's `spots`) with no collider. `kind` picks the look, `type` the herb (a NODE_TYPES row, herbs.ts). */
   herbs?: HerbSpot[];
   gates?: Gate[];
+  /** A stand of nodes that adds no floor of its own: it lies inside an earlier region's, which the renderer draws. Listed last so no older node moves (the waysides' trick, once more). */
+  district?: boolean;
 }
 
 /** Cell size of a zone's routing grid unless its regions ask for finer. */
@@ -110,6 +112,8 @@ export const GREYWATER = { x: 436, z: 8 };   // 800 x 120, road along its z = 0;
 export const SALTMARROW = { x: 906, z: 8 };  // 140 x 140; the town is its west half, the Strand its south and east, the sea beyond x = +30
 export const DUNMERE = { x: 875, z: 524 };   // 140 wide, 848 long (z 100 to 948), the road down its x = 0; a 6-unit corridor north, through Saltmarrow's south edge, is the gate
 export const THORNWICK = { x: 875, z: 1008 }; // 140 x 140; the town is its north-west, the Thornwood its south and east; the road comes in at the middle of its north edge
+export const BARROWDOWNS = { x: 1400, z: 1008 }; // 900 x 140 (world x 950 to 1850), the road along its z = 0; a 6-unit corridor west through Thornwick's east edge is the gate
+export const HIGHMOOR = { x: 1910, z: 1008 };   // 140 x 140; the town is its west half, the Moor its east; the road comes in at the middle of its west edge
 const at =(o: Pt, lx: number, lz: number) => ({ x: o.x + lx, z: o.z + lz });
 const hash = (n: number) => Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1; // deterministic scatter: no rng state touched
 
@@ -340,13 +344,18 @@ const WARREN_DOOR = at(THORNWICK, 42.5, 89);
 const HEART_DOOR = at(THORNWICK, 27, 109);
 const WARREN_STONES: Obstacle[] = [at(THORNWICK, 40, 97), at(THORNWICK, 30, 94), at(THORNWICK, 36, 105)].map(p => ({ ...p, r: 1.4 }));
 const HEART_STONES: Obstacle[] = [at(THORNWICK, 26, 118), at(THORNWICK, 12, 118), at(THORNWICK, 26, 128), at(THORNWICK, 12, 128)].map(p => ({ ...p, r: 1.6 }));
+/**
+ * Stormiron in the Thornwood (bible 3.3): three veins in the wood's west, 40 from the nearest camp and out of the town's ground. They are their own district region
+ * (listed last), not Thornwick's `rocks`: a rock there would take node ids from every herb patch after it and break the saves.
+ */
+const THORN_SEAM: RockSpot[] = [[-60, -14], [-62.4, -9.6], [-58.4, -5.6]].map(([lx, lz]) => ({ type: 'stormiron' as const, ...at(THORNWICK, lx, lz), r: 1.2 }));
 /** The Thornwood: thornoaks wherever there is room, which is most places outside the town. Deterministic, 5 apart, clear of camps, the gate, the Rotroot's mouth and the town's own ground. */
 function thornwood(): Obstacle[] {
   const out: Obstacle[] = [], sq = thornLandmarks.thornSquare;
   for (let k = 0; k < 400 && out.length < 70; k++) {
     const c = at(THORNWICK, (hash(k * 3 + 1) - 0.5) * 132, (hash(k * 5 + 2) - 0.5) * 132);
     if (Math.hypot(c.x - sq.x, c.z - sq.z) < 41 || Math.hypot(c.x - graveThorn.x, c.z - graveThorn.z) < 12 || Math.abs(c.x - THORNWICK.x) < 7 && c.z < THORNWICK.z - 20) continue;
-    if (Math.hypot(c.x - ROTROOT_DOOR.x, c.z - ROTROOT_DOOR.z) < 8) continue;
+    if (Math.hypot(c.x - ROTROOT_DOOR.x, c.z - ROTROOT_DOOR.z) < 8 || THORN_SEAM.some(r => Math.hypot(c.x - r.x, c.z - r.z) < 7)) continue;
     if (thornSpawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 9) || Math.hypot(c.x - (THORNWICK.x + 63), c.z - THORNWICK.z) < 12) continue;
     if (out.some(o => Math.hypot(o.x - c.x, o.z - c.z) < 6)) continue;
     out.push({ ...c, r: 1.3, kind: 'thornoak' });
@@ -357,12 +366,89 @@ const THORNWOODS = thornwood();
 /** The garden by the alembic (Marrowleaf, the first six: the one herb a new gatherer can pick), and Thornmint wherever the wood thins. */
 const THORN_HERBS: HerbSpot[] = [[22, -30], [25, -26], [28, -32], [24, -22], [20, -24], [29, -20], [-52, 8], [-44, 20], [40, 50], [52, 18], [-20, 44], [8, 36], [30, 24], [-62, 36]]
   .map(([lx, lz], i) => ({ kind: 'thorn' as const, type: i < 6 ? 'marrowleaf' : 'thornmint', ...at(THORNWICK, lx, lz) }));
-/** The east gate, onto the road to the Barrowdowns: refuses everyone for now, since nothing is built behind it. */
+/** The east gate, onto the road to the Barrowdowns: open to combat 22 and over. It stands in the 6-unit corridor through the town's east edge (x 936 to 960), five units past the town's floor, so there is no way round the line. */
 const THORN_GATE: Gate = {
-  id: 'barrowdowns', axis: 'x', at: THORNWICK.x + 63, span: [THORNWICK.z - 3, THORNWICK.z + 3], from: -1, combat: 22, keeper: 'Gatewarden Hobb', post: { x: THORNWICK.x + 60.6, z: THORNWICK.z - 4 },
+  id: 'barrowdowns', axis: 'x', at: THORNWICK.x + 73, span: [THORNWICK.z - 3, THORNWICK.z + 3], from: -1, combat: 22, keeper: 'Gatewarden Hobb', post: { x: THORNWICK.x + 71.4, z: THORNWICK.z - 2 },
   refuse: 'The barrow road is for those of combat level 22 and over. Come back when you are one of them.',
-  closed: 'The road to the Barrowdowns is shut. Nobody who went up it has come back to say why.',
 };
+
+/**
+ * The Barrowdowns (bible 3.4): open grave country, levels 25 to 29, 900 long. Local coordinates: x runs from Thornwick's gate (-450) to Highmoor (+450), the road down z = 0.
+ * Every camp is 30 or more off the road, so a walker is never pulled in; the packs of hounds and the wights come first, the cairn brutes toward the middle, and the Barrow Lord
+ * holds the last stretch before Highmoor. The Hollow Knight stands apart behind a mound, as the other rares do.
+ */
+const BARROW_SPAWNS = [
+  ['barrow_wight', -400, 34], ['barrow_wight', -372, -38],
+  ['grave_hound', -330, 42], ['grave_hound', -328.4, 43.2], ['grave_hound', -331.6, 43.6],
+  ['barrow_wight', -290, -34],
+  ['grave_hound', -250, -44], ['grave_hound', -248.4, -42.8], ['grave_hound', -251.6, -42.4],
+  ['barrow_wight', -210, 36], ['cairn_brute', -170, -34],
+  ['grave_hound', -130, 46], ['grave_hound', -128.4, 47.2], ['grave_hound', -131.6, 47.6],
+  ['barrow_wight', -100, -40], ['cairn_brute', -60, 36],
+  ['barrow_wight', -20, -46],
+  ['grave_hound', 20, -48], ['grave_hound', 21.6, -46.8], ['grave_hound', 18.4, -46.4],
+  ['cairn_brute', 60, 40], ['barrow_wight', 90, -36],
+  ['grave_hound', 130, 44], ['grave_hound', 131.6, 45.2], ['grave_hound', 128.4, 45.6],
+  ['cairn_brute', 170, -38], ['barrow_wight', 200, 36],
+  ['hollow_knight', 210, 62],
+  ['cairn_brute', 240, 42], ['barrow_wight', 290, -42],
+  ['grave_hound', 330, -46], ['grave_hound', 331.6, -44.8], ['grave_hound', 328.4, -44.4],
+  ['cairn_brute', 350, 38], ['barrow_lord', 388, -36],
+] as const;
+const barrowSpawns = worldSpawns(BARROWDOWNS, BARROW_SPAWNS);
+/** Stormiron in the barrows: four stands of three veins, each beside a mound, 12 to 20 off the road and well clear of every camp. */
+const BARROW_STANDS: [number, number][] = [[-310, 16], [-90, -18], [110, 16], [300, -16]];
+const BARROW_ORE: RockSpot[] = BARROW_STANDS.flatMap(([lx, lz]) => [-1, 0, 1].map(i => ({ type: 'stormiron' as const, ...at(BARROWDOWNS, lx + i * 3.6, lz + (i === 0 ? 1.4 : 0)), r: 1.2 })));
+/** The barrows: grass-covered mounds with a pair of standing stones at the mouth. One beside each stand, the rest scattered 18 to 62 off the road, none on a camp or a vein. */
+function barrowMounds(): Obstacle[] {
+  const mound = (c: Pt, r: number): Obstacle => ({ ...c, r, kind: 'barrow' });
+  const out = BARROW_STANDS.map(([lx, lz]) => mound(at(BARROWDOWNS, lx - 1, lz + Math.sign(lz) * 11), 3.4));
+  for (let k = 0; k < 200 && out.length < 40; k++) {
+    const c = at(BARROWDOWNS, (hash(k * 3 + 1) - 0.5) * 860, (hash(k * 7 + 2) < 0.5 ? -1 : 1) * (18 + hash(k * 5 + 3) * 44)), r = 2.4 + hash(k * 11 + 4) * 1.8;
+    if (barrowSpawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 13) || BARROW_ORE.some(o => Math.hypot(o.x - c.x, o.z - c.z) < r + 7) || out.some(o => Math.hypot(o.x - c.x, o.z - c.z) < o.r + r + 8)) continue;
+    out.push(mound(c, r));
+  }
+  return out;
+}
+const BARROW_MOUNDS = barrowMounds();
+const barrowRoad = verge(BARROWDOWNS, barrowSpawns, BARROW_MOUNDS, { axis: 'x', reach: 440, near: 12, far: 38 });
+
+/** Highmoor's keepers: the Cairn Hold's door, and the north gate to the Cairnwaste. Nothing is built behind either, and they say so. */
+const HIGH_GATES: Gate[] = [
+  { id: 'cairnhold', axis: 'z', at: HIGHMOOR.z - 76, span: [HIGHMOOR.x - 33, HIGHMOOR.x - 27], from: 1, combat: 29, keeper: 'Cairnwarden Ysolt', post: { x: HIGHMOOR.x - 28.8, z: HIGHMOOR.z - 73 },
+    refuse: 'The Cairn Hold is not for anyone under combat level 29. What sleeps in it has waited this long: it can wait for you to be ready.',
+    closed: 'The Hold is sealed, and I am the one who keeps it so. Nobody has gone in since the winter the mound closed over the door, and nothing has come out. Come back when I know more.' },
+  { id: 'cairnwaste', axis: 'z', at: HIGHMOOR.z - 76, span: [HIGHMOOR.x + 27, HIGHMOOR.x + 33], from: 1, combat: 0, keeper: 'Watchman Corvin', post: { x: HIGHMOOR.x + 28.8, z: HIGHMOOR.z - 73 },
+    refuse: 'The north road is closed.',
+    closed: 'The road north to the Cairnwaste is closed, by the town\'s order, and nobody gets past me without a writ. There is no writ yet. Whatever is up there, the town has not seen fit to say.' },
+];
+/** Highmoor (bible 2.1): the town is the west half, a safe circle of 35 about the square; the Moor fills the east. Local coordinates. */
+const HIGH_SPAWNS = [
+  ['moor_ram', 32, -46], ['moor_ram', 46, -34], ['moor_ram', 38, 36],
+  ['moor_raider', 54, -12], ['moor_raider', 50, 24], ['moor_raider', 60, 44],
+  ['ridge_ogre', 30, 54], ['ridge_ogre', 58, -52],
+  ['stonehorn', 62, 4],
+] as const;
+const highSpawns = worldSpawns(HIGHMOOR, HIGH_SPAWNS);
+const HIGH_HOUSES: Obstacle[] = [[-36, -28], [-6, -30], [6, 24], [-42, 26]].map(([lx, lz]) => ({ ...at(HIGHMOOR, lx, lz), r: 3.1, kind: 'house' as const }));
+const highLandmarks = {
+  highSquare: at(HIGHMOOR, -24, 0),
+  /** The flight master, just inside the town from the road in from the west. */
+  flightHigh: { ...at(HIGHMOOR, -56, 5), r: 0.7 },
+};
+const graveHigh: Pt = at(HIGHMOOR, -58, 36);
+const HIGH_HEADSTONES = headstones(graveHigh);
+/** The moor's boulders: grey tors strewn across the east half, none on a camp, the gates' passages or one another. */
+function moorRocks(): Obstacle[] {
+  const out: Obstacle[] = [];
+  for (let k = 0; k < 300 && out.length < 28; k++) {
+    const c = at(HIGHMOOR, 8 + hash(k * 3 + 1) * 58, (hash(k * 5 + 2) - 0.5) * 124), r = 1.2 + hash(k * 7 + 3) * 1.6;
+    if (highSpawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 10) || Math.abs(c.z - HIGHMOOR.z) < 5 && c.x < HIGHMOOR.x + 12 || out.some(o => Math.hypot(o.x - c.x, o.z - c.z) < o.r + r + 4)) continue;
+    out.push({ ...c, r });
+  }
+  return out;
+}
+const MOOR_ROCKS = moorRocks();
 
 /**
  * The world. Order matters: node ids follow region order (each region's rocks, then its trees), so new ground goes last and every
@@ -527,7 +613,7 @@ export const REGIONS: Region[] = [
     tall: [...THORN_HOUSES, ...THORNWOODS],
     trees: [], rocks: [],
     landmarks: thornLandmarks,
-    connections: [{ to: 'dunmere', at: { x: THORNWICK.x, z: 943 } }, { to: 'mouth', at: ROTROOT_DOOR }],
+    connections: [{ to: 'dunmere', at: { x: THORNWICK.x, z: 943 } }, { to: 'mouth', at: ROTROOT_DOOR }, { to: 'barrowdowns', at: { x: THORNWICK.x + 66, z: THORNWICK.z } }, { to: 'thornseam', at: THORN_SEAM[1] }],
     safe: [{ ...thornLandmarks.thornSquare, r: 35 }, { ...graveThorn, r: GRAVE_SAFE_R }],
     spawns: thornSpawns,
     herbs: THORN_HERBS,
@@ -578,6 +664,48 @@ export const REGIONS: Region[] = [
     connections: [{ to: 'warren', at: HEART_DOOR }],
     spawns: worldSpawns(THORNWICK, [['rotroot_mother', 19, 126]]),
   },
+  {
+    // The Barrowdowns (HOM-95): the road east from Thornwick to Highmoor, 900 x 140 of grave country (bible 3.4). Its main floor runs from 950 to 1850; a 6-unit corridor west
+    // through Thornwick's east edge holds the hard gate (combat 22, Gatewarden Hobb, Thornwick's own). Its east end overlaps Highmoor across the whole width: soft.
+    id: 'barrowdowns', name: 'The Barrowdowns', cave: false, zone: 'barrowdowns',
+    footprint: [
+      { x0: BARROWDOWNS.x - 450, x1: BARROWDOWNS.x + 450, z0: BARROWDOWNS.z - 70, z1: BARROWDOWNS.z + 70 },
+      { x0: THORNWICK.x + 61, x1: THORNWICK.x + 85, z0: THORNWICK.z - 3, z1: THORNWICK.z + 3 },
+    ],
+    obstacles: barrowRoad.obstacles, tall: barrowRoad.tall, trees: [], rocks: BARROW_ORE,
+    landmarks: { gate: { x: THORNWICK.x + 73, z: THORNWICK.z } },
+    connections: [{ to: 'thornwick', at: { x: THORNWICK.x + 66, z: THORNWICK.z } }, { to: 'highmoor', at: { x: HIGHMOOR.x - 65, z: HIGHMOOR.z } }],
+    spawns: barrowSpawns,
+    road: { axis: 'x', at: BARROWDOWNS.z },
+  },
+  {
+    // Highmoor and the Moor (HOM-95). The town is safe ground: a flight master and a graveyard (the second stable, the vendor and the leatherworker are later cards). The hard gates
+    // are two 6-unit passages through the north wall, each held by a keeper and each shut: the Cairn Hold's door (combat 29) and the road to the Cairnwaste (Q6).
+    id: 'highmoor', name: 'Highmoor', cave: false, zone: 'highmoor',
+    footprint: [
+      { x0: HIGHMOOR.x - 70, x1: HIGHMOOR.x + 70, z0: HIGHMOOR.z - 70, z1: HIGHMOOR.z + 70 },
+      ...HIGH_GATES.map(g => ({ x0: g.span[0], x1: g.span[1], z0: g.at - 8, z1: HIGHMOOR.z - 66 })),
+    ],
+    obstacles: [
+      ...HIGH_HOUSES, ...MOOR_ROCKS, ...HIGH_HEADSTONES, { ...highLandmarks.flightHigh, kind: 'person' },
+      ...HIGH_GATES.map(g => ({ ...g.post, r: 0.55, kind: 'person' as const })),
+    ],
+    tall: [...HIGH_HOUSES, ...MOOR_ROCKS.filter(o => o.r >= 1.8)],
+    trees: [], rocks: [],
+    landmarks: { ...highLandmarks, gate: { x: HIGHMOOR.x - 65, z: HIGHMOOR.z } },
+    connections: [{ to: 'barrowdowns', at: { x: HIGHMOOR.x - 65, z: HIGHMOOR.z } }],
+    safe: [{ ...highLandmarks.highSquare, r: 35 }, { ...graveHigh, r: GRAVE_SAFE_R }],
+    spawns: highSpawns,
+    gates: HIGH_GATES,
+  },
+  {
+    // The Thornwood's stormiron (HOM-95), after everything else so no older node moves. A district of Thornwick: it adds no floor of its own.
+    id: 'thornseam', name: 'The Thornwood Seams', cave: false, zone: 'thornwick', district: true,
+    footprint: [{ x0: THORN_SEAM[0].x - 6, x1: THORN_SEAM[0].x + 6, z0: THORN_SEAM[0].z - 3, z1: THORN_SEAM[2].z + 3 }],
+    obstacles: [], tall: [], trees: [], rocks: THORN_SEAM,
+    landmarks: {},
+    connections: [{ to: 'thornwick', at: THORN_SEAM[1] }],
+  },
 ];
 // the hollow's and hall's standing stones are tall (they break sight lines)
 for (const r of REGIONS) if (r.cave) r.tall.push(...r.obstacles);
@@ -592,6 +720,7 @@ export const TOWNS: { id: string; name: string; wake: Pt; grave: Pt; map: Pt }[]
   { id: 'hale', name: 'Hale', wake: { x: 0, z: 6 }, grave: graveHale, map: { x: 0, z: 0 } }, // where a new game starts (PLAYER_SPAWN in data.ts reads this)
   { id: 'saltmarrow', name: 'Saltmarrow', wake: at(SALTMARROW, -25, -4), grave: graveSalt, map: { x: 900, z: 0 } },
   { id: 'thornwick', name: 'Thornwick', wake: at(THORNWICK, 2, -30), grave: graveThorn, map: { x: 900, z: 1000 } },
+  { id: 'highmoor', name: 'Highmoor', wake: at(HIGHMOOR, -26, -4), grave: graveHigh, map: { x: 1900, z: 1000 } },
 ];// `map`: the world-map position (design 1.2), used for the map screen and for flight prices only: walking never reads it
 export function nearestTown(x: number, z: number, found: readonly string[] = TOWNS.map(t => t.id)) {
   const open = TOWNS.filter(t => found.includes(t.id));
@@ -604,7 +733,7 @@ export const regionById = (id: string): Region => REGIONS.find(r => r.id === id)
 // --- Flat views of the regions: what the renderer and the sim read. -----------------------------------------------------------
 
 export let WORLD_HALF = 30; // the clearing is a square of side 2*WORLD_HALF
-export const LANDMARKS = { ...clearingLandmarks, ...ridgeLandmarks, ...saltLandmarks, ...thornLandmarks };
+export const LANDMARKS = { ...clearingLandmarks, ...ridgeLandmarks, ...saltLandmarks, ...thornLandmarks, ...highLandmarks };
 /** Every hard gate in the world (each region's own), and every Withering Ground patch. */
 export const GATES: Gate[] = REGIONS.flatMap(r => r.gates ?? []);
 export const WITHERING: { x: number; z: number; r: number }[] = REGIONS.flatMap(r => r.hazards ?? []);
