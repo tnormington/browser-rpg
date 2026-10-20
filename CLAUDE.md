@@ -23,6 +23,18 @@ with `git config core.hooksPath .githooks`; it never blocks or delays a commit.
 
 Work in a `wt/*` worktree is not playable until it lands on `master` in the main checkout.
 
+## The admin panel (QA)
+
+The playtest server is a dev build, so the game always has the QA panel: the **Admin** button in the
+bottom-left corner, or the **`** key. It sets your combat level, teleports you to any town or region,
+and puts any item in your bag — which is how a late-game fight, gate or recipe is reached without
+playing up to it. Levelling up through it hands over the abilities and the talent points the level
+owes, so a jumped-to character is the character, not a stand-in.
+
+It is dev tooling: a build the human downloads has no panel, no button and no key, because main.ts
+only wires it up behind the same `?debug=1` flag that `window.__debug` sits behind. The rules it uses
+are in `src/sim/admin.ts` (pure sim, like every other action) and the panel in `src/admin-ui.ts`.
+
 ## Reaching the remote
 
 Plain `git fetch`/`push` has no credentials and fails with `could not read Username for

@@ -3,6 +3,7 @@ import { Renderer } from './render';
 import { Hud } from './hud';
 import type { InvAction } from './sim/inventory';
 import type { ShopAction } from './sim/shop';
+import type { AdminAction } from './sim/admin';
 import type { Interact } from './sim';
 import type { WeatherKind } from './weather';
 import { loadGame, loadQuality, saveGame, saveQuality, wipeSave } from './storage';
@@ -28,6 +29,7 @@ const view = new Renderer(document.body, state, loadQuality());
 if (trace) (window as any).__frameTrace = trace, trace.attach(view.renderer);
 const pendingInv: InvAction[] = [];
 const pendingShop: ShopAction[] = [];
+const pendingAdmin: AdminAction[] = [];
 let pendingCraft: { recipe: string; count: number } | null = null;
 let pendingAdvance: boolean | 'road' = false;
 let pendingTalent: string | null = null, pendingTalentReset = false;
@@ -54,6 +56,8 @@ const hud = new Hud((x, y, z) => view.showingMap ? null : view.project(x, y, z),
     if (toggle) { view.setQuality(view.quality === 'high' ? 'low' : 'high'); saveQuality(view.quality); }
     return view.quality;
   },
+  // the QA panel, and with it the admin actions, exists only in a debug build: a player's game has no way to raise one
+  admin: debug ? (a: AdminAction) => { pendingAdmin.push(a); saveDirty = true; } : undefined,
   save: () => hud.note(save() ? 'Game saved.' : 'Could not save (browser storage unavailable).', 'log-info'),
   newGame: () => {
     if (!confirm('Wipe your save and start a new game?')) return;
@@ -120,6 +124,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyK') hud.toggle('skills');
   else if (e.code === 'KeyN') hud.toggle('talents');
   else if (e.code === 'KeyP') hud.toggle('book');
+  else if (debug && e.code === 'Backquote') hud.toggleAdmin(); // the QA panel: after the bar, so a slot bound to ` still wins
 });
 addEventListener('keyup', e => keys.delete(e.code));
 addEventListener('blur', () => { keys.clear(); held.clear(); });
@@ -200,6 +205,7 @@ function readInput(): Input {
     pickup: pendingPickup,
     inv: pendingInv.splice(0),
     shop: pendingShop.splice(0),
+    admin: pendingAdmin.splice(0),
     interact: pendingInteract,
     craft: pendingCraft,
     questAdvance: pendingAdvance,

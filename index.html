@@ -191,6 +191,19 @@ canvas{display:block}
 .rstat{color:var(--moss)}.rinputs{margin-top:var(--sp-2)}.rin{display:inline-block;margin-right:10px;color:var(--moss)}
 .rmeta{font-size:var(--fs-sm);opacity:.6;margin-top:var(--sp-1)}.rbtns{margin-top:5px;display:flex;gap:var(--sp-3)}
 
+/* ---- the admin / QA panel (admin-ui.ts): a dev-build panel, so it takes the panel chrome and adds only the form rows the others have no use for ---- */
+/* its button sits in the menu bar's row, in the corner opposite it: the bottom-left is clear of the action bar above and of the XP bar, which starts at 12% */
+.devbar{position:absolute;left:var(--gutter);bottom:var(--sp-2);pointer-events:auto}
+.adminpanel{--ptop:76px;--pbottom:250px;left:286px;width:300px}
+.afield{display:flex;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-3)}
+.afield input,.afield select{flex:1;min-width:0;box-sizing:border-box;padding:var(--sp-2) var(--sp-3);background:var(--iron-lift);border:1px solid var(--edge);border-radius:var(--r);font-family:var(--serif);font-size:var(--fs-md);color:var(--ink)}
+.afield input[type=number]{flex:0 0 68px}
+.anow{font-size:var(--fs-sm);color:var(--ink-dim);margin-bottom:var(--sp-2)}
+.alist{max-height:300px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--edge-hi) transparent}
+.arow{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--edge-dim)}
+.arow:hover{background:var(--iron-lift)}
+.aitem{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
 /* ---- combat bars ---- */
 .swing{--bar-h:10px;--bar-fs:var(--fs-xs);--fill:var(--fill-steel);position:absolute;left:50%;bottom:96px;width:424px;margin-left:-212px;margin-top:0;opacity:.55}.swing .fill{width:0}.swing .label{letter-spacing:.06em}
 .swing.on{--fill:var(--fill-gold);opacity:1;box-shadow:0 0 0 1px var(--gold),0 0 8px rgba(240,190,80,.45)}.swing.on.ready{--fill:var(--fill-gold-hi)}
@@ -226,7 +239,7 @@ canvas{display:block}
 .questbanner{top:20%;color:var(--arcane);text-shadow:0 0 22px #1a8fc0,0 3px 4px #000}.questbanner.show{animation:lvl 3.2s ease-out}
 
 /* ---- the world map screen and the flight ride (flight-ui.ts): the map scene is drawn in place of the game, so the game's own overlays step aside ---- */
-.hud.mapmode .tracker,.hud.mapmode .actionbar,.hud.mapmode .swing,.hud.mapmode .frame.target,.hud.mapmode .msglog,.hud.mapmode .panel,.hud.mapmode .menubar,.hud.mapmode .xp,.hud.mapmode .minimap{display:none!important}
+.hud.mapmode .tracker,.hud.mapmode .actionbar,.hud.mapmode .swing,.hud.mapmode .frame.target,.hud.mapmode .msglog,.hud.mapmode .panel,.hud.mapmode .menubar,.hud.mapmode .devbar,.hud.mapmode .xp,.hud.mapmode .minimap{display:none!important}
 .maplayer,.ridelayer{position:absolute;inset:0;pointer-events:none}
 .maptitle,.ridetitle{position:absolute;left:0;right:0;text-align:center;font-size:var(--fs-3xl);color:var(--gold);text-shadow:0 0 14px #000,0 2px 3px #000}
 .maptitle{top:22px;letter-spacing:.2em}.ridetitle{top:40px;letter-spacing:.12em}

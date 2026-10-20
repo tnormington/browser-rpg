@@ -63,6 +63,7 @@ for (const [width, height] of SIZES) {
     // the forge is already open from the click; the rest are opened by the keys that toggle them
     const scenes = [['forge', () => {}], ['bag', () => key('KeyI')], ['bag+sheet', () => { key('KeyI'); key('KeyC'); }],
       ['skills', () => key('KeyK')], ['talents', () => key('KeyN')], ['spellbook', () => key('KeyP')], ['help', () => key('KeyH')],
+      ['admin', () => key('Backquote')], // the QA panel (HOM-114): only there with ?debug=1, which is how this bench loads the game
       ['shop', async () => { const p = d.sim.player; p.hp = p.maxHp = 99999; p.x = -7; p.z = 3; d.step(); d.sim.interact = { k: 'vendor' }; await wait(500); }],
       // Highmoor (HOM-104): the tanning rack is the forge's panel again, and Isolde Marr's row is the tallest a shop row gets (two requirements)
       ['rack', async () => { const p = d.sim.player, r = d.world.LANDMARKS.rack; p.x = r.x - 3; p.z = r.z; d.step(); d.sim.interact = { k: 'rack' }; await wait(300); }],
@@ -102,7 +103,8 @@ for (const [width, height] of SIZES) {
     for (let i = 0; i < 12; i++) { const l = document.createElement('div'); l.className = 'logline log-quest'; l.textContent = 'Cairnwarden Ysolt: "The Cairn Hold is not for anyone under combat level 29. What sleeps in it has waited this long."'; log.append(l); }
     await new Promise(r => setTimeout(r, 400));
     const parts = [['quest tracker', '.tracker'], ['minimap', '.minimap'], ['player frame', '.frame.player'], ['target frame', '.frame.target'],
-      ['action bar', '.actionbar'], ['swing bar', '.swing'], ['XP bar', '.xp'], ['menu bar', '.menubar'], ['message log', '.msglog']];
+      ['action bar', '.actionbar'], ['swing bar', '.swing'], ['XP bar', '.xp'], ['menu bar', '.menubar'], ['message log', '.msglog'],
+      ['admin button', '.devbar']]; // HOM-114: dev builds only, and this bench loads the game as one
     const boxes = [];
     for (const [name, sel] of parts) {
       const x = document.querySelector(sel);

@@ -23,6 +23,8 @@ import { ShopUi } from './shop-ui';
 import { FlightUi, MapUi, MapView } from './flight-ui';
 import { QuestUi } from './quest-ui';
 import { MenuUi } from './menu-ui';
+import { AdminUi } from './admin-ui';
+import type { AdminAction } from './sim/admin';
 import { SpellbookUi } from './spellbook-ui';
 import { Minimap } from './minimap';
 import { HudWindow, el, dragData, parseDrag } from './dom';
@@ -47,6 +49,8 @@ export interface HudActions {
   save: () => void;
   newGame: () => void;
   quality: (toggle: boolean) => import('./post').Quality;
+  /** Dev tooling: present only when main.ts has the debug flag on, and the only thing that builds the QA panel. */
+  admin?: (a: AdminAction) => void;
 }
 
 /** The player-facing message for a refused gather/craft. Level failures say exactly what is needed. */
@@ -187,6 +191,8 @@ export class Hud {
   private flightUi: FlightUi;
   private mapUi: MapUi;
   private bookUi: SpellbookUi;
+  /** The QA panel, or null in a build without the debug flag. */
+  private adminUi: AdminUi | null = null;
   private minimap: Minimap;
   /** Every panel Esc shuts, in the order they are built. */
   private windows: HudWindow[] = [];
@@ -264,9 +270,11 @@ export class Hud {
     this.castBar = bar(this.root, 'castbar');
     this.questUi = new QuestUi(this.root, actions.questAdvance);
     this.bookUi = new SpellbookUi(this.root, () => this.bar, a => this.keyForAbility(a), a => this.assign(this.slotOfAbility(a), null));
+    if (actions.admin) this.adminUi = new AdminUi(this.root, actions.admin);
     this.menuUi = new MenuUi(this.root, actions);
     this.windows = [this.mapUi, this.menuUi, this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi,
-      this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char];
+      this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char,
+      ...(this.adminUi ? [this.adminUi] : [])];
     this.renderBar();
   }
 
@@ -279,6 +287,8 @@ export class Hud {
 
   toggleHelp() { this.menuUi.toggle(); }
   toggleMap() { this.mapUi.toggle(); }
+  /** The QA panel, where there is one: a build without the debug flag has none and this does nothing. */
+  toggleAdmin() { this.adminUi?.toggle(); }
 
   /** A dialogue, the help screen or the map has focus: game keys (jump) must not act under it. */
   get modalOpen(): boolean { return this.menuUi.isOpen || this.questUi.isOpen || this.mapUi.isOpen; }
@@ -786,6 +796,7 @@ export class Hud {
     this.shopUi.update(s);
     this.flightUi.update(s);
     this.mapUi.update(s);
+    this.adminUi?.update(s);
     this.updateCastBar(s);
     this.updateNodePlates(s, blockers);
 
