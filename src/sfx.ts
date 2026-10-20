@@ -97,10 +97,15 @@ const AMBIENCE: Record<string, { file: string; vol: number }> = {
   thornwick: { file: 'forest-ambience', vol: 0.4 },
   barrowdowns: { file: 'barrows-ambience', vol: 0.4 },
   highmoor: { file: 'moor-ambience', vol: 0.35 },
+  hale: { file: 'hale-ambience', vol: 0.35 },   // a zone key, not a region: ridge, clearing and seams all fall through to it
 };
-/** Every cave room (Hollow, Grotto, Rotroot, and Cairn Hold once it lands) shares one bed: no cave region has an entry above. */
+/** Every cave room (Hollow, Grotto, Rotroot, Cairn Hold) shares one bed: no cave region has an entry above. */
 const CAVE_BED = { file: 'cave-ambience', vol: 0.4 };
-const bedFor = (id: string | null) => !id ? undefined : AMBIENCE[id] ?? (REGIONS.find(r => r.id === id)?.cave ? CAVE_BED : undefined);
+/** A region's own bed, else the cave bed, else its zone's: so a district (the Waysides, the Thornwood Seams) sounds like the land it sits in. */
+const bedFor = (id: string | null) => {
+  const r = id ? REGIONS.find(x => x.id === id) : undefined;
+  return !id ? undefined : AMBIENCE[id] ?? (r?.cave ? CAVE_BED : r && AMBIENCE[r.zone]);
+};
 const AMBIENCE_FADE = 1.5;   // seconds to cross between beds
 
 const MASTER_GAIN = 0.8;

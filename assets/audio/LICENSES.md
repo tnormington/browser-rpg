@@ -67,3 +67,11 @@ Same recipe as above (20 s seamless loop, 2 s triangle crossfade, mono, 32 kHz, 
 | cave-ambience.ogg | "Loopable Dungeon Ambience", dungeon_ambient_1.ogg (22 s from 0:29) - https://opengameart.org/content/loopable-dungeon-ambience (file: https://opengameart.org/sites/default/files/dungeon_ambient_1_0.ogg) | JaggedStone | CC0 | 2026-10-20 |
 
 The tanning-rack and destrier cues reuse Kenney samples already listed above (thud.ogg, cook-start.ogg, interrupt.ogg, hoof-*.ogg) at other pitches; no new files.
+
+### Added 2026-10-20 (HOM-113)
+
+Same recipe (20 s seamless loop, 2 s triangle crossfade, mono, 32 kHz, -26 LUFS, Vorbis q2). Source recording is not in the repo.
+
+| File | Source | Author | Licence | Fetched |
+|---|---|---|---|---|
+| hale-ambience.ogg | "Ambient Bird Sounds", birds-isaiah658.ogg (22 s from 0:04) - https://opengameart.org/content/ambient-bird-sounds (file: https://opengameart.org/sites/default/files/birds-isaiah658_0.ogg) | isaiah658 | CC0 | 2026-10-20 |
