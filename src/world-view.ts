@@ -39,6 +39,8 @@ const WOOD_FLOOR = { litter: 0x3a4630, litterAlt: 0x2f3a2a, loam: 0x3a3226 };
 /** The Barrowdowns' turf (cold grey-green grass, peat showing through) and Highmoor's (heath, with heather), and Highmoor's greystone buildings under dark slate. */
 const BARROW_FLOOR = { turf: 0x4a5640, turfAlt: 0x3d4833, peat: 0x2f3329 };
 const MOOR_FLOOR = { heath: 0x5a5840, heathAlt: 0x4b4a38, heather: 0x5e4a5a };
+/** The barrows' mounds (a lighter, drier turf than the ground round them, so a mound is a shape and not a shadow) and the black of a barrow's open mouth. */
+const BARROW = { turf: 0x66744f, dark: 0x07090b };
 const MOOR_PAL: Pal = { wall: 0x7d7a72, roof: 0x3d4650, foot: 0x4a4a48 };
 
 let poolMaterial: THREE.MeshBasicMaterial | undefined;
@@ -58,11 +60,11 @@ function headstone(o: Obstacle, ry: number, i: number): THREE.BufferGeometry[] {
   return [place(new THREE.BoxGeometry(0.8, 1.2, 0.22).rotateZ(lean), o.x, 0.6, o.z, ry), place(new THREE.CylinderGeometry(0.4, 0.4, 0.22, 8).rotateX(Math.PI / 2).rotateZ(lean), o.x - lean * 0.6, 1.2, o.z, ry)];
 }
 
-type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed' | 'bone' | 'brush' | 'thorn' | 'cloth', THREE.BufferGeometry[]> & {
+type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed' | 'bone' | 'brush' | 'thorn' | 'cloth' | 'turf' | 'dark' | 'heather', THREE.BufferGeometry[]> & {
   /** Placed copies of props.ts props, by `prop:layer`: one draw per layer however many there are. */
   props: Map<string, { color: number; cls: string; geoms: THREE.BufferGeometry[] }>;
 };
-const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], bone: [], brush: [], thorn: [], cloth: [], props: new Map() });
+const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], bone: [], brush: [], thorn: [], cloth: [], turf: [], dark: [], heather: [], props: new Map() });
 
 /** A prop's layers as one merged geometry each, built the first time it is wanted and copied (never moved) for every placement. */
 const propSources = new Map<PropId, { name: string; color: number; cls: string; geo: THREE.BufferGeometry }[]>();
@@ -289,11 +291,17 @@ export class WorldView {
             place(new THREE.CylinderGeometry(0.04, 0.09, 1.3, 4).rotateZ(-1.0), o.x - Math.cos(ry) * 0.4 - 0.35, 2.2, o.z + Math.sin(ry) * 0.4, ry));
           return;
         }
-        case 'barrow': { // a grass mound with a pair of standing stones and a lintel at its mouth, which faces the road
-          const rz = (mainRect(r).z0 + mainRect(r).z1) / 2, dir = o.z > rz ? -1 : 1, mz = o.z + dir * o.r * 0.95;
-          bag.brush.push(place(new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), o.x, 0, o.z, ry, o.r * 1.15, o.r * 0.55, o.r * 1.15));
-          for (const s of [-1, 1]) bag.rock.push(place(new THREE.BoxGeometry(0.6, 2, 0.6), o.x + s * 1.1, 1, mz, 0.1 * s));
-          bag.rock.push(place(new THREE.BoxGeometry(3, 0.5, 0.7), o.x, 2.2, mz));
+        case 'barrow': { // a turf mound ringed with kerbstones, its black mouth between two standing stones under a lintel, facing the road
+          const rz = (mainRect(r).z0 + mainRect(r).z1) / 2, dir = o.z > rz ? -1 : 1, mz = o.z + dir * o.r * 0.8;
+          bag.turf.push(place(new THREE.SphereGeometry(1, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), o.x, 0, o.z, ry, o.r * 1.1, o.r * 0.7, o.r * 1.1));
+          for (let n = 0; n < 11; n++) {
+            const a = n * Math.PI * 2 / 11 + ry;
+            if (dir * Math.cos(a) > 0.8) continue; // not across the mouth
+            bag.rock.push(place(new THREE.BoxGeometry(0.9, 0.7, 0.55), o.x + Math.sin(a) * o.r * 1.08, 0.3, o.z + Math.cos(a) * o.r * 1.08, a));
+          }
+          for (const s of [-1, 1]) bag.rock.push(place(new THREE.BoxGeometry(0.6, 2.4, 0.7), o.x + s * 1.15, 1.2, mz, 0.08 * s));
+          bag.rock.push(place(new THREE.BoxGeometry(3.3, 0.55, 0.9), o.x, 2.55, mz));
+          bag.dark.push(place(new THREE.BoxGeometry(1.7, 2.1, 1.2), o.x, 1.05, mz - dir * 0.3));
           return;
         }
         case 'hut': case 'house': case 'inn': building(o, ry * 0.12, bag); return;
@@ -313,6 +321,8 @@ export class WorldView {
     if (r.road) this.waymarks(bag, rect, mainRect(r), r.road.axis, r.id === 'greywater' ? 100 : 0);
     if (r.id === 'dunmere') this.fenDressing(bag, rect, r);
     if (r.id === 'thornwick') this.woodDressing(bag, rect, r);
+    if (r.id === 'barrowdowns') this.barrowDressing(bag, rect, r);
+    if (r.id === 'highmoor') this.moorDressing(bag, rect, r);
     this.emit(bag, add, r.id === 'thornwick' ? THORN_PAL : r.id === 'highmoor' ? MOOR_PAL : SALT_PAL);
   }
 
@@ -393,6 +403,43 @@ export class WorldView {
     }
   }
 
+  /**
+   * The Barrowdowns' grave country: standing stones (some with a second leaning on them), cairns, leaning headstones, dead thorns and scattered bone in every 12-unit cell, none on the road,
+   * a camp, a mound or a vein. Thin or low enough that no enemy hides behind it, and with nothing to collide with. The barrows themselves are the sim's obstacles, drawn in `scenery`.
+   */
+  private barrowDressing(bag: Bag, rect: Rect, r: Region) {
+    const CELL = 12, road = r.road!.at, camps = r.spawns ?? [];
+    for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
+      const k = hash(i * 6.1 + j * 10.3 + 2), x = (i + 0.15 + 0.7 * hash(i * 2.9 + j * 1.9)) * CELL, z = (j + 0.15 + 0.7 * hash(j * 5.3 + i * 3.7)) * CELL;
+      if (k > 0.5 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || Math.abs(z - road) < 8 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
+      if (camps.some(c => Math.hypot(c.x - x, c.z - z) < 6) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + 2.5) || (r.rocks ?? []).some(o => Math.hypot(o.x - x, o.z - z) < 5)) continue;
+      const ry = k * 40;
+      if (k < 0.14) { // a standing stone, with a shorter one leaning against it
+        bag.rock.push(place(new THREE.BoxGeometry(0.9, 3.4 + k * 8, 0.55).rotateZ((k - 0.07) * 0.5), x, 1.8, z, ry), place(new THREE.BoxGeometry(0.7, 1.7, 0.45).rotateZ(0.2), x + 1.1, 0.85, z, ry));
+      } else if (k < 0.24) { // a cairn: three stones and a capstone
+        for (let n = 0; n < 3; n++) bag.rock.push(place(new THREE.DodecahedronGeometry(1), x + Math.cos(n * 2.1) * 0.8, 0.4, z + Math.sin(n * 2.1) * 0.8, ry + n, 0.75, 0.5, 0.75));
+        bag.rock.push(place(new THREE.DodecahedronGeometry(1), x, 1.2, z, ry, 0.55, 0.5, 0.55));
+      } else if (k < 0.34) { // a leaning headstone
+        bag.rock.push(...headstone({ x, z, r: 0.5, kind: 'grave' }, ry, i + j));
+      } else if (k < 0.42) snag(bag, x, z, i * 29 + j);
+      else for (let n = 0; n < 4; n++) { const a = n * 1.7 + ry; bag.bone.push(place(new THREE.ConeGeometry(0.07, 0.8, 3).rotateZ(Math.PI / 2 - 0.1 * n), x + Math.cos(a) * 0.5, 0.12, z + Math.sin(a) * 0.5, a)); } // scattered bone
+    }
+  }
+
+  /** Highmoor's heath: heather in drifts, loose stones and runs of drystone wall in every 6-unit cell, none in the square, on the road in, on a camp or a boulder. */
+  private moorDressing(bag: Bag, rect: Rect, r: Region) {
+    const CELL = 6, camps = r.spawns ?? [], sq = LANDMARKS.highSquare;
+    for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
+      const k = hash(i * 4.9 + j * 8.3 + 5), x = (i + 0.15 + 0.7 * hash(i * 3.7 + j * 2.3)) * CELL, z = (j + 0.15 + 0.7 * hash(j * 6.1 + i * 1.1)) * CELL;
+      if (k > 0.55 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
+      if (Math.hypot(x - sq.x, z - sq.z) < 14 || (Math.abs(z - HIGHMOOR.z) < 5 && x < HIGHMOOR.x + 12) || camps.some(c => Math.hypot(c.x - x, c.z - z) < 4) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + 1.5)) continue;
+      const ry = k * 50;
+      if (k < 0.4) for (let n = 0; n < 5; n++) { const a = n * 1.3 + ry; bag.heather.push(place(new THREE.IcosahedronGeometry(1, 0), x + Math.cos(a) * 0.7, 0.25, z + Math.sin(a) * 0.7, a, 0.55 + hash(n + k * 9) * 0.3, 0.32, 0.55)); }
+      else if (k < 0.48) for (let n = 0; n < 3; n++) bag.rock.push(place(new THREE.DodecahedronGeometry(1), x + n * 0.9, 0.2, z + (n % 2) * 0.5, ry + n, 0.5 + hash(n + k) * 0.4, 0.3, 0.5));
+      else bag.rock.push(place(new THREE.BoxGeometry(1.8, 0.6, 0.45), x, 0.3, z, ry), place(new THREE.BoxGeometry(1.4, 0.45, 0.45), x + 1.7, 0.22, z + 0.2, ry + 0.2));
+    }
+  }
+
   /** Thornwick's own: a well in the square, a stall at the provisioner's, a notice board at the reeve's, barrels and crates, and lamps down the road from the north. */
   private townDressing(bag: Bag) {
     const sq = LANDMARKS.thornSquare, v = LANDMARKS.thornVendor, rv = LANDMARKS.thornReeve;
@@ -434,6 +481,9 @@ export class WorldView {
     one(bag.brush, WOOD.brush, 'foliage', 'cast');
     one(bag.thorn, WOOD.thorn, 'wood', 'cast');
     one(bag.cloth, 0x7a4a3a, 'cloth', 'cast');
+    one(bag.turf, BARROW.turf, 'foliage');
+    one(bag.dark, BARROW.dark, 'stone', 'none');
+    one(bag.heather, MOOR_FLOOR.heather, 'foliage', 'cast');
     for (const e of bag.props.values()) one(e.geoms, e.color, e.cls, e.cls === 'glow' ? 'none' : 'both');
     if (bag.glow.length) { const m = mesh(mergeGeometries(bag.glow)!, LANTERN, 'glow', 'none'); (m.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.1; add(m); }
     if (bag.pool.length) {
@@ -538,6 +588,7 @@ export class WorldView {
     bag.stone.push(place(new THREE.CylinderGeometry(2.4, 2.8, 0.5, 8), sq.x, 0.25, sq.z));
     for (let n = 0; n < 4; n++) bag.stone.push(place(new THREE.DodecahedronGeometry(1.5 - n * 0.3), sq.x + n * 0.15, 0.9 + n * 1.1, sq.z, n * 0.7));
     for (let n = 0, x = HIGHMOOR.x - 62; x < sq.x - 6; n++, x += 13) lampPost(bag, x, HIGHMOOR.z + (n % 2 ? 4.4 : -4.4), 0, 5.5);
+    for (const [lx, lz, rot] of [[-13, 12, 0.5], [-9, 15, 0.1], [-31, -14, 2.2]]) placeProp(bag, 'tanningRack', HIGHMOOR.x + lx, HIGHMOOR.z + lz, rot); // the tanners' racks, off the road
     this.emit(bag, add, MOOR_PAL);
   }
 
