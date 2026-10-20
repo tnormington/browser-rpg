@@ -1,9 +1,12 @@
 // Sound effects: CC0 ogg samples (assets/audio, see LICENSES.md) played through one shared AudioContext, plus two
 // synth blips kept on purpose (enemy telegraph, Second Wind). Reads sim events; silent until the first user gesture,
 // and M mutes. Samples are fetched and decoded lazily after the context exists; until decoded a sound is skipped.
+// The looping ambience bed and the place's music (music.ts) both hang off the same master, so M and the death duck
+// take all three together.
 import type { GameEvent } from './sim';
 import { ABILITIES } from './sim/data';
 import { bedFor } from './ambience';
+import { Music } from './music';
 
 // ---- tuning table: change numbers here, by ear ----
 /** minGap ms between plays of a group, maxVoices simultaneously sounding in it. */
@@ -103,6 +106,7 @@ const URLS = new Map(Object.entries(FILES).map(([p, url]) => [p.split('/').pop()
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
+let music: Music | null = null;
 let muted = false;
 const buffers = new Map<string, AudioBuffer>();
 const lastPick = new Map<string, string>();
@@ -125,11 +129,12 @@ export function unlockAudio() {
       master = ctx.createGain();
       master.gain.value = muted ? 0 : MASTER_GAIN;
       master.connect(ctx.destination);
+      music = new Music(ctx, master);   // the music rides under the same master, so M mutes it and a death ducks it
       setTimeout(loadSamples, 0);   // after the gesture handler returns, never in the initial load
     }
     if (ctx.state === 'suspended') void ctx.resume().then(syncAmbience);
     else syncAmbience();
-  } catch { ctx = null; master = null; }
+  } catch { ctx = null; master = null; music = null; }
 }
 
 export function toggleMute() {
@@ -152,18 +157,19 @@ function duck() {
   master.gain.linearRampToValueAtTime(MASTER_GAIN, t + DUCK_HOLD * 2);
 }
 
-// ---- ambience: one looping bed at a time, crossfaded as the player changes region ----
+// ---- ambience: one looping bed at a time, crossfaded as the player changes region, with the place's music under it ----
 interface Bed { file: string; src: AudioBufferSourceNode; gain: GainNode }
 let bed: Bed | null = null;
 let wantBed: string | null = null;   // region id asked for; kept so a bed asked for before decode or unlock still starts
 
-/** Call whenever the player's region changes (and once at start): fades the matching bed in and the old one out. */
+/** Call whenever the player's region changes (and once at start): fades the matching bed and music in and the old ones out. */
 export function setAmbience(region: string | null) {
   wantBed = region;
   syncAmbience();
 }
 
 function syncAmbience() {
+  music?.set(wantBed);   // a region asked for before the first gesture is held in wantBed and starts when the context runs
   if (!ctx || !master || ctx.state !== 'running') return;
   const cfg = bedFor(wantBed);
   const buf = cfg && buffers.get(cfg.file);

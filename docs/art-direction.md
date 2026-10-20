@@ -21,10 +21,29 @@ Rendered comparisons: `sh bench/art.sh` (frames per reference), `python bench/co
 | Grade | Vignette 0.6 from 0.32, contrast 1.12, cold shadows / warm highlights (`POST.grade`). |
 | Emissive | Saturation is for fire, blood and arcane light only. Arcane crystals (`CRYSTALS`) and tier 3+ gear glow are cold blue; neither may out-glow the forge. Emissive stays under the bloom threshold unless it is a beacon (`glow.ts`). |
 | Colour | Flat per material. Ground and cave floor are tinted per vertex with low variance; never per triangle. |
+| Surface | Relief, not colour (`surface.ts`). Each material class carries a faint greyscale detail map and a normal map, so the key light has something to catch; the colour under them stays flat. |
 
 ## Faceting
 
 Facets are deliberate where the surface is hard: **rock, stone, trees, ore, coal, gems, buildings and gear plates** use flat shading (`FACETED` in `render.ts`; static slots and `gear.ts` in `models.ts`). **Organic skinned bodies** (player, enemies, NPCs) get smoothed normals at a 45 degree crease (`CREASE` in `models.ts`), so a body reads as a body while plates, belts and horns keep edges. The board's original ask ("don't show the polygons") is met on characters and ground; the references show hard facets on rock and armour, so those stay.
+
+## Surface detail (HOM-117)
+
+Every material class gets two generated maps from `src/surface.ts`, shared by every material of that class: a detail
+map (greyscale, centred just under white, so it darkens into the hollows and never tints the flat colour) and a
+normal map cut from the same height field. Grass and heath, trodden earth, chipped rock, coursed stone, limewash,
+lapped slate, sawn board, leaf, hammered metal, hide and cloth; emitters, skin and gems stay clean.
+
+- **The dials** are `repeat` (tiles per world unit), `relief` (how deep the extrusion reads) and `grime` (how far the
+  detail map darkens) in `SURFACES`. The ground's is the faintest of the lot on purpose: it is already tinted per
+  vertex and the two must not fight.
+- **UVs** are world-unit planar projections off the dominant axis of each face, baked by `bakeUV` inside `mesh()`.
+  A texel is the same size on a cottage wall, a boulder and the ground, so nothing needs unwrapping and a merged
+  slab's parts each keep their own scale. A non-indexed geometry projects per triangle, so no facet carries a seam
+  through its middle.
+- **Buildings** have three surfaces, not one: `plaster` walls over a `stone` footing under a `roof` of slates.
+- **Cost** (bench/run.mjs, 1x): draw calls and triangles unchanged; about +0.6 ms GPU a frame and +1.4 s of load,
+  which is ten more shader programs for `warmUp` to compile up front rather than stall on mid-fight.
 
 ## Tier 5 (HOM-47)
 
