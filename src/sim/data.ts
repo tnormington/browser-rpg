@@ -51,7 +51,8 @@ export const powerForLevel = (level: number) => 1 + 0.07 * (level - 1); // scale
 export interface AbilityDef {
   name: string;
   desc: string;
-  kind: 'strike' | 'dot' | 'heal' | 'cleave' | 'interrupt' | 'guard';
+  /** `bash` staggers whether or not the target is winding up; `burst` tears the bleed off it and spends what is left at once. */
+  kind: 'strike' | 'dot' | 'heal' | 'cleave' | 'interrupt' | 'guard' | 'bash' | 'burst';
   unlockLevel: number; // combat level that hands the ability over; locked slots do nothing and say why
   damage: number;     // direct damage (strike/dot/cleave) or heal amount (heal), at power 1; 0 for interrupt
   dotDamage?: number; // per tick
@@ -60,20 +61,24 @@ export interface AbilityDef {
   cooldown: number;   // seconds, on top of the GCD
   range: number;      // world units, center to center; 0 = self
   arc?: number;       // cleave: full width in degrees of the cone, centred on the line to the target
-  offGcd?: boolean;   // interrupt, guard: usable mid-GCD, so it can answer a wind-up the instant it starts
+  offGcd?: boolean;   // interrupt, guard, bash: usable mid-GCD, so it can answer a wind-up the instant it starts
   /** guard: the buff it puts on the player (see BUFFS), which is what actually takes the damage down. */
   buff?: string;
-  /** What a talent calls this ability by. `kind` already names the other five; only the two strikes need telling apart. */
-  tag?: 'crush';
+  /** Share of the damage dealt that comes back as health (Bloodthirst). */
+  leech?: number;
+  /** What a talent calls this ability by. `kind` already names the rest; only the strikes need telling apart. */
+  tag?: 'crush' | 'strike';
   /** Share of the weapon's damage the ability carries (default 1). Without it a bigger `damage` is just Strike, the weapon being most of a hit by level 12. */
   weaponMult?: number;
   /** Not handed over by level alone: bought from this vendor (see VENDORS) for gold, once the level is reached. */
   trainer?: { vendor: string; price: number };
+  /** ...or paid for with a talent point: the capstone of a tree (see TALENTS) hands this over, and nothing else does. */
+  talent?: string;
 }
 
 export const ABILITIES: AbilityDef[] = [
   { name: 'Strike', desc: 'Cheap, reliable melee hit. Your GCD filler.',
-    kind: 'strike', unlockLevel: 1, damage: 8, cost: 10, cooldown: 0, range: 3 },
+    kind: 'strike', unlockLevel: 1, damage: 8, cost: 10, cooldown: 0, range: 3, tag: 'strike' },
   { name: 'Crushing Blow', desc: 'Heavy melee hit. Save energy for it.',
     kind: 'strike', unlockLevel: 3, damage: 20, cost: 30, cooldown: 6, range: 3, tag: 'crush' },
   { name: 'Serrated Throw', desc: 'Ranged opener that makes the target bleed.',
@@ -88,6 +93,14 @@ export const ABILITIES: AbilityDef[] = [
     kind: 'cleave', unlockLevel: 12, damage: 8, weaponMult: 0.6, cost: 35, cooldown: 10, range: 4, arc: 360, trainer: { vendor: 'trainer', price: 120 } },
   { name: 'Guard', desc: 'Off the global cooldown. Halves all damage you take for 4 seconds. Learned from the Thornwick trainer.',
     kind: 'guard', unlockLevel: 20, damage: 0, cost: 20, cooldown: 30, range: 0, offGcd: true, buff: 'guard', trainer: { vendor: 'thorn_trainer', price: 350 } },
+  // The three capstones. Each is bought with the last talent point of a tree rather than with gold, so the kit a player
+  // ends with says which tree they went down. `unlockLevel` is simply the earliest a tree can hold twelve points.
+  { name: 'Bloodthirst', desc: 'A heavy hit that feeds you: a quarter of the damage comes back as health. The Fury capstone.',
+    kind: 'strike', unlockLevel: 14, damage: 24, weaponMult: 1.1, leech: 0.25, cost: 35, cooldown: 12, range: 3, talent: 'bloodthirst' },
+  { name: 'Shield Bash', desc: 'Off the global cooldown. Staggers whatever you hit, wind-up or no wind-up. The Bulwark capstone.',
+    kind: 'bash', unlockLevel: 14, damage: 10, weaponMult: 0.5, cost: 25, cooldown: 25, range: 3.5, offGcd: true, talent: 'ironwill' },
+  { name: 'Hemorrhage', desc: 'Tears the bleed off your target from range and deals everything it had left at once. The Hunt capstone.',
+    kind: 'burst', unlockLevel: 14, damage: 10, weaponMult: 0.8, cost: 30, cooldown: 15, range: 9, talent: 'hemorrhage' },
 ];
 
 /** How long an interrupted enemy is stunned, and what share of its heavy-attack cooldown it keeps (so it cannot slam again at once). */

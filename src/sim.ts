@@ -51,7 +51,8 @@ export interface Enemy {
   deadFor: number;
   hitFlash: number; // presentation timers kept in sim so they tick deterministically
   swing: number;
-  bleed: { ticks: number; timer: number; damage: number } | null;
+  /** `interval` is the seconds between ticks, fixed when the wound was opened (Exsanguinate empties it sooner). */
+  bleed: { ticks: number; timer: number; damage: number; interval: number } | null;
   /** A wind-up in progress: the tell the player reads. Cleared by a Pummel, by dying, or when it lands. */
   cast: { kind: CastKind; t: number; total: number; x?: number; z?: number; radius?: number } | null;
   stagger: number;   // seconds left stunned after an interrupt: it does nothing

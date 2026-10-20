@@ -29,8 +29,9 @@ export function playerStatuses(p: Player): Status[] {
 /** What is on an enemy: the bleed it carries and the stagger a landed Pummel left. */
 export function enemyStatuses(e: Enemy): Status[] {
   const out: Status[] = [];
-  // one tick a second: the tick in flight, plus a whole second for each one behind it
-  if (e.bleed) out.push({ key: 'bleed', icon: '🩸', name: 'Bleeding', left: e.bleed.ticks - 1 + e.bleed.timer, total: BLEED_TICKS, bad: true });
+  // the tick in flight, plus a whole interval for each one behind it (Exsanguinate shortens the interval, Rending adds ticks)
+  if (e.bleed) out.push({ key: 'bleed', icon: '🩸', name: 'Bleeding',
+    left: (e.bleed.ticks - 1) * e.bleed.interval + e.bleed.timer, total: BLEED_TICKS * e.bleed.interval, bad: true });
   if (e.stagger > 0) out.push({ key: 'stagger', icon: '💫', name: 'Staggered', left: e.stagger, total: STAGGER_TIME, bad: true });
   return out;
 }

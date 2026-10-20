@@ -1,6 +1,6 @@
 // HUD: DOM overlay. Reads GameState and sim events; never mutates sim state.
 import { GameState, GameEvent, ResourceNode, Enemy } from './sim';
-import { ABILITIES, ENEMY_TYPES, GCD, castName } from './sim/data';
+import { ABILITIES, AbilityDef, ENEMY_TYPES, GCD, castName } from './sim/data';
 import { levelProgress } from './sim/xp';
 import { ITEMS } from './sim/items';
 import { InvAction } from './sim/inventory';
@@ -63,9 +63,16 @@ function actionFailText(ev: Extract<GameEvent, { t: 'actionfail' }>): string {
 
 type Project = (x: number, y: number, z: number) => { x: number; y: number } | null;
 
-const ICONS = ['⚔', '🔨', '🗡', '❤', '🌀', '✊', '🌪', '🛡'];
+/** Why a slot will not fire: the level it still wants, the trainer who sells it, or the talent that hands it over. */
+function lockedWhy(a: AbilityDef, level: number): string {
+  if (level < a.unlockLevel) return `${a.name} unlocks at combat level ${a.unlockLevel} (you are level ${level})`;
+  if (a.trainer) return `${a.name} is taught by ${VENDORS.find(v => v.id === a.trainer!.vendor)!.name}: ${a.trainer.price} gold`;
+  return `${a.name} comes with the ${talentById(a.talent!)!.name} talent (N)`;
+}
+
+const ICONS =['⚔', '🔨', '🗡', '❤', '🌀', '✊', '🌪', '🛡', '🫀', '🔰', '🩸'];
 /** The key for each bar slot, in order: a longer bar is more entries here, and the bar lays itself out. */
-export const BAR_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'KeyQ', 'KeyE', 'KeyR', 'KeyF'];
+export const BAR_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyT'];
 export const keyLabel = (barSlot: number) => BAR_KEYS[barSlot].replace(/^(Digit|Key)/, '');
 /** The layout a fresh player gets: every ability in order, and the rest of the bar left empty for the spell book. */
 const defaultBar = () => BAR_KEYS.map((_, i) => (i < ABILITIES.length ? i : null));
@@ -377,11 +384,7 @@ export class Hud {
         this.note(`+${ev.amount} ${SKILLS[ev.skill].name} XP`, 'log-xp');
       } else if (ev.t === 'fail') {
         if (ev.reason === 'gcd') continue; // too noisy while mashing; the sweep already shows it
-        this.say(ev.reason === 'locked'
-          ? (s.player.combat.level >= ABILITIES[ev.slot].unlockLevel
-            ? `${ABILITIES[ev.slot].name} is taught by ${VENDORS.find(v => v.id === ABILITIES[ev.slot].trainer!.vendor)!.name}: ${ABILITIES[ev.slot].trainer!.price} gold`
-            : `${ABILITIES[ev.slot].name} unlocks at combat level ${ABILITIES[ev.slot].unlockLevel} (you are level ${s.player.combat.level})`)
-          : FAIL_TEXT[ev.reason]);
+        this.say(ev.reason === 'locked' ? lockedWhy(ABILITIES[ev.slot], s.player.combat.level) : FAIL_TEXT[ev.reason]);
       } else if (ev.t === 'loot') {
         const name = ITEMS[ev.item].name;
         this.float(`+${ev.qty > 1 ? ev.qty + 'x ' : ''}${name}`, 'loot', s.player.x, 3.0, s.player.z);
@@ -613,7 +616,8 @@ export class Hud {
         ? `conic-gradient(rgba(0,0,0,0.65) ${frac * 360}deg, transparent 0)` : 'none';
       slot.cdText.textContent = cd > 0.05 ? (cd >= 10 ? String(Math.ceil(cd)) : cd.toFixed(1)) : '';
       const locked = !abilityOpen(p, i);
-      slot.lockText.textContent = p.combat.level >= a.unlockLevel ? 'Trainer' : `Lv ${a.unlockLevel}`; // level reached but locked: it is for sale
+      // level reached but locked: it is for sale, or it waits on the talent point that hands it over
+      slot.lockText.textContent = p.combat.level < a.unlockLevel ? `Lv ${a.unlockLevel}` : a.talent ? 'Talent' : 'Trainer';
       slot.root.classList.toggle('locked', locked);
       slot.lock.style.display = locked ? 'flex' : 'none';
       const noEnergy = !locked && p.energy < costOf(p, i);

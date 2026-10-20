@@ -34,10 +34,10 @@ import { SAVE_VERSION, deserialize, serialize } from './sim/save';
 import { clearLine } from './sim/sight';
 import { playerStatuses } from './sim/status';
 import {
-  EXECUTE_BONUS, EXECUTE_UNDER, TALENTS, TALENT_START_LEVEL, TIER_COST, TREE_IDS,
-  deriveTalents, refreshTalents, spentIn, spentTotal, talentPoints,
+  EXECUTE_BONUS, EXECUTE_UNDER, TALENTS, TALENT_START_LEVEL, TIER_COST, TREE_IDS, WOUNDED_UNDER,
+  abilityFromTalent, deriveTalents, refreshTalents, spentIn, spentTotal, talentById, talentPoints,
 } from './sim/talents';
-import { reductionOf } from './sim/combat';
+import { abilityOpen, reductionOf } from './sim/combat';
 import { SHOP_STOCK, VENDOR, SHOP_REACH, BUY_MARKUP, buyPrice, HARBOUR_STOCK, HARBOUR_VENDOR } from './sim/shop';
 
 let checks = 0;
@@ -1092,7 +1092,8 @@ section('Phase 3: ability unlocks tied to combat level');
   assert(ABILITIES[SLOT.strike].unlockLevel === 1 && ABILITIES.every(a => a.unlockLevel >= 1), `Strike is the only level-1 ability (${shipped})`);
   assert(ABILITIES.filter(a => a.unlockLevel === 1).length === 1, 'a fresh character starts with exactly one ability');
   assert(ABILITIES.some(a => a.kind === 'cleave') && ABILITIES.some(a => a.kind === 'interrupt'), 'the kit includes a cleave and an interrupt');
-  assert(ABILITIES.every(a => a.trainer || a.unlockLevel <= 5), 'the whole kit is handed over by combat level 5 (trainer abilities are bought), within the quest levelling');
+  assert(ABILITIES.every(a => a.trainer || a.talent || a.unlockLevel <= 5),
+    'the whole kit is handed over by combat level 5 (trainer abilities are bought, capstones are talented), within the quest levelling');
 
   // locked: does nothing, costs nothing, says why
   const s = createState(41);
@@ -2743,8 +2744,18 @@ section('HOM-38 talents: the rules of the trees');
 {
   assert(talentPoints(1) === 0 && talentPoints(TALENT_START_LEVEL) === 1 && talentPoints(10) === 9, 'no points at level 1, then one a level from level 2');
   assert(TALENTS.every(t => TREE_IDS.includes(t.tree) && t.ranks >= 1 && t.tier < TIER_COST.length), 'every talent sits in a real tree at a real tier');
-  assert(TREE_IDS.every(tree => TALENTS.filter(t => t.tree === tree).reduce((n, t) => n + t.ranks, 0) < talentPoints(10)),
-    'no tree can be filled before combat 10: depth costs breadth');
+  const CAP = TIER_COST.length - 1;
+  const ranksIn = (tree: string) => TALENTS.filter(t => t.tree === tree).reduce((n, t) => n + t.ranks, 0);
+  assert(TREE_IDS.every(tree => TIER_COST.every((_, tier) => TALENTS.filter(t => t.tree === tree && t.tier === tier).length === (tier === CAP ? 1 : 2))),
+    'every tree is two talents abreast at each tier, with one capstone under them: a route through, not a list to tick off');
+  assert(TREE_IDS.every(tree => ranksIn(tree) === 18 && ranksIn(tree) > talentPoints(10)),
+    `a tree is 18 ranks, so none can be filled before combat 10: depth costs breadth (${TREE_IDS.map(t => ranksIn(t)).join('/')})`);
+  assert(TALENTS.every(d => !d.prereq || (talentById(d.prereq)?.tree === d.tree && talentById(d.prereq)!.tier < d.tier)),
+    'every prerequisite is a talent lower down the same tree, so a branch is always reachable from where it starts');
+  assert(TALENTS.filter(d => d.tier === CAP).every(d => d.ranks === 1 && !!d.prereq && abilityFromTalent(d.id) >= 0),
+    'each capstone is one rank, built on something, and hands over an ability');
+  assert(ABILITIES.filter(a => a.talent).length === TREE_IDS.length && ABILITIES.every(a => !a.talent || talentById(a.talent)?.tier === CAP),
+    'and nothing but a capstone hands over an ability');
 
   const buy = (s: GameState, id: string) => tick(s, { talent: id });
   /** Read a rank through a function so TS does not narrow it across sim calls. */
@@ -2776,6 +2787,19 @@ section('HOM-38 talents: the rules of the trees');
   tick(s, { talentReset: true });
   assert(spentTotal(s.player.talents) === 0 && hasEvent(s, e => e.t === 'talentreset') && s.player.talentFx.damage === 1,
     'unlearning hands every point back and the effects go neutral with them');
+
+  // the second gate: the points a tier wants are the floor, and a branch also names what it is built on
+  const g = quietState(702);
+  atLevel(g, 12);
+  for (let n = 0; n < 3; n++) buy(g, 'brutality');
+  buy(g, 'overpower');
+  assert(spentIn(g.player.talents, 'fury') === 4 && rank(g, 'overpower') === 1, 'four points in Fury: the tier Ruin sits at is paid for');
+  buy(g, 'ruin');
+  assert(rank(g, 'ruin') === 0 && hasEvent(g, e => e.t === 'talentfail' && e.reason === 'prereq'),
+    'and Ruin is still shut, because Overpower is not at full rank');
+  buy(g, 'overpower'); buy(g, 'overpower');
+  buy(g, 'ruin');
+  assert(rank(g, 'overpower') === 3 && rank(g, 'ruin') === 1, 'Overpower taken all the way opens it');
 
   // not mid-fight
   const c = quietState(701);
@@ -2938,6 +2962,160 @@ section('HOM-38 talents: every one of them changes an ability you already have')
 }
 
 // ---------------------------------------------------------------------------
+section('HOM-80 talents: the branches, and the three capstones that hand over an ability');
+{
+  const give = (s: GameState, ranks: Record<string, number>) => { Object.assign(s.player.talents, ranks); refreshTalents(s); };
+
+  // Overpower is Strike's alone; Carnage is the sweep's alone
+  const hitWith = (slot: number, ranks: Record<string, number>) => {
+    const a = arena(620, 8);
+    a.s.player.equipment.weapon = 'forged_blade'; refreshGearStats(a.s);
+    give(a.s, ranks);
+    const hp0 = a.b.hp;
+    tick(a.s, { ability: slot });
+    return hp0 - a.b.hp;
+  };
+  assert(hitWith(SLOT.strike, { overpower: 3 }) > hitWith(SLOT.strike, {}) && hitWith(SLOT.crushing, { overpower: 3 }) === hitWith(SLOT.crushing, {}),
+    `Overpower 3 is Strike's own bonus and no other hit's (${hitWith(SLOT.strike, {})} -> ${hitWith(SLOT.strike, { overpower: 3 })})`);
+  assert(hitWith(SLOT.cleave, { carnage: 2 }) > hitWith(SLOT.cleave, {}) && hitWith(SLOT.strike, { carnage: 2 }) === hitWith(SLOT.strike, {}),
+    `Carnage 2 is the sweep's and no other hit's (${hitWith(SLOT.cleave, {})} -> ${hitWith(SLOT.cleave, { carnage: 2 })})`);
+
+  // Predator pays only on a wound, Berserk only when you are the wounded one
+  const onBleeder = (ranks: Record<string, number>) => {
+    const a = arena(621, 8);
+    give(a.s, ranks);
+    tick(a.s, { ability: SLOT.throw }); // the bleed first, then the hit that reads it
+    a.s.player.gcd = 0;
+    const hp0 = a.b.hp;
+    tick(a.s, { ability: SLOT.strike });
+    return hp0 - a.b.hp;
+  };
+  assert(onBleeder({ predator: 3 }) > onBleeder({}) && hitWith(SLOT.strike, { predator: 3 }) === hitWith(SLOT.strike, {}),
+    `Predator 3 only pays against something already bleeding (${onBleeder({})} -> ${onBleeder({ predator: 3 })} on a bleeder, unchanged on a whole one)`);
+  const cornered = (ranks: Record<string, number>, hpFrac: number) => {
+    const a = arena(622, 8);
+    give(a.s, ranks);
+    a.s.player.hp = Math.round(a.s.player.maxHp * hpFrac);
+    const hp0 = a.b.hp;
+    tick(a.s, { ability: SLOT.strike });
+    return hp0 - a.b.hp;
+  };
+  assert(cornered({ berserk: 2 }, 0.2) > cornered({}, 0.2) && cornered({ berserk: 2 }, 1) === cornered({}, 1),
+    `Berserk 2 hits harder only below ${Math.round(WOUNDED_UNDER * 100)}% health (${cornered({}, 0.2)} -> ${cornered({ berserk: 2 }, 0.2)} cornered, unchanged whole)`);
+
+  // Bastion: health that arrives with the rank and leaves with the reset
+  const bast = quietState(623);
+  atLevel(bast, 12);
+  const hp0 = bast.player.maxHp;
+  give(bast, { bastion: 3 });
+  assert(Math.abs(bast.player.maxHp / hp0 - 1.15) < 0.01 && bast.player.hp === bast.player.maxHp,
+    `Bastion 3 is 15% more health, handed over at once (${hp0} -> ${bast.player.maxHp})`);
+  tick(bast, { talentReset: true });
+  assert(bast.player.maxHp === hp0, 'and it goes back when the points do');
+
+  // Guardian and Thick Skin sit outside the flat reduction: one answers a telegraph, the other a wounded player
+  /** What one hit from a Brute lands for: its telegraphed slam, or the plain swing it leads with when the slam is off. */
+  const brutalHit = (ranks: Record<string, number>, hpFrac: number, heavy: boolean) => {
+    const g = quietState(624);
+    atLevel(g, 12);
+    give(g, ranks);
+    const b = enemyOf(g, 'brute');
+    placeAt(b, 0, 0); b.state = 'chase'; b.heavyCd = heavy ? 0 : 1e9; b.attackCd = 0;
+    g.player.x = 0; g.player.z = 2;
+    let dmg = 0;
+    for (let n = 0; n < Math.round(20 / TICK_DT) && !dmg; n++) {
+      g.player.hp = Math.round(g.player.maxHp * hpFrac); // hold the player at that share: each read is of one hit
+      tick(g);
+      for (const e of g.events) if (e.t === 'hit' && e.target === 'player' && !!e.heavy === heavy) dmg = e.amount;
+    }
+    return dmg;
+  };
+  const slam = brutalHit({}, 1, true), bite = brutalHit({}, 1, false);
+  assert(brutalHit({ thickskin: 2 }, 1, true) < slam && brutalHit({ thickskin: 2 }, 1, false) === bite,
+    `Thick Skin 2 takes a quarter off the slam and nothing off the bite (slam ${slam} -> ${brutalHit({ thickskin: 2 }, 1, true)}, bite ${bite})`);
+  const low = brutalHit({}, 0.2, false), guarded = brutalHit({ guardian: 2 }, 0.2, false);
+  assert(guarded < low && brutalHit({ guardian: 2 }, 1, false) === bite,
+    `Guardian 2 only answers once you are wounded (${low} -> ${guarded} cornered, ${bite} unchanged whole)`);
+
+  // Exsanguinate empties the same wound sooner; Rending gives it more to spend
+  const bleedRun = (ranks: Record<string, number>) => {
+    const a = arena(625, 8);
+    give(a.s, ranks);
+    tick(a.s, { ability: SLOT.throw });
+    const ticks = a.b.bleed!.ticks, interval = a.b.bleed!.interval;
+    let n = 0;
+    while (a.b.bleed && n < Math.round(30 / TICK_DT)) { tick(a.s); n++; }
+    return { ticks, interval, secs: n * TICK_DT };
+  };
+  const slow = bleedRun({}), fast = bleedRun({ exsanguinate: 2 }), longer = bleedRun({ rending: 2 });
+  assert(fast.ticks === slow.ticks && fast.secs < slow.secs * 0.75,
+    `Exsanguinate 2 runs the same ${slow.ticks} ticks 40% faster (${slow.secs.toFixed(1)}s -> ${fast.secs.toFixed(1)}s)`);
+  assert(longer.ticks === slow.ticks + 2 && longer.secs > slow.secs, `Rending 2 adds two ticks to it (${slow.ticks} -> ${longer.ticks})`);
+
+  // ---- the capstones ----
+  const CAPSTONE = { bloodthirst: 8, bash: 9, hemorrhage: 10 };
+  assert(ABILITIES[CAPSTONE.bloodthirst].talent === 'bloodthirst' && ABILITIES[CAPSTONE.bash].talent === 'ironwill' && ABILITIES[CAPSTONE.hemorrhage].talent === 'hemorrhage',
+    'the three capstone abilities sit at the end of the bar, each named by its talent');
+
+  // locked by the talent, not by gold or by the level
+  const cap = arena(626, 20);
+  tick(cap.s, { ability: CAPSTONE.bloodthirst });
+  assert(hasEvent(cap.s, e => e.t === 'fail' && e.reason === 'locked' && e.slot === CAPSTONE.bloodthirst) && !abilityOpen(cap.s.player, CAPSTONE.bloodthirst),
+    'at combat 20 with no talent in it, Bloodthirst is locked');
+  give(cap.s, { bloodthirst: 1 });
+  assert(abilityOpen(cap.s.player, CAPSTONE.bloodthirst), 'the talent point is what opens it');
+
+  // Bloodthirst feeds you a share of what it deals
+  const drink = () => {
+    const a = arena(627, 20);
+    a.s.player.equipment.weapon = 'forged_blade'; refreshGearStats(a.s);
+    give(a.s, { bloodthirst: 1 });
+    a.s.player.hp = Math.round(a.s.player.maxHp * 0.5);
+    const hp0 = a.s.player.hp, boar0 = a.b.hp;
+    tick(a.s, { ability: CAPSTONE.bloodthirst });
+    return { healed: a.s.player.hp - hp0, dealt: boar0 - a.b.hp };
+  };
+  const bt = drink();
+  assert(bt.dealt > 0 && Math.abs(bt.healed - Math.round(bt.dealt * ABILITIES[CAPSTONE.bloodthirst].leech!)) <= 1,
+    `Bloodthirst deals ${bt.dealt} and gives ${bt.healed} of it back`);
+
+  // Shield Bash staggers anything, wind-up or no wind-up, and takes no GCD
+  const bashed = () => {
+    const g = quietState(628);
+    atLevel(g, 20);
+    give(g, { ironwill: 1 });
+    const b = enemyOf(g, 'brute');
+    placeAt(b, 0, 0); b.state = 'chase'; b.heavyCd = 1e9; b.attackCd = 1e9;
+    g.player.x = 0; g.player.z = 2.5;
+    tick(g, { clickEnemy: b.id });
+    const hp0 = b.hp;
+    tick(g, { ability: CAPSTONE.bash });
+    return { cast: b.cast, stagger: b.stagger, dealt: hp0 - b.hp, gcd: g.player.gcd };
+  };
+  const sb = bashed();
+  assert(sb.stagger > 0 && sb.dealt > 0 && sb.gcd === 0,
+    `Shield Bash staggers a Brute that was not winding up at all, hits it for ${sb.dealt}, and takes no GCD`);
+  assert(Math.abs(deriveTalents({ stalwart: 2 }).staggerBonus - 0.8) < 1e-9, 'and Stalwart lengthens every stagger the player lands');
+
+  // Hemorrhage tears the bleed off and spends what is left at once
+  const tear = (withBleed: boolean) => {
+    const a = arena(629, 20);
+    give(a.s, { hemorrhage: 1 });
+    if (withBleed) { tick(a.s, { ability: SLOT.throw }); a.s.player.gcd = 0; }
+    const owed = a.b.bleed ? a.b.bleed.ticks * a.b.bleed.damage : 0;
+    const hp0 = a.b.hp;
+    tick(a.s, { ability: CAPSTONE.hemorrhage });
+    return { owed, dealt: hp0 - a.b.hp, bleed: a.b.bleed };
+  };
+  const dry = tear(false), wet = tear(true);
+  // what it deals on a bleeder is its own hit plus everything the wound still owed, so taking the debt back off it
+  // leaves a hit the size of the dry one (the damage roll is the only difference between them)
+  assert(wet.owed > 0 && wet.bleed === null && Math.abs((wet.dealt - wet.owed) / dry.dealt - 1) < 0.25,
+    `Hemorrhage spends the ${wet.owed} the wound still owed in one hit and leaves nothing bleeding (${dry.dealt} dry -> ${wet.dealt} on a bleeder)`);
+  assert(dry.dealt > 0, 'and on something whole it is still a hit, not a wasted press');
+}
+
+// ---------------------------------------------------------------------------
 section('HOM-38 talents: saved, and only if the build was legal');
 {
   const s = quietState(710);
@@ -2958,6 +3136,7 @@ section('HOM-38 talents: saved, and only if the build was legal');
   assert(bad(f => { f.player.talents.brutality = 9; }) === null, 'more ranks than the talent has -> null');
   assert(bad(f => { f.player.talents.serration = 3; f.player.talents.whirling = 2; f.player.talents.bloodscent = 1; }) === null, 'more points than the level ever handed out -> null');
   assert(bad(f => { f.player.talents = { brutality: 3, frenzy: 2, execute: 1, bloodscent: 1 }; }) === null, 'a tier bought without paying into its tree -> null');
+  assert(bad(f => { f.player.talents = { brutality: 3, overpower: 2, ruin: 1 }; }) === null, 'a branch bought without the talent it is built on -> null');
 }
 
 // ---------------------------------------------------------------------------

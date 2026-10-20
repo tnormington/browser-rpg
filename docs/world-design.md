@@ -515,9 +515,9 @@ Camps and counts per region (suggestions; a builder places them against the actu
 
 ### 3.5 Abilities and talents: what unlocks where
 
-**Today all six abilities are open at combat 5 and the nine talents are all bought by combat 19** (`talentPoints` = level − 1, 18 ranks in total). After 19 a level gives nothing. So the ladder has to give each level something.
+**All six starting abilities are open at combat 5.** The talents used to run out with them: nine of them, 18 ranks, all bought by combat 19. HOM-80 rebuilt the trees, and they now hold **54 ranks**, which is more than level 40 hands out — so from here the ladder's job is the abilities, not the talents.
 
-**Abilities.** Five new ones. Each has an `unlockLevel` and is **bought from a trainer for gold** (a gold sink that also makes each town worth visiting). The bar grows from 6 to 11 slots: that is a Game Engineer change, a second row of keys. Combat 5 abilities stay free.
+**Abilities.** Five new ones. Each has an `unlockLevel` and is **bought from a trainer for gold** (a gold sink that also makes each town worth visiting). The bar is **11 slots** as of HOM-80, which is where the three capstones below went; the trainer's five will share it. Combat 5 abilities stay free.
 
 | Ability | Combat | Trainer | Price | Kind | What it does | Cost / CD |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -529,15 +529,25 @@ Camps and counts per region (suggestions; a builder places them against the actu
 
 **A design problem the existing numbers hide.** An ability is `(base + weapon) x power`, so by level 12 the weapon (28) is already 78 % of a Strike (8 + 28). A new ability with a bigger `base` is nearly indistinguishable from Strike. That is why the new ones carry a **`weaponMult`** (default 1; Whirlwind 0.6, Colossus Blow 2.5): without it Colossus Blow would deal 10 % more than Strike for five times the energy. It is a field on `AbilityDef`, not a system.
 
-**Talents.** Two new tiers per tree, so a point is worth spending every level from 20 to 40. `TIER_COST` becomes `[0, 2, 4, 8, 12]`. Each tree gains tier 3 (two talents, 3 ranks each) and tier 4 (one capstone, 1 rank) = **7 ranks a tree, 21 in all: 18 + 21 = 39 = `talentPoints(40)`**. At level 30 a player holds 29 of the 39, so ten ranks are still unbought: choices keep mattering, and at 40 everything is open. Resetting stays free.
+**Talents (shipped, HOM-80).** `TIER_COST` is `[0, 2, 4, 8, 12]`: five tiers a tree, **two talents abreast at each of tiers 0–3 and one capstone alone at tier 4**. That is 9 talents and **18 ranks a tree, 27 talents and 54 ranks in all** — `talentPoints(55)`, so the trees outlast the ladder and a build is always a choice rather than a checklist. A tree cannot be filled before combat 19; a capstone wants 12 points in its own tree, so the earliest anyone holds one is combat 14. Resetting stays free.
 
-| Tree | Tier 3 | Tier 3 | Tier 4 (capstone) |
+**Two gates, not one.** The tier's points are the floor. A talent may also name a **`prereq`**: another talent, lower down the same tree, that must already be at full rank. That is what makes a tier a fork instead of a shelf — three ranks of Overpower buys Ruin, three of Brutality buys Berserk, and nine points will not buy both.
+
+| Tree | Tier 0 | Tier 1 | Tier 2 | Tier 3 | Tier 4 (capstone) |
+| --- | --- | --- | --- | --- | --- |
+| **Fury** | *Brutality* (3): +5 % damage per rank · *Overpower* (3): Strike hits 12 % harder per rank | *Frenzy* (2): swing 10 % faster per rank · *Relentless* (2): +3 % crit and Crushing Blow −1 s per rank | *Execute* (1): Crushing Blow +50 % under 35 % health, and a kill resets it · *Ruin* (2, needs Overpower): crits deal 15 % more per rank | *Berserk* (2, needs Brutality): +8 % damage per rank under half health · *Unbridled* (2, needs Frenzy): every swing gives back 3 energy per rank | *Bloodthirst* (1, needs Execute): **teaches Bloodthirst** |
+| **Bulwark** | *Toughened* (3): −4 % damage taken per rank · *Bastion* (3): +5 % max health per rank | *Rally* (2): Second Wind +25 % and −3 s per rank · *Stalwart* (2): staggers last 0.4 s longer and Pummel −2 s per rank | *Counterstrike* (1): Pummel at half cooldown, +30 energy on a landed interrupt · *Thick Skin* (2, needs Toughened): −12 % per rank from slams and marked ground | *Guardian* (2, needs Bastion): −10 % damage taken per rank under half health · *Vigour* (2, needs Rally): +75 % out-of-combat regen and −1 s to leave combat per rank | *Iron Will* (1, needs Counterstrike): **teaches Shield Bash** |
+| **Hunt** | *Serration* (3): bleeds tick 25 % harder per rank · *Predator* (3): +4 % damage per rank against anything bleeding | *Whirling* (2): Cleave +20° and −5 energy per rank · *Rending* (2): bleeds run 1 tick longer per rank | *Bloodscent* (1): +6 % crit, and a crit adds two ticks to the bleed · *Carnage* (2, needs Predator): sweeps deal 12 % more per rank | *Exsanguinate* (2, needs Serration): bleeds tick 20 % faster per rank · *Opportunist* (2, needs Rending): +10 energy per rank on a crit | *Hemorrhage* (1, needs Bloodscent): **teaches Hemorrhage** |
+
+**The capstones reverse the old rule.** Every other talent still only bends a button the player already has — combat reads one derived `TalentEffects` record, never the ranks. The capstone of each tree is the exception and the only one: it hands over an ability, gated by **`AbilityDef.talent`** exactly as a trainer's ability is gated by `AbilityDef.trainer`. The bar grew to **11 keys** (`1 2 3 4 5 6 Q E R F T`) to hold them.
+
+| Capstone ability | Kind | What it does | Cost / CD |
 | --- | --- | --- | --- |
-| **Fury** | *Relentless* (3): +3 % crit per rank, Crushing Blow −0.5 s cooldown per rank | *Overpower* (3): Strike hits 10 % harder per rank | *Bloodthirst* (1): every auto-attack gives back 2 energy |
-| **Bulwark** | *Bastion* (3): +5 % max HP per rank | *Stalwart* (3): Pummel staggers 0.3 s longer and is 2 s quicker per rank | *Unbreakable* (1): Guard lasts 2 s longer and its cooldown is 10 s shorter |
-| **Hunt** | *Rending* (3): bleeds last 1 tick longer per rank | *Predator* (3): +4 % damage per rank against a target that is bleeding | *Open Wounds* (1): Rupture ticks twice as often |
+| **Bloodthirst** | `strike`, `leech: 0.25` | `24 + 1.1 x weapon`, and a quarter of what it deals comes back as health | 35 / 12 s |
+| **Shield Bash** | new kind `bash`, off the GCD | `10 + 0.5 x weapon` and a stagger on anything it hits, wind-up or no wind-up — the shutdown Pummel only gets on a cast | 25 / 25 s |
+| **Hemorrhage** | new kind `burst`, range 9 | `10 + 0.8 x weapon`, then tears the bleed off the target and deals everything it still owed at once | 30 / 15 s |
 
-Same rule as today's file header: **no talent adds an ability**; each changes a button the player has. They are lines in `TALENTS` and in `deriveTalents`, plus fields on `TalentEffects`.
+The trainer's five abilities above are still the ladder's job; the capstones are not for sale and cost no gold.
 
 ### 3.6 Level 40 and the long tail
 

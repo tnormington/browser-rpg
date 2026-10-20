@@ -1,7 +1,7 @@
 // Combat rules: targeting, abilities, damage, enemy AI, death and respawn. Pure sim, no DOM/Three.
 import type { GameState, Enemy, EnemyState, Player } from '../sim';
 import { MAX_REDUCTION } from './items';
-import { EXECUTE_BONUS } from './talents';
+import { EXECUTE_BONUS, WOUNDED_UNDER } from './talents';
 import { grantXp } from './skills';
 import { applyBuff, breakFood, buffedDamage, clearBuffs, maxHpOf } from './consumables';
 import { ITEMS, EQUIP_SLOTS } from './items';
@@ -50,23 +50,38 @@ export function refreshPlayerStats(s: GameState, fillHp: boolean) {
 export const swingInterval = (p: Player) => p.stats.swingInterval * p.talentFx.swingSpeed;
 /** Fraction of incoming damage removed: armour plus talents, under armour's own cap. */
 export const reductionOf = (p: Player) => Math.min(MAX_REDUCTION, p.stats.reduction + p.talentFx.reduction);
-/** Level reached and, for a trainer's ability, bought: the one test for whether a slot does anything. */
-export const abilityOpen = (p: Player, slot: number) =>
-  p.combat.level >= ABILITIES[slot].unlockLevel && (!ABILITIES[slot].trainer || p.learned.includes(ABILITIES[slot].name));
-
-/** An ability's cooldown after talents: Second Wind comes back sooner with Rally, Pummel with Counterstrike. */
-export function cooldownOf(p: Player, slot: number): number {
+/** Below this share of health the player is wounded: Berserk hits harder there and Guardian takes less. */
+export const wounded = (p: Player) => p.hp <= p.maxHp * WOUNDED_UNDER;
+/** Level reached and, for a trainer's ability bought or a capstone's talent held: the one test for whether a slot does anything. */
+export const abilityOpen = (p: Player, slot: number) => {
   const a = ABILITIES[slot];
-  if (a.kind === 'heal') return Math.max(1, a.cooldown - p.talentFx.healCdCut);
-  if (a.kind === 'interrupt') return a.cooldown * p.talentFx.pummelCdMult;
+  return p.combat.level >= a.unlockLevel
+    && (!a.trainer || p.learned.includes(a.name))
+    && (!a.talent || (p.talents[a.talent] ?? 0) > 0);
+};
+
+/** An ability's cooldown after talents: Second Wind comes back sooner with Rally, Pummel with Counterstrike and Stalwart, Crushing Blow with Relentless. */
+export function cooldownOf(p: Player, slot: number): number {
+  const a = ABILITIES[slot], fx = p.talentFx;
+  if (a.kind === 'heal') return Math.max(1, a.cooldown - fx.healCdCut);
+  if (a.kind === 'interrupt') return Math.max(1, a.cooldown * fx.pummelCdMult - fx.pummelCdCut);
+  if (a.tag === 'crush') return Math.max(1, a.cooldown - fx.crushCdCut);
   return a.cooldown;
 }
 /** An ability's energy cost after talents: Whirling makes Cleave cheaper. */
 export const costOf = (p: Player, slot: number) =>
   ABILITIES[slot].kind === 'cleave' ? Math.max(0, ABILITIES[slot].cost - p.talentFx.cleaveCost) : ABILITIES[slot].cost;
 
-/** Incoming damage after armour and talents. Never below 1: nothing that reaches you is free. */
-const takeDamage = (p: Player, raw: number) => Math.max(1, Math.round(raw * (1 - reductionOf(p))));
+/**
+ * Incoming damage after armour and talents. Never below 1: nothing that reaches you is free.
+ * Thick Skin and Guardian sit outside `reductionOf` and its cap: one only answers a telegraph, the other only a wounded
+ * player, so neither belongs in the flat number the character sheet shows.
+ */
+const takeDamage = (p: Player, raw: number, heavy = false) => {
+  const fx = p.talentFx;
+  const situational = (heavy ? 1 - fx.heavyReduction : 1) * (wounded(p) ? 1 - fx.lowHpReduction : 1);
+  return Math.max(1, Math.round(raw * (1 - reductionOf(p)) * situational));
+};
 
 // ---------- targeting ----------
 
@@ -182,27 +197,37 @@ function updateAutoAttack(s: GameState, dt: number) {
   // speed sets the rhythm, not the damage per second: a quicker weapon hits proportionally lighter. The weapon's own
   // interval, not the talented one: Frenzy is meant to be a gain, and scaling by it here would hand the gain straight back
   const power = powerForLevel(p.combat.level) * p.stats.swingInterval / BARE_SWING;
-  const { amount, crit } = rollDamage(s, AUTO_BASE, power, p.stats.weaponDamage * AUTO_WEAPON_SHARE);
+  const { amount, crit } = rollDamage(s, AUTO_BASE, power, p.stats.weaponDamage * AUTO_WEAPON_SHARE, t);
+  p.energy = Math.min(p.maxEnergy, p.energy + p.talentFx.swingEnergy); // Unbridled: the swings pay for the abilities
   damageEnemy(s, t, amount, crit, AUTO_SLOT);
 }
 
 // ---------- damage ----------
 
-function rollDamage(s: GameState, base: number, power: number, bonus: number) {
-  const fx = s.player.talentFx;
+/**
+ * One hit the player is dealing, once the talents that bend damage have had their say. `mult` is what the ability itself
+ * puts on top (Overpower on Strike, Carnage on a sweep); the target is read for Predator, which only pays on a wound.
+ */
+function rollDamage(s: GameState, base: number, power: number, bonus: number, target: Enemy, mult = 1) {
+  const p = s.player, fx = p.talentFx;
   const crit = rand(s) < CRIT_CHANCE + fx.crit;
-  const amount = Math.max(1, Math.round((base + bonus) * power * fx.damage * (0.9 + 0.2 * rand(s)) * (crit ? CRIT_MULT : 1)));
+  const amount = Math.max(1, Math.round((base + bonus) * power * mult * fx.damage
+    * (wounded(p) ? fx.lowHpDamage : 1) * (target.bleed ? fx.bleedHunter : 1)
+    * (0.9 + 0.2 * rand(s)) * (crit ? CRIT_MULT + fx.critMult : 1)));
   return { amount, crit };
 }
 
 function damageEnemy(s: GameState, e: Enemy, amount: number, crit: boolean, slot: number, dot = false) {
   if (!targetable(e)) return;
-  const fx = s.player.talentFx;
+  const p = s.player, fx = p.talentFx;
   e.hp = Math.max(0, e.hp - amount);
   e.hitFlash = 0.12;
-  s.player.outOfCombat = 0;
+  p.outOfCombat = 0;
   s.events.push({ t: 'hit', target: e.id, x: e.x, z: e.z, amount, crit, slot, dot, species: e.type });
-  if (crit && !dot && e.bleed) e.bleed.ticks += fx.critBleed; // Bloodscent: a crit works the wound open
+  if (crit && !dot) {
+    if (e.bleed) e.bleed.ticks += fx.critBleed;                             // Bloodscent: a crit works the wound open
+    p.energy = Math.min(p.maxEnergy, p.energy + fx.critEnergy);             // Opportunist: ...and pays you for it
+  }
   aggro(s, e);
   if (e.hp <= 0) killEnemy(s, e);
 }
@@ -280,16 +305,23 @@ function tryUse(s: GameState, slot: number) {
     p.hp += amount;
     s.events.push({ t: 'heal', x: p.x, z: p.z, amount });
   } else if (target && a.kind === 'interrupt') {
-    const def = ENEMY_TYPES[target.type];
-    target.cast = null;
-    target.stagger = STAGGER_TIME;
-    target.attackCd = Math.max(target.attackCd, 1);
-    if (def.heavy) target.heavyCd = Math.max(target.heavyCd, def.heavy.every * STAGGER_HEAVY_KEEP);
-    if (def.hazard) target.hazardCd = Math.max(target.hazardCd, def.hazard.every * STAGGER_HEAVY_KEEP);
-    if (def.net) target.netCd = Math.max(target.netCd, def.net.every * STAGGER_HEAVY_KEEP);
+    staggerEnemy(s, target);
     p.energy = Math.min(p.maxEnergy, p.energy + fx.pummelEnergy); // Counterstrike: the shutdown pays for itself
     p.outOfCombat = 0;
     s.events.push({ t: 'interrupt', id: target.id, x: target.x, z: target.z });
+  } else if (target && a.kind === 'bash') {
+    // Shield Bash: the stagger a Pummel only lands on a wind-up, landed on anything, and it hits as well
+    staggerEnemy(s, target);
+    s.events.push({ t: 'interrupt', id: target.id, x: target.x, z: target.z });
+    const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), target);
+    damageEnemy(s, target, amount, crit, slot);
+  } else if (target && a.kind === 'burst') {
+    // Hemorrhage: the wound is spent in one go. Its own hit lands first, so Predator still reads the bleed.
+    const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), target);
+    const left = target.bleed ? target.bleed.ticks * target.bleed.damage : 0;
+    target.bleed = null;
+    damageEnemy(s, target, amount, crit, slot);
+    if (left > 0) damageEnemy(s, target, left, false, slot);
   } else if (target && a.kind === 'cleave') {
     // everything in front of the player, within reach and inside the arc centred on the line to the target (the target always qualifies)
     const aim = Math.atan2(target.x - p.x, target.z - p.z), half = (((a.arc ?? 120) + fx.cleaveArc) / 2) * Math.PI / 180;
@@ -300,17 +332,36 @@ function tryUse(s: GameState, slot: number) {
     const hit = s.enemies.filter(e => targetable(e) && dist(p, e) <= a.range && (e === target || angleTo(e) <= half))
       .sort((m, n) => dist(p, m) - dist(p, n));
     for (const e of hit) {
-      const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1));
+      const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), e, fx.cleaveDamage);
       damageEnemy(s, e, amount, crit, slot);
     }
   } else if (target) {
     // Execute: Crushing Blow finishes a wounded target, and a kill hands the cooldown straight back
     const exec = a.tag === 'crush' && fx.executeUnder > 0 && target.hp <= target.maxHp * fx.executeUnder;
-    const { amount, crit } = rollDamage(s, a.damage * (exec ? 1 + EXECUTE_BONUS : 1), power, p.stats.weaponDamage * (a.weaponMult ?? 1));
-    if (a.kind === 'dot') target.bleed = { ticks: a.dotTicks!, timer: 1, damage: Math.round(a.dotDamage! * power * fx.bleedBonus) };
+    const { amount, crit } = rollDamage(s, a.damage * (exec ? 1 + EXECUTE_BONUS : 1), power,
+      p.stats.weaponDamage * (a.weaponMult ?? 1), target, a.tag === 'strike' ? fx.strikeBonus : 1);
+    if (a.kind === 'dot') target.bleed = {
+      ticks: a.dotTicks! + fx.bleedTicks, timer: fx.bleedInterval, interval: fx.bleedInterval,
+      damage: Math.round(a.dotDamage! * power * fx.bleedBonus),
+    };
     damageEnemy(s, target, amount, crit, slot);
     if (exec && target.state === 'dead') p.cd[slot] = 0;
+    if (a.leech) { // Bloodthirst: the hit feeds you, whether or not it was the one that landed last
+      const heal = Math.min(p.maxHp - p.hp, Math.round(amount * a.leech));
+      if (heal > 0) { p.hp += heal; s.events.push({ t: 'heal', x: p.x, z: p.z, amount: heal }); }
+    }
   }
+}
+
+/** Stun an enemy and push back everything it was about to do, so it cannot slam the instant it comes round. */
+function staggerEnemy(s: GameState, e: Enemy) {
+  const def = ENEMY_TYPES[e.type];
+  e.cast = null;
+  e.stagger = STAGGER_TIME + s.player.talentFx.staggerBonus; // Stalwart
+  e.attackCd = Math.max(e.attackCd, 1);
+  if (def.heavy) e.heavyCd = Math.max(e.heavyCd, def.heavy.every * STAGGER_HEAVY_KEEP);
+  if (def.hazard) e.hazardCd = Math.max(e.hazardCd, def.hazard.every * STAGGER_HEAVY_KEEP);
+  if (def.net) e.netCd = Math.max(e.netCd, def.net.every * STAGGER_HEAVY_KEEP);
 }
 
 // ---------- per-tick updates ----------
@@ -321,8 +372,9 @@ export function updatePlayerCombat(s: GameState, dt: number) {
   p.cast = Math.max(0, p.cast - dt);
   if (p.root && (p.root.left -= dt) <= 0) p.root = null; // the net frays through
   p.outOfCombat += dt;
-  setInCombat(s, p.outOfCombat <= OOC_DELAY || s.enemies.some(e => e.state === 'chase'));
-  if (!p.inCombat) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * OOC_REGEN_FRAC * dt);
+  // Vigour: the fight lets go of you sooner, and what comes back comes back faster
+  setInCombat(s, p.outOfCombat <= Math.max(1, OOC_DELAY - p.talentFx.oocDelayCut) || s.enemies.some(e => e.state === 'chase'));
+  if (!p.inCombat) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * OOC_REGEN_FRAC * p.talentFx.oocRegen * dt);
   for (let i = 0; i < p.cd.length; i++) p.cd[i] = Math.max(0, p.cd[i] - dt);
   p.gcd = Math.max(0, p.gcd - dt);
   announceUnlocks(s);
@@ -346,12 +398,16 @@ function setInCombat(s: GameState, on: boolean) {
   s.events.push({ t: 'combat', on });
 }
 
-/** Hand over abilities as combat levels are crossed. `p.unlocked` is the level already announced, so each unlock fires exactly once, even across a multi-level jump. */
+/**
+ * Hand over abilities as combat levels are crossed. `p.unlocked` is the level already announced, so each unlock fires
+ * exactly once, even across a multi-level jump. A trainer's ability is announced by the sale and a capstone's by the
+ * talent point, so neither is announced here.
+ */
 function announceUnlocks(s: GameState) {
   const p = s.player;
   if (p.combat.level <= p.unlocked) return;
   ABILITIES.forEach((a, slot) => {
-    if (!a.trainer && a.unlockLevel > p.unlocked && a.unlockLevel <= p.combat.level) s.events.push({ t: 'unlock', slot, level: a.unlockLevel });
+    if (!a.trainer && !a.talent && a.unlockLevel > p.unlocked && a.unlockLevel <= p.combat.level) s.events.push({ t: 'unlock', slot, level: a.unlockLevel });
   });
   p.unlocked = p.combat.level;
 }
@@ -463,12 +519,12 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
     const h = def.hazard!;
     e.hazardCd = h.every;
     s.events.push({ t: 'slam', id: e.id, x: c.x!, z: c.z!, radius: h.radius });
-    if (!p.dead && dist({ x: c.x!, z: c.z! }, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage), h.name, true);
+    if (!p.dead && dist({ x: c.x!, z: c.z! }, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage, true), h.name, true);
   } else if (c.kind === 'heavy') {
     const h = def.heavy!;
     e.heavyCd = h.every;
     s.events.push({ t: 'slam', id: e.id, x: e.x, z: e.z, radius: h.radius });
-    if (!p.dead && dist(e, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage), h.name, true);
+    if (!p.dead && dist(e, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage, true), h.name, true);
   } else if (c.kind === 'net') {
     const n = def.net!;
     e.netCd = n.every;
@@ -540,7 +596,7 @@ export function updateEnemies(s: GameState, dt: number) {
     if (e.bleed && e.state !== 'return') {
       e.bleed.timer -= dt;
       if (e.bleed.timer <= 0) {
-        e.bleed.timer += 1;
+        e.bleed.timer += e.bleed.interval;
         const dmg = e.bleed.damage;
         if (--e.bleed.ticks <= 0) e.bleed = null;
         damageEnemy(s, e, dmg, false, 2, true);

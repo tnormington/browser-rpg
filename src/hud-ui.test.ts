@@ -102,11 +102,11 @@ section('Debuffs on the target: the bleed and the stagger');
   assert(enemyStatuses(e).length === 0, 'an untouched enemy shows nothing');
 
   const ticks = ABILITIES.find(a => a.kind === 'dot')!.dotTicks!;
-  e.bleed = { ticks, timer: 1, damage: 4 };
+  e.bleed = { ticks, timer: 1, damage: 4, interval: 1 };
   const bleeding = enemyStatuses(e);
   assert(bleeding.length === 1 && bleeding[0].key === 'bleed' && bleeding[0].bad, 'a fresh bleed is one debuff');
   assert(bleeding[0].left === ticks && bleeding[0].total === ticks, `and it has its whole run left: ${bleeding[0].left}/${bleeding[0].total}s`);
-  e.bleed = { ticks: 2, timer: 0.5, damage: 4 };
+  e.bleed = { ticks: 2, timer: 0.5, damage: 4, interval: 1 };
   assert(enemyStatuses(e)[0].left === 1.5, 'part way through, the tick in flight counts as the fraction it has left');
 
   e.bleed = null;

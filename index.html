@@ -85,7 +85,7 @@ canvas{display:block}
 @keyframes buffsoon{50%{border-color:var(--gold)}}
 
 /* ---- action bar ---- */
-.actionbar{position:absolute;left:50%;bottom:28px;width:max-content;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-4);max-width:min(96vw,820px);pointer-events:auto}
+.actionbar{position:absolute;left:50%;bottom:28px;width:min(96vw,840px);transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-4);pointer-events:auto}/* an explicit width, not shrink-to-fit: left:50% caps the space a shrunk box may take at half the viewport, which the eleven-slot bar outgrew */
 .slot{position:relative;width:64px;height:64px;background:var(--iron);border:2px solid var(--edge);box-shadow:var(--lift-1);border-radius:var(--r);overflow:hidden;text-align:center;cursor:grab}
 .slot.empty{background:var(--iron-glass);border-style:dashed;border-color:var(--edge-dim);cursor:default}
 .slot .icon{font-size:var(--fs-3xl);line-height:46px}.slot .key{position:absolute;top:var(--sp-1);left:5px;font-weight:bold;font-size:var(--fs-md);color:var(--gold)}
@@ -152,17 +152,21 @@ canvas{display:block}
 .skillspanel{--ptop:330px;left:var(--gutter);width:220px}
 .skillrow{margin-bottom:7px}.skillhead{display:flex;justify-content:space-between}.skilllvl{color:var(--gold);font-weight:bold}
 .skillbar{--bar-h:12px;--fill:var(--fill-skill)}
-.talentpanel{--pbottom:250px;left:50%;transform:translateX(-50%);width:570px}
+.talentpanel{--ptop:76px;--pbottom:250px;left:50%;transform:translateX(-50%);width:760px}
 .ttrees{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-4)}
 .ttree{background:var(--iron-glass);border:1px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-3)}
 .tthead{display:flex;justify-content:space-between;font-weight:bold}.ttspent{color:var(--gold)}
 .ttblurb{font-size:var(--fs-sm);opacity:.6;margin:var(--sp-1) 0 var(--sp-3);min-height:26px}
-.talent{position:relative;background:var(--iron-lift);border:2px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-2) var(--sp-3);margin-bottom:5px;cursor:pointer}
+/* a tier is a row of two, the capstone a row of one; the mark between rows is what that tier costs to open */
+.ttier{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-2);margin-bottom:5px}.ttier.cap{grid-template-columns:1fr}
+.ttiermark{font-size:var(--fs-xs);text-align:center;color:var(--ink-dim);opacity:.55;letter-spacing:.06em;margin-bottom:var(--sp-1)}
+.talent{position:relative;background:var(--iron-lift);border:2px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-2) var(--sp-3);cursor:pointer}
 .talent:hover{border-color:var(--edge-hi)}
 .talent.taken{border-color:var(--gold)}
 .talent.shut{opacity:.45;cursor:default}.talent.shut:hover{border-color:var(--edge-dim)}
 .talent.taken.shut{opacity:.8}
-.tlname{font-weight:bold}.tlrank{position:absolute;top:var(--sp-2);right:var(--sp-3);font-size:var(--fs-sm);color:var(--gold)}
+.tlname{font-size:var(--fs-sm);font-weight:bold;padding-right:26px;min-height:26px}.tlrank{position:absolute;top:var(--sp-2);right:var(--sp-3);font-size:var(--fs-sm);color:var(--gold)}
+.tlreq{font-size:var(--fs-xs);color:var(--ink-dim);opacity:.7}.tlreq.bad{color:var(--bad);opacity:1}
 .treset{text-align:center;margin-top:var(--sp-4)}
 .shoppanel{--ptop:100px;--pbottom:250px;--chrome-edge:var(--gold-dim);left:286px;width:290px}.shopgold{color:var(--gold);margin-bottom:var(--sp-1)}.shophint{font-size:var(--fs-sm);opacity:.6;margin-bottom:var(--sp-3)}
 /* centred, but never left of the quest tracker's column (as the dialogue is) */

@@ -13,7 +13,7 @@ const CONTROLS: [string, string][] = [
   ['Tab / click enemy', 'Target an enemy (Esc clears)'],
   ['X', 'Auto-attack on / off (the bar above the action bar is your swing timer). Strike and Cleave start it too.'],
   ['Space', 'Jump (hold to keep hopping)'],
-  ['1 2 3 4 Q E R F', 'Your action bar. Abilities unlock as you level; P re-arranges them.'],
+  ['1 2 3 4 5 6 Q E R F T', 'Your action bar. Abilities unlock as you level, and the last three come from the capstone talents; P re-arranges them.'],
   ['P', 'Spell book: every spell you know. Drag one onto the bar, right-click a slot to clear it.'],
   ['Pummel', 'Interrupts an enemy wind-up. Or step out of the red circle.'],
   ['Click rock / tree', 'Mine or chop it (walks there first)'],

@@ -89,7 +89,7 @@ addEventListener('keydown', e => {
   if (state.player.action?.k === 'flight') return; // the ride owns the screen: no key does anything until it lands
   if (e.code === 'Space' && !hud.modalOpen) { e.preventDefault(); if (!e.repeat) pendingJump = true; return; } // latched here so a tap shorter than a tick still jumps; never scrolls or presses a focused button
   if (e.repeat) return;
-  // the ability bar (1 2 3 4 Q E R F) comes first: it owns those keys, and what each one casts is the player's own layout
+  // the ability bar (1 2 3 4 5 6 Q E R F T) comes first: it owns those keys, and what each one casts is the player's own layout
   if (BAR_KEYS.includes(e.code)) { const ability = hud.abilityAt(BAR_KEYS.indexOf(e.code)); if (ability !== null) pendingAbilities.push(ability); return; }
   if (e.code === 'Tab') { e.preventDefault(); pendingTab = true; }
   else if (e.code === 'Escape') { if (!hud.closeAll()) pendingClear = true; }

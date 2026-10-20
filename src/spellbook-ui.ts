@@ -3,6 +3,7 @@
 import type { GameState } from './sim';
 import { ABILITIES } from './sim/data';
 import { abilityOpen } from './sim/combat';
+import { talentById } from './sim/talents';
 import { HudWindow, el, panelWindow, titleRow } from './dom';
 
 export class SpellbookUi implements HudWindow {
@@ -31,7 +32,7 @@ export class SpellbookUi implements HudWindow {
   update(s: GameState) {
     if (!this.isOpen) return;
     const p = s.player;
-    const sig = JSON.stringify([p.combat.level, p.learned, this.bar()]);
+    const sig = JSON.stringify([p.combat.level, p.learned, p.talents, this.bar()]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.list.textContent = '';
@@ -42,7 +43,8 @@ export class SpellbookUi implements HudWindow {
       el(head, 'rname', a.name);
       el(head, `rreq${known ? '' : ' bad'}`, known
         ? (key ? `on the bar: ${key}` : 'not on the bar')
-        : p.combat.level >= a.unlockLevel ? `taught for ${a.trainer!.price} gold` : `combat level ${a.unlockLevel}`);
+        : p.combat.level < a.unlockLevel ? `combat level ${a.unlockLevel}`
+          : a.trainer ? `taught for ${a.trainer.price} gold` : `the ${talentById(a.talent!)!.name} talent`);
       el(row, 'rstat', a.desc);
       if (!known) continue;
       row.draggable = true;
