@@ -19,7 +19,7 @@ Rendered comparisons: `sh bench/art.sh` (frames per reference), `python bench/co
 | Warm | Fire only: forge, braziers, gold. The forge light is the one warm pool and must not clip the building to white (`FORGE_LIGHT`, forge slot `light`). |
 | Fog / sky | Horizon and fog `0x222c38`, zenith near black. Fog fades to dark, not a bright haze. |
 | Grade | Vignette 0.6 from 0.32, contrast 1.12, cold shadows / warm highlights (`POST.grade`). |
-| Emissive | Saturation is for fire, blood and arcane light only. Arcane crystals (`CRYSTALS`) and tier 3+ gear glow are cold blue; neither may out-glow the forge. Emissive stays under the bloom threshold unless it is a beacon (`glow.ts`). |
+| Emissive | Saturation is for fire, blood and arcane light only. Arcane crystals (`CRYSTALS`) and tier 3+ gear glow are cold blue; neither may out-glow the forge. Emissive stays under the bloom threshold unless it is a beacon (`glow.ts`); the glow a light throws is a halo over it, not a hotter material (`halo.ts`). |
 | Colour | Flat per material. Ground and cave floor are tinted per vertex with low variance; never per triangle. |
 | Surface | Relief, not colour (`surface.ts`). Every material class carries a faint greyscale detail map and a normal map, so the key light has something to catch; the colour under them stays flat. Models are dressed too (`surface` on a `SlotDef`): nothing in the world is a bare flat colour except a light. |
 
@@ -54,6 +54,26 @@ surface**: `glow`, `beacon` and the unlit ground marks (`dark`).
   GPU a frame; dressing the models cost +0.7 ms GPU, +0.15 ms a frame and +0.1 s of load, for twelve more textures.
 - **Looking at it**: `node bench/surfaces.mjs` stands every model slot on the open road and shoots it close, plus
   two frames at the camera the player actually has. Shots land in `bench/shots/surfaces/`.
+
+## The glow round a light (HOM-117)
+
+A lit emitter is held under the bloom threshold so its colour survives tone mapping (`glow.ts`), which is right for
+the lamp and leaves it a flat shape with nothing coming off it. The halo is the other half: a camera-facing disc of
+light centred on the flame, additive, falling to nothing at its rim (`halo.ts`). It reads as lit air at any distance
+and in either quality setting, and where it lies over the emitter the two together cross the threshold, so the core --
+and only the core -- blooms.
+
+- **Every light in the world has one**: torches, lamp posts, lit windows, the forge and the inn's range, the cave's
+  braziers, the arcane crystals, the Rotroot's fungus, the Grotto's lanterns, the alembic's fire.
+- **The dials** are `color`, `radius` (how far the light carries), `strength` (its peak over the emitter) and
+  `flicker` in `HALOS`. The budget is two-sided and `halo.test.ts` holds it: a halo alone must stay under
+  `BLOOM_THRESHOLD`, or it is a white disc on the ground; over an emitter at `EMISSIVE_CAP` the two must pass it, or
+  nothing blooms at all.
+- **A lit prop carries its own** (`halos` on a `Prop`), in the prop's frame, so a torch glows wherever it is stood --
+  Hale's gate, a barrow's mouth -- and nothing added later can miss it.
+- **Cost** is one draw per slab, per room and per prop: the halos of a slab are merged into one geometry and the
+  billboarding is in the vertex shader, so a static, merged mesh still faces the camera. Measured at 1x, against the
+  same build with the halos off: +3 draw calls, +126 triangles, +2 shader programs, +0.5 ms a frame.
 
 ## Tier 5 (HOM-47)
 

@@ -3,10 +3,12 @@
 // Rendering only. Units are world units, feet at y 0, centred on x = z = 0.
 import * as THREE from 'three';
 import { put, spike, lump, stick, hangers, BARK, THORN, MOSS, MUD } from './creatures';
+import type { HaloSpot } from './halo';
 
 /** A material class the renderer knows (render.ts MATERIALS): how a layer takes light. `glow` layers are self-lit. */
 export interface PropLayer { name: string; color: number; cls: 'wood' | 'bark' | 'metal' | 'foliage' | 'glow' | 'stone' | 'hide' | 'rock'; parts: THREE.BufferGeometry[] }
-export interface Prop { layers: PropLayer[] }
+/** `halos`: the glow a prop's own flames throw, in the prop's frame (halo.ts). Both placers emit them, so a lit prop glows wherever it is put. */
+export interface Prop { layers: PropLayer[]; halos?: HaloSpot[] }
 
 const BRASS = 0x8a6f3c, COPPER = 0x7a4f34, GLASS_LIQUID = 0x2fa89e, EMBER = 0xff8a30, TABLE = 0x3d3328, STONE = 0x4b525b;
 const LEAF = 0x44624c, LEAF_DARK = 0x2b4136, LEAF_BLIGHT = 0x546238, OAK_BARK = 0x5a4b3c, OAK_LEAF = 0x3b5238, BUD = 0x36907f, BUD_THORN = 0x6a58a8;
@@ -48,7 +50,7 @@ function alembic(): Prop {
     { name: 'bench', color: TABLE, cls: 'wood', parts: bench }, { name: 'hearth', color: STONE, cls: 'stone', parts: footing },
     { name: 'brass', color: BRASS, cls: 'metal', parts: pot }, { name: 'copper', color: COPPER, cls: 'metal', parts: copper },
     { name: 'liquor', color: GLASS_LIQUID, cls: 'glow', parts: liquor }, { name: 'embers', color: EMBER, cls: 'glow', parts: embers },
-  ] };
+  ], halos: [{ id: 'ember', x: -0.57, y: 1.3, z: 0 }] };
 }
 
 /**
@@ -146,7 +148,8 @@ function bush(kind: 'green' | 'dry'): Prop {
 /**
  * A torch on a post: a stake with two iron bands, a cage of four struts over it and a pitch head burning in the cage. The one
  * warm thing where there is no lamp and no forge, so it is kept small and its flame sits under the bloom threshold like the
- * braziers'. Feet at y 0, the flame near y 2.3; its pool of light on the ground is the placer's to add (world-view.ts `torchPost`).
+ * braziers'. Feet at y 0, the flame near y 2.3; the glow round the flame rides with the prop, and its pool of light on the
+ * ground is the placer's to add (world-view.ts `torchPost`).
  */
 function torch(): Prop {
   const post = [put(new THREE.CylinderGeometry(0.075, 0.1, 2.1, 6).translate(0, 1.05, 0), 0, 0, 0), put(new THREE.ConeGeometry(0.14, 0.26, 5).rotateX(Math.PI), 0, 0.08, 0)];
@@ -162,7 +165,7 @@ function torch(): Prop {
     { name: 'iron', color: TORCH_IRON, cls: 'metal', parts: iron },
     { name: 'pitch', color: 0x241c16, cls: 'wood', parts: pitch },
     { name: 'flame', color: EMBER, cls: 'glow', parts: flame },
-  ] };
+  ], halos: [{ id: 'torch', x: 0, y: 2.52, z: 0 }] };
 }
 
 /** Prop id -> its build. A prop is built per use (cheap: a handful of merged layers) and the renderer shares nothing between uses. */

@@ -15,6 +15,7 @@ import { HIGHMOOR, LANDMARKS, REGIONS, Gate, Obstacle, Rect, Region, SALTMARROW,
 import { PROPS, PropId } from './props';
 import { mergeParts } from './creatures';
 import { bakeUV } from './surface';
+import { HaloSpot, haloMesh } from './halo';
 
 /** The few things this file needs from the renderer: its mesh factory (materials and shadows stay in render.ts) and its palette. */
 export interface Kit {
@@ -74,14 +75,21 @@ function headstone(o: Obstacle, ry: number, i: number): THREE.BufferGeometry[] {
 type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed' | 'bone' | 'brush' | 'thorn' | 'cloth' | 'turf' | 'dark' | 'jamb' | 'heather' | 'cairn' | 'marble' | 'rune', THREE.BufferGeometry[]> & {
   /** Placed copies of props.ts props, by `prop:layer`: one draw per layer however many there are. */
   props: Map<string, { color: number; cls: string; geoms: THREE.BufferGeometry[] }>;
+  /** The glow round every light on the slab (halo.ts): one draw for all of them. */
+  halos: HaloSpot[];
 };
-const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], bone: [], brush: [], thorn: [], cloth: [], turf: [], dark: [], jamb: [], heather: [], cairn: [], marble: [], rune: [], props: new Map() });
+const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], bone: [], brush: [], thorn: [], cloth: [], turf: [], dark: [], jamb: [], heather: [], cairn: [], marble: [], rune: [], props: new Map(), halos: [] });
 
 /** A prop's layers as one merged geometry each, built the first time it is wanted and copied (never moved) for every placement. */
 const propSources = new Map<PropId, { name: string; color: number; cls: string; geo: THREE.BufferGeometry }[]>();
+const propHalos = new Map<PropId, HaloSpot[]>();
 function propLayers(id: PropId) {
   let layers = propSources.get(id);
-  if (!layers) propSources.set(id, layers = PROPS[id]().layers.map(l => ({ name: l.name, color: l.color, cls: l.cls, geo: mergeParts(l.parts) })));
+  if (!layers) {
+    const p = PROPS[id]();
+    propSources.set(id, layers = p.layers.map(l => ({ name: l.name, color: l.color, cls: l.cls, geo: mergeParts(l.parts) })));
+    propHalos.set(id, p.halos ?? []);
+  }
   return layers;
 }
 function placeProp(bag: Bag, id: PropId, x: number, z: number, rot = 0, scale = 1) {
@@ -90,6 +98,10 @@ function placeProp(bag: Bag, id: PropId, x: number, z: number, rot = 0, scale = 
     let entry = bag.props.get(key);
     if (!entry) bag.props.set(key, entry = { color: l.color, cls: l.cls, geoms: [] });
     entry.geoms.push(place(l.geo.clone(), x, 0, z, rot, scale));
+  }
+  for (const h of propHalos.get(id)!) { // the prop's own flames, turned and scaled with it
+    const [hx, hz] = rotXZ(h.x * scale, h.z * scale, rot);
+    bag.halos.push({ id: h.id, x: x + hx, y: h.y * scale, z: z + hz, scale: scale * (h.scale ?? 1) });
   }
 }
 
@@ -106,6 +118,7 @@ function lampPool(x: number, z: number, r: number, strength = 0.3, y = 0.05, col
 function lampPost(bag: Bag, x: number, z: number, y = 0, pool = 4.5) {
   bag.wood.push(place(new THREE.CylinderGeometry(0.08, 0.12, 3.1, 5), x, y + 1.55, z), place(new THREE.BoxGeometry(0.5, 0.08, 0.08), x + 0.2, y + 3.05, z));
   bag.glow.push(place(new THREE.OctahedronGeometry(0.26), x + 0.4, y + 2.85, z));
+  bag.halos.push({ id: 'lantern', x: x + 0.4, y: y + 2.85, z });
   bag.pool.push(lampPool(x + 0.3, z, pool, 0.3, y + 0.05));
 }
 /** A torch on a post (props.ts) and the warm pool it throws: the lamp's counterpart out where the town's lamps do not reach. */
@@ -128,7 +141,12 @@ function building(o: Obstacle, rot: number, bag: Bag) {
   put(bag.roof, new THREE.ConeGeometry(w * 1.65, roofH, 4).rotateY(Math.PI / 4).scale(1, 1, big ? 0.8 : 0.95), 0, h + roofH / 2, 0);
   put(bag.stone, new THREE.BoxGeometry(0.9, 2.4, 0.9), w * 0.5, h + roofH * 0.45, -d * 0.12); // the chimney
   put(bag.wood, new THREE.BoxGeometry(1, 1.9, 0.16), doorX, 0.95, d / 2 + 0.28); // the door, proud of the footing
-  const win = (lx: number, ly: number) => { put(bag.wood, new THREE.BoxGeometry(1, 1.1, 0.08), lx, ly, d / 2 + 0.03); put(bag.glow, new THREE.BoxGeometry(0.72, 0.82, 0.1), lx, ly, d / 2 + 0.07); };
+  const win = (lx: number, ly: number) => {
+    put(bag.wood, new THREE.BoxGeometry(1, 1.1, 0.08), lx, ly, d / 2 + 0.03);
+    put(bag.glow, new THREE.BoxGeometry(0.72, 0.82, 0.1), lx, ly, d / 2 + 0.07);
+    const [wx, wz] = rotXZ(lx, d / 2 + 0.12, rot); // the light coming through the glass, just proud of the pane
+    bag.halos.push({ id: 'window', x: o.x + wx, y: ly, z: o.z + wz });
+  };
   if (big) { for (const lx of [-0.8, -0.45, 0.55, 0.85]) win(lx * w, 1.9); for (const lx of [-0.5, 0.5]) win(lx * w, 3.65); } else for (const lx of [-0.5, 0.5]) win(lx * w, 1.9);
   if (big) { // the Gilded Gull's sign: a board on a bracket over the door
     put(bag.wood, new THREE.BoxGeometry(1.5, 0.1, 0.1), doorX + 0.8, 3.3, d / 2 + 0.7);
@@ -657,6 +675,8 @@ export class WorldView {
       m.renderOrder = 1;
       add(m);
     }
+    const halos = haloMesh(bag.halos); // the glow round every lamp, window and torch on the slab, in one draw
+    if (halos) add(halos);
   }
   /** Boulders every 4 units along the edges of the floor that open onto nothing, as the clearing's ring does, in one instanced draw. */
   private boundary(floors: Rect[], rect: Rect, r: Region, add: (o: THREE.Object3D) => void) {

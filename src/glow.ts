@@ -7,6 +7,7 @@
 // Both are capped here, in terms of BLOOM_THRESHOLD, and post.ts reads the same constant. Anything that needs to read as a
 // hot spark instead is a `beacon` (thin rings, flat markers, ore flecks): deliberately over the cap, never near a light.
 // `bench/glow-audit.sh` lists every scene material and light that breaks either number.
+// The glow a light is *seen* to throw is not a material at all: it is a halo drawn over the emitter (`halo.ts`), sized against these caps.
 
 /** Bloom's high-pass threshold, in linear HDR units before exposure (post.ts POST.bloom.threshold). */
 export const BLOOM_THRESHOLD = 1.5;

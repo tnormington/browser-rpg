@@ -22,6 +22,7 @@ import { PlayerGear } from './gear';
 import { MountRig, MOUNT_LOOKS, mountLookId } from './mount';
 import { bestMount, moveSpeed } from './sim/mounts';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
+import { HaloSpot, haloMesh, tickHalos } from './halo';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
 import { WorldView, flightMasterFigure, headstones, Kit } from './world-view';
 import { WorldMap, mapPosition } from './world-map';
@@ -298,6 +299,8 @@ export class Renderer {
   private caveWalls!: THREE.InstancedMesh;
   private caveWallPts: { x: number; z: number; r: number; w: number }[] = [];
   private caveFlames: { m: THREE.Mesh; phase: number }[] = [];
+  /** The glow round every fixed light of the clearing and the caves (halo.ts), collected as they are built and drawn as one. */
+  private haloSpots: HaloSpot[] = [];
   private hemi!: THREE.HemisphereLight;
   private rim!: THREE.DirectionalLight;
   private lantern!: THREE.PointLight;
@@ -484,6 +487,7 @@ export class Renderer {
     const hash = (n: number) => Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1;
     CRYSTALS.forEach((c, i) => {
       if (COLLIDERS.some(o => Math.hypot(o.x - c.x, o.z - c.z) < o.r + CRYSTAL_CLEARANCE)) return; // never grow out of a tree, rock or wall
+      this.haloSpots.push({ id: 'crystal', x: c.x, y: 0.75 * c.s, z: c.z, scale: c.s });
       for (let k = 0; k < CRYSTAL_SHARDS; k++) {
         const h = (k === 0 ? 1.5 : 0.7 + hash(i * 7 + k) * 0.6) * c.s, a = hash(i * 31 + k) * Math.PI * 2, lean = k === 0 ? 0 : 0.25 + hash(i * 13 + k) * 0.3;
         shards.push(new THREE.OctahedronGeometry(1).scale(0.22 * c.s, h / 2, 0.22 * c.s).translate(0, h / 2, 0).rotateZ(lean).rotateY(a).translate(c.x + (k ? Math.cos(a) * 0.35 * c.s : 0), 0, c.z + (k ? Math.sin(a) * 0.35 * c.s : 0)));
@@ -520,6 +524,7 @@ export class Renderer {
         add(furnace, f.x - 1, 1, f.z + 1.55),
         add(mesh(new THREE.BoxGeometry(0.8, 0.6, 0.5), P.anvil, 'metal'), f.x - 3, 0.3, f.z + 2)]);
       this.forgeLights.push(add(new THREE.PointLight(P.forgeLight, FORGE_LIGHT.intensity, FORGE_LIGHT.distance), f.x - 1, FORGE_LIGHT.y, f.z + 3.6) as THREE.PointLight);
+      this.haloSpots.push({ id: 'forge', x: f.x - 1, y: 1, z: f.z + 1.7 });
     }
     // the cooking range, in Saltmarrow's inn: a stone hearth with a bed of coals. No light of its own: the forge keeps the one warm light
     const r = LANDMARKS.range;
@@ -535,6 +540,7 @@ export class Renderer {
       add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.8, 5).rotateZ(Math.PI / 2), P.bark, 'wood'), r.x - 0.1, 1.6, r.z + 0.1),
       add(mesh(new THREE.SphereGeometry(0.3, 7, 4, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2).rotateX(Math.PI), P.anvil, 'metal'), r.x - 0.1, 1.3, r.z + 0.1),
       add(mesh(new THREE.ConeGeometry(0.55, 0.5, 4).rotateY(Math.PI / 4), P.stoneDark, 'stone'), r.x + 0.5, 2.4, r.z - 0.2));
+    this.haloSpots.push({ id: 'ember', x: r.x - 0.1, y: 1.02, z: r.z });
     // Thornwick's alembic is drawn with the town (world-view.ts, merged): this unseen box over the bench is what a click lands on. Its front faces the square
     const alembic = LANDMARKS.alembic;
     this.alembicPick = new THREE.Mesh(new THREE.BoxGeometry(2.6, 3, 1.4), new THREE.MeshBasicMaterial({ visible: false }));
@@ -579,6 +585,9 @@ export class Renderer {
     }
     // beyond the boundary: dark ground so the edge reads as the end of the world
     this.beyond = add(mesh(new THREE.PlaneGeometry(Math.max(400, WORLD_HALF * 4), Math.max(400, WORLD_HALF * 4)).rotateX(-Math.PI / 2), P.beyond, 'ground', 'receive'), 0, -0.05, 0) as THREE.Mesh; // follows the player: the world is no longer 400 across
+    // the glow of every fixed light built above -- forge, range, braziers, crystals, the two lit dungeons -- in one draw
+    const halos = haloMesh(this.haloSpots);
+    if (halos) this.scene.add(halos);
   }
 
   /** Everything inside the cave that is not a rock model: floor, wall rock, standing stones, braziers and the lights they carry. */
@@ -618,6 +627,7 @@ export class Renderer {
       g.scale.setScalar(b.s);
       this.scene.add(g);
       this.caveFlames.push({ m: flame, phase: i * 2.3 });
+      this.haloSpots.push({ id: 'brazier', x: b.x, y: 1.5 * b.s, z: b.z, scale: b.s });
       if (b.light) {
         const light = new THREE.PointLight(P.arcane, BRAZIER_LIGHT.intensity, BRAZIER_LIGHT.distance);
         light.position.set(b.x, BRAZIER_LIGHT.y, b.z);
@@ -745,14 +755,21 @@ export class Renderer {
           if (side < 0) arc.rotateY(Math.PI);
           const bx = side > 0 ? r.x1 - rad : r.x0 + rad, zz = z + (rnd() - 0.5) * 1.2;
           roots.push(arc.translate(bx, 0, zz));
-          if ((i + (side > 0 ? 1 : 0)) % 2 === 0) glow.push(new THREE.ConeGeometry(0.28, 0.5, 5).translate(side > 0 ? r.x1 - 0.9 : r.x0 + 0.9, 0.25, zz + 0.4));
+          if ((i + (side > 0 ? 1 : 0)) % 2 === 0) {
+            const bx = side > 0 ? r.x1 - 0.9 : r.x0 + 0.9;
+            glow.push(new THREE.ConeGeometry(0.28, 0.5, 5).translate(bx, 0.25, zz + 0.4));
+            this.haloSpots.push({ id: 'fungus', x: bx, y: 0.3, z: zz + 0.4 });
+          }
         }
       }
       // standing roots and fungus on the floor: knuckled stumps, and clusters of caps, kept out of the doorways
       for (let i = 0; i < Math.round(d / 2.5); i++) {
         const x = r.x0 + 1.2 + rnd() * (w - 2.4), z = r.z0 + 4 + rnd() * (d - 8);
         if (i % 2) roots.push(new THREE.CylinderGeometry(0.3, 0.6, 0.9 + rnd() * 0.8, 6).translate(x, 0.5, z));
-        else for (let k = 0; k < 3; k++) glow.push(new THREE.SphereGeometry(0.2 + rnd() * 0.18, 6, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(x + (rnd() - 0.5) * 1.1, 0.05, z + (rnd() - 0.5) * 1.1));
+        else { // a cluster of caps, under one glow: three halos stacked on each other would read as one bright blob anyway
+          for (let k = 0; k < 3; k++) glow.push(new THREE.SphereGeometry(0.2 + rnd() * 0.18, 6, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(x + (rnd() - 0.5) * 1.1, 0.05, z + (rnd() - 0.5) * 1.1));
+          this.haloSpots.push({ id: 'fungus', x, y: 0.2, z, scale: 1.3 });
+        }
       }
     }
     this.scene.add(mesh(mergeGeometries(roots)!, ROTROOT.root, 'wood', 'cast'), mesh(mergeGeometries(glow)!, ROTROOT.fungus, 'glow', 'none'));
@@ -788,6 +805,7 @@ export class Renderer {
           if ((i + (side > 0 ? 1 : 0)) % 3 === 0) {
             const tip = { x: (side > 0 ? r.x1 - R : r.x0 + R) + side * R * Math.cos(Math.PI * 0.42), y: R * Math.sin(Math.PI * 0.42) };
             glass.push(new THREE.OctahedronGeometry(0.28).scale(1, 1.4, 1).translate(tip.x, tip.y - 0.5, z));
+            this.haloSpots.push({ id: 'glass', x: tip.x, y: tip.y - 0.5, z });
             timber.push(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 4).translate(tip.x, tip.y - 0.1, z));
           }
         }
@@ -1097,7 +1115,7 @@ export class Renderer {
     }
   }
 
-  /** A torch standing in the clearing (props.ts): lit geometry only, like the braziers that carry no light, so the frame's light budget is untouched. */
+  /** A torch standing in the clearing (props.ts): lit geometry and its halo, like the braziers that carry no light, so the frame's light budget is untouched. */
   private standTorch(x: number, z: number) {
     const t = this.buildProp('torch');
     t.position.set(x, 0, z);
@@ -1107,8 +1125,10 @@ export class Renderer {
 
   /** A built prop (props.ts) as a group of one mesh per layer, ready to stand on a station or a node. Its materials are its own. */
   buildProp(id: PropId): THREE.Group {
-    const g = new THREE.Group();
-    for (const l of PROPS[id]().layers) g.add(mesh(mergeParts(l.parts), l.color, l.cls, l.cls === 'glow' ? 'none' : 'both')).name = l.name;
+    const g = new THREE.Group(), p = PROPS[id]();
+    for (const l of p.layers) g.add(mesh(mergeParts(l.parts), l.color, l.cls, l.cls === 'glow' ? 'none' : 'both')).name = l.name;
+    const halos = haloMesh(p.halos ?? []); // in the prop's own frame: it turns and moves with the group
+    if (halos) g.add(halos).name = 'halo';
     return g;
   }
 
@@ -1781,6 +1801,7 @@ export class Renderer {
     this.skyClock += dtFx;
     this.applyCaveLight(caveDepth(x, z), x, z);
     this.caveFlames.forEach(f => f.m.scale.set(1, 0.85 + 0.25 * Math.sin(nowMs / 110 + f.phase) + 0.1 * Math.sin(nowMs / 47 + f.phase), 1));
+    tickHalos(nowMs / 1000); // every glow in the scene flickers off one clock
     for (const l of this.brazierLights) l.intensity = BRAZIER_LIGHT.intensity * (1 + 0.08 * Math.sin(nowMs / 100) + 0.05 * Math.sin(nowMs / 41));
     this.followSun(x, z);
     this.post.render(this.scene);
