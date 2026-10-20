@@ -18,6 +18,7 @@ type WornSlot = 'weapon' | 'head' | 'chest' | 'legs' | 'hands' | 'feet';
 import { Appearance, appearanceOf } from './gear-look';
 import { cappedIntensity } from './glow';
 import { Instance, Prepared, spawn } from './models';
+import { bakeUV, dress } from './surface';
 import type { Motes } from './fx';
 
 const SKIN = 0xb89a7e;
@@ -108,7 +109,7 @@ export class PlayerGear {
   }
 
   private part(g: THREE.BufferGeometry, material: THREE.Material, parent: THREE.Object3D, pos: [number, number, number], rot?: [number, number, number]) {
-    const m = new THREE.Mesh(g, material);
+    const m = new THREE.Mesh(bakeUV(g), material);   // generated gear is authored in world units, so the projection is already to scale
     m.castShadow = m.receiveShadow = true;
     m.userData.own = true;
     m.position.set(...pos);
@@ -129,6 +130,7 @@ export class PlayerGear {
     const m = new THREE.MeshStandardMaterial({
       color: trim ? ap.trim : ap.tint, metalness: trim ? Math.min(ap.metal, 0.6) : ap.metal, roughness: trim ? Math.min(1, ap.rough + 0.15) : ap.rough, flatShading: true,
     });
+    dress(m, ap.metal > 0.3 ? 'metal' : 'hide');   // plate takes the hammered grain, leather and cloth the pebbled one
     return m;
   }
 
@@ -148,6 +150,7 @@ export class PlayerGear {
       if (mat.name === 'Brown') { mat.color.setHex(GRIP); mat.metalness = 0; mat.roughness = 0.9; continue; }
       if (!isMain && !isTrim) continue;
       mat.map = null;
+      dress(mat, 'metal');   // the pack's own texture goes; the class's maps (hung by models.ts) go back on
       mat.color.setHex(isMain ? ap.tint : ap.trim);
       mat.metalness = isMain ? ap.metal : Math.min(ap.metal, 0.6);
       mat.roughness = isMain ? ap.rough : Math.min(1, ap.rough + 0.15);

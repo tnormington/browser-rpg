@@ -629,7 +629,7 @@ export class WorldView {
       if (list.length) add(mesh(mergeGeometries(list)!, color, cls, shadow));
     };
     one(bag.rock, P.slate, 'rock');
-    one(bag.bark, P.bark, 'wood');
+    one(bag.bark, P.bark, 'bark');
     one(bag.wall, pal.wall, 'plaster');   // limewash and render, not cut stone: the footing below it is what is coursed
     one(bag.stone, pal.foot, 'stone');
     one(bag.roof, pal.roof, 'roof');

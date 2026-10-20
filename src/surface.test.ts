@@ -9,7 +9,13 @@ const assert = (ok: boolean, msg: string) => { if (!ok) { console.error('FAIL', 
 assert(surfaceFor('ground') === null, 'no maps without a document');
 assert(surfaceFor('glow') === null, 'and none for a class that has no surface');
 assert(hasSurface('ground') && hasSurface('roof') && hasSurface('plaster'), 'the world classes have surfaces');
-assert(!hasSurface('glow') && !hasSurface('beacon') && !hasSurface('skin'), 'emitters and skin stay clean');
+// HOM-117 follow-up: everything that is a thing has a surface, trees and mineral nodes included; only lights do not
+assert(hasSurface('bark') && hasSurface('ore') && hasSurface('coal') && hasSurface('gem') && hasSurface('skin'), 'bark, ore, coal, gem and skin have surfaces too');
+assert(!hasSurface('glow') && !hasSurface('beacon') && !hasSurface('dark'), 'emitters and the unlit ground marks stay clean');
+
+// every material class the renderer knows is either dressed or deliberately bare: nothing falls through the gap
+for (const cls of ['ground', 'dirt', 'foliage', 'wood', 'bark', 'rock', 'stone', 'plaster', 'roof', 'metal', 'ore', 'coal', 'cloth', 'skin', 'hide', 'gem'])
+  assert(hasSurface(cls), `${cls} has a surface`);
 
 // an empty geometry stood up only to carry a material is left alone
 assert(!bakeUV(new THREE.BufferGeometry()).attributes.uv, 'an empty geometry gets no UVs');
@@ -30,6 +36,10 @@ for (const side of [2, 6, 0.5]) {
   const [su, sv] = uvSpan(bakeUV(new THREE.BoxGeometry(side, side, side).toNonIndexed()));
   assert(Math.abs(su - side) < 1e-5 && Math.abs(sv - side) < 1e-5, `a ${side}-unit box spans ${side} in UV (${su}, ${sv})`);
 }
+
+// a model still in its file's units takes its fit scale, so a knight's texels are the size of the ground's
+const [ku, kv] = uvSpan(bakeUV(new THREE.BoxGeometry(1, 1, 1).toNonIndexed(), 2.5));
+assert(Math.abs(ku - 2.5) < 1e-5 && Math.abs(kv - 2.5) < 1e-5, `a 1-unit box fitted to 2.5 spans 2.5 in UV (${ku}, ${kv})`);
 
 // ...and a wall twice as wide as it is tall spans twice as far across as up: no stretching to fit
 const [wu, wv] = uvSpan(bakeUV(new THREE.BoxGeometry(8, 4, 0.2).toNonIndexed()));

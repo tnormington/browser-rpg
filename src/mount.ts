@@ -9,11 +9,18 @@
 import * as THREE from 'three';
 import { Animator, Seat } from './anim';
 import { Prepared, SlotId, spawn } from './models';
+import { SurfaceId, bakeUV, dress } from './surface';
 
 /** Tack is drawn in world units, in the horse's frame (+z forward, +y up from the hooves), then hung on a bone so it moves with the body. */
 type Hang = (bone: string, mesh: THREE.Mesh, pos: [number, number, number], rot?: [number, number, number]) => void;
-const flat = (color: number, rough = 0.85, metal = 0.05) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, flatShading: true });
-const box = (w: number, h: number, d: number, m: THREE.Material) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+const flat = (color: number, cls: SurfaceId, rough = 0.85, metal = 0.05) => {
+  const m = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, flatShading: true });
+  dress(m, cls);   // the class's shared maps (surface.ts): a caparison reads as cloth, a peytral as hammered plate
+  return m;
+};
+/** A piece of tack: world-unit geometry, so its UVs are to the same scale as everything else's. */
+const shape = (g: THREE.BufferGeometry, m: THREE.Material) => new THREE.Mesh(bakeUV(g), m);
+const box = (w: number, h: number, d: number, m: THREE.Material) => shape(new THREE.BoxGeometry(w, h, d), m);
 
 export interface Saddle { y: number; z: number; width: number; length: number }
 export interface MountLook {
@@ -26,7 +33,7 @@ export interface MountLook {
 const LEATHER = 0x3a2a20, CLOTH = 0x4a3c34, IRON = 0x5a5e66;
 /** A blanket, the seat, a low pommel and cantle: a working saddle and nothing finer. */
 function courserTack(hang: Hang, { y, z, width: w, length: l }: Saddle) {
-  const leather = flat(LEATHER), cloth = flat(CLOTH), iron = flat(IRON, 0.5, 0.6);
+  const leather = flat(LEATHER, 'hide'), cloth = flat(CLOTH, 'cloth'), iron = flat(IRON, 'metal', 0.5, 0.6);
   hang('Torso', box(w, 0.06, l * 1.25, cloth), [0, y - 0.1, z]);
   hang('Torso', box(w * 0.7, 0.1, l, leather), [0, y - 0.03, z]);
   hang('Torso', box(w * 0.4, 0.14, 0.1, leather), [0, y + 0.07, z + l / 2]);
@@ -45,7 +52,7 @@ const WAR_STEEL = 0x8e98aa, WAR_DARK = 0x2c303c, WAR_CLOTH = 0x3a4a64, WAR_TRIM 
  * Silhouette does the work: the plume, the crest and the hanging cloth are what read at play distance. No glow: it is the horse that is looked at.
  */
 function destrierTack(hang: Hang, { y, z, width: w, length: l }: Saddle) {
-  const steel = flat(WAR_STEEL, 0.4, 0.45), dark = flat(WAR_DARK, 0.75), cloth = flat(WAR_CLOTH, 0.95), trim = flat(WAR_TRIM, 0.6, 0.2), plume = flat(WAR_PLUME, 0.9);
+  const steel = flat(WAR_STEEL, 'metal', 0.4, 0.45), dark = flat(WAR_DARK, 'hide', 0.75), cloth = flat(WAR_CLOTH, 'cloth', 0.95), trim = flat(WAR_TRIM, 'metal', 0.6, 0.2), plume = flat(WAR_PLUME, 'cloth', 0.9);
   // saddle: a deep seat between a tall cantle and a pommel that swells forward
   hang('Torso', box(w * 0.8, 0.1, l, dark), [0, y - 0.03, z]);
   hang('Torso', box(w * 0.8, 0.34, 0.12, dark), [0, y + 0.15, z - l / 2], [0.2, 0, 0]);
@@ -57,7 +64,7 @@ function destrierTack(hang: Hang, { y, z, width: w, length: l }: Saddle) {
     const x = sx * (w / 2 + 0.2), lean: [number, number, number] = [0, 0, sx * 0.1];
     hang('Torso', box(0.05, 0.46, 1.3, cloth), [x, y - 0.4, z - 0.05], lean);
     hang('Torso', box(0.06, 0.06, 1.3, trim), [x + sx * 0.04, y - 0.64, z - 0.05], lean);
-    for (let i = 0; i < 6; i++) hang('Torso', new THREE.Mesh(dag, trim), [x + sx * 0.05, y - 0.78, z - 0.6 + i * 0.22], lean);
+    for (let i = 0; i < 6; i++) hang('Torso', shape(dag, trim), [x + sx * 0.05, y - 0.78, z - 0.6 + i * 0.22], lean);
     hang('Torso', box(0.07, 0.2, 0.2, steel), [x, y - 0.12, z + 0.45]); // the plate each skirt is pinned by
     hang('Torso', box(0.05, 0.04, 0.28, steel), [sx * (w / 2 + 0.3), y - 0.38, z + 0.14]); // stirrup iron, under the rider's boot (his feet hang at y - 0.38, measured)
     hang('Torso', box(0.03, 0.32, 0.05, dark), [sx * (w / 2 + 0.3), y - 0.2, z + 0.14]); // and its leather
@@ -67,13 +74,13 @@ function destrierTack(hang: Hang, { y, z, width: w, length: l }: Saddle) {
   // peytral: a chest plate with a rim, studded, hanging from a strap over the withers
   hang('Torso', box(0.62, 0.5, 0.1, steel), [0, y - 0.55, z + 0.95], [-0.15, 0, 0]);
   hang('Torso', box(0.66, 0.06, 0.12, trim), [0, y - 0.28, z + 0.93], [-0.15, 0, 0]);
-  for (const sx of [-1, 0, 1]) hang('Torso', new THREE.Mesh(new THREE.OctahedronGeometry(0.05), trim), [sx * 0.2, y - 0.55, z + 1.02]);
+  for (const sx of [-1, 0, 1]) hang('Torso', shape(new THREE.OctahedronGeometry(0.05), trim), [sx * 0.2, y - 0.55, z + 1.02]);
   // crinet: plates down the crest of the neck, smaller toward the poll
   for (let i = 0; i < 5; i++) hang('Torso', box(0.14 - i * 0.012, 0.05, 0.2, steel), [0, y + 0.07 + i * 0.12, z + 0.88 + i * 0.12], [-0.8 - i * 0.04, 0, 0]);
   // chamfron: a plate down the face, a rim round each eye and a plume at the poll
   hang('Head', box(0.2, 0.07, 0.7, steel), [0, 2.1, 1.28], [0.85, 0, 0]);
   hang('Head', box(0.26, 0.05, 0.12, trim), [0, 2.38, 1.03], [0.2, 0, 0]);
-  for (let i = 0; i < 4; i++) hang('Head', new THREE.Mesh(new THREE.ConeGeometry(0.11 - i * 0.012, 0.8 - i * 0.09, 4), plume), [0, 2.62 - i * 0.04, 0.9 - i * 0.12], [-0.5 - i * 0.28, 0, 0]);
+  for (let i = 0; i < 4; i++) hang('Head', shape(new THREE.ConeGeometry(0.11 - i * 0.012, 0.8 - i * 0.09, 4), plume), [0, 2.62 - i * 0.04, 0.9 - i * 0.12], [-0.5 - i * 0.28, 0, 0]);
 }
 
 /** Look per mount id; a mount the table does not know falls back by speed (the second is the 13 u/s one). */

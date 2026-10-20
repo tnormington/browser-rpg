@@ -26,7 +26,7 @@ import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
 import { WorldView, flightMasterFigure, headstones, Kit } from './world-view';
 import { WorldMap, mapPosition } from './world-map';
 import { landingSpot } from './sim/flight';
-import { bakeUV, hasSurface, surfaceFor } from './surface';
+import { bakeUV, dress, hasSurface } from './surface';
 
 /**
  * Every colour in the scene, in one place. Desaturated, cold and narrow: the world sits in a tight dark band so that
@@ -56,7 +56,7 @@ const P = PALETTE;
 type Mat = THREE.MeshStandardMaterial;
 /** Roughness / metalness per material class. */
 const MATERIALS = {
-  ground: [0.95, 0], dirt: [0.98, 0], foliage: [0.85, 0], wood: [0.8, 0], rock: [0.9, 0], stone: [0.85, 0],
+  ground: [0.95, 0], dirt: [0.98, 0], foliage: [0.85, 0], wood: [0.8, 0], bark: [0.95, 0], rock: [0.9, 0], stone: [0.85, 0],
   plaster: [0.92, 0], roof: [0.88, 0],
   metal: [0.4, 0.9], ore: [0.55, 0.6], coal: [0.3, 0.1], cloth: [0.9, 0], skin: [0.6, 0], hide: [0.92, 0],
   gem: [0.3, 0.2], glow: [0.6, 0], beacon: [0.6, 0], dark: [1, 0],
@@ -70,8 +70,7 @@ const material = (color: number, cls: MatClass): Mat => {
   const [roughness, metalness] = MATERIALS[cls];
   const m = new THREE.MeshStandardMaterial({ color, roughness, metalness, flatShading: FACETED.has(cls) });
   // the class's shared detail and normal maps (surface.ts): flat colour, with relief for the key light to catch
-  const s = surfaceFor(cls);
-  if (s) { m.map = s.map; m.normalMap = s.normalMap; }
+  dress(m, cls);
   // glow: a lit emitter, self-lit and capped under the bloom threshold (glow.ts). beacon: a thin marker meant to cross it and bloom.
   if (cls === 'glow' || cls === 'beacon') { m.emissive.setHex(color); m.emissiveIntensity = cls === 'beacon' ? BEACON_INTENSITY : cappedIntensity(color, BEACON_INTENSITY); }
   if (cls === 'glow') m.color.multiplyScalar(EMITTER_DIFFUSE); // an emitter shows its own light, not the room's: a light parked beside it would otherwise wash it to white
@@ -1080,7 +1079,7 @@ export class Renderer {
     if (kit.squash && !kit.squashRig) dress.scale.set(...kit.squash);
     fit.add(dress);
     for (const l of kit.layers) {
-      const m = new THREE.Mesh(mergeParts(l.parts), material(l.color ?? a.mats[0].color.getHex(), l.lit ? 'glow' : 'hide'));
+      const m = new THREE.Mesh(bakeUV(mergeParts(l.parts)), material(l.color ?? a.mats[0].color.getHex(), l.lit ? 'glow' : 'hide'));
       if (!l.lit) m.material.emissive.setHex(a.glow);
       m.castShadow = !l.lit;
       m.raycast = () => {}; // the click volume is the enemy's own
@@ -1269,7 +1268,7 @@ export class Renderer {
         fin.position.x = dx; fin.position.z = dz;
       }
     } else if (n.type === 'tree') {
-      part(new THREE.CylinderGeometry(0.25, 0.35, 2, 5), P.bark, 'wood', 1);
+      part(new THREE.CylinderGeometry(0.25, 0.35, 2, 5), P.bark, 'bark', 1);
       crown = part(new THREE.ConeGeometry(1.4, 3.5, 6), P.pine, 'foliage', 3.5);
     } else {
       const coal = n.type === 'coal', glow = n.type in ORE_LOOK ? ORE_LOOK[n.type as keyof typeof ORE_LOOK] : undefined;
@@ -1309,7 +1308,7 @@ export class Renderer {
     const group = new THREE.Group();
     const mat = material(color, 'hide');
     const body = new THREE.Mesh(
-      slot === 'brute' ? new THREE.BoxGeometry(1.6, 2.2, 1.2) : new THREE.CapsuleGeometry(def.radius * 0.8, def.radius * 1.2, 2, 6).rotateX(Math.PI / 2),
+      bakeUV(slot === 'brute' ? new THREE.BoxGeometry(1.6, 2.2, 1.2) : new THREE.CapsuleGeometry(def.radius * 0.8, def.radius * 1.2, 2, 6).rotateX(Math.PI / 2)),
       mat);
     body.castShadow = body.receiveShadow = true;
     body.position.y = slot === 'brute' ? 1.5 : def.radius + 0.2;
@@ -1319,7 +1318,7 @@ export class Renderer {
     if (def.look) mat.color.lerp(new THREE.Color(def.look.tint), TINT_MIX);
     mat.emissive.setHex(glow);
     // snout/fist so facing is readable on the placeholder body; the model carries its own face
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), material(P.bone, 'skin'));
+    const nose = new THREE.Mesh(bakeUV(new THREE.BoxGeometry(0.3, 0.3, 0.5)), material(P.bone, 'skin'));
     nose.castShadow = true;
     nose.position.set(0, body.position.y + 0.1, def.radius + 0.4);
     nose.userData.enemyId = e.id;

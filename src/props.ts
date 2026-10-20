@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { put, spike, lump, stick, hangers, BARK, THORN, MOSS, MUD } from './creatures';
 
 /** A material class the renderer knows (render.ts MATERIALS): how a layer takes light. `glow` layers are self-lit. */
-export interface PropLayer { name: string; color: number; cls: 'wood' | 'metal' | 'foliage' | 'glow' | 'stone' | 'hide' | 'rock'; parts: THREE.BufferGeometry[] }
+export interface PropLayer { name: string; color: number; cls: 'wood' | 'bark' | 'metal' | 'foliage' | 'glow' | 'stone' | 'hide' | 'rock'; parts: THREE.BufferGeometry[] }
 export interface Prop { layers: PropLayer[] }
 
 const BRASS = 0x8a6f3c, COPPER = 0x7a4f34, GLASS_LIQUID = 0x2fa89e, EMBER = 0xff8a30, TABLE = 0x3d3328, STONE = 0x4b525b;
@@ -87,7 +87,7 @@ function thornoak(): Prop {
   const thorns = Array.from({ length: 9 }, (_, i) => spike(Math.sin(i * 2.4) * 0.62, 0.4 + i * 0.28, Math.cos(i * 2.4) * 0.62, 0.5, 0.07, 0, Math.sin(i * 2.4) * 1.0));
   const clumps = [[-1.9, 4.5, 0.2, 1.3], [1.7, 4.7, 0.8, 1.2], [0.2, 5.2, -1.6, 1.3], [-0.6, 4.3, 1.7, 1.1], [0.1, 5.5, 0.2, 1.5], [2.9, 4.1, -0.6, 0.9], [-3.0, 4.0, -0.4, 0.9]];
   return { layers: [
-    { name: 'bark', color: OAK_BARK, cls: 'wood', parts: [...bole, ...limbs] },
+    { name: 'bark', color: OAK_BARK, cls: 'bark', parts: [...bole, ...limbs] },
     { name: 'thorns', color: THORN, cls: 'wood', parts: thorns },
     { name: 'leaves', color: OAK_LEAF, cls: 'foliage', parts: clumps.map(([x, y, z, r]) => lump(x, y, z, r, 0.55)) },
     { name: 'moss', color: MOSS, cls: 'foliage', parts: [...hangers(-1.9, 4.2, 0.2, 0.9, 6, 0.9), ...hangers(1.7, 4.4, 0.8, 0.8, 6, 0.8), lump(0.9, 1.0, 0.5, 0.3, 0.6)] },
@@ -138,7 +138,7 @@ function bush(kind: 'green' | 'dry'): Prop {
     .filter((_, i) => !dry || i % 2 === 0)   // a dry bush keeps every other clump: the gaps are the look
     .map(([x, y, z, r]) => lump(x * spread, y * top, z * spread, r * (dry ? 0.85 : 1), 0.7));
   return { layers: [
-    { name: 'wood', color: BUSH_STEM, cls: 'wood', parts: [...stems, ...twigs] },
+    { name: 'wood', color: BUSH_STEM, cls: 'bark', parts: [...stems, ...twigs] },
     { name: 'leaf', color: dry ? LEAF_DRY : LEAF, cls: 'foliage', parts: clumps },
   ] };
 }

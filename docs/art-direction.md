@@ -21,7 +21,7 @@ Rendered comparisons: `sh bench/art.sh` (frames per reference), `python bench/co
 | Grade | Vignette 0.6 from 0.32, contrast 1.12, cold shadows / warm highlights (`POST.grade`). |
 | Emissive | Saturation is for fire, blood and arcane light only. Arcane crystals (`CRYSTALS`) and tier 3+ gear glow are cold blue; neither may out-glow the forge. Emissive stays under the bloom threshold unless it is a beacon (`glow.ts`). |
 | Colour | Flat per material. Ground and cave floor are tinted per vertex with low variance; never per triangle. |
-| Surface | Relief, not colour (`surface.ts`). Each material class carries a faint greyscale detail map and a normal map, so the key light has something to catch; the colour under them stays flat. |
+| Surface | Relief, not colour (`surface.ts`). Every material class carries a faint greyscale detail map and a normal map, so the key light has something to catch; the colour under them stays flat. Models are dressed too (`surface` on a `SlotDef`): nothing in the world is a bare flat colour except a light. |
 
 ## Faceting
 
@@ -32,18 +32,28 @@ Facets are deliberate where the surface is hard: **rock, stone, trees, ore, coal
 Every material class gets two generated maps from `src/surface.ts`, shared by every material of that class: a detail
 map (greyscale, centred just under white, so it darkens into the hollows and never tints the flat colour) and a
 normal map cut from the same height field. Grass and heath, trodden earth, chipped rock, coursed stone, limewash,
-lapped slate, sawn board, leaf, hammered metal, hide and cloth; emitters, skin and gems stay clean.
+lapped slate, sawn board, bark, leaf, ore, coal, hammered metal, gem, hide, cloth and skin. **Only a light has no
+surface**: `glow`, `beacon` and the unlit ground marks (`dark`).
 
 - **The dials** are `repeat` (tiles per world unit), `relief` (how deep the extrusion reads) and `grime` (how far the
   detail map darkens) in `SURFACES`. The ground's is the faintest of the lot on purpose: it is already tinted per
-  vertex and the two must not fight.
-- **UVs** are world-unit planar projections off the dominant axis of each face, baked by `bakeUV` inside `mesh()`.
-  A texel is the same size on a cottage wall, a boulder and the ground, so nothing needs unwrapping and a merged
-  slab's parts each keep their own scale. A non-indexed geometry projects per triangle, so no facet carries a seam
-  through its middle.
+  vertex and the two must not fight; skin's is next, because a face must not read as orange peel.
+- **UVs** are world-unit planar projections off the dominant axis of each face, baked by `bakeUV`. A texel is the
+  same size on a cottage wall, a boulder, a knight and the ground, so nothing needs unwrapping and a merged slab's
+  parts each keep their own scale. A non-indexed geometry projects per triangle, so no facet carries a seam through
+  its middle. `bakeUV`'s `scale` is for geometry still in a file's own units (a skinned model, before its fit).
+- **Three doors, one rule.** `render.ts mesh()` for primitives and merged slabs, `models.ts` for a glTF slot, and
+  `gear.ts` / `mount.ts` for what is built onto a rig. Each bakes the UVs and calls `surface.ts dress()`; a material
+  that carries a pack texture of its own keeps it and takes no maps.
+- **Models say which class each of their materials is** (`surface` on a `SlotDef`): one class for the slot, or one
+  per material name with `*` for the rest. The pine is `bark` and `foliage`, the stump's cut face is sawn `wood`,
+  the ore and coal rocks wear their own mineral, the smithy is plaster, timber, coursed stone and tiles, and the
+  knight is plate, boots and skin. A slot with no `surface` is drawn in flat colour and keeps its own UVs.
 - **Buildings** have three surfaces, not one: `plaster` walls over a `stone` footing under a `roof` of slates.
-- **Cost** (bench/run.mjs, 1x): draw calls and triangles unchanged; about +0.6 ms GPU a frame and +1.4 s of load,
-  which is ten more shader programs for `warmUp` to compile up front rather than stall on mid-fight.
+- **Cost** (bench/run.mjs, 1x): draw calls and triangles unchanged (513 / 387k). The first pass cost about +0.6 ms
+  GPU a frame; dressing the models cost +0.7 ms GPU, +0.15 ms a frame and +0.1 s of load, for twelve more textures.
+- **Looking at it**: `node bench/surfaces.mjs` stands every model slot on the open road and shoots it close, plus
+  two frames at the camera the player actually has. Shots land in `bench/shots/surfaces/`.
 
 ## Tier 5 (HOM-47)
 

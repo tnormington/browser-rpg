@@ -5,6 +5,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { AnimDef } from './anim';
+import { SurfaceId, bakeUV, dress } from './surface';
 
 const FILES = import.meta.glob('../assets/models/*.glb', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 const urlOf = (file: string) => FILES[`../assets/models/${file}.glb`];
@@ -30,46 +31,63 @@ export interface SlotDef {
   splitLegs?: boolean;
   /** Ignore the file's vertex colours: a pack that bakes its colours dark would otherwise tint every named colour black. */
   plain?: boolean;
+  /**
+   * Which surface class (`surface.ts`) dresses the file's materials: one for the whole slot, or one per material name
+   * with `*` for the rest. A slot with no entry is drawn in flat colour, as every model was before HOM-117.
+   */
+  surface?: SurfaceId | Partial<Record<string, SurfaceId>>;
 }
+/** The surface class for one of a slot's materials: its own, else the slot's catch-all. */
+const surfaceOf = (def: SlotDef, name: string): SurfaceId | undefined =>
+  typeof def.surface === 'string' ? def.surface : def.surface?.[name] ?? def.surface?.['*'];
 
 const SKIN = 0xb89a7e;
 export const SLOTS = {
   player: { file: 'knight', height: 2.0, look: { sat: 0.55, light: 1.9, named: { Skin: SKIN, Armor: 0x6a7684, ArmorLegs: 0x6a7684, Boots: 0x2a2622, Hands: SKIN } }, splitLegs: true,
+    surface: { '*': 'metal', Skin: 'skin', Hands: 'skin', Boots: 'hide' },
     anim: { idle: 'Idle', move: 'Run', moveSpeed: 6, attack: ['Run_swordAttack', 'swordAttackJump'], upper: ['Run_swordAttack'], death: 'Death', jump: 'Jump', impact: { Run_swordAttack: 0.4, swordAttackJump: 0.62 } } },
-  warden: { file: 'wizard', height: 2.1, look: { sat: 0.6, light: 1.6, named: { Skin: SKIN, Clothes: 0x4c3b66, Hat: 0x33283f, Belt: 0x3a2d22, Gold: 0xb8893a } }, anim: { idle: 'Idle', move: 'Walk' } },
-  boar: { file: 'pig', height: 1.0, look: { sat: 0.5, light: 0.95, named: { 'Material.003': 0x93705a, Material: 0x3a281c } },
+  warden: { file: 'wizard', height: 2.1, look: { sat: 0.6, light: 1.6, named: { Skin: SKIN, Clothes: 0x4c3b66, Hat: 0x33283f, Belt: 0x3a2d22, Gold: 0xb8893a } },
+    surface: { '*': 'cloth', Skin: 'skin', Face: 'skin', Belt: 'hide', Gold: 'metal' }, anim: { idle: 'Idle', move: 'Walk' } },
+  boar: { file: 'pig', height: 1.0, look: { sat: 0.5, light: 0.95, named: { 'Material.003': 0x93705a, Material: 0x3a281c } }, surface: 'hide',
     anim: { idle: 'Idle', move: 'Idle', attack: ['Jump'], impact: { Jump: 0.5 }, hop: 0.1, lie: 0.45 } },
-  wolf: { file: 'wolf', height: 1.25, yaw: -Math.PI / 2, look: { sat: 0.35, light: 0.75, named: { Wolf: 0x8c8e8a } }, anim: { idle: 'Idle', move: 'Walking', moveSpeed: 5, lie: 0.4 } },
+  wolf: { file: 'wolf', height: 1.25, yaw: -Math.PI / 2, look: { sat: 0.35, light: 0.75, named: { Wolf: 0x8c8e8a } }, surface: 'hide', anim: { idle: 'Idle', move: 'Walking', moveSpeed: 5, lie: 0.4 } },
   brute: { file: 'viking', height: 2.7, look: { sat: 0.8, light: 2.4, named: { Skin: 0x8a5a4a, Face: 0x8a5a4a, Main: 0x6a2a28, Pants: 0x3a2220 } },
+    surface: { '*': 'hide', Skin: 'skin', Face: 'skin', Pants: 'cloth' },
     anim: { idle: 'Idle', move: 'Walk', moveSpeed: 4, attack: ['Punch'], hit: 'RecieveHit', death: 'Defeat', impact: { Punch: 0.38 } } },
   // the Warden's model again, dressed as a cultist: a different person from his silhouette alone (crimson robe, dark hat)
   hexer: { file: 'wizard', height: 2.2, look: { sat: 0.6, light: 1.5, named: { Skin: SKIN, Clothes: 0x5a1c24, Hat: 0x2a1418, Belt: 0x2a1d16, Gold: 0x8a6a2a } },
+    surface: { '*': 'cloth', Skin: 'skin', Face: 'skin', Belt: 'hide', Gold: 'metal' },
     anim: { idle: 'Idle', move: 'Walk', moveSpeed: 4, attack: ['Shoot_OneHanded'], hit: 'RecieveHit', death: 'Defeat', impact: { Shoot_OneHanded: 0.3 } } },
   // a smaller, paler wolf
-  pup: { file: 'wolf', height: 0.8, yaw: -Math.PI / 2, look: { sat: 0.35, light: 0.85, named: { Wolf: 0xa8a290 } }, anim: { idle: 'Idle', move: 'Walking', moveSpeed: 5, lie: 0.3 } },
+  pup: { file: 'wolf', height: 0.8, yaw: -Math.PI / 2, look: { sat: 0.35, light: 0.85, named: { Wolf: 0xa8a290 } }, surface: 'hide', anim: { idle: 'Idle', move: 'Walking', moveSpeed: 5, lie: 0.3 } },
   // the first mount (Thornwick, 10 u/s): the pack's plainer horse, a dun with a dark mane. 'Material.003' is the coat and 'Material.006' mane, tail and
   // hooves, so a skin (section 6.3) is a new pair of colours here plus its own tack layers in mount.ts. The second mount must be a different animal or
   // carry visibly better tack: nothing here should be pushed as far as this model can go.
-  horse: { file: 'horse', height: 2.3, plain: true, look: { sat: 0.55, light: 1.3, named: { 'Material.003': 0x6a5848, 'Material.006': 0x1c1a18 } },
+  horse: { file: 'horse', height: 2.3, plain: true, look: { sat: 0.55, light: 1.3, named: { 'Material.003': 0x6a5848, 'Material.006': 0x1c1a18 } }, surface: 'hide',
     anim: { idle: 'Idle', move: 'Run', moveSpeed: 7, death: 'Death', jump: 'Jump' } },
   // the second mount (Highmoor, 13 u/s): a different animal, not a tint. The pack's fuller horse (2,182 triangles against the first's 690, eight
   // named materials instead of two): a near-black coat with ash markings and a pale mane, so the head and the flowing hair read at a distance. Its
   // tack (barding, a war saddle, a plume) is built in mount.ts. moveSpeed is measured, not guessed (HOM-100): the Gallop clip's planted hooves sweep back at ~5.2 u/s at rate 1,
   // so 13 u/s would need rate 2.5; 7 gives rate 1.86 (a 3.2 Hz gallop) and the hooves slide ~25% instead of the 42% that 9 left.
   destrier: { file: 'destrier', height: 2.55, plain: true, look: { sat: 0.5, light: 1, named: { Main: 0x626a74, Main_Dark: 0x2c2f35, Main_Light: 0x9aa2aa, Hair: 0xdcdfe2, Muzzle: 0x3a3c42,
-    Hooves: 0x14151a, Eye_Black: 0x08090b, Eye_White: 0xb4c4d4 } },
+    Hooves: 0x14151a, Eye_Black: 0x08090b, Eye_White: 0xb4c4d4 } }, surface: 'hide',
     anim: { idle: 'Idle', move: 'Gallop', moveSpeed: 7, death: 'Death', jump: 'Gallop_Jump' } },
-  tree: { file: 'pine', height: 5.6, look: { sat: 0.45, light: 1.3, named: { Wood: 0x4a3b2e, Green: 0x2f4538 } } },
-  stump: { file: 'stump', height: 0.8, look: { sat: 0.45, light: 1.3, named: { Wood: 0x4a3b2e, LightWood: 0x6a5a48, Green: 0x2f4538 } } },
-  ironRock: { file: 'rock5', footprint: 2.6, look: { sat: 0.5, light: 1.7, named: { Rock: 0x6a7078 } } },
-  coalRock: { file: 'rock3', footprint: 2.6, look: { sat: 0.5, light: 1.0, named: { Rock: 0x2f3036 } } },
-  caveRock: { file: 'rock2', footprint: 6.4, look: { sat: 0.5, light: 1.5, named: { Rock: 0x4b525b } } },
-  boulder: { file: 'rock6', footprint: 3.6, look: { sat: 0.5, light: 1.5, named: { Rock: 0x454b53 } } },
-  forge: { file: 'blacksmith', footprint: 5.2, look: { sat: 0.45, light: 1.0 } },
-  anvil: { file: 'anvil', height: 0.9, look: { sat: 0.3, light: 0.5, named: { MI_Trim_Metal: 0x2a2c33 } }, metal: 0.6, roughness: 0.5 },
-  helmet: { file: 'helmet', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794, DarkGrey: 0x4a525c } } },
-  pauldrons: { file: 'pauldrons', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794 } } },
-  sword: { file: 'sword', height: 1.15, look: { sat: 1, light: 1, named: {} } },
+  tree: { file: 'pine', height: 5.6, look: { sat: 0.45, light: 1.3, named: { Wood: 0x4a3b2e, Green: 0x2f4538 } }, surface: { Wood: 'bark', Green: 'foliage' } },
+  // the stump's cut face is the one sawn surface on a tree, so it takes the board grain and the sides keep their bark
+  stump: { file: 'stump', height: 0.8, look: { sat: 0.45, light: 1.3, named: { Wood: 0x4a3b2e, LightWood: 0x6a5a48, Green: 0x2f4538 } },
+    surface: { Wood: 'bark', LightWood: 'wood', Green: 'foliage' } },
+  // the two mineral nodes wear their own mineral: flecked ore rock and brittle coal, so a node reads apart from a boulder
+  ironRock: { file: 'rock5', footprint: 2.6, look: { sat: 0.5, light: 1.7, named: { Rock: 0x6a7078 } }, surface: 'ore' },
+  coalRock: { file: 'rock3', footprint: 2.6, look: { sat: 0.5, light: 1.0, named: { Rock: 0x2f3036 } }, surface: 'coal' },
+  caveRock: { file: 'rock2', footprint: 6.4, look: { sat: 0.5, light: 1.5, named: { Rock: 0x4b525b } }, surface: 'rock' },
+  boulder: { file: 'rock6', footprint: 3.6, look: { sat: 0.5, light: 1.5, named: { Rock: 0x454b53 } }, surface: 'rock' },
+  // the smithy is the one model that ships its own material names for all three of a building's surfaces: render, timber, coursed stone and tiles
+  forge: { file: 'blacksmith', footprint: 5.2, look: { sat: 0.45, light: 1.0 },
+    surface: { Plaster: 'plaster', Wood: 'wood', Wood_Light: 'wood', Wood_Side: 'wood', Stone_Light: 'stone', Stone_Dark: 'stone', RoofTiles_Red: 'roof' } },
+  anvil: { file: 'anvil', height: 0.9, look: { sat: 0.3, light: 0.5, named: { MI_Trim_Metal: 0x2a2c33 } }, metal: 0.6, roughness: 0.5, surface: 'metal' },
+  helmet: { file: 'helmet', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794, DarkGrey: 0x4a525c } }, surface: 'metal' },
+  pauldrons: { file: 'pauldrons', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794 } }, surface: 'metal' },
+  sword: { file: 'sword', height: 1.15, look: { sat: 1, light: 1, named: {} }, surface: { '*': 'metal', Brown: 'hide' } },
 } satisfies Record<string, SlotDef>;
 export type SlotId = keyof typeof SLOTS;
 
@@ -136,6 +154,8 @@ function restyle(src: THREE.MeshStandardMaterial, def: SlotDef, soft: boolean): 
     m.color.copy(src.color).getHSL(hsl, THREE.SRGBColorSpace);
     m.color.setHSL(hsl.h, Math.min(1, hsl.s * def.look.sat), Math.min(0.75, hsl.l * def.look.light), THREE.SRGBColorSpace);
   }
+  const cls = surfaceOf(def, src.name);
+  if (cls) dress(m, cls);   // the class's shared detail and normal maps (surface.ts); a pack texture left in place keeps them off
   m.name = src.name;
   return m;
 }
@@ -261,6 +281,12 @@ async function load(id: SlotId): Promise<Prepared> {
     if (def.yaw) geometry.rotateY(def.yaw);
     geometry.computeBoundingSphere();
     geometry.computeBoundingBox();
+  }
+  // UVs for the surface maps (surface.ts), last, so the projection is off the geometry as it will be drawn. A static slot
+  // carries its fit, so it is already in world units; a skinned one is still in the file's units until the wrapper scales it.
+  if (def.surface) {
+    if (geometry) bakeUV(geometry);
+    else for (const m of meshes) bakeUV(m.geometry, scale);
   }
   return { def, geometry, materials, scene: skinned ? root : undefined, clips, fit: { scale, offset } };
 }

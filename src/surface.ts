@@ -6,8 +6,9 @@
 // rather than a repaint. Colour stays flat; what the maps add is relief, so the key light does the work it already does on
 // the facets.
 //
-// How it reaches the geometry: every mesh in the world is built by render.ts `mesh()`, so `bakeUV` is called there once per
-// geometry and `surfaceFor` dresses the material. UVs are world-unit planar projections off the dominant axis of each face,
+// How it reaches the geometry: a mesh is built either by render.ts `mesh()` (primitives and merged slabs), by models.ts
+// (a glTF slot: a tree, a rock, a building, a creature) or by gear.ts, and each of those calls `bakeUV` on the geometry
+// and `dress` on the material. UVs are world-unit planar projections off the dominant axis of each face,
 // so a texel is the same size on a cottage wall, a boulder and the ground, however the geometry was built or merged.
 import * as THREE from 'three';
 
@@ -92,6 +93,11 @@ function slates(rows: number, perRow: number, rough: Float32Array): Float32Array
   });
 }
 
+/** Bark: `count` fissures running up the bole, wandering with `warp`, with `rough` as the grain on the ridges between them. */
+function fissures(count: number, warp: Float32Array, rough: Float32Array): Float32Array {
+  return field((u, v, i) => Math.abs(Math.sin((u + (warp[i] - 0.5) * 0.22) * Math.PI * count)) ** 0.55 * (0.7 + rough[i] * 0.3));
+}
+
 /** A plain weave: threads over and under in both directions. */
 const weave = (threads: number) => field((u, v) =>
   0.5 + 0.5 * Math.sin(u * threads * Math.PI * 2) * Math.sin(v * threads * Math.PI * 2) * 0.6 + 0.2 * Math.sin(v * threads * Math.PI * 2));
@@ -100,6 +106,8 @@ const weave = (threads: number) => field((u, v) =>
 const mix = (a: Float32Array, b: Float32Array, k: number) => a.map((v, i) => v * (1 - k) + b[i] * k);
 /** Pull a field toward its extremes, so a soft noise reads as chips and ridges rather than haze. */
 const sharpen = (a: Float32Array, p: number) => a.map(v => v ** p);
+/** Crystal faces scattered through a field: anything over `t` stands proud as a flat chip, the rest falls away under it. */
+const chips = (a: Float32Array, t: number) => a.map(v => (v > t ? 0.8 + (v - t) : v * 0.55));
 
 // ---- the surfaces ----------------------------------------------------------------------------------------------------
 
@@ -121,8 +129,18 @@ const SURFACES = {
   roof: { height: () => slates(7, 5, fbm(20, 2, 10)), repeat: 0.85, relief: 2.6, grime: 0.24 },
   /** Sawn timber: boards with their grain. */
   wood: { height: () => planks(5, fbm(40, 2, 11), fbm(12, 3, 12)), repeat: 0.55, relief: 1.4, grime: 0.24 },
+  /** Bark: fissures up the bole over a coarse grain. A bole, a limb, a fallen bough; a board that was sawn out of one is `wood`. */
+  bark: { height: () => fissures(9, fbm(8, 2, 18), fbm(26, 3, 19)), repeat: 0.6, relief: 2.2, grime: 0.3 },
   /** Leaf: clumped, not grainy, so a bush keeps its mass. */
   foliage: { height: () => sharpen(fbm(10, 3, 13), 1.4), repeat: 0.8, relief: 1.6, grime: 0.26 },
+  /** Ore-bearing rock: a chipped face with crystal flecks standing proud of it, so a node reads as mineral and not as another boulder. */
+  ore: { height: () => mix(sharpen(fbm(6, 3, 20), 1.6), chips(fbm(18, 2, 21), 0.62), 0.45), repeat: 0.8, relief: 2, grime: 0.28 },
+  /** Coal: brittle and glassy, broken in big conchoidal flakes with no grain between them. Kept shallow on grime: the colour is already near black. */
+  coal: { height: () => sharpen(mix(fbm(4, 3, 22), fbm(11, 2, 23), 0.35), 2.2), repeat: 0.7, relief: 1.8, grime: 0.18 },
+  /** A cut gem: a fine facet grain, barely there. A gem is read by its colour and its glint, not by its texture. */
+  gem: { height: () => fbm(16, 2, 24), repeat: 2.6, relief: 0.5, grime: 0.08 },
+  /** Skin: pores, and the faintest surface of the lot — a face must not read as orange peel across a square. */
+  skin: { height: () => mix(fbm(30, 2, 25), fbm(9, 2, 26), 0.25), repeat: 3, relief: 0.45, grime: 0.07 },
   /** Hammered metal: shallow dimples, nothing that would read as rust. */
   metal: { height: () => fbm(12, 2, 14), repeat: 1.4, relief: 0.7, grime: 0.12 },
   /** Hide and leather: a fine pebble grain. */
@@ -181,7 +199,7 @@ const built = new Map<SurfaceId, { map: THREE.Texture; normalMap: THREE.Texture 
 
 /**
  * The shared maps for a material class, built the first time one is asked for. Null where the class has no surface
- * (emitters, skin, gems: the art direction keeps those clean) or where there is no canvas to draw on (node tests).
+ * (emitters and the unlit ground marks: a light has no grain) or where there is no canvas to draw on (node tests).
  */
 export function surfaceFor(cls: string): { map: THREE.Texture; normalMap: THREE.Texture } | null {
   if (!hasSurface(cls)) return null;
@@ -191,6 +209,18 @@ export function surfaceFor(cls: string): { map: THREE.Texture; normalMap: THREE.
     built.set(cls, { map: detailMap(h, s.grime, s.repeat), normalMap: normalMap(h, s.relief, s.repeat) });
   }
   return built.get(cls) ?? null;
+}
+
+/**
+ * Hang a material class's shared maps on a material: the one door every surface in the world goes through, whether the
+ * material was built by the renderer (render.ts `material`), restyled off a glTF file (models.ts) or built for a piece of
+ * gear. A material that already carries a colour map of its own (a pack's own texture) keeps it.
+ */
+export function dress(m: THREE.MeshStandardMaterial, cls: string) {
+  const s = surfaceFor(cls);
+  if (!s || m.map) return;
+  m.map = s.map;
+  m.normalMap = s.normalMap;
 }
 
 // ---- UVs ---------------------------------------------------------------------------------------------------------------
@@ -206,13 +236,17 @@ const dominant = (x: number, y: number, z: number) => {
  * world unit whatever the shape is and however it was placed. A non-indexed geometry (everything merged, which is nearly
  * everything here) projects per triangle, so a facet never carries a seam through its middle; an indexed one (the ground
  * planes) projects per vertex off the normals it already carries.
+ *
+ * `scale` is what the geometry's own units are multiplied by before it is drawn: 1 for anything authored in world units,
+ * and a skinned model's fit scale for geometry that is still in its file's units (models.ts). A texel is then the same
+ * size on a knight as on the ground he stands on.
  */
-export function bakeUV(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+export function bakeUV(geo: THREE.BufferGeometry, scale = 1): THREE.BufferGeometry {
   const pos = geo.attributes.position as THREE.BufferAttribute | undefined;
   if (!pos) return geo;   // an empty geometry stood up only to carry a material (world-view.ts's instanced boulders)
   const uv = new Float32Array(pos.count * 2);
   const write = (v: number, axis: number) => {
-    const x = pos.getX(v), y = pos.getY(v), z = pos.getZ(v);
+    const x = pos.getX(v) * scale, y = pos.getY(v) * scale, z = pos.getZ(v) * scale;
     uv[v * 2] = axis === 0 ? z : x;
     uv[v * 2 + 1] = axis === 1 ? z : y;
   };
