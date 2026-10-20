@@ -491,12 +491,13 @@ export class WorldView {
     const thorn = t.region.id === 'thornwick', square = thorn ? LANDMARKS.thornSquare : LANDMARKS.square;
     const toward = (at: { x: number; z: number }) => Math.atan2(square.x - at.x, square.z - at.z + 0.01) + Math.PI; // turned toward the way in
     const tag = (g: THREE.Group, id: string) => { g.traverse(o => { o.userData.id = id; }); return g; };
-    const stands = thorn ? [LANDMARKS.thornReeve, LANDMARKS.thornVendor, LANDMARKS.thornTrainer, LANDMARKS.flightThorn] : [LANDMARKS.harbourmaster, LANDMARKS.harbourVendor, LANDMARKS.trainer, LANDMARKS.flightSalt];
+    const stands = thorn ? [LANDMARKS.thornReeve, LANDMARKS.thornVendor, LANDMARKS.thornTrainer, LANDMARKS.thornStable, LANDMARKS.flightThorn] : [LANDMARKS.harbourmaster, LANDMARKS.harbourVendor, LANDMARKS.trainer, LANDMARKS.flightSalt];
     if (thorn) {
       this.person(add, LANDMARKS.thornReeve, 0x5c4a6e, 'cap', toward(LANDMARKS.thornReeve), t.picks.npc, 'thorn', 0x3a2f44);
       this.person(add, LANDMARKS.thornVendor, 0x6a5a30, 'brim', toward(LANDMARKS.thornVendor), t.picks.vendor, 'thorn');
       add(tag(flightMasterFigure(this.kit, LANDMARKS.flightThorn, square, t.picks.flight), 'thornwick'));
       this.person(add, LANDMARKS.thornTrainer, 0x3a5a4a, 'cap', toward(LANDMARKS.thornTrainer), t.picks.trainer, 'thorn_trainer');
+      this.person(add, LANDMARKS.thornStable, 0x5a3e28, 'brim', toward(LANDMARKS.thornStable), t.picks.trainer, 'thorn_stable'); // the stablemaster is picked like the trainer: a vendor with one thing to sell
     } else {
       this.person(add, LANDMARKS.harbourmaster, 0x3d5870, 'cap', toward(LANDMARKS.harbourmaster), t.picks.npc, 'harbour');
       this.person(add, LANDMARKS.harbourVendor, 0x6b4a2c, 'brim', toward(LANDMARKS.harbourVendor), t.picks.vendor, 'harbour');

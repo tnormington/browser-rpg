@@ -14,6 +14,8 @@ import { legalTalents, refreshTalents, talentById } from './talents';
 import { nearestTown, resolveCollisions } from './world';
 import { MAX_GOLD } from './shop';
 import { landingSpot, masterById } from './flight';
+import { mountById } from './mounts';
+import { mountsAllowed } from './world';
 
 export const SAVE_VERSION = 1;
 /** Nothing is further than this from the origin: the world is a few thousand units across at most (Saltmarrow ends near x = 970). */
@@ -35,6 +37,8 @@ interface SaveFile {
     durability?: Record<string, number>; // points left on worn-down gear, by item id; absent in saves from before durability: everything loads whole
     talents?: Record<string, number>; // absent in saves from before the trees: nobody had spent a point
     learned?: string[];               // trainer abilities bought; absent in saves from before the trainer
+    mounts?: string[];                // mounts owned, by id; absent in saves from before the stablemaster
+    mounted?: boolean;                // riding when saved
     gold?: number;                    // absent in saves from before the economy: nobody had any
     buffs?: { id: string; left: number }[]; // absent in saves from before cooking: nobody was Well Fed
   };
@@ -66,6 +70,8 @@ export function serialize(s: GameState): string {
       gold: p.gold,
       buffs: p.buffs.map(b => ({ id: b.id, left: b.left })),
       learned: [...p.learned],
+      mounts: [...p.mounts],
+      mounted: p.mounted,
     },
     found: [...s.found],
     quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second, third: s.quest.third, fourth: s.quest.fourth, fifth: s.quest.fifth, sixth: s.quest.sixth },
@@ -140,6 +146,13 @@ export function deserialize(raw: string): GameState | null {
         if (!p.learned.includes(n)) p.learned.push(n);
       }
     }
+    if (fp.mounts !== undefined) {
+      if (!Array.isArray(fp.mounts)) return null;
+      for (const id of fp.mounts) {
+        if (typeof id !== 'string' || !mountById(id)) throw new Error('bad mount');
+        if (!p.mounts.includes(id)) p.mounts.push(id);
+      }
+    }
     if (fp.gold !== undefined) p.gold = num(fp.gold, 0, MAX_GOLD, 'gold');
     if (fp.buffs !== undefined) {
       if (!Array.isArray(fp.buffs)) return null;
@@ -154,6 +167,7 @@ export function deserialize(raw: string): GameState | null {
     p.unlocked = p.combat.level; // abilities already earned are not announced again
     p.x = num(fp.x, -WORLD_LIMIT, WORLD_LIMIT, 'x'); p.z = num(fp.z, -WORLD_LIMIT, WORLD_LIMIT, 'z'); p.facing = num(fp.facing, -100, 100, 'facing');
     resolveCollisions(p);
+    p.mounted = fp.mounted === true && p.mounts.length > 0 && mountsAllowed(p.x, p.z); // a saddle that is no longer yours, or is in a dungeon room, is empty
     p.hp = Math.min(p.maxHp, Math.max(1, num(fp.hp, 0, 1e6, 'hp')));
     p.energy = Math.min(p.maxEnergy, num(fp.energy, 0, 1e6, 'energy'));
 

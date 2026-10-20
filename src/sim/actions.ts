@@ -1,4 +1,4 @@
-// The player's one timed action (gathering, crafting or a flight) and the click-to-interact walk that starts it.
+// The player's one timed action (gathering, crafting, mounting or a flight) and the click-to-interact walk that starts it.
 import type { GameState } from '../sim';
 import { PLAYER_RADIUS, LANDMARKS, OBSTACLES, clampToWorld } from './world';
 import { beginGather, finishGather, nodeById, strikeGather } from './gathering';
@@ -6,10 +6,12 @@ import { finishCraft } from './crafting';
 import { NPCS, npcNear } from './quest';
 import { vendorById, vendorNear } from './shop';
 import { masterById, masterNear } from './flight';
+import { dismount, finishMount } from './mounts';
 
 export type Action =
   | { k: 'gather'; nodeId: number; t: number; duration: number }
   | { k: 'craft'; recipe: string; t: number; duration: number; left: number }
+  | { k: 'mount'; t: number; duration: number }                                      // climbing up: mounts.ts finishes it. Any movement, hit or other work breaks it like any action
   | { k: 'flight'; from: string; to: string; t: number; duration: number }; // the ride: flight.ts runs it, and the player is out of everyone's reach until it lands
 
 /** `npc` and `vendor` name who (a click on them knows); without one, the nearest in earshot is meant (the E key). */
@@ -57,6 +59,7 @@ export function updateInteract(s: GameState) {
   s.interact = null;
   s.moveTarget = null;
   p.moving = false;
+  dismount(s); // a node, the forge or somebody to talk to is a stop: you step down
   p.facing = Math.atan2(t.x - p.x, t.z - p.z);
   if (it.k === 'forge') s.events.push({ t: 'forge' });
   else if (it.k === 'range') s.events.push({ t: 'range' });
@@ -74,5 +77,5 @@ export function updateAction(s: GameState, dt: number) {
   const before = a.t;
   a.t += dt;
   if (a.t < a.duration) { if (a.k === 'gather') strikeGather(s, a, before); return; }
-  if (a.k === 'gather') finishGather(s, a); else finishCraft(s, a);
+  if (a.k === 'gather') finishGather(s, a); else if (a.k === 'mount') finishMount(s); else finishCraft(s, a);
 }

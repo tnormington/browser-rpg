@@ -3,6 +3,7 @@
 import type { GameState } from './sim';
 import { SHOP_REACH, Vendor, buyPrice, taughtBy, vendorById, VENDORS } from './sim/shop';
 import { ABILITIES } from './sim/data';
+import { FOOT_SPEED, mountsSoldBy } from './sim/mounts';
 import { ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { hasRoom } from './sim/inventory';
 import { damagedGear, durabilityOf, repairCost } from './sim/durability';
@@ -20,7 +21,7 @@ export class ShopUi {
   private open = false;
   private sig = '';
 
-  constructor(root: HTMLElement, private buy: (item: string, qty: number) => void, private learn: (slot: number) => void, private repair: () => void) {
+  constructor(root: HTMLElement, private buy: (item: string, qty: number) => void, private learn: (slot: number) => void, private repair: () => void, private buyMount: (id: string) => void) {
     this.panel = el(root, 'panel shoppanel');
     this.titleEl = titleRow(this.panel, '', () => this.setOpen(false));
     this.goldEl = el(this.panel, 'shopgold');
@@ -35,7 +36,7 @@ export class ShopUi {
     this.open = on;
     if (on && vendor) this.vendor = vendorById(vendor) ?? this.vendor;
     this.titleEl.firstChild?.nodeType === Node.TEXT_NODE ? (this.titleEl.firstChild.textContent = this.vendor.name) : this.titleEl.prepend(this.vendor.name);
-    this.hint.textContent = taughtBy(this.vendor.id).length ? 'Abilities are bought here with gold, once you have the level.' : 'Right-click an item in your bag to sell it.';
+    this.hint.textContent = mountsSoldBy(this.vendor.id).length ? 'Mounts are bought here with gold, once you have the level. Press Z to ride.' : taughtBy(this.vendor.id).length ? 'Abilities are bought here with gold, once you have the level.' : 'Right-click an item in your bag to sell it.';
     this.panel.style.display = on ? 'block' : 'none';
     this.sig = '';
   }
@@ -57,7 +58,7 @@ export class ShopUi {
     // a little slack beyond selling reach so the panel does not flicker at the edge
     if (this.open && (p.dead || Math.hypot(p.x - this.vendor.x, p.z - this.vendor.z) > SHOP_REACH + 1.5)) this.setOpen(false);
     if (!this.open) return;
-    const sig = JSON.stringify([p.gold, p.inventory.map(st => st && st.id + st.qty), p.equipment, p.durability, p.learned, p.combat.level, Math.hypot(p.x - this.vendor.x, p.z - this.vendor.z) <= SHOP_REACH]);
+    const sig = JSON.stringify([p.gold, p.inventory.map(st => st && st.id + st.qty), p.equipment, p.durability, p.learned, p.mounts, p.combat.level, Math.hypot(p.x - this.vendor.x, p.z - this.vendor.z) <= SHOP_REACH]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.goldEl.textContent = `Your gold: ${p.gold}`;
@@ -74,6 +75,16 @@ export class ShopUi {
       el(row, 'rstat', a.desc);
       if (known) continue;
       actionButton(el(row, 'rbtns'), 'Learn', can).addEventListener('click', () => this.learn(slot));
+    }
+    for (const m of mountsSoldBy(this.vendor.id)) {
+      const known = p.mounts.includes(m.id), ready = p.combat.level >= m.level, can = !known && ready && p.gold >= m.price && near;
+      const row = el(this.list, `recipe${can ? '' : ' locked'}`);
+      const head = el(row, 'rhead');
+      el(head, 'rname', m.name);
+      el(head, `rreq${known || (ready && p.gold >= m.price) ? '' : ' bad'}`, known ? 'Owned' : ready ? `${m.price} gold` : `combat level ${m.level}`);
+      el(row, 'rstat', `Rides at ${m.speed} against ${FOOT_SPEED} on foot.`);
+      if (known) continue;
+      actionButton(el(row, 'rbtns'), 'Buy', can).addEventListener('click', () => this.buyMount(m.id));
     }
     if (this.vendor.stock.length) this.repairRow(p, near);
     for (const id of this.vendor.stock) {

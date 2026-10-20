@@ -321,6 +321,8 @@ const thornLandmarks = {
   thornVendor: { ...at(THORNWICK, -16, -12), r: 0.7 },
   /** The trainer, a little way off the square on the west side: Guard is bought here. */
   thornTrainer: { ...at(THORNWICK, -22, -24), r: 0.7 },
+  /** The stablemaster, beside the trainer on the west side: the first mount is bought here. */
+  thornStable: { ...at(THORNWICK, -22, -34), r: 0.7 },
   /** The flight master, just inside the town from the north road. */
   flightThorn: { ...at(THORNWICK, 10, -52), r: 0.7 },
   /** The alchemist's bench: a station, for the card that teaches alchemy. */
@@ -518,7 +520,7 @@ export const REGIONS: Region[] = [
     footprint: [{ x0: THORNWICK.x - 70, x1: THORNWICK.x + 70, z0: THORNWICK.z - 70, z1: THORNWICK.z + 70 }],
     obstacles: [
       ...THORN_HOUSES, THORN_ALEMBIC, ...THORNWOODS, ...THORN_HEADSTONES, { ...THORN_GATE.post, r: 0.55, kind: 'person' },
-      { ...thornLandmarks.thornReeve, kind: 'person' }, { ...thornLandmarks.thornVendor, kind: 'person' }, { ...thornLandmarks.flightThorn, kind: 'person' }, { ...thornLandmarks.thornTrainer, kind: 'person' },
+      { ...thornLandmarks.thornReeve, kind: 'person' }, { ...thornLandmarks.thornVendor, kind: 'person' }, { ...thornLandmarks.flightThorn, kind: 'person' }, { ...thornLandmarks.thornTrainer, kind: 'person' }, { ...thornLandmarks.thornStable, kind: 'person' },
     ],
     tall: [...THORN_HOUSES, ...THORNWOODS],
     trees: [], rocks: [],

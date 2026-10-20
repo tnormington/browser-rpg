@@ -46,6 +46,7 @@ const hud = new Hud((x, y, z) => view.showingMap ? null : view.project(x, y, z),
   buy: (item, qty) => { pendingShop.push({ k: 'buy', item, qty }); saveDirty = true; },
   learn: slot => { pendingShop.push({ k: 'learn', slot }); saveDirty = true; },
   repair: () => { pendingShop.push({ k: 'repair' }); saveDirty = true; },
+  buyMount: id => { pendingShop.push({ k: 'mount', id }); saveDirty = true; },
   craft: (recipe, count) => { pendingCraft = { recipe, count }; },
   questAdvance: what => { pendingAdvance = what; },
   quality: toggle => {
@@ -77,7 +78,7 @@ function eatBest() {
   saveDirty = true;
 }
 const keys = new Set<string>();
-let pendingTab = false, pendingClear = false, pendingAttack = false, pendingJump = false;
+let pendingMount = false, pendingTab = false, pendingClear = false, pendingAttack = false, pendingJump = false;
 /** Ability presses in the order they were made, one handed to each tick: two keys inside one tick (Guard, then Strike) are both cast, not the last of them. */
 const pendingAbilities: number[] = [];
 /** Keys typed into a form control belong to it. */
@@ -97,6 +98,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyH') hud.toggleHelp();
   else if (e.code === 'KeyJ') hud.toggleMap();
   else if (e.code === 'KeyG') eatBest();
+  else if (e.code === 'KeyZ') pendingMount = true;
   else if (e.code === 'KeyV') pendingInteract = { k: 'npc' };
   else if (e.code === 'KeyM') hud.say(toggleMute() ? 'Sound off' : 'Sound on');
   else if (e.code === 'KeyI') hud.toggle('inv');
@@ -176,6 +178,7 @@ function readInput(): Input {
     clickEnemy: pendingEnemy,
     tab: pendingTab,
     attack: pendingAttack,
+    mount: pendingMount,
     jump: (pendingJump || keys.has('Space')) && !hud.modalOpen,
     clearTarget: pendingClear,
     ability: pendingAbilities.shift() ?? null,
@@ -191,7 +194,7 @@ function readInput(): Input {
   };
   pendingFlight = null;
   pendingInteract = null; pendingCraft = null; pendingAdvance = false; pendingTalent = null; pendingTalentReset = false;
-  pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingAttack = false; pendingJump = false; pendingClear = false;
+  pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingAttack = false; pendingMount = false; pendingJump = false; pendingClear = false;
   return input;
 }
 
@@ -212,7 +215,7 @@ function frame(now: number) {
     const region = regionAt(state.player.x, state.player.z)?.id ?? null;
     if (region !== lastRegion) setAmbience(lastRegion = region);
     trace?.tick(state.events);
-    if (state.events.some(ev => ev.t === 'levelup' || ev.t === 'quest' || ev.t === 'crafted' || ev.t === 'kill' || ev.t === 'talent' || ev.t === 'talentreset' || ev.t === 'flight' || ev.t === 'discover')) saveDirty = true;
+    if (state.events.some(ev => ev.t === 'levelup' || ev.t === 'quest' || ev.t === 'crafted' || ev.t === 'kill' || ev.t === 'talent' || ev.t === 'talentreset' || ev.t === 'flight' || ev.t === 'discover' || ev.t === 'stable' || ev.t === 'mount')) saveDirty = true;
     acc -= TICK_DT;
   }
   // autosave: soon after anything meaningful, otherwise on a timer

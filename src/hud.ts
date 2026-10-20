@@ -14,6 +14,7 @@ import { BUFFS } from './sim/consumables';
 import { clearLine } from './sim/sight';
 import { abilityOpen, cooldownOf, costOf, swingInterval } from './sim/combat';
 import { VENDORS } from './sim/shop';
+import { mountById } from './sim/mounts';
 import { InventoryUi } from './inventory-ui';
 import { SkillsUi } from './skills-ui';
 import { TalentsUi } from './talents-ui';
@@ -40,6 +41,7 @@ export interface HudActions {
   map: MapView;
   learn: (slot: number) => void;
   repair: () => void;
+  buyMount: (id: string) => void;
   questAdvance: (what: boolean | 'road') => void;
   save: () => void;
   newGame: () => void;
@@ -58,6 +60,7 @@ function actionFailText(ev: Extract<GameEvent, { t: 'actionfail' }>): string {
     case 'cooldown': return `${ev.what}: you cannot eat again yet`;
     case 'combat': return `${ev.what} needs a quiet moment: not in combat`;
     case 'gold': return `Not enough gold for ${ev.what}`;
+    case 'mount': return ev.what; // the sentence is the sim's: it knows which rule refused
   }
 }
 
@@ -250,7 +253,7 @@ export class Hud {
     this.invUi = new InventoryUi(this.root, actions.inv, actions.sell);
     this.skillsUi = new SkillsUi(this.root);
     this.talentsUi = new TalentsUi(this.root, { learn: actions.talent, reset: actions.talentReset });
-    this.shopUi = new ShopUi(this.root, actions.buy, actions.learn, actions.repair);
+    this.shopUi = new ShopUi(this.root, actions.buy, actions.learn, actions.repair, actions.buyMount);
     this.flightUi = new FlightUi(this.root, actions.fly);
     this.mapUi = new MapUi(this.root, actions.map);
     const craft = (r: string, n: number) => { this.acting = true; actions.craft(r, n); };
@@ -409,6 +412,11 @@ export class Hud {
           this.float(`-${ev.price} gold`, 'loot', s.player.x, 3.0, s.player.z);
           this.note(`You pay ${ev.price} gold and take flight.`, 'log-loot');
         } else this.note('You land.', 'log-info');
+      } else if (ev.t === 'stable') {
+        this.float(`-${ev.gold} gold`, 'loot', s.player.x, 3.0, s.player.z);
+        this.note(`You buy ${mountById(ev.mount)!.name}. Press Z to mount: not in combat, and any hit or ability throws you off.`, 'log-loot');
+      } else if (ev.t === 'mount') {
+        this.say(ev.on ? 'Mounted' : 'Dismounted');
       } else if (ev.t === 'learn') {
         this.float(`-${ev.gold} gold`, 'loot', s.player.x, 3.0, s.player.z);
         this.unlock(ev.slot);
@@ -704,7 +712,9 @@ export class Hud {
     this.castBar.fill.parentElement!.style.display = a ? 'block' : 'none';
     if (!a) return;
     let label: string;
-    if (a.k === 'gather') {
+    if (a.k === 'mount') {
+      label = 'Mounting';
+    } else if (a.k === 'gather') {
       const d = NODE_TYPES[s.nodes.find(n => n.id === a.nodeId)!.type];
       label = `${SKILLS[d.skill].name}: ${d.name}`;
     } else {

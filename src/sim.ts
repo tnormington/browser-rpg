@@ -14,6 +14,7 @@ import { ShopAction, applyShopAction } from './sim/shop';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
 import { holdDoor } from './sim/dungeon';
+import { dismount, moveSpeed, toggleMount, updateMount } from './sim/mounts';
 import { START_TOWN, discoverMasters, startFlight, updateFlight } from './sim/flight';
 import { holdAtGates } from './sim/gates';
 import { updateWithering } from './sim/hazards';
@@ -32,8 +33,7 @@ export type { Action, Interact } from './sim/actions';
 export type { QuestState } from './sim/quest';
 
 export { TICK_RATE, TICK_DT };
-const MOVE_SPEED = 6;
-export const STRIDE_DIST = 2.7; // one footfall: 0.45s of running at MOVE_SPEED (the audio request's cadence; not checked against the run clip's footfalls)
+export const STRIDE_DIST = 2.7; // one footfall: 0.45s of running at foot speed (the audio request's cadence; not checked against the run clip's footfalls)
 const ARRIVE_DIST = 0.15;
 
 export type EnemyState = 'idle' | 'chase' | 'return' | 'dead';
@@ -81,6 +81,8 @@ export interface Player {
   gcd: number;
   cd: number[];            // per-ability cooldown remaining
   learned: string[];       // names of the trainer abilities bought so far (see AbilityDef.trainer)
+  mounts: string[];        // ids of the mounts owned (sim/mounts.ts); the fastest is the one ridden
+  mounted: boolean;        // riding: faster on the ground, and no fighting until you get off
   unlocked: number;        // combat level up to which ability unlocks have been announced (so each fires exactly once)
   queued: number | null;   // ability pressed just before the GCD ended
   queuedOff: number | null; // an off-GCD ability pressed just before its own cooldown ended: held apart from `queued`, so neither can replace the other
@@ -136,7 +138,7 @@ export type GameEvent =
   | { t: 'kill'; id: number; x: number; z: number; species: string }
   | { t: 'xp'; skill: SkillId; amount: number; x: number; z: number }
   | { t: 'levelup'; skill: SkillId; level: number }
-  | { t: 'actionfail'; reason: 'level' | 'req' | 'depleted' | 'full' | 'materials' | 'range' | 'gold' | 'cooldown' | 'combat'; skill?: SkillId; need: number; what: string; station?: string } // skill: absent for a failed trade or a refused meal; station: what a 'range' failure was too far from
+  | { t: 'actionfail'; reason: 'level' | 'req' | 'depleted' | 'full' | 'materials' | 'range' | 'gold' | 'cooldown' | 'combat' | 'mount'; skill?: SkillId; need: number; what: string; station?: string } // skill: absent for a failed trade or a refused meal; station: what a 'range' failure was too far from
   | { t: 'npc'; who: string }                           // player reached a quest giver: open their dialogue
   | { t: 'quest'; what: 'accept' | 'progress' | 'stage' | 'complete'; name: string }  // name: the quest it is about (both chains sit at stage 'done' at once)
   | { t: 'forge' }                                      // player reached the forge: open the recipe list
@@ -152,6 +154,8 @@ export type GameEvent =
   | { t: 'loot'; item: string; qty: number }
   | { t: 'invfull' }
   | { t: 'shop'; vendor: string }                       // player reached a merchant: open their shop
+  | { t: 'stable'; mount: string; gold: number }          // a mount was bought from a stablemaster
+  | { t: 'mount'; on: boolean }                            // the player climbed up (on) or came down (off)
   | { t: 'learn'; slot: number; gold: number }               // an ability was bought from a trainer
   | { t: 'trade'; sold: boolean; item: string; qty: number; gold: number } // a sale (gold earned) or a purchase (gold spent) went through
   | { t: 'death'; killer: string; wear: { item: string; was: number; now: number }[]; grave: string; run: number; recap: { src: string; what: string; amount: number; heavy: boolean; ago: number }[] } // killer: "Cave Brute: Crushing Slam"; wear: every worn piece and its durability before and after; grave: the graveyard you wake at (its town's name); run: the straight-line walk from there back to where you fell; recap: last hits, oldest first, `ago` seconds before death
@@ -201,6 +205,7 @@ export interface Input {
   questAdvance: boolean | 'road';               // the advancing dialogue option was chosen this tick
   talent?: string | null;                       // talent id bought this tick
   talentReset?: boolean;                        // every talent point handed back this tick
+  mount?: boolean;                              // the mount key this tick: climb up, or get off
   flight?: string | null;                       // town id to fly to this tick (from the master the player stands at)
   /** World angle the player is turned to this tick, whatever they are walking: the mouse steering the camera with the right button. */
   face?: number | null;
@@ -217,7 +222,7 @@ export function createState(seed = 1): GameState {
       x: PLAYER_SPAWN.x, z: PLAYER_SPAWN.z, facing: Math.PI, moving: false,
       y: 0, vy: 0, stride: STRIDE_DIST / 2, airborne: false, autoAttack: false, swing: 0, inCombat: false, recap: [],
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
-      gcd: 0, cd: ABILITIES.map(() => 0), learned: [], unlocked: 1, queued: null, queuedOff: null, cast: 0,
+      gcd: 0, cd: ABILITIES.map(() => 0), learned: [], mounts: [], mounted: false, unlocked: 1, queued: null, queuedOff: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
       skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), durability: {}, stats: deriveStats(emptyEquipment()),
       talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [], root: null,
@@ -276,13 +281,15 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     if (input.craft) beginCraft(s, input.craft.recipe, input.craft.count);
     if (input.tab) tabTarget(s);
     if (input.acquire) acquireFront(s);
-    if (input.attack) toggleAutoAttack(s);
+    if (input.mount) toggleMount(s);
+    if (input.attack) { dismount(s); toggleAutoAttack(s); } // the attack key is a fight: it gets you off the horse on the same tick
     movePlayer(s, input, dt);
+    updateMount(s);
     updateInteract(s);
     updateAction(s, dt);
     updateConsumables(s, dt);
     updatePlayerCombat(s, dt);
-    if (input.ability !== null) pressAbility(s, input.ability);
+    if (input.ability !== null) { dismount(s); pressAbility(s, input.ability); } // off the horse, and the ability fires on this same tick
     if (input.flight) startFlight(s, input.flight);
     discoverMasters(s);
   }
@@ -304,7 +311,7 @@ function routedAim(s: GameState, aim: Pt): Pt {
 }
 
 function movePlayer(s: GameState, input: Input, dt: number) {
-  const p = s.player;
+  const p = s.player, speed = moveSpeed(p);
   let dx = input.dirX, dz = input.dirZ;
   if (dx !== 0 || dz !== 0) {
     s.moveTarget = null; // keyboard cancels click-to-move
@@ -318,7 +325,7 @@ function movePlayer(s: GameState, input: Input, dt: number) {
       s.moveTarget = null;
     } else if (d > 1e-6) {
       // don't overshoot the target within a single tick
-      const k = Math.min(1, d / (MOVE_SPEED * dt)) / d;
+      const k = Math.min(1, d / (speed * dt)) / d;
       dx = tx * k; dz = tz * k;
     }
   }
@@ -327,8 +334,8 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   const len = Math.hypot(dx, dz);
   if (len > 1) { dx /= len; dz /= len; }
   const px = p.x, pz = p.z;
-  p.x += dx * MOVE_SPEED * dt;
-  p.z += dz * MOVE_SPEED * dt;
+  p.x += dx * speed * dt;
+  p.z += dz * speed * dt;
   resolveCollisions(p, PLAYER_RADIUS);
   holdAtGates(s, px, pz);
   if (holdDoor(s, { x: px, z: pz })) s.moveTarget = null; // a click-to-move walk into a shut door ends there: the door has said why, "can't reach that" would say less
@@ -340,7 +347,7 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   stepVertical(s, input.jump === true, dt);
   stepStride(s, moved);
   // click-to-move blocked by an obstacle: give up instead of pushing forever
-  if (s.moveTarget && len > 1e-4 && moved < len * MOVE_SPEED * dt * 0.1) {
+  if (s.moveTarget && len > 1e-4 && moved < len * speed * dt * 0.1) {
     s.moveTarget = null;
     s.events.push({ t: 'stuck' });
   }

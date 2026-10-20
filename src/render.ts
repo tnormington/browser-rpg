@@ -179,6 +179,8 @@ const MOUTH_TOPS = [{ x: -21, y: 2.6, z: -27.8, w: 4.6 }, { x: -15, y: 2.6, z: -
 /** Enemy click volume: a vertical capsule as tall as the model on screen, wide enough for the widest of its body and its sim radius. A little generous on purpose. */
 const PICK_SPHERES = 4;
 const CAMERA_JUMP_FOLLOW = 0.5;
+const CAMERA_FOV = 60;
+const MOUNT_FOV_OPEN = 6, MOUNT_CAMERA_PULL = 0.3, MOUNT_CAMERA_EASE = 3; // mounted: the lens opens by this many degrees, the camera backs off by this fraction, and both settle at this rate (per second)
 /**
  * In the cave the orbit camera is pulled in along its own ray until it is on the floor (the walls are rectangle edges in the sim, so there is nothing
  * to raycast) and short of the first rock (wall boulder, standing stone, mouth rock) the ray would pass through; never closer to the player than
@@ -204,7 +206,7 @@ function nodeVolume(type: string, depleted: boolean): { height: number; radius: 
 export class Renderer {
   readonly renderer = new THREE.WebGLRenderer({ antialias: true });
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200);
+  readonly camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.1, 200);
   private ground: THREE.Mesh;
   private player: THREE.Mesh;
   private marker: THREE.Mesh;
@@ -289,6 +291,8 @@ export class Renderer {
   yaw = 0;
   pitch = 0.5;
   distance = 10;
+  /** 0 on foot, 1 mounted: eased, so climbing up pulls the camera back and opens the lens rather than cutting. */
+  private mountedBlend = 0;
 
   constructor(parent: HTMLElement, s: GameState, quality: Quality = 'high') {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -1547,10 +1551,14 @@ export class Renderer {
     // orbit camera; y clamped above ground so it never clips through
     // it rides half of a jump: a pure translation (the view angle never changes), so the hop reads without the horizon lurching
     const cp = Math.cos(this.pitch), lift = pl.y * CAMERA_JUMP_FOLLOW;
+    this.mountedBlend += ((pl.mounted ? 1 : 0) - this.mountedBlend) * Math.min(1, dtFx * MOUNT_CAMERA_EASE);
+    const fov = CAMERA_FOV + this.mountedBlend * MOUNT_FOV_OPEN;
+    if (Math.abs(fov - this.camera.fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
+    const dist = this.distance * (1 + this.mountedBlend * MOUNT_CAMERA_PULL);
     this.camera.position.set(
-      x + Math.sin(this.yaw) * cp * this.distance,
-      Math.max(0.5, 1.5 + lift + Math.sin(this.pitch) * this.distance),
-      z + Math.cos(this.yaw) * cp * this.distance);
+      x + Math.sin(this.yaw) * cp * dist,
+      Math.max(0.5, 1.5 + lift + Math.sin(this.pitch) * dist),
+      z + Math.cos(this.yaw) * cp * dist);
     if (inCave(x, z)) this.pullCameraInside(x, 1.5 + lift, z);
     this.shakeMag *= 0.88;
     if (this.shakeMag > 0.005) {

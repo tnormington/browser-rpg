@@ -8,12 +8,14 @@ import { VIAL } from './herbs';
 import { addItem, hasRoom, refreshGearStats } from './inventory';
 import { ABILITIES } from './data';
 import { damagedGear, repairCost } from './durability';
+import { mountById } from './mounts';
 
 export const VENDOR = { name: 'Brannoch the Peddler', x: LANDMARKS.vendor.x, z: LANDMARKS.vendor.z, r: LANDMARKS.vendor.r };
 export const HARBOUR_VENDOR = { name: 'Tam Brine, Chandler', x: LANDMARKS.harbourVendor.x, z: LANDMARKS.harbourVendor.z, r: LANDMARKS.harbourVendor.r };
 export const THORN_VENDOR = { name: 'Edda Bracken, Provisioner', x: LANDMARKS.thornVendor.x, z: LANDMARKS.thornVendor.z, r: LANDMARKS.thornVendor.r };
 export const TRAINER ={ name: 'Orla Saltblade, Trainer', x: LANDMARKS.trainer.x, z: LANDMARKS.trainer.z, r: LANDMARKS.trainer.r };
 export const THORN_TRAINER = { name: 'Brannock Vane, Trainer', x: LANDMARKS.thornTrainer.x, z: LANDMARKS.thornTrainer.z, r: LANDMARKS.thornTrainer.r };
+export const THORN_STABLE = { name: 'Garth Hollin, Stablemaster', x: LANDMARKS.thornStable.x, z: LANDMARKS.thornStable.z, r: LANDMARKS.thornStable.r };
 export const SHOP_REACH = 6; // centre to centre, like the forge
 export const BUY_MARKUP = 4; // the shop charges this many times an item's value: far above what it pays, so a round trip always loses gold
 export const MAX_GOLD = 1e9;
@@ -28,13 +30,13 @@ export const HARBOUR_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iro
 export const THORN_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword', VIAL] as const;
 
 export interface Vendor { id: string; name: string; x: number; z: number; r: number; stock: readonly string[] }
-/** Merchants buy and sell; the trainer has no stock and teaches whatever ABILITIES names her in `trainer.vendor`. */
-export const VENDORS: Vendor[] = [{ id: 'hale', ...VENDOR, stock: SHOP_STOCK }, { id: 'harbour', ...HARBOUR_VENDOR, stock: HARBOUR_STOCK }, { id: 'trainer', ...TRAINER, stock: [] }, { id: 'thorn', ...THORN_VENDOR, stock: THORN_STOCK }, { id: 'thorn_trainer', ...THORN_TRAINER, stock: [] }];
+/** Merchants buy and sell; the trainer has no stock and teaches whatever ABILITIES names her in `trainer.vendor`, and the stablemaster sells whatever MOUNTS names him in `vendor`. */
+export const VENDORS: Vendor[] = [{ id: 'hale', ...VENDOR, stock: SHOP_STOCK }, { id: 'harbour', ...HARBOUR_VENDOR, stock: HARBOUR_STOCK }, { id: 'trainer', ...TRAINER, stock: [] }, { id: 'thorn', ...THORN_VENDOR, stock: THORN_STOCK }, { id: 'thorn_trainer', ...THORN_TRAINER, stock: [] }, { id: 'thorn_stable', ...THORN_STABLE, stock: [] }];
 /** The slots a trainer teaches. */
 export const taughtBy = (vendor: string) => ABILITIES.flatMap((a, slot) => a.trainer?.vendor === vendor ? [slot] : []);
 export const vendorById = (id: string) => VENDORS.find(v => v.id === id);
 
-export type ShopAction = { k: 'sell'; slot: number; qty: number } | { k: 'buy'; item: string; qty: number } | { k: 'learn'; slot: number } | { k: 'repair' };
+export type ShopAction = { k: 'sell'; slot: number; qty: number } | { k: 'buy'; item: string; qty: number } | { k: 'learn'; slot: number } | { k: 'mount'; id: string } | { k: 'repair' };
 
 export const buyPrice = (id: string) => ITEMS[id].value * BUY_MARKUP;
 const reachOf = (s: GameState, v: Vendor) => Math.hypot(s.player.x - v.x, s.player.z - v.z);
@@ -53,6 +55,7 @@ export function applyShopAction(s: GameState, act: ShopAction) {
   if (p.dead) return;
   if (act.k === 'learn') return learnAbility(s, act.slot);
   if (act.k === 'repair') return repairGear(s);
+  if (act.k === 'mount') return buyMount(s, act.id);
   if (!Number.isInteger(act.qty) || act.qty < 1) return;
   if (act.k === 'sell') {
     const st = Number.isInteger(act.slot) ? p.inventory[act.slot] : null;
@@ -104,6 +107,18 @@ function learnAbility(s: GameState, slot: number) {
   p.gold -= a.trainer.price;
   p.learned.push(a.name);
   s.events.push({ t: 'learn', slot, gold: a.trainer.price });
+}
+
+/** Buy a mount from its stablemaster: needs the level, the gold and the stablemaster in reach, and is paid for once. */
+function buyMount(s: GameState, id: string) {
+  const p = s.player, m = mountById(id);
+  if (!m || p.mounts.includes(m.id)) return;
+  if (!nearTrainer(s, m.vendor)) return fail(s, 'range', m.name);
+  if (p.combat.level < m.level) return void s.events.push({ t: 'actionfail', reason: 'mount', need: m.level, what: `You need Combat level ${m.level} to buy ${m.name}` });
+  if (p.gold < m.price) return fail(s, 'gold', m.name);
+  p.gold -= m.price;
+  p.mounts.push(m.id);
+  s.events.push({ t: 'stable', mount: m.id, gold: m.price });
 }
 
 function removeFromSlot(s: GameState, slot: number, qty: number) {

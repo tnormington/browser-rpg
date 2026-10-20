@@ -13,6 +13,7 @@ import { nextRandom } from './rng';
 import { inSafeZone, nearestTown, resolveCollisions, sameSideOfDoor } from './world';
 import { clearLine } from './sight';
 import { isFlying } from './flight';
+import { dismount } from './mounts';
 import {
   ABILITIES, ENEMY_TYPES, GCD, QUEUE_WINDOW, CRIT_CHANCE, CRIT_MULT, ENERGY_MAX, ENERGY_REGEN,
   RESPAWN_DELAY, OOC_DELAY, OOC_REGEN_FRAC, TAB_RANGE, powerForLevel,
@@ -186,6 +187,7 @@ export function toggleAutoAttack(s: GameState) {
 function updateAutoAttack(s: GameState, dt: number) {
   const p = s.player, interval = swingInterval(p);
   p.swing = Math.min(Math.max(0, p.swing - dt), interval);
+  if (p.mounted) return setAutoAttack(s, false); // no fighting from the saddle
   if (!p.autoAttack) return;
   const t = enemyById(s, s.targetId);
   if (!t || !targetable(t)) return setAutoAttack(s, false);
@@ -485,6 +487,7 @@ export function harmPlayer(s: GameState, src: string, srcId: number | undefined,
   p.hp = Math.max(0, p.hp - amount);
   p.outOfCombat = 0;
   p.action = null; // getting hit breaks concentration
+  dismount(s); // ...and throws you from the saddle: a bolt, a slam or the fen's own ground
   breakFood(s);
   const now = s.tick * TICK_DT;
   p.recap = [...p.recap.filter(h => now - h.at <= RECAP_WINDOW), { src, what, amount, heavy, at: now }].slice(-RECAP_MAX);
