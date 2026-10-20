@@ -18,6 +18,7 @@ import { SILHOUETTES, Silhouette, mergeParts } from './creatures';
 import { PROPS, PropId } from './props';
 import { PlayerGear } from './gear';
 import { MountRig } from './mount';
+import { moveSpeed } from './sim/mounts';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
 import { WorldView, flightMasterFigure, headstones, Kit } from './world-view';
@@ -293,6 +294,7 @@ export class Renderer {
   distance = 10;
   /** 0 on foot, 1 mounted: eased, so climbing up pulls the camera back and opens the lens rather than cutting. */
   private mountedBlend = 0;
+  private rideShown = false; // what the rider and the horse were last told
 
   constructor(parent: HTMLElement, s: GameState, quality: Quality = 'high') {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -1551,6 +1553,7 @@ export class Renderer {
     // orbit camera; y clamped above ground so it never clips through
     // it rides half of a jump: a pure translation (the view angle never changes), so the hop reads without the horizon lurching
     const cp = Math.cos(this.pitch), lift = pl.y * CAMERA_JUMP_FOLLOW;
+    if (pl.mounted !== this.rideShown) { this.rideShown = pl.mounted; this.setMounted(pl.mounted, moveSpeed(pl)); }
     this.mountedBlend += ((pl.mounted ? 1 : 0) - this.mountedBlend) * Math.min(1, dtFx * MOUNT_CAMERA_EASE);
     const fov = CAMERA_FOV + this.mountedBlend * MOUNT_FOV_OPEN;
     if (Math.abs(fov - this.camera.fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }

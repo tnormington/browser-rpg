@@ -58,7 +58,7 @@ section('The stablemaster: one thing to sell, a level and a price');
   assert(s.player.mounts.join() === 'courser' && s.player.gold === 0 && s.events.some(e => e.t === 'stable'), 'at 20 with 1,000 in reach, it is bought and paid for');
   s.player.gold = 1000;
   tick(s, { shop: [{ k: 'mount', id: 'courser' }] });
-  assert(s.player.mounts.length === 1 && s.player.gold === 1000, 'and paid for once');
+  assert((s.player.mounts as string[]).length === 1 && s.player.gold === 1000, 'and paid for once');
 }
 
 section('Mounting: a one second cast, stationary, and nowhere it should not be');
