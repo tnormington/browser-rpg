@@ -83,7 +83,7 @@ async function botInPage(cfg) {
   };
 
   // the player's hands: auto-attack, then Pummel on a wind-up, else Crushing Blow > Serrated Throw > Strike (the bible's greedy loop), queued inside the GCD window
-  let lastSelect = -99;
+  let lastSelect = -99, lastAttackTap = -99;
   function fightStep(focus) {
     const chasers = s.enemies.filter(e => e.state === 'chase').sort((a, b) => dist(a, p) - dist(b, p));
     const t = s.enemies.find(e => e.id === s.targetId);
@@ -102,7 +102,9 @@ async function botInPage(cfg) {
     faceYaw(t.x, t.z);
     const dd = dist(t, p);
     hold('KeyW', dd > 2.2);
-    if (!p.autoAttack && dd <= 3) tap('KeyR');
+    // KeyX is the attack key (KeyR is an ability-bar slot, so this used to cast whatever R holds and never arm anything). It is a toggle that the sim
+    // only applies on its next tick, so assert the state wanted: tap only when disarmed, and not again until that tap has had ticks to land.
+    if (!p.autoAttack && dd <= 3 && s.tick - lastAttackTap >= 6) { lastAttackTap = s.tick; tap('KeyX'); }
     const slotKey = i => tap('Digit' + (i + 1));
     if (t.cast && t.cast.t >= 0.25 && p.cd[5] <= 0.02 && p.energy >= 10 && dd <= 3.5) slotKey(5);
     else if (p.queued === null && p.gcd <= 0.4) {
@@ -303,7 +305,7 @@ async function runBot(page) {
   const stat = a => { a = a.filter(x => x != null); if (!a.length) return { n: 0 }; const m = a.reduce((x, y) => x + y, 0) / a.length, sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, a.length - 1)); const sorted = [...a].sort((x, y) => x - y), h = sorted.length >> 1, med = sorted.length % 2 ? sorted[h] : (sorted[h - 1] + sorted[h]) / 2;
     return { n: a.length, mean: +m.toFixed(2), median: +med.toFixed(2), sd: +sd.toFixed(2), min: +Math.min(...a).toFixed(1), max: +Math.max(...a).toFixed(1) }; };
   if (mode === 'ttk') {
-    console.table(runs.map(r => { const t = res.filter(x => x.type === r.type); return { type: r.type, level: r.level, gear, fights: t.length, died: t.filter(x => x.died).length, ttk: JSON.stringify(stat(t.map(x => x.ttk))), hpPct: JSON.stringify(stat(t.map(x => x.takenPct))) }; }));
+    console.table(runs.map(r => { const t = res.filter(x => x.type === r.type); return { type: r.type, level: r.level, gear, fights: t.length, died: t.filter(x => x.died).length, swings: JSON.stringify(stat(t.map(x => x.swings))), noSwing: t.filter(x => x.swings === 0).length, ttk: JSON.stringify(stat(t.map(x => x.ttk))), hpPct: JSON.stringify(stat(t.map(x => x.takenPct))) }; }));
   } else {
     console.table(res.map(r => { const f = r.fights.filter(x => x.loop != null); return { type: r.type, level: r.level, fights: r.fights.length, kills: r.fights.reduce((a, x) => a + x.kills, 0), loop: JSON.stringify(stat(f.map(x => x.loop))), fight: stat(f.map(x => x.parts.fight)).mean, loot: stat(f.map(x => x.parts.loot)).mean, walk: stat(f.map(x => x.parts.walk)).mean, regen: stat(f.map(x => x.parts.regenWait)).mean, engage: stat(f.map(x => x.parts.engage)).mean, respawn: stat(f.map(x => x.parts.respawnWait)).mean }; }));
   }
