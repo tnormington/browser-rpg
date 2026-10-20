@@ -1,5 +1,5 @@
 // Walks the Barrowdowns and Highmoor in real Chromium, with real keys and mouse clicks: Hobb's gate (a level-18 player turned back, a level-24 one let through), the road east past the
-// barrows and a stand of stormiron, a camp of hounds picked off the screen, Highmoor from the west, its flight master clicked and its two gates refusing with a line.
+// barrows and a stand of stormiron, a camp of hounds picked off the screen, Highmoor from the west, its flight master clicked, the Hold's door and the north gate refusing with a line.
 // Screenshots land in bench/shots/barrow-*.png.
 //   node bench/barrowdowns.mjs        (needs a build: npx vite build)
 import { preview } from 'vite';
@@ -142,7 +142,7 @@ await page.waitForTimeout(300);
 if (await sim(() => window.__debug.sim.targetId) !== ram.id) fail('a click on the moor ram did not target it');
 await sim(() => { const s = window.__debug.sim; for (const e of s.enemies) { e.state = 'dead'; e.respawnIn = 1e9; e.deadFor = 99; } s.targetId = null; });
 
-// 8. the Cairn Hold's door at combat 24 (refused with the level), then at 30 (shut for good); the north gate at 40 (shut)
+// 8. the Cairn Hold's door at combat 24 (refused with the level), then at 30 (open: bench/cairnhold.mjs walks what is behind it); the north gate at 40 without the Steward's writ (refused, with no level in the line)
 const gates = await sim(() => Object.fromEntries(window.__debug.world.GATES.filter(g => g.id === 'cairnhold' || g.id === 'cairnwaste').map(g => [g.id, { at: g.at, mid: (g.span[0] + g.span[1]) / 2 }])));
 await setLevel(24);
 await stand(gates.cairnhold.mid, gates.cairnhold.at + 14, NORTH, 600);
@@ -155,8 +155,8 @@ await setLevel(30);
 await stand(gates.cairnhold.mid, gates.cairnhold.at + 14, NORTH, 600);
 await walk(3500);
 const z3 = await sim(() => window.__debug.sim.player.z);
-if (z3 < gates.cairnhold.at) fail(`a level-30 player got through the Cairn Hold's door to z = ${z3.toFixed(1)}`);
-await page.screenshot({ path: join(shots, 'highmoor-cairn-shut.png') });
+if (z3 > gates.cairnhold.at) fail(`a level-30 player was turned back at the Cairn Hold's door: z = ${z3.toFixed(1)}`);
+await page.screenshot({ path: join(shots, 'highmoor-cairn-open.png') });
 await setLevel(40);
 await stand(gates.cairnwaste.mid, gates.cairnwaste.at + 14, NORTH, 600);
 await walk(3500);

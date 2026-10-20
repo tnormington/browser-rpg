@@ -6,7 +6,7 @@ import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, W
 import { ABILITIES, ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NODE_TYPES } from './sim/gathering';
-import { HARBOURMASTER, NPC, THORN_REEVE, harbourMarker as harbourMarkOf, npcMarker as markerOf, reeveMarker as reeveMarkOf } from './sim/quest';
+import { HARBOURMASTER, HIGH_STEWARD, NPC, THORN_REEVE, harbourMarker as harbourMarkOf, npcMarker as markerOf, reeveMarker as reeveMarkOf, stewardMarker as stewardMarkOf } from './sim/quest';
 import { VENDOR } from './sim/shop';
 import { Motes, Particles, Rings, Slashes } from './fx';
 import { PostStack, Quality } from './post';
@@ -138,9 +138,17 @@ const ROTROOT = {
   floor: 0x2a2a1e, floorAlt: 0x363322, wall: new THREE.Color(1, 0.72, 0.5), root: 0x4a3a2a, fungus: 0x9ae07a,
   fog: new THREE.Color(0x0a0a06), light: { color: 0x8fd878, intensity: 120, distance: 20, y: 4.6 },
 };
-const FLOORS: Record<string, [number, number]> = { hollow: [P.caveFloor, P.caveFloorAlt], grotto: [GROTTO.floor, GROTTO.floorAlt], rotroot: [ROTROOT.floor, ROTROOT.floorAlt] };
+/**
+ * The Cairn Hold (bible 1.2): a barrow's passage grave, dry and cold. A stand-in look until the 3D Artist's (HOM-99 ships the rooms): grey-violet flagstone, pale cut stone for walls, a cold
+ * lamplight in each room and nothing else. It is a different dark from the other three: no green in it.
+ */
+const CAIRN = {
+  floor: 0x2c2c34, floorAlt: 0x383842, wall: new THREE.Color(0.85, 0.88, 1),
+  fog: new THREE.Color(0x07080c), light: { color: 0xa8b4e0, intensity: 110, distance: 20, y: 4.8 },
+};
+const FLOORS: Record<string, [number, number]> = { hollow: [P.caveFloor, P.caveFloorAlt], grotto: [GROTTO.floor, GROTTO.floorAlt], rotroot: [ROTROOT.floor, ROTROOT.floorAlt], cairnhold: [CAIRN.floor, CAIRN.floorAlt] };
 /** Per-dungeon rock tint and air; the Hollow is the default and falls through. */
-const DUNGEON_LOOK: Record<string, { wall: THREE.Color; fog: THREE.Color }> = { grotto: GROTTO, rotroot: ROTROOT };
+const DUNGEON_LOOK: Record<string, { wall: THREE.Color; fog: THREE.Color }> = { grotto: GROTTO, rotroot: ROTROOT, cairnhold: CAIRN };
 
 /**
  * Arcane crystal clusters: the cold emissive accents the art direction asks for (docs/art-direction.md), small bright shapes against large
@@ -246,6 +254,7 @@ export class Renderer {
   private npcMarker!: THREE.Sprite;
   private harbourMarker!: THREE.Sprite;
   private reeveMarker!: THREE.Sprite;
+  private stewardMarker!: THREE.Sprite;
   private world!: WorldView;
   private kit!: Kit;
   private beyond!: THREE.Mesh;
@@ -590,6 +599,11 @@ export class Renderer {
     this.scene.add(this.lantern);
     this.buildGrotto();
     this.buildRotroot();
+    for (const room of CAVE_ROOMS.filter(r => r.dungeon === 'cairnhold')) { // the Hold's dressing is the Artist's to come: a light in each room, so the King's chamber is readable
+      const l = new THREE.PointLight(CAIRN.light.color, CAIRN.light.intensity, CAIRN.light.distance);
+      l.position.set((room.rect.x0 + room.rect.x1) / 2, CAIRN.light.y, (room.rect.z0 + room.rect.z1) / 2);
+      this.scene.add(l);
+    }
   }
 
   /** The Rotroot's dressing, one merged draw each for roots and fungus glow, and a light in each room: roots arch over the rooms, fungus clusters on them and the floor. */
@@ -792,6 +806,11 @@ export class Renderer {
     this.reeveMarker.renderOrder = 10;
     this.reeveMarker.visible = false;
     this.scene.add(this.reeveMarker);
+    this.stewardMarker = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.markerTex.offer, depthTest: false }));
+    this.stewardMarker.scale.set(1.1, 1.1, 1);
+    this.stewardMarker.renderOrder = 10;
+    this.stewardMarker.visible = false;
+    this.scene.add(this.stewardMarker);
     this.buildVendor();
   }
 
@@ -1330,7 +1349,7 @@ export class Renderer {
     this.shakeMag = Math.max(this.shakeMag, 0.12);
   }
 
-  /** The merchant under the click ('hale', 'harbour', 'thorn' or 'trainer'), or null. */
+  /** The merchant under the click ('hale', 'harbour', 'thorn', 'high' or 'trainer'), or null. */
   pickVendor(clientX: number, clientY: number): string | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
@@ -1348,7 +1367,7 @@ export class Renderer {
     return this.raycaster.intersectObjects(this.world.flightPicks(), false)[0]?.object.userData.id ?? null; // each master's figure is tagged with its town
   }
 
-  /** The quest giver under the click ('hale', 'harbour' or 'thorn'), or null. */
+  /** The quest giver under the click ('hale', 'harbour', 'thorn' or 'high'), or null. */
   pickNpc(clientX: number, clientY: number): string | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
@@ -1501,6 +1520,12 @@ export class Renderer {
     if (rm && this.reeveMarker.visible) {
       (this.reeveMarker.material as THREE.SpriteMaterial).map = this.markerTex[rm];
       this.reeveMarker.position.set(THORN_REEVE.x, 3.5 + 0.18 * Math.sin(nowMs / 250 + 2), THORN_REEVE.z);
+    }
+    const sm = stewardMarkOf(s); // Highmoor's Steward, the same way
+    this.stewardMarker.visible = !!sm && Math.hypot(HIGH_STEWARD.x - x, HIGH_STEWARD.z - z) < 150;
+    if (sm && this.stewardMarker.visible) {
+      (this.stewardMarker.material as THREE.SpriteMaterial).map = this.markerTex[sm];
+      this.stewardMarker.position.set(HIGH_STEWARD.x, 3.5 + 0.18 * Math.sin(nowMs / 250 + 3), HIGH_STEWARD.z);
     }
     const mk = markerOf(s);
     this.npcMarker.visible = !!mk;

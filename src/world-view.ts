@@ -584,7 +584,7 @@ export class WorldView {
     this.emit(bag, add);
   }
 
-  /** Highmoor's square: its flight master by the road in, a cairn of grey stones in the middle, and a lamp every 13 units down the road from the west. (The keepers stand at their gates.) */
+  /** Highmoor's square: its flight master by the road in, the Steward, the provisioner, the trainer and the stablemaster, a cairn of grey stones in the middle, and a lamp every 13 units down the road from the west. (The keepers stand at their gates.) */
   private highmoorTown(t: Tile, add: (o: THREE.Object3D) => void) {
     const sq = LANDMARKS.highSquare, fm = LANDMARKS.flightHigh, bag = newBag();
     add(((g: THREE.Group) => { g.traverse(o => { o.userData.id = 'highmoor'; }); return g; })(flightMasterFigure(this.kit, fm, sq, t.picks.flight)));
@@ -592,7 +592,9 @@ export class WorldView {
     const toward = (at: { x: number; z: number }) => Math.atan2(sq.x - at.x, sq.z - at.z + 0.01) + Math.PI; // turned toward the way in, as in the other towns
     this.person(add, LANDMARKS.highTrainer, 0x4a3a52, 'cap', toward(LANDMARKS.highTrainer), t.picks.trainer, 'high_trainer');
     this.person(add, LANDMARKS.highStable, 0x5a3e28, 'brim', toward(LANDMARKS.highStable), t.picks.trainer, 'high_stable'); // picked like the trainer: a vendor with one thing to sell
-    for (const l of [LANDMARKS.highTrainer, LANDMARKS.highStable]) lampPost(bag, l.x + 1.4, l.z - 1.1, 0, 6);
+    this.person(add, LANDMARKS.highSteward, 0x3a4a62, 'cap', toward(LANDMARKS.highSteward), t.picks.npc, 'high', 0x2a3248);
+    this.person(add, LANDMARKS.highVendor, 0x6a5a30, 'brim', toward(LANDMARKS.highVendor), t.picks.vendor, 'high');
+    for (const l of [LANDMARKS.highTrainer, LANDMARKS.highStable, LANDMARKS.highSteward, LANDMARKS.highVendor]) lampPost(bag, l.x + 1.4, l.z - 1.1, 0, 6);
     lampPost(bag, LANDMARKS.rack.x - 2.6, LANDMARKS.rack.z + 1.4, 0, 5); // the tanner works late
     bag.stone.push(place(new THREE.CylinderGeometry(2.4, 2.8, 0.5, 8), sq.x, 0.25, sq.z));
     for (let n = 0; n < 4; n++) bag.stone.push(place(new THREE.DodecahedronGeometry(1.5 - n * 0.3), sq.x + n * 0.15, 0.9 + n * 1.1, sq.z, n * 0.7));
