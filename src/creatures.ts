@@ -1,4 +1,4 @@
-// Silhouettes for the enemies that share a rig with another: a tint and a scale do not make a different creature at play distance, so each
+﻿// Silhouettes for the enemies that share a rig with another: a tint and a scale do not make a different creature at play distance, so each
 // of these adds the shapes that do (antlers, thorns, a mantle of moss, a crown) and squashes the rig where its proportions are wrong.
 // Rendering only. Everything is in the rig's own units (its fitted height: boar 1, wolf 1.25, brute 2.7, hexer 2.2; +z is forward) and is
 // carried by the actor's group, so the look's scale applies to it as to the model.
@@ -79,19 +79,33 @@ export const hangers = (cx: number, cy: number, cz: number, spread: number, n: n
 /** Eyes: two small lit points either side of the face. */
 const eyes = (y: number, z: number, gap: number, r = 0.045): THREE.BufferGeometry[] => [1, -1].map(s => put(new THREE.OctahedronGeometry(r), s * gap, y, z));
 
-/** The shore crab's: raised pincers, side legs, a domed carapace and eyes on stalks (the boar squashed low and wide). */
+/**
+ * The shore crab's: a flat carapace with a toothed front rim, four bent legs a side, and two oversized claws held up and open (the one
+ * thing everyone knows a crab by). The claw tips are bone-pale so the open jaws read against dark water and wet sand. The boar squashed
+ * low and wide; the parts are drawn in the final shape.
+ */
 function crab(): Silhouette {
-  const parts: THREE.BufferGeometry[] = [], stalks: THREE.BufferGeometry[] = [];
+  const shell: THREE.BufferGeometry[] = [], tips: THREE.BufferGeometry[] = [], stalks: THREE.BufferGeometry[] = [];
   for (const side of [1, -1]) {
-    const arm = new THREE.BoxGeometry(0.16, 0.16, 0.8).translate(0, 0, 0.4);
-    const jaw = new THREE.ConeGeometry(0.2, 0.6, 4).rotateX(Math.PI / 2).translate(0.11, 0, 1.05);
-    for (const g of [arm, jaw, jaw.clone().translate(-0.22, 0, 0)]) parts.push(put(g, side * 0.95, 0.6, 0.45, 0, side * 0.35));
-    for (const z of [-0.35, 0, 0.35]) parts.push(put(new THREE.BoxGeometry(0.8, 0.07, 0.07), side * 1.0, 0.22, z, 0, 0, side * -0.5));
-    parts.push(put(new THREE.CylinderGeometry(0.03, 0.04, 0.35, 4), side * 0.2, 0.85, 0.75));
-    stalks.push(put(new THREE.SphereGeometry(0.07, 5, 4), side * 0.2, 1.05, 0.75));
+    // claw: an arm out and up from the shoulder, a heavy palm, and two jaws that open forward in a V
+    shell.push(put(new THREE.BoxGeometry(0.2, 0.2, 0.7).translate(0, 0, 0.35), side * 0.85, 0.35, 0.3, -0.5, side * 0.5));
+    shell.push(lump(side * 1.2, 0.85, 0.72, 0.36, 0.8));
+    for (const j of [1, -1]) {
+      const jaw = new THREE.ConeGeometry(0.2, 0.9, 4).rotateX(Math.PI / 2).translate(0, 0, 0.45);
+      tips.push(put(jaw, side * 1.2 + j * 0.13, 0.85, 0.85, 0, side * 0.1 - j * side * 0.5));
+    }
+    // legs: thigh out and up, shin down to the ground
+    for (const z of [-0.5, -0.17, 0.16, 0.5]) {
+      shell.push(put(new THREE.BoxGeometry(0.5, 0.07, 0.07), side * 1.0, 0.42, z * 0.9, 0, 0, side * 0.5));
+      shell.push(put(new THREE.BoxGeometry(0.07, 0.4, 0.07), side * 1.28, 0.22, z * 0.9 + 0.05, 0, 0, side * -0.25));
+    }
+    stalks.push(put(new THREE.SphereGeometry(0.08, 5, 4), side * 0.2, 0.98, 0.78));
+    shell.push(put(new THREE.CylinderGeometry(0.03, 0.04, 0.4, 4), side * 0.2, 0.7, 0.78));
   }
-  parts.push(put(new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), 0, 0.35, 0.1, 0, 0, 0, 1.05, 0.55, 0.95));
-  return { squash: [1.6, 0.5, 0.65], squashRig: true, layers: [{ color: null, parts }, { color: 0x1a1210, parts: stalks }] };
+  shell.push(put(new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), 0, 0.3, 0.1, 0, 0, 0, 1.05, 0.55, 0.9));
+  for (const x of [-0.6, -0.3, 0, 0.3, 0.6]) tips.push(spike(x, 0.34, 0.88 - Math.abs(x) * 0.45, 0.24, 0.06, -0.8));
+  const big = (ps: THREE.BufferGeometry[]) => ps.map(g => g.scale(1.3, 1.3, 1.3)); // the Strand's first enemy must read at play distance
+  return { squash: [1.95, 0.78, 0.85], squashRig: true, layers: [{ color: null, parts: big(shell) }, { color: 0xe8dfc8, parts: big(tips) }, { color: 0x1a1210, parts: big(stalks) }] };
 }
 
 /** Fen Stalker: the wolf stretched long in the leg and dark with mud to the knee, a mane of reed blades from the skull to the tail, pale eyes. A thing that waits in the reeds. */
