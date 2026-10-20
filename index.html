@@ -85,12 +85,14 @@ canvas{display:block}
 @keyframes buffsoon{50%{border-color:var(--gold)}}
 
 /* ---- action bar ---- */
-.actionbar{position:absolute;left:50%;bottom:28px;width:min(96vw,840px);transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-4);pointer-events:auto}/* an explicit width, not shrink-to-fit: left:50% caps the space a shrunk box may take at half the viewport, which the eleven-slot bar outgrew */
-.slot{position:relative;width:64px;height:64px;background:var(--iron);border:2px solid var(--edge);box-shadow:var(--lift-1);border-radius:var(--r);overflow:hidden;text-align:center;cursor:grab}
+/* a slot is 68px (64 and its border) unless the window is too narrow for the whole bar in one row, then it shrinks so the bar never wraps onto the frames above it.
+   --slots is set by the HUD from the bar's length. The width is explicit, not shrink-to-fit (left:50% caps the space a shrunk box may take at half the viewport); the 1px is slack against rounding. */
+.actionbar{--slot:min(68px,calc((100vw - 2*var(--gutter) - (var(--slots) - 1)*var(--sp-4))/var(--slots)));position:absolute;left:50%;bottom:28px;width:calc(var(--slots)*var(--slot) + (var(--slots) - 1)*var(--sp-4) + 1px);transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-4);pointer-events:auto}
+.slot{position:relative;box-sizing:border-box;width:var(--slot);height:var(--slot);background:var(--iron);border:2px solid var(--edge);box-shadow:var(--lift-1);border-radius:var(--r);overflow:hidden;text-align:center;cursor:grab}
 .slot.empty{background:var(--iron-glass);border-style:dashed;border-color:var(--edge-dim);cursor:default}
 .slot .icon{font-size:var(--fs-3xl);line-height:46px}.slot .key{position:absolute;top:var(--sp-1);left:5px;font-weight:bold;font-size:var(--fs-md);color:var(--gold)}
 .slot .aname{position:absolute;bottom:var(--sp-1);width:100%;font-size:var(--fs-xs)}
-.slot .sweep{position:absolute;inset:0}.slot .cdtext{position:absolute;inset:0;font-size:var(--fs-2xl);font-weight:bold;line-height:64px}
+.slot .sweep{position:absolute;inset:0}.slot .cdtext{position:absolute;inset:0;font-size:var(--fs-2xl);font-weight:bold;display:flex;align-items:center;justify-content:center}
 .slot.locked .icon,.slot.locked .aname,.slot.locked .key{opacity:.28}.slot.locked{border-color:var(--edge-dim);box-shadow:inset 0 0 0 1px #000}
 .slot .lock{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(6,6,8,.62);color:var(--gold)}
 .slot .lockicon{font-size:var(--fs-lg);line-height:17px}.slot .locklvl{font-size:var(--fs-md);font-weight:bold;letter-spacing:.04em}

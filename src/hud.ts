@@ -217,6 +217,7 @@ export class Hud {
     this.minimap = new Minimap(this.root); // before the panels, so an open panel prints over it
 
     const ab = el(this.root, 'actionbar');
+    ab.style.setProperty('--slots', String(BAR_KEYS.length)); // the CSS sizes a slot so the whole bar fits one row of the window
     BAR_KEYS.forEach((_, i) => {
       const root = el(ab, 'slot');
       const icon = el(root, 'icon');

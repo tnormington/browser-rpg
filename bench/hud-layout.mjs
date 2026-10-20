@@ -61,7 +61,7 @@ for (const [width, height] of SIZES) {
     const scenes = [['forge', () => {}], ['bag', () => key('KeyI')], ['bag+sheet', () => { key('KeyI'); key('KeyC'); }],
       ['skills', () => key('KeyK')], ['talents', () => key('KeyN')], ['spellbook', () => key('KeyP')], ['help', () => key('KeyH')],
       ['shop', async () => { const p = d.sim.player; p.hp = p.maxHp = 99999; p.x = -7; p.z = 3; d.step(); d.sim.interact = { k: 'vendor' }; await wait(500); }]];
-    // the panels that sit in the open middle of the screen and so must stay clear of what is always on. The talent tree (570 wide) and the
+    // the panels that sit in the open middle of the screen and so must stay clear of what is always on. The talent tree (760 wide) and the
     // skills list do not yet at 800 wide: that is a layout call for the CEO (HOM-83 report), not something a restyle moves.
     const CLEAR = new Set(['forge', 'spellbook', 'shop']);
     for (const [name, open] of scenes) {
