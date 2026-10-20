@@ -101,6 +101,11 @@ export const ABILITIES: AbilityDef[] = [
     kind: 'bash', unlockLevel: 14, damage: 10, weaponMult: 0.5, cost: 25, cooldown: 25, range: 3.5, offGcd: true, talent: 'ironwill' },
   { name: 'Hemorrhage', desc: 'Tears the bleed off your target from range and deals everything it had left at once. The Hunt capstone.',
     kind: 'burst', unlockLevel: 14, damage: 10, weaponMult: 0.8, cost: 30, cooldown: 15, range: 9, talent: 'hemorrhage' },
+  // Highmoor's trainer (bible 4.1, HOM-96)
+  { name: 'Colossus Blow', desc: 'The big hit: two and a half times your weapon behind it. Learned from the Highmoor trainer.',
+    kind: 'strike', unlockLevel: 25, damage: 60, weaponMult: 2.5, cost: 55, cooldown: 18, range: 3, trainer: { vendor: 'high_trainer', price: 500 } },
+  { name: 'Last Stand', desc: 'Heal yourself for three times what Second Wind does. A long cooldown: it is the one you save. Learned from the Highmoor trainer.',
+    kind: 'heal', unlockLevel: 30, damage: 140, cost: 40, cooldown: 90, range: 0, trainer: { vendor: 'high_trainer', price: 750 } },
 ];
 
 /** How long an interrupted enemy is stunned, and what share of its heavy-attack cooldown it keeps (so it cannot slam again at once). */

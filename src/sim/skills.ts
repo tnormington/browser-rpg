@@ -2,8 +2,8 @@
 import type { GameState } from '../sim';
 import { XpTrack, addXp, newTrack } from './xp';
 
-export type SkillId = 'combat' | 'mining' | 'woodcutting' | 'smithing' | 'fishing' | 'cooking' | 'herbalism' | 'alchemy';
-export const SKILL_IDS: SkillId[] = ['combat', 'mining', 'woodcutting', 'smithing', 'fishing', 'cooking', 'herbalism', 'alchemy'];
+export type SkillId = 'combat' | 'mining' | 'woodcutting' | 'smithing' | 'fishing' | 'cooking' | 'herbalism' | 'alchemy' | 'leatherworking';
+export const SKILL_IDS: SkillId[] = ['combat', 'mining', 'woodcutting', 'smithing', 'fishing', 'cooking', 'herbalism', 'alchemy', 'leatherworking'];
 
 export const SKILLS: Record<SkillId, { name: string; icon: string; verb: string; made: string }> = {
   combat: { name: 'Combat', icon: '⚔', verb: 'fight', made: 'Fought' },
@@ -14,14 +14,18 @@ export const SKILLS: Record<SkillId, { name: string; icon: string; verb: string;
   cooking: { name: 'Cooking', icon: '🍳', verb: 'cook', made: 'Cooked' },
   herbalism: { name: 'Herbalism', icon: '🌿', verb: 'pick', made: 'Picked' },
   alchemy: { name: 'Alchemy', icon: '⚗', verb: 'brew', made: 'Brewed' },
+  leatherworking: { name: 'Leatherworking', icon: '🧵', verb: 'tan', made: 'Made' },
 };
 
 export type Skills = Record<SkillId, XpTrack>;
 
 export const newSkills = (): Skills => ({
   combat: newTrack(), mining: newTrack(), woodcutting: newTrack(), smithing: newTrack(), fishing: newTrack(), cooking: newTrack(),
-  herbalism: newTrack(), alchemy: newTrack(),
+  herbalism: newTrack(), alchemy: newTrack(), leatherworking: newTrack(),
 });
+
+/** The sum of every skill's level: what the second stablemaster asks for (bible 4). */
+export const totalLevel = (skills: Skills) => SKILL_IDS.reduce((n, id) => n + skills[id].level, 0);
 
 /** Adds xp to a skill, raising xp / levelup events. Returns levels gained (combat callers refresh stats on > 0). */
 export function grantXp(s: GameState, skill: SkillId, amount: number, x: number, z: number): number {

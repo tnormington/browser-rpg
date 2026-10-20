@@ -144,6 +144,7 @@ export type GameEvent =
   | { t: 'forge' }                                      // player reached the forge: open the recipe list
   | { t: 'range' }                                      // ...or the cooking range
   | { t: 'alembic' }                                    // ...or Thornwick's alembic
+  | { t: 'rack' }                                       // ...or Highmoor's tanning rack
   | { t: 'crafted'; item: string; qty: number; skill: SkillId }
   | { t: 'use'; item: string }                          // an item was eaten or drunk (one is gone from the bag)
   | { t: 'eatbreak' }                                   // a hit spoiled the meal being eaten

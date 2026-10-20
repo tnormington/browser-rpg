@@ -6,6 +6,7 @@ import { ABILITIES } from './sim/data';
 import { FOOT_SPEED, mountsSoldBy } from './sim/mounts';
 import { ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { hasRoom } from './sim/inventory';
+import { totalLevel } from './sim/skills';
 import { damagedGear, durabilityOf, repairCost } from './sim/durability';
 import { actionButton, el, titleRow } from './dom';
 
@@ -58,7 +59,7 @@ export class ShopUi {
     // a little slack beyond selling reach so the panel does not flicker at the edge
     if (this.open && (p.dead || Math.hypot(p.x - this.vendor.x, p.z - this.vendor.z) > SHOP_REACH + 1.5)) this.setOpen(false);
     if (!this.open) return;
-    const sig = JSON.stringify([p.gold, p.inventory.map(st => st && st.id + st.qty), p.equipment, p.durability, p.learned, p.mounts, p.combat.level, Math.hypot(p.x - this.vendor.x, p.z - this.vendor.z) <= SHOP_REACH]);
+    const sig = JSON.stringify([p.gold, p.inventory.map(st => st && st.id + st.qty), p.equipment, p.durability, p.learned, p.mounts, p.combat.level, totalLevel(p.skills), Math.hypot(p.x - this.vendor.x, p.z - this.vendor.z) <= SHOP_REACH]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.goldEl.textContent = `Your gold: ${p.gold}`;
@@ -77,13 +78,13 @@ export class ShopUi {
       actionButton(el(row, 'rbtns'), 'Learn', can).addEventListener('click', () => this.learn(slot));
     }
     for (const m of mountsSoldBy(this.vendor.id)) {
-      const known = p.mounts.includes(m.id), ready = p.combat.level >= m.level, can = !known && ready && p.gold >= m.price && near;
+      const total = totalLevel(p.skills), known = p.mounts.includes(m.id), ready = p.combat.level >= m.level && total >= (m.total ?? 0), can = !known && ready && p.gold >= m.price && near;
       const row = el(this.list, `recipe${can ? '' : ' locked'}`);
       const speed = `Rides at ${m.speed} against ${FOOT_SPEED} on foot.`;
       row.title = `${speed} Not in combat; any hit or ability throws you off.`;
       const head = el(row, 'rhead');
       el(head, 'rname', m.name);
-      el(head, `rreq${known || (ready && p.gold >= m.price) ? '' : ' bad'}`, known ? 'Owned' : ready ? `${m.price} gold` : `combat level ${m.level}`);
+      el(head, `rreq${known || (ready && p.gold >= m.price) ? '' : ' bad'}`, known ? 'Owned' : ready ? `${m.price} gold` : m.total ? `total level ${total} / ${m.total}` : `combat level ${m.level}`);
       el(row, 'rstat', speed);
       if (known) continue;
       actionButton(el(row, 'rbtns'), 'Buy', can).addEventListener('click', () => this.buyMount(m.id));

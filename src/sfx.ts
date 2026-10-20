@@ -308,7 +308,7 @@ export function playEvents(events: GameEvent[]) {
       case 'loot': play('loot', [SOUNDS.loot]); break;
       case 'crafted':
         if (ev.skill === 'cooking') { play('cook', [SOUNDS.cookDone]); break; }
-        if (ev.skill === 'alchemy') { play('loot', [SOUNDS.loot]); break; } // no free bubbling yet: a brew is the loot chime, not a smith's clang
+        if (ev.skill === 'alchemy' || ev.skill === 'leatherworking') { play('loot', [SOUNDS.loot]); break; } // no free bubbling or stitching yet: a brew or a tanned hide is the loot chime, not a smith's clang
         play('smith', [SOUNDS.smith1, { ...SOUNDS.smith2, delay: SMITH_STEP }, { ...SOUNDS.smith1, delay: SMITH_STEP * 2 }]);
         break;
       case 'forge': play('smith', [SOUNDS.forge]); break;

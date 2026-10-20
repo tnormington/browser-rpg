@@ -21,7 +21,7 @@ export const SAVE_VERSION = 1;
 /** Nothing is further than this from the origin: the world is a few thousand units across at most (Saltmarrow ends near x = 970). */
 const WORLD_LIMIT = 10000;
 /** Skills added after the first save format: a save without them starts them at 0 xp. */
-const LATE_SKILLS: SkillId[] = ['fishing', 'cooking', 'herbalism', 'alchemy'];
+const LATE_SKILLS: SkillId[] = ['fishing', 'cooking', 'herbalism', 'alchemy', 'leatherworking'];
 /**
  * Items that were renamed rather than retired, by their old id. The mithril rung became steel in HOM-81 at the same stats and the same
  * recipe shape, so a character who was wearing it keeps wearing it instead of having their save refused. Ore and bars have no steel

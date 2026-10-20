@@ -9,8 +9,8 @@ import { reductionOf, swingInterval } from './sim/combat';
 import { nearVendor } from './sim/shop';
 import { HudWindow, el, panelWindow } from './dom';
 
-const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖' };
-const SLOT_LABEL: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs' };
+const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖', hands: '🧤', feet: '🥾' };
+const SLOT_LABEL: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs', hands: 'Hands', feet: 'Feet' };
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 
 type MenuRow = [label: string, run: (() => void) | null, cls?: string];

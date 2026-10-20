@@ -1,7 +1,7 @@
 // HOM-48: fishing, cooking at a station, food and Well Fed, and what a death costs. Run with `npm run verify` (after the golden path).
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState } from './sim';
 import { addItem, countItem } from './sim/inventory';
-import { EQUIP_SLOTS, ITEMS } from './sim/items';
+import { EQUIP_SLOTS, ITEMS, emptyEquipment } from './sim/items';
 import { refreshGearStats } from './sim/inventory';
 import { repairCost, wearWornGear } from './sim/durability';
 import { grantXp } from './sim/skills';
@@ -96,7 +96,7 @@ section('HOM-48 cooking: a recipe names its station');
   stand(s, LANDMARKS.forge);
   tick(s, { craft: { recipe: cookedId(FISH[0]), count: 3 } });
   assert(failOf(s)?.reason === 'range' && failOf(s)?.station === 'cooking range' && s.player.action === null, 'at the forge you cannot cook: the range is where it is done');
-  assert(!nearStation(s, 'range') && !nearStation(s, 'alembic') && nearStation(s, 'forge') && STATIONS.rack === undefined && !nearStation(s, 'rack'), 'near a station means near that station; an unbuilt one is never near');
+  assert(!nearStation(s, 'range') && !nearStation(s, 'alembic') && nearStation(s, 'forge') && STATIONS.circle === undefined && !nearStation(s, 'circle') && !nearStation(s, 'rack'), 'near a station means near that station; an unbuilt one is never near');
   stand(s, LANDMARKS.range, 2);
   tick(s, { craft: { recipe: cookedId(FISH[0]), count: 3 } });
   run(s, 12);
@@ -219,7 +219,7 @@ section('HOM-58 death costs something: wake at a graveyard, run back, gear worn 
   a.player.equipment.weapon = 'warden_edge'; a.player.equipment.head = 'steel_helm'; a.player.equipment.chest = 'steel_chestplate'; a.player.equipment.legs = 'steel_greaves';
   refreshGearStats(a);
   const whole = { ...a.player.stats };
-  assert(wearWornGear(a.player).length === 4 && EQUIP_SLOTS.every(sl => a.player.durability[a.player.equipment[sl]!] === 75), 'a death takes 25 points off every worn piece');
+  assert(wearWornGear(a.player).length === 4 && EQUIP_SLOTS.filter(sl => a.player.equipment[sl]).every(sl => a.player.durability[a.player.equipment[sl]!] === 75), 'a death takes 25 points off every worn piece');
   a.player.durability.warden_edge = 0;
   refreshGearStats(a);
   assert(a.player.stats.weaponDamage === 0 && a.player.stats.armor === whole.armor && a.player.equipment.weapon === 'warden_edge', 'a broken piece stays on and gives nothing: not its damage, and not its swing speed');
@@ -238,7 +238,7 @@ section('HOM-58 death costs something: wake at a graveyard, run back, gear worn 
   addItem(a.player.inventory, 'iron_helm', 1); a.player.x = 0; a.player.z = -12; a.player.durability.iron_helm = 10;
   tick(a, { shop: [{ k: 'repair' }] });
   assert(failOf(a)?.reason === 'range' && a.player.durability.iron_helm === 10, 'a merchant has to be in reach');
-  a.player.equipment = { weapon: null, head: null, chest: null, legs: null };
+  a.player.equipment = emptyEquipment();
   assert(wearWornGear(a.player).length === 0, 'and wearing nothing, nothing is worn');
 
   const at = (s: GameState, type: string) => {

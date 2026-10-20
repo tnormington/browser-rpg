@@ -233,6 +233,7 @@ export class Renderer {
   private forgeParts: THREE.Object3D[] = [];
   private rangeParts: THREE.Object3D[] = [];
   private alembicPick!: THREE.Mesh;
+  private rackPick!: THREE.Mesh;
   private npcParts: THREE.Object3D[] = [];
   private vendorParts: THREE.Object3D[] = [];
   private flightParts: THREE.Mesh[] = [];
@@ -505,6 +506,12 @@ export class Renderer {
     this.alembicPick.position.set(alembic.x, 1.5, alembic.z);
     this.alembicPick.rotation.y = Math.atan2(LANDMARKS.thornSquare.x - alembic.x, LANDMARKS.thornSquare.z - alembic.z) - Math.PI / 2;
     this.scene.add(this.alembicPick);
+    // ...and so is Highmoor's tanning rack (its front faces the square too)
+    const rack = LANDMARKS.rack;
+    this.rackPick = new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.8, 1.4), new THREE.MeshBasicMaterial({ visible: false }));
+    this.rackPick.position.set(rack.x, 1.4, rack.z);
+    this.rackPick.rotation.y = Math.atan2(LANDMARKS.highSquare.x - rack.x, LANDMARKS.highSquare.z - rack.z);
+    this.scene.add(this.rackPick);
     this.forgeLight = add(new THREE.PointLight(P.forgeLight, FORGE_LIGHT.intensity, FORGE_LIGHT.distance), f.x - 1, FORGE_LIGHT.y, f.z + 3.6) as THREE.PointLight;
 
     // cave mouth: the sim's four flank colliders, rock heaped over them and across the top; the way in is the gap between
@@ -1420,6 +1427,13 @@ export class Renderer {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
     return this.raycaster.intersectObject(this.alembicPick, false).length > 0;
+  }
+
+  /** True when the click lands on the tanning rack in Highmoor. */
+  pickRack(clientX: number, clientY: number): boolean {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    return this.raycaster.intersectObject(this.rackPick, false).length > 0;
   }
 
   /** Ground-drop id under a screen position, or null. Drops are generous to click. */

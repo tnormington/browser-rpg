@@ -1,4 +1,4 @@
-// Crafting at a station (the forge, the cooking range, the alembic): recipes, requirements, timed crafting. Pure sim.
+// Crafting at a station (the forge, the cooking range, the alembic, the tanning rack): recipes, requirements, timed crafting. Pure sim.
 import type { GameState } from '../sim';
 import type { Action } from './actions';
 import { LANDMARKS, Pt } from './world';
@@ -9,7 +9,7 @@ import { addItem, countItem, hasRoom, removeItem } from './inventory';
 import { FISH, SEA_SALT, cookedId, pieId } from './fish';
 import { HERBS, VIAL } from './herbs';
 
-/** Where a recipe is made. The forge, the range and the alembic are built; the rest are named by the bible (2.2) for the skills still to come. */
+/** Where a recipe is made. The forge, the range, the alembic and the rack are built; the rest are named by the bible (2.2) for the skills still to come. */
 export type Station = 'forge' | 'range' | 'alembic' | 'rack' | 'circle';
 
 export interface Recipe {
@@ -112,6 +112,19 @@ export const RECIPES: Recipe[] = [
   // the alembic: an herb and an empty vial make its potion. Alchemy asks the herb's own level
   ...HERBS.map((h): Recipe => ({ id: h.potion.id, name: h.potion.name, skill: 'alchemy', station: 'alembic', level: h.level, time: 4, xp: h.potion.xp,
     inputs: [{ id: h.id, qty: 1 }, { id: VIAL, qty: 1 }], output: { id: h.potion.id, qty: 1 } })),
+  // the tanning rack (bible 3.2, HOM-96): a hide is tanned first, then cut into gloves and boots. XP by the ladder's rule (tanning 0.25 x, a piece 0.35 x the cost of its level)
+  { id: 'tanned_hide', name: 'Tan Boar Hide', skill: 'leatherworking', station: 'rack', level: 1, time: 3, xp: 20,
+    inputs: [{ id: 'boar_hide', qty: 1 }], output: { id: 'tanned_hide', qty: 1 } },
+  { id: 'hide_gloves', name: 'Hide Gloves', skill: 'leatherworking', station: 'rack', level: 1, time: 6, xp: 29,
+    inputs: [{ id: 'tanned_hide', qty: 2 }], output: { id: 'hide_gloves', qty: 1 } },
+  { id: 'hide_boots', name: 'Hide Boots', skill: 'leatherworking', station: 'rack', level: 2, time: 7, xp: 32,
+    inputs: [{ id: 'tanned_hide', qty: 3 }], output: { id: 'hide_boots', qty: 1 } },
+  { id: 'wolf_leather', name: 'Tan Wolf Pelt', skill: 'leatherworking', station: 'rack', level: 10, time: 3, xp: 50,
+    inputs: [{ id: 'wolf_pelt', qty: 1 }], output: { id: 'wolf_leather', qty: 1 } },
+  { id: 'wolfskin_gloves', name: 'Wolfskin Gloves', skill: 'leatherworking', station: 'rack', level: 10, time: 7, xp: 71,
+    inputs: [{ id: 'wolf_leather', qty: 2 }], output: { id: 'wolfskin_gloves', qty: 1 } },
+  { id: 'wolfskin_boots', name: 'Wolfskin Boots', skill: 'leatherworking', station: 'rack', level: 11, time: 8, xp: 79,
+    inputs: [{ id: 'wolf_leather', qty: 3 }], output: { id: 'wolfskin_boots', qty: 1 } },
 ];
 
 export const FORGE_REACH = 6; // centre-to-centre; the hut is 2.6 radius
@@ -123,6 +136,7 @@ export const STATIONS: Partial<Record<Station, { at: Pt; name: string }>> = {
   forge: { at: LANDMARKS.forge, name: 'forge' },
   range: { at: LANDMARKS.range, name: 'cooking range' },
   alembic: { at: LANDMARKS.alembic, name: 'alembic' },
+  rack: { at: LANDMARKS.rack, name: 'tanning rack' },
 };
 export const stationOf = (r: Recipe): Station => r.station ?? 'forge';
 

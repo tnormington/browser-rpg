@@ -3,8 +3,9 @@ import { BARE_SWING } from './data';
 import { FISH, SEA_SALT, cookedId, pieId } from './fish';
 import { HERBS, POTION_PREMIUM, VIAL, VIAL_VALUE } from './herbs';
 
-export type EquipSlot = 'weapon' | 'head' | 'chest' | 'legs';
-export const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'head', 'chest', 'legs'];
+export type EquipSlot = 'weapon' | 'head' | 'chest' | 'legs' | 'hands' | 'feet';
+// `hands` and `feet` are the leatherworker's: the smith makes the other four (bible 3.2)
+export const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'head', 'chest', 'legs', 'hands', 'feet'];
 
 export interface ItemStats {
   damage?: number; // weapon: flat damage added to every direct hit (before level power)
@@ -97,6 +98,13 @@ export const ITEMS: Record<string, ItemDef> = {
   stormiron_blade: { name: 'Stormiron Blade', slot: 'weapon', stats: { damage: 58, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 480, req: { combat: 23 }, desc: 'Three bars of barrow stormiron and a log for the hilt. Narrow, pale and very sharp.' },
   // the Rotroot's capstone (3.3): damage 72, Smithing 42, equip combat 26 (one under the Mother's level; the committed player arrives at 27). Stormiron is not built yet: adamant stands in for its bars
   rotroot_edge: { name: 'Rotroot Edge', slot: 'weapon', stats: { damage: 72, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 760, req: { combat: 26 }, desc: "Metal folded round three shards of the Rotroot Mother's heartwood. The best blade a smith in Thornwick can make." },
+  // leatherworking (bible 3.2, HOM-96): hides tanned at Highmoor's rack, then gloves and boots. Nothing sells a hide: they are only ever dropped
+  tanned_hide: { name: 'Tanned Hide', stack: 50, dropWeight: 0, tier: 0, value: 4, desc: 'A boar hide, cured at a tanning rack in Highmoor. Gloves and boots are made from it.' },
+  wolf_leather: { name: 'Wolf Leather', stack: 50, dropWeight: 0, tier: 0, value: 6, desc: 'A wolf pelt, cured at a tanning rack in Highmoor. Thicker than boar leather.' },
+  hide_gloves: { name: 'Hide Gloves', slot: 'hands', stats: { armor: 2 }, stack: 1, dropWeight: 0, tier: 1, value: 10, desc: 'Cut and stitched from boar leather.' },
+  hide_boots: { name: 'Hide Boots', slot: 'feet', stats: { armor: 3 }, stack: 1, dropWeight: 0, tier: 1, value: 14, desc: 'Cut and stitched from boar leather.' },
+  wolfskin_gloves: { name: 'Wolfskin Gloves', slot: 'hands', stats: { armor: 5 }, stack: 1, dropWeight: 0, tier: 2, value: 24, desc: 'Wolf leather, fur turned inward.' },
+  wolfskin_boots: { name: 'Wolfskin Boots', slot: 'feet', stats: { armor: 7 }, stack: 1, dropWeight: 0, tier: 2, value: 34, desc: 'Wolf leather, fur turned inward.' },
   // armour
   leather_cap: { name: 'Leather Cap', slot: 'head', stats: { armor: 2 }, stack: 1, dropWeight: 10, tier: 1, value: 5, desc: 'Stitched hide.' },
   hide_jerkin: { name: 'Hide Jerkin', slot: 'chest', stats: { armor: 4 }, stack: 1, dropWeight: 8, tier: 1, value: 10, desc: 'Stitched hide.' },
@@ -137,6 +145,10 @@ export const ADAMANT_SET = ['adamant_helm', 'adamant_greaves', 'adamant_chestpla
 
 /** The stormiron set, in smithing order. */
 export const STORMIRON_SET = ['stormiron_helm', 'stormiron_greaves', 'stormiron_chestplate'] as const;
+
+/** The leatherworker's sets, gloves then boots: Hide at Leatherworking 1, Wolfskin at 10. */
+export const HIDE_SET = ['hide_gloves', 'hide_boots'] as const;
+export const WOLFSKIN_SET = ['wolfskin_gloves', 'wolfskin_boots'] as const;
 
 export const TIER_COLORS = [0xc8c8c8, 0xe8e8e8, 0x4aa8ff, 0xffa030, 0xb48cff, 0x3ee0c0]; // material, common, good, rare, epic, legendary (spectral jade; art's TIER5_COLOR in gear-look.ts)
 
@@ -282,7 +294,7 @@ export const ARMOR_K = 40;        // reduction = armor / (armor + ARMOR_K)
 export const MAX_REDUCTION = 0.75;
 
 export type Equipment = Record<EquipSlot, string | null>;
-export const emptyEquipment = (): Equipment => ({ weapon: null, head: null, chest: null, legs: null });
+export const emptyEquipment = (): Equipment => ({ weapon: null, head: null, chest: null, legs: null, hands: null, feet: null });
 /** Durability points left, by item id. Absent means whole (MAX_DURABILITY): only a piece that has been worn down has an entry, so an old save needs none. */
 export type Durability = Record<string, number>;
 

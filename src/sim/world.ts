@@ -10,7 +10,7 @@
 export const PLAYER_RADIUS = 0.5;
 
 /** What an obstacle is, for whatever draws it: the sim only ever reads the circle. Absent means a rock (or, in the clearing, whatever it always was). */
-export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'barrow';
+export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'rack' | 'barrow';
 export interface Obstacle { x: number; z: number; r: number; kind?: PropKind }
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 export interface Pt { x: number; z: number }
@@ -435,7 +435,14 @@ const highLandmarks = {
   highSquare: at(HIGHMOOR, -24, 0),
   /** The flight master, just inside the town from the road in from the west. */
   flightHigh: { ...at(HIGHMOOR, -56, 5), r: 0.7 },
+  /** The trainer, a little way off the square: Colossus Blow and Last Stand are bought here. */
+  highTrainer: { ...at(HIGHMOOR, -30, -14), r: 0.7 },
+  /** The stablemaster, at the west edge of the town: the second mount is bought here. */
+  highStable: { ...at(HIGHMOOR, -52, -16), r: 0.7 },
+  /** The tanning rack: the leatherworker's station. */
+  rack: at(HIGHMOOR, -14, 12),
 };
+const HIGH_RACK: Obstacle = { ...highLandmarks.rack, r: 1.6, kind: 'rack' };
 const graveHigh: Pt = at(HIGHMOOR, -58, 36);
 const HIGH_HEADSTONES = headstones(graveHigh);
 /** The moor's boulders: grey tors strewn across the east half, none on a camp, the gates' passages or one another. */
@@ -679,7 +686,7 @@ export const REGIONS: Region[] = [
     road: { axis: 'x', at: BARROWDOWNS.z },
   },
   {
-    // Highmoor and the Moor (HOM-95). The town is safe ground: a flight master and a graveyard (the second stable, the vendor and the leatherworker are later cards). The hard gates
+    // Highmoor and the Moor (HOM-95). The town is safe ground: a flight master, a graveyard, the trainer, the second stablemaster and the tanning rack (HOM-96). The hard gates
     // are two 6-unit passages through the north wall, each held by a keeper and each shut: the Cairn Hold's door (combat 29) and the road to the Cairnwaste (Q6).
     id: 'highmoor', name: 'Highmoor', cave: false, zone: 'highmoor',
     footprint: [
@@ -687,7 +694,7 @@ export const REGIONS: Region[] = [
       ...HIGH_GATES.map(g => ({ x0: g.span[0], x1: g.span[1], z0: g.at - 8, z1: HIGHMOOR.z - 66 })),
     ],
     obstacles: [
-      ...HIGH_HOUSES, ...MOOR_ROCKS, ...HIGH_HEADSTONES, { ...highLandmarks.flightHigh, kind: 'person' },
+      ...HIGH_HOUSES, HIGH_RACK, ...MOOR_ROCKS, ...HIGH_HEADSTONES, { ...highLandmarks.flightHigh, kind: 'person' }, { ...highLandmarks.highTrainer, kind: 'person' }, { ...highLandmarks.highStable, kind: 'person' },
       ...HIGH_GATES.map(g => ({ ...g.post, r: 0.55, kind: 'person' as const })),
     ],
     tall: [...HIGH_HOUSES, ...MOOR_ROCKS.filter(o => o.r >= 1.8)],

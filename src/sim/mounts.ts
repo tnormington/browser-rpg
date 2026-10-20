@@ -7,9 +7,11 @@ import { mountsAllowed } from './world';
 export const FOOT_SPEED = 6;
 export const MOUNT_CAST = 1.0; // seconds standing still to climb up
 
-export interface MountDef { id: string; name: string; speed: number; level: number; price: number; vendor: string }
+/** `level` is the combat level it asks for; `total` (optional) is the total of every skill's level. The id is also its look in mount.ts. */
+export interface MountDef { id: string; name: string; speed: number; level: number; total?: number; price: number; vendor: string }
 export const MOUNTS: MountDef[] = [
   { id: 'courser', name: 'Thornwick Courser', speed: 10, level: 20, price: 1000, vendor: 'thorn_stable' },
+  { id: 'destrier', name: 'Highmoor Destrier', speed: 13, level: 0, total: 250, price: 3000, vendor: 'high_stable' },
 ];
 export const mountById = (id: string) => MOUNTS.find(m => m.id === id);
 /** What a stablemaster sells. */

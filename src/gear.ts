@@ -10,6 +10,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Equipment } from './sim/items';
+
+/** The slots that have a worn look. `hands` and `feet` count for armour from HOM-96 but are not drawn yet: the 3D Artist owes a look for each leather set. */
+type WornSlot = 'weapon' | 'head' | 'chest' | 'legs';
 import { Appearance, appearanceOf } from './gear-look';
 import { cappedIntensity } from './glow';
 import { Instance, Prepared, spawn } from './models';
@@ -53,7 +56,7 @@ export class PlayerGear {
   private bind = new Map<string, THREE.Matrix4>();
   /** World units -> model units (the fit wrapper scales the rig down). */
   private k: number;
-  private slots: Record<keyof Equipment, Mounted> = { weapon: empty(), head: empty(), chest: empty(), legs: empty() };
+  private slots: Record<WornSlot, Mounted> = { weapon: empty(), head: empty(), chest: empty(), legs: empty() };
   private bodyMats = new Map<string, THREE.MeshStandardMaterial>();
   private motes = { weapon: 0, head: 0, chest: 0, legs: 0 };
   private tmp = new THREE.Vector3();
@@ -134,7 +137,7 @@ export class PlayerGear {
     }
   }
 
-  private unmount(slot: keyof Equipment) {
+  private unmount(slot: WornSlot) {
     const s = this.slots[slot];
     s.group?.removeFromParent();
     s.group?.traverse(o => { if (o.userData.own) (o as THREE.Mesh).geometry.dispose(); });
@@ -322,7 +325,7 @@ export class PlayerGear {
     return { group: root.children.length ? root : null, materials: mats };
   }
 
-  private build(slot: keyof Equipment, id: string) {
+  private build(slot: WornSlot, id: string) {
     switch (slot) {
       case 'weapon': return this.buildWeapon(id);
       case 'head': return this.buildHead(id);
