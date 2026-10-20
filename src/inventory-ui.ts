@@ -7,7 +7,7 @@ import { INVENTORY_SIZE, InvAction, ItemStack } from './sim/inventory';
 import { EQUIP_SLOTS, EquipSlot, ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { reductionOf, swingInterval } from './sim/combat';
 import { nearVendor } from './sim/shop';
-import { HudWindow, el, panelWindow } from './dom';
+import { HudWindow, dragData, el, panelWindow, parseDrag } from './dom';
 
 const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖', hands: '🧤', feet: '🥾' };
 const SLOT_LABEL: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs', hands: 'Hands', feet: 'Feet' };
@@ -77,14 +77,14 @@ export class InventoryUi {
       cell.addEventListener('dragover', e => e.preventDefault());
       cell.addEventListener('drop', e => {
         e.preventDefault();
-        const from = Number(e.dataTransfer?.getData('text/plain'));
-        if (Number.isInteger(from)) this.send({ k: 'move', from, to: i });
+        const d = parseDrag(e.dataTransfer?.getData('text/plain') ?? '');
+        if (d?.k === 'bag') this.send({ k: 'move', from: d.slot, to: i });
       });
       if (!st) continue;
       const def = ITEMS[st.id];
       this.fillCell(cell, st.id, st.qty);
       cell.draggable = true;
-      cell.addEventListener('dragstart', e => { e.dataTransfer?.setData('text/plain', String(i)); this.hideTip(); });
+      cell.addEventListener('dragstart', e => { e.dataTransfer?.setData('text/plain', dragData({ k: 'bag', slot: i, id: st.id })); this.hideTip(); });
       cell.addEventListener('click', e => {
         // quick sell: shift-click at a merchant sells the whole stack outright, no menu and no confirmation
         if (e.shiftKey && nearVendor(s)) return this.sell(i, st.qty);
@@ -164,7 +164,7 @@ export class InventoryUi {
       }
       el(this.tip, 'thint', 'Click to equip  ·  Right-click to drop or destroy');
     } else if (worn) el(this.tip, 'thint', 'Click to unequip');
-    else if (def.use) el(this.tip, 'thint', 'Click to eat (G eats the best food)  ·  Right-click to drop or destroy');
+    else if (def.use) el(this.tip, 'thint', 'Click to eat (G eats the best food)  ·  Drag onto the action bar for a key of its own  ·  Right-click to drop or destroy');
     else el(this.tip, 'thint', 'Right-click to drop or destroy');
     if (!worn && nearVendor(s)) el(this.tip, 'thint', `Shift-click to sell the stack (${def.value} gold each)`);
     this.tip.style.display = 'block';

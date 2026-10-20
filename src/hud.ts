@@ -3,14 +3,14 @@ import { GameState, GameEvent, ResourceNode, Enemy } from './sim';
 import { ABILITIES, AbilityDef, ENEMY_TYPES, GCD, castName } from './sim/data';
 import { levelProgress } from './sim/xp';
 import { ITEMS } from './sim/items';
-import { InvAction } from './sim/inventory';
+import { InvAction, countItem } from './sim/inventory';
 import { SKILLS, SkillId } from './sim/skills';
 import { Status, enemyStatuses, playerStatuses } from './sim/status';
 import { TALENTS, spentTotal, talentPoints, talentById } from './sim/talents';
 import { NODE_TYPES } from './sim/gathering';
 import { recipeById } from './sim/crafting';
 import { nearestTown } from './sim/world';
-import { BUFFS } from './sim/consumables';
+import { BUFFS, FOOD_COOLDOWN } from './sim/consumables';
 import { clearLine } from './sim/sight';
 import { abilityOpen, cooldownOf, costOf, swingInterval } from './sim/combat';
 import { VENDORS } from './sim/shop';
@@ -25,9 +25,9 @@ import { QuestUi } from './quest-ui';
 import { MenuUi } from './menu-ui';
 import { SpellbookUi } from './spellbook-ui';
 import { Minimap } from './minimap';
-import { HudWindow, el } from './dom';
-import { loadBar, saveBar } from './storage';
-import { sanitizeBar } from './bar-layout';
+import { HudWindow, el, dragData, parseDrag } from './dom';
+import { loadBar, loadBarKeys, saveBar, saveBarKeys } from './storage';
+import { BarEntry, DEFAULT_KEYS, barWorthy, bindKey, bindRefusal, keyLabel, sameEntry, sanitizeBar, sanitizeKeys } from './bar-layout';
 
 const PUMMEL = ABILITIES.findIndex(a => a.kind === 'interrupt');
 
@@ -75,9 +75,10 @@ function lockedWhy(a: AbilityDef, level: number): string {
 }
 
 const ICONS =['⚔', '🔨', '🗡', '❤', '🌀', '✊', '🌪', '🛡', '🫀', '🔰', '🩸', '💥', '🏰'];
-/** The key for each bar slot, in order: a longer bar is more entries here, and the bar lays itself out. */
-export const BAR_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyT', 'Digit7', 'Digit8'];
-export const keyLabel = (barSlot: number) => BAR_KEYS[barSlot].replace(/^(Digit|Key)/, '');
+/** The face a consumable wears on the bar: the bag draws its food the same way. */
+const ITEM_ICON = '🍖';
+/** How many slots the bar has: one per key it ships with. */
+const SLOT_COUNT = DEFAULT_KEYS.length;
 const FAIL_TEXT = {
   range: 'Out of range', cooldown: 'Not ready yet', gcd: 'Not ready yet',
   energy: 'Not enough energy', target: 'No target', nocast: 'Nothing to interrupt',
@@ -152,9 +153,13 @@ export class Hud {
   private targetStatus: StatusRow;
   /** Which track the XP bar shows: the skill that last earned XP, so the bar follows whatever is being levelled. */
   private xpSkill: SkillId = 'combat';
-  /** One per bar slot (not per ability): `ability` is what it currently casts, null when the slot is empty. */
-  private slots: { root: HTMLElement; icon: HTMLElement; aname: HTMLElement; sweep: HTMLElement; cdText: HTMLElement; lock: HTMLElement; lockText: HTMLElement; ability: number | null }[] = [];
-  private bar = sanitizeBar(loadBar(), BAR_KEYS.length, ABILITIES.length);
+  /** One per bar slot: `entry` is what it currently fires, null when the slot is empty. */
+  private slots: { root: HTMLElement; icon: HTMLElement; key: HTMLElement; aname: HTMLElement; qty: HTMLElement; sweep: HTMLElement; cdText: HTMLElement; lock: HTMLElement; lockText: HTMLElement; entry: BarEntry | null }[] = [];
+  private bar = sanitizeBar(loadBar(), SLOT_COUNT, ABILITIES.length);
+  /** The key each slot answers to, the player's own: `keys[i]` is a `KeyboardEvent.code`, or '' for an unbound slot. */
+  private keys = sanitizeKeys(loadBarKeys(), SLOT_COUNT);
+  /** The slot waiting for the key the player is about to press, or -1 when nothing is being rebound. */
+  private binding = -1;
   private swingBar: ReturnType<typeof bar>;
   private msg: HTMLElement;
   private banner: HTMLElement;
@@ -213,26 +218,28 @@ export class Hud {
     this.minimap = new Minimap(this.root); // before the panels, so an open panel prints over it
 
     const ab = el(this.root, 'actionbar');
-    ab.style.setProperty('--slots', String(BAR_KEYS.length)); // the CSS sizes a slot so the whole bar fits one row of the window
-    BAR_KEYS.forEach((_, i) => {
+    ab.style.setProperty('--slots', String(SLOT_COUNT)); // the CSS sizes a slot so the whole bar fits one row of the window
+    for (let i = 0; i < SLOT_COUNT; i++) {
       const root = el(ab, 'slot');
       const icon = el(root, 'icon');
-      el(root, 'key', keyLabel(i));
+      const key = el(root, 'key');
       const aname = el(root, 'aname');
+      const qty = el(root, 'qty');
       const sweep = el(root, 'sweep');
       const cdText = el(root, 'cdtext');
       const lock = el(root, 'lock');
       el(lock, 'lockicon', '🔒');
       const lockText = el(lock, 'locklvl');
-      this.slots.push({ root, icon, aname, sweep, cdText, lock, lockText, ability: null });
+      this.slots.push({ root, icon, key, aname, qty, sweep, cdText, lock, lockText, entry: null });
+      key.addEventListener('click', e => { e.stopPropagation(); this.startBinding(i); });
       root.addEventListener('dragstart', e => {
         if (this.bar[i] === null) return e.preventDefault();
-        e.dataTransfer?.setData('text/plain', `bar:${i}`);
+        e.dataTransfer?.setData('text/plain', dragData({ k: 'bar', slot: i }));
       });
       root.addEventListener('dragover', e => e.preventDefault());
       root.addEventListener('drop', e => { e.preventDefault(); this.dropOnBar(i, e.dataTransfer?.getData('text/plain') ?? ''); });
       root.addEventListener('contextmenu', e => { e.preventDefault(); this.assign(i, null); });
-    });
+    }
 
     this.swingBar = bar(this.root, 'swing');
     this.msg = el(this.root, 'msg');
@@ -256,7 +263,7 @@ export class Hud {
     this.rackUi = new ForgeUi(this.root, 'rack', 'Tanning Rack', craft);
     this.castBar = bar(this.root, 'castbar');
     this.questUi = new QuestUi(this.root, actions.questAdvance);
-    this.bookUi = new SpellbookUi(this.root, () => this.bar, a => this.keyForAbility(a), a => this.assign(this.bar.indexOf(a), null));
+    this.bookUi = new SpellbookUi(this.root, () => this.bar, a => this.keyForAbility(a), a => this.assign(this.slotOfAbility(a), null));
     this.menuUi = new MenuUi(this.root, actions);
     this.windows = [this.mapUi, this.menuUi, this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi,
       this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char];
@@ -285,34 +292,42 @@ export class Hud {
 
   // ---------- action bar layout ----------
 
-  /** The ability a bar key casts, or null when that slot is empty. */
-  abilityAt(barSlot: number): number | null { return this.bar[barSlot] ?? null; }
+  /** What a bar slot fires, or null when it is empty. main.ts turns it into a cast or a swig. */
+  entryAt(barSlot: number): BarEntry | null { return this.bar[barSlot] ?? null; }
 
-  /** Where an ability sits on the bar, as the key the player presses; null when it is not on the bar at all. */
+  /** The slot a key press belongs to, or -1 when the bar does not want that key. */
+  slotForKey(code: string): number { return code ? this.keys.indexOf(code) : -1; }
+
+  /** Where an ability sits on the bar, as the key the player presses; null when it is not on the bar, or its slot has no key. */
   private keyForAbility(ability: number): string | null {
-    const at = this.bar.indexOf(ability);
-    return at < 0 ? null : keyLabel(at);
+    const at = this.slotOfAbility(ability);
+    return at < 0 || !this.keys[at] ? null : keyLabel(this.keys[at]);
   }
 
-  /** Put an ability in a slot (or empty it). An ability lives in one slot only, so its old one is cleared. */
-  private assign(barSlot: number, ability: number | null) {
+  private slotOfAbility(ability: number) { return this.bar.findIndex(e => e?.k === 'ability' && e.i === ability); }
+
+  /** Put something in a slot (or empty it). It lives in one slot only, so its old one is cleared. */
+  private assign(barSlot: number, entry: BarEntry | null) {
     if (barSlot < 0 || barSlot >= this.bar.length) return;
-    if (ability !== null) {
-      const old = this.bar.indexOf(ability);
+    if (entry) {
+      const old = this.bar.findIndex(e => sameEntry(e, entry));
       if (old >= 0) this.bar[old] = null;
     }
-    this.bar[barSlot] = ability;
+    this.bar[barSlot] = entry;
     this.barChanged();
   }
 
-  /** A drop on a bar slot: a spell from the book lands there, another slot's spell swaps with it. */
+  /** A drop on a bar slot: a spell from the book or a consumable from the bag lands there, another slot swaps with it. */
   private dropOnBar(barSlot: number, data: string) {
-    const [kind, raw] = data.split(':');
-    const n = Number(raw);
-    if (!Number.isInteger(n)) return;
-    if (kind === 'spell') return this.assign(barSlot, n >= 0 && n < ABILITIES.length ? n : null);
-    if (kind !== 'bar' || n < 0 || n >= this.bar.length || n === barSlot) return;
-    [this.bar[barSlot], this.bar[n]] = [this.bar[n], this.bar[barSlot]];
+    const d = parseDrag(data);
+    if (!d) return;
+    if (d.k === 'spell') return this.assign(barSlot, d.i < ABILITIES.length ? { k: 'ability', i: d.i } : null);
+    if (d.k === 'bag') {
+      if (!barWorthy(d.id)) return this.say(`${ITEMS[d.id]?.name ?? 'That'} is not something you can use: only food and potions go on the bar`);
+      return this.assign(barSlot, { k: 'item', id: d.id });
+    }
+    if (d.slot >= this.bar.length || d.slot === barSlot) return;
+    [this.bar[barSlot], this.bar[d.slot]] = [this.bar[d.slot], this.bar[barSlot]];
     this.barChanged();
   }
 
@@ -322,20 +337,87 @@ export class Hud {
     this.bookUi.invalidate();
   }
 
-  /** The slot faces: icon, name and tooltip follow whatever each slot now holds. */
+  // ---------- rebinding ----------
+
+  /**
+   * The player clicked a slot's key: the next key they press becomes that slot's, Esc leaves it alone and
+   * Backspace unbinds it. The listener captures, so the key never reaches the game while the bar is waiting for it.
+   */
+  private startBinding(barSlot: number) {
+    if (this.binding === barSlot) return this.stopBinding();
+    this.stopBinding();
+    this.binding = barSlot;
+    this.slots[barSlot].root.classList.add('binding');
+    this.slots[barSlot].key.textContent = '?';
+    this.say('Press the key for this slot  -  Backspace clears it, Esc keeps the one it has');
+    addEventListener('keydown', this.onBindKey, true);
+  }
+
+  private stopBinding() {
+    if (this.binding < 0) return;
+    removeEventListener('keydown', this.onBindKey, true);
+    this.slots[this.binding].root.classList.remove('binding');
+    this.binding = -1;
+    this.renderBar();
+  }
+
+  /** Bound so it can be added and removed as the same listener; stays live only while a slot is waiting. */
+  private onBindKey = (e: KeyboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.repeat) return;
+    const barSlot = this.binding;
+    if (e.code === 'Escape') return this.stopBinding();
+    if (e.code === 'Backspace' || e.code === 'Delete') {
+      this.keys[barSlot] = '';
+      this.keysChanged();
+      return this.say('That slot now has no key');
+    }
+    const refusal = bindRefusal(e.code);
+    if (refusal) return this.say(`${refusal}: try another key, or Esc`); // still waiting: the player gets another go
+    const taken = this.keys.indexOf(e.code);
+    this.keys = bindKey(this.keys, barSlot, e.code);
+    this.keysChanged();
+    this.say(taken >= 0 && taken !== barSlot
+      ? `${keyLabel(e.code)} moved here: the slot that had it now has no key`
+      : `This slot is now ${keyLabel(e.code)}`);
+  };
+
+  private keysChanged() {
+    saveBarKeys(this.keys);
+    this.stopBinding(); // redraws the bar, and the book's "on the bar: 3" lines with it
+    this.bookUi.invalidate();
+  }
+
+  /** The slot faces: key, icon, name and tooltip follow whatever each slot now holds. */
   private renderBar() {
     this.slots.forEach((slot, i) => {
-      const ability = this.bar[i];
-      slot.ability = ability;
+      const entry = this.bar[i];
+      slot.entry = entry;
+      const ability = entry?.k === 'ability' ? entry.i : null;
       const a = ability === null ? null : ABILITIES[ability];
-      slot.icon.textContent = a ? ICONS[ability!] : '';
-      slot.aname.textContent = a?.name ?? '';
-      slot.root.draggable = !!a;
-      slot.root.classList.toggle('empty', !a);
-      slot.root.title = a
-        ? `${a.name}: ${a.desc}\nDrag to move it, right-click to clear the slot.`
-        : 'Empty. Drag a spell here from the spell book (P).';
+      const item = entry?.k === 'item' ? ITEMS[entry.id] : null;
+      slot.key.textContent = keyLabel(this.keys[i]);
+      slot.key.title = `Click to set the key for this slot (now: ${this.keys[i] ? keyLabel(this.keys[i]) : 'none'})`;
+      slot.icon.textContent = ability !== null ? ICONS[ability] : item ? ITEM_ICON : '';
+      slot.aname.textContent = a?.name ?? item?.name ?? '';
+      slot.root.draggable = !!entry;
+      slot.root.classList.toggle('empty', !entry);
+      if (!item) slot.qty.textContent = ''; // only a consumable counts what is left; update() fills it in
+      slot.root.title = a ? `${a.name}: ${a.desc}\nDrag to move it, right-click to clear the slot, click the key to rebind it.`
+        : item ? `${item.name}: ${item.desc}\nDrag to move it, right-click to clear the slot, click the key to rebind it.`
+        : 'Empty. Drag a spell here from the spell book (P), or a food or potion from your bag (I).';
     });
+  }
+
+  /**
+   * A slot's cooldown ring and the number inside it. `remaining`/`total` darken the ring; `shown` is the clock
+   * the player reads, which is not always the same thing (an ability's ring runs on the GCD, its number does not).
+   */
+  private setSweep(slot: { sweep: HTMLElement; cdText: HTMLElement }, remaining: number, total: number, shown = remaining) {
+    const frac = remaining > 0 && total > 0 ? Math.min(1, remaining / total) : 0;
+    slot.sweep.style.background = frac > 0 ? `conic-gradient(rgba(0,0,0,0.65) ${frac * 360}deg, transparent 0)` : 'none';
+    slot.cdText.textContent = shown > 0.05 ? (shown >= 10 ? String(Math.ceil(shown)) : shown.toFixed(1)) : '';
   }
 
   /** A line in the scrolling message log (and optionally the centre-screen message). */
@@ -513,12 +595,12 @@ export class Hud {
    */
   private unlock(ability: number) {
     const a = ABILITIES[ability], at = this.unlockQueue++ * UNLOCK_BANNER_GAP_MS;
-    if (this.keyForAbility(ability) === null) {
-      const free = this.bar.indexOf(null);
-      if (free >= 0) this.assign(free, ability);
+    if (this.slotOfAbility(ability) < 0) {
+      const free = this.bar.findIndex((e, i) => e === null && !!this.keys[i]); // a slot with no key is no help: it could not be pressed
+      if (free >= 0) this.assign(free, { k: 'ability', i: ability });
     }
     const key = this.keyForAbility(ability), where = key ? `press ${key}` : 'assign it in your spell book (P)';
-    const barSlot = this.bar.indexOf(ability);
+    const barSlot = this.slotOfAbility(ability);
     setTimeout(() => {
       this.unlockQueue = Math.max(0, this.unlockQueue - 1);
       this.popBanner(this.unlockBanner, `NEW ABILITY:  ${a.name}`);
@@ -607,23 +689,30 @@ export class Hud {
 
     // action bar: cooldown sweeps (GCD shows on every slot), energy and range tint
     for (const slot of this.slots) {
-      const i = slot.ability;
-      if (i === null) { // an empty slot shows nothing but its key
-        slot.sweep.style.background = 'none';
-        slot.cdText.textContent = '';
+      const entry = slot.entry;
+      if (entry === null) { // an empty slot shows nothing but its key
+        this.setSweep(slot, 0, 0);
         slot.lock.style.display = 'none';
-        slot.root.classList.remove('locked', 'noenergy', 'outrange', 'queued');
+        slot.root.classList.remove('locked', 'noenergy', 'outrange', 'queued', 'gone');
         continue;
       }
+      if (entry.k === 'item') { // a consumable: how many are left in the bag, and the shared food clock
+        const left = countItem(p.inventory, entry.id);
+        const cd = ITEMS[entry.id].use!.food ? p.foodCd : 0;
+        slot.qty.textContent = left ? String(left) : '0';
+        this.setSweep(slot, cd, FOOD_COOLDOWN);
+        slot.lock.style.display = 'none';
+        slot.root.classList.remove('locked', 'noenergy', 'outrange', 'queued');
+        slot.root.classList.toggle('gone', left === 0);
+        continue;
+      }
+      const i = entry.i;
       const a = ABILITIES[i];
       const cd = p.cd[i];
       const gcd = a.offGcd ? 0 : p.gcd; // an off-GCD button does not dim while the GCD runs: it is the one you can press
       const remaining = Math.max(cd, gcd);
       const total = cd > gcd ? cooldownOf(p, i) : GCD;
-      const frac = remaining > 0 ? remaining / total : 0;
-      slot.sweep.style.background = frac > 0
-        ? `conic-gradient(rgba(0,0,0,0.65) ${frac * 360}deg, transparent 0)` : 'none';
-      slot.cdText.textContent = cd > 0.05 ? (cd >= 10 ? String(Math.ceil(cd)) : cd.toFixed(1)) : '';
+      this.setSweep(slot, remaining, total, cd); // the ring runs on the GCD too, but only the cooldown itself prints a number
       const locked = !abilityOpen(p, i);
       // level reached but locked: it is for sale, or it waits on the talent point that hands it over
       slot.lockText.textContent = p.combat.level < a.unlockLevel ? `Lv ${a.unlockLevel}` : a.talent ? 'Talent' : 'Trainer';
@@ -635,6 +724,7 @@ export class Hud {
       slot.root.classList.toggle('outrange', outOfRange);
       slot.root.classList.toggle('queued', p.queued === i || p.queuedOff === i);
     }
+    if (this.binding >= 0) this.slots[this.binding].key.textContent = '?'; // the waiting slot keeps asking, whatever else redrew
 
     // nameplates
     const blockers = this.visibleBlockers();
