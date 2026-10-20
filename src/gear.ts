@@ -6,13 +6,15 @@
 //   head   -> a generated leather cap (rung 1) or helmet.glb (rung 2+), crest and horns added by rung
 //   chest  -> the knight's own armour mesh recoloured, plus pauldrons.glb (rung 2+), spiked at rung 3+
 //   legs   -> the split-off leg mesh recoloured, plus generated greaves (rung 2+) and knee cops (rung 3+)
+//   hands  -> generated gloves: a cuff at the wrist and a mitt over the palm (hide, or wolf pelt with a fur ruff)
+//   feet   -> generated boots: a shaft over the ankle and a foot with a sole, a fur-topped shaft for wolfskin
 // Bare slots show skin. Looks come from gear-look.ts, keyed by item id with a tier fallback.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Equipment } from './sim/items';
 
-/** The slots that have a worn look. `hands` and `feet` count for armour from HOM-96 but are not drawn yet: the 3D Artist owes a look for each leather set. */
-type WornSlot = 'weapon' | 'head' | 'chest' | 'legs';
+/** The slots that have a worn look: every equipment slot. */
+type WornSlot = 'weapon' | 'head' | 'chest' | 'legs' | 'hands' | 'feet';
 import { Appearance, appearanceOf } from './gear-look';
 import { cappedIntensity } from './glow';
 import { Instance, Prepared, spawn } from './models';
@@ -56,9 +58,9 @@ export class PlayerGear {
   private bind = new Map<string, THREE.Matrix4>();
   /** World units -> model units (the fit wrapper scales the rig down). */
   private k: number;
-  private slots: Record<WornSlot, Mounted> = { weapon: empty(), head: empty(), chest: empty(), legs: empty() };
+  private slots: Record<WornSlot, Mounted> = { weapon: empty(), head: empty(), chest: empty(), legs: empty(), hands: empty(), feet: empty() };
   private bodyMats = new Map<string, THREE.MeshStandardMaterial>();
-  private motes = { weapon: 0, head: 0, chest: 0, legs: 0 };
+  private motes = { weapon: 0, head: 0, chest: 0, legs: 0, hands: 0, feet: 0 };
   private tmp = new THREE.Vector3();
 
   /** Call at the bind pose, before the Animator exists. */
@@ -67,25 +69,35 @@ export class PlayerGear {
     inst.root.updateMatrixWorld(true);
     const modelInv = new THREE.Matrix4().copy(this.model.matrixWorld).invert();
     this.model.traverse(o => {
-      if (!(o as THREE.Bone).isBone) return;
-      this.bones.set(o.name, o);
+      const bone = (o as THREE.Bone).isBone;
+      if (!bone && !o.name.endsWith('_end')) return; // the rig's `*_end` tips are plain nodes, not joints, but gear is sized from them
+      if (bone) this.bones.set(o.name, o);
       this.bind.set(o.name, new THREE.Matrix4().multiplyMatrices(modelInv, o.matrixWorld));
     });
     this.k = 1 / this.model.scale.x;
-    for (const m of inst.materials) if (m.name === 'Armor' || m.name === 'ArmorLegs') this.bodyMats.set(m.name, m as THREE.MeshStandardMaterial);
+    for (const m of inst.materials) if (m.name === 'Armor' || m.name === 'ArmorLegs' || m.name === 'Boots' || m.name === 'Hands') this.bodyMats.set(m.name, m as THREE.MeshStandardMaterial);
     this.dressBody('Armor', null);
     this.dressBody('ArmorLegs', null);
+    this.dressBody('Boots', null);
+    this.dressBody('Hands', null);
   }
 
   /** Where a bone sat at the bind pose, in model units. */
   private at(bone: string): THREE.Vector3 { return new THREE.Vector3().setFromMatrixPosition(this.bind.get(bone)!); }
 
   /** Parent `obj` to `bone`, positioned at `modelPos` (model units) with the bind pose's orientation, so it follows the bone from there. */
-  private mount(bone: string, obj: THREE.Object3D, modelPos: THREE.Vector3) {
-    const local = new THREE.Matrix4().copy(this.bind.get(bone)!).invert().multiply(new THREE.Matrix4().makeTranslation(modelPos.x, modelPos.y, modelPos.z));
+  private mount(bone: string, obj: THREE.Object3D, modelPos: THREE.Vector3, dir?: THREE.Vector3) {
+    const q = dir ? new THREE.Quaternion().setFromUnitVectors(UP, dir.clone().normalize()) : new THREE.Quaternion(); // `dir`: where the piece's +Y points, in model space
+    const local = new THREE.Matrix4().copy(this.bind.get(bone)!).invert().multiply(new THREE.Matrix4().compose(modelPos, q, new THREE.Vector3(1, 1, 1)));
     obj.matrixAutoUpdate = true;
     local.decompose(obj.position, obj.quaternion, obj.scale);
     this.bones.get(bone)!.add(obj);
+  }
+
+  /** A piece on its own bone, of a slot that spans several: holder is only a handle that remembers the pieces, since each lives under a different bone. */
+  private mountPiece(holder: THREE.Object3D, bone: string, obj: THREE.Object3D, modelPos: THREE.Vector3, dir?: THREE.Vector3) {
+    this.mount(bone, obj, modelPos, dir);
+    (holder.userData.pieces ??= [] as THREE.Object3D[]).push(obj);
   }
 
   /** Generated geometry is authored in world units; this wrapper puts it in model units. Meshes are flagged so unmount() can free them. */
@@ -140,13 +152,14 @@ export class PlayerGear {
   private unmount(slot: WornSlot) {
     const s = this.slots[slot];
     s.group?.removeFromParent();
+    for (const o of (s.group?.userData.pieces ?? []) as THREE.Object3D[]) o.removeFromParent();
     s.group?.traverse(o => { if (o.userData.own) (o as THREE.Mesh).geometry.dispose(); });
     for (const m of s.materials) m.dispose();
     this.slots[slot] = empty();
   }
 
   /** Dress the body materials for a slot: skin when bare, the item's tint when worn. */
-  private dressBody(name: 'Armor' | 'ArmorLegs', id: string | null) {
+  private dressBody(name: 'Armor' | 'ArmorLegs' | 'Boots' | 'Hands', id: string | null) {
     const m = this.bodyMats.get(name);
     if (!m) return;
     const ap = id ? appearanceOf(id) : null;
@@ -307,7 +320,7 @@ export class PlayerGear {
     const main = this.material(ap), trim = this.material(ap, true), mats: THREE.Material[] = [main, trim];
     const root = new THREE.Group();
     for (const side of ['L', 'R']) {
-      const shin = `LowerLeg.${side}`, end = `LowerLeg.${side}_end`;
+      const shin = `LowerLeg${side}`, end = `LowerLeg${side}_end`;
       if (!this.bind.has(shin) || !this.bind.has(end)) continue;
       const a = this.at(shin), b = this.at(end), len = a.distanceTo(b) / this.k;
       const g = new THREE.Group(), w = this.world();
@@ -319,18 +332,78 @@ export class PlayerGear {
       if (ap.form === 'adamant') this.part(new THREE.BoxGeometry(0.34, 0.12, 0.3), trim, w, [0, len * 0.4 + 0.1, 0.06]); // a squared knee guard over the cop
       if (ap.form === 'storm') for (const s of [-1, 1]) this.part(curvedSpike(0.04, 0.3, 1.0, -0.4), trim, w, [s * 0.14, 0, 0], [0, 0, 0]).scale.x = s; // shin barbs
       g.add(w);
-      this.mount(shin, g, a.clone().lerp(b, 0.5));
-      root.add(g);
+      this.mountPiece(root, shin, g, a.clone().lerp(b, 0.5));
     }
-    return { group: root.children.length ? root : null, materials: mats };
+    return { group: root.userData.pieces ? root : null, materials: mats };
   }
 
+  /** Gloves: the knight's own hands recoloured (they are a mesh of their own, see models.ts), plus a cuff at the wrist, on the Palm bone. Wolfskin swaps the cuff for a flared fur ruff and fringes the fingertips. Sizes are world units: the knight's hand is ~0.2 long. */
+  private buildHands(id: string) {
+    const ap = appearanceOf(id), fur = ap.form === 'wolfskin';
+    const main = this.material(ap), trim = this.material(ap, true), mats: THREE.Material[] = [main, trim];
+    const ruff = fur ? this.double(main) : null;
+    if (ruff) mats.push(ruff);
+    const vein = ap.glow && ap.rung >= 3 ? this.inlay(ap) : null;
+    if (vein) mats.push(vein);
+    const root = new THREE.Group();
+    for (const side of ['L', 'R']) {
+      const palm = `Palm${side}`, tip = `Fingers${side}_end`;
+      if (!this.bind.has(palm) || !this.bind.has(tip)) continue;
+      const a = this.at(palm), dir = this.at(tip).sub(a), len = dir.length() / this.k; // +Y runs from the wrist to the fingertips
+      const g = new THREE.Group(), w = this.world();
+      if (fur) {
+        this.part(new THREE.CylinderGeometry(0.095, 0.16, 0.12, 7, 1, true), ruff!, w, [0, -0.07, 0]); // flared ruff, widest at the elbow end
+        for (const x of [-0.04, 0.04]) this.part(new THREE.ConeGeometry(0.035, 0.09, 4), trim, w, [x, len * 1.0, 0], [Math.PI, 0, 0]); // fringe at the fingertips
+      } else {
+        this.part(new THREE.CylinderGeometry(0.1, 0.095, 0.1, 7), trim, w, [0, -0.04, 0]); // a plain stitched cuff
+      }
+      if (ap.rung >= 2) this.part(new THREE.BoxGeometry(0.13, 0.05, 0.11), trim, w, [0, len * 0.35, 0]); // knuckle band: the tier fallback
+      if (vein) this.part(new THREE.BoxGeometry(0.135, 0.015, 0.115), vein, w, [0, len * 0.35 + 0.03, 0]);
+      g.add(w);
+      this.mountPiece(root, palm, g, a, dir);
+    }
+    return { group: root.userData.pieces ? root : null, materials: mats };
+  }
+
+  /** Boots: a shaft over the ankle and a foot with a sole, both on the Foot bone (which sits at ground level, heel). Wolfskin tops the shaft with a flared fur cuff. */
+  private buildFeet(id: string) {
+    const ap = appearanceOf(id), fur = ap.form === 'wolfskin';
+    const main = this.material(ap), trim = this.material(ap, true), mats: THREE.Material[] = [main, trim];
+    const ruff = fur ? this.double(main) : null;
+    if (ruff) mats.push(ruff);
+    const vein = ap.glow && ap.rung >= 3 ? this.inlay(ap) : null;
+    if (vein) mats.push(vein);
+    const root = new THREE.Group();
+    for (const side of ['L', 'R']) {
+      const foot = `Foot${side}`, toe = `Foot${side}_end`;
+      if (!this.bind.has(foot) || !this.bind.has(toe)) continue;
+      const a = this.at(foot), dir = this.at(toe).sub(a);
+      // the foot's local Z ends up pointing up or down depending on the rig's handedness; "up" is whichever side it faces
+      const zUp = new THREE.Vector3(0, 0, 1).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, dir.clone().normalize())).y > 0 ? 1 : -1;
+      const g = new THREE.Group(), w = this.world();
+      this.part(new THREE.BoxGeometry(0.17, 0.3, 0.09), main, w, [0, 0.07, zUp * 0.055]);
+      this.part(new THREE.BoxGeometry(0.165, 0.32, 0.025), trim, w, [0, 0.07, zUp * 0.0125]); // sole
+      if (ap.rung >= 2) this.part(new THREE.BoxGeometry(0.16, 0.08, 0.09), trim, w, [0, 0.19, zUp * 0.055]); // toe cap: the tier fallback
+      if (vein) this.part(new THREE.BoxGeometry(0.02, 0.2, 0.02), vein, w, [0, 0.1, zUp * 0.1]);
+      g.add(w);
+      this.mountPiece(root, foot, g, a, dir);
+      const shaft = new THREE.Group(), s = this.world();
+      this.part(new THREE.CylinderGeometry(0.105, 0.12, 0.24, 7), main, s, [0, 0.13, -0.03]);
+      if (fur) this.part(new THREE.CylinderGeometry(0.17, 0.11, 0.1, 7, 1, true), ruff!, s, [0, 0.27, -0.03]);
+      else this.part(new THREE.CylinderGeometry(0.12, 0.12, 0.035, 7), trim, s, [0, 0.25, -0.03]); // rolled top
+      shaft.add(s);
+      this.mountPiece(root, foot, shaft, a);
+    }
+    return { group: root.userData.pieces ? root : null, materials: mats };
+  }
   private build(slot: WornSlot, id: string) {
     switch (slot) {
       case 'weapon': return this.buildWeapon(id);
       case 'head': return this.buildHead(id);
       case 'chest': return this.buildChest(id);
       case 'legs': return this.buildLegs(id);
+      case 'hands': return this.buildHands(id);
+      case 'feet': return this.buildFeet(id);
     }
   }
 
@@ -339,7 +412,7 @@ export class PlayerGear {
    * A slot whose piece failed to load simply shows nothing extra (the body recolour still applies), so a missing GLB never breaks play.
    */
   sync(eq: Equipment, dt: number, motes?: Motes) {
-    for (const slot of ['weapon', 'head', 'chest', 'legs'] as const) {
+    for (const slot of ['weapon', 'head', 'chest', 'legs', 'hands', 'feet'] as const) {
       const id = eq[slot];
       if (id !== this.slots[slot].id) {
         this.unmount(slot);
@@ -347,8 +420,10 @@ export class PlayerGear {
         this.slots[slot] = { id, group: built?.group ?? null, materials: built?.materials ?? [] };
         if (slot === 'chest') this.dressBody('Armor', id);
         if (slot === 'legs') this.dressBody('ArmorLegs', id);
+        if (slot === 'hands') this.dressBody('Hands', id);
+        if (slot === 'feet') this.dressBody('Boots', id); // the knight's own boots are black: bare feet are skin, worn ones take the item's colour
       }
-      const ap = id ? appearanceOf(id) : null, g = this.slots[slot].group;
+      const ap = id ? appearanceOf(id) : null, g = (this.slots[slot].group?.userData.pieces?.[0] ?? this.slots[slot].group) as THREE.Object3D | null;
       if (motes && ap?.motes && g) {
         this.motes[slot] += dt * (slot === 'weapon' ? 6 : 2);
         while (this.motes[slot] >= 1) {

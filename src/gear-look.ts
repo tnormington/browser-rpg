@@ -21,7 +21,7 @@ export interface Appearance {
   /** Colour of the motes that drift off the piece; 0 = none. */
   motes: number;
   /** Bespoke silhouette for a named metal or piece, layered on the rung's. Absent = the rung's plain shape. */
-  form?: 'adamant' | 'storm' | 'greywolf' | 'gutterhook';
+  form?: 'adamant' | 'storm' | 'greywolf' | 'gutterhook' | 'wolfskin';
   /** Weapon width multiplier (default 1): adamant is broad, stormiron narrow. */
   width?: number;
 }
@@ -76,10 +76,14 @@ export const ITEM_LOOKS: Record<string, Partial<Appearance>> = {
   stormiron_blade: { ...S, scale: 1.6, width: 0.7 },
   // named pieces: bespoke by form, each carries one cold glint and no more
   greywolf_hauberk: { tint: 0x6a7078, trim: 0x3e444c, metal: 0.05, rough: 1, glow: 0x6ef0d4, glowI: 0.5, rung: 5, form: 'greywolf' },
+  // Leatherworking: two plain materials. Hide is the boar's brown; wolfskin is grey pelt in the Hauberk's colours, furred at the cuffs. Rung 1: no plate, no glow.
+  hide_gloves: { rung: 1 }, hide_boots: { rung: 1 },
+  wolfskin_gloves: { tint: 0x8c9096, trim: 0x50565e, metal: 0.02, rough: 1, glow: 0, glowI: 0, rung: 1, form: 'wolfskin', motes: 0 },
+  wolfskin_boots: { tint: 0x8c9096, trim: 0x50565e, metal: 0.02, rough: 1, glow: 0, glowI: 0, rung: 1, form: 'wolfskin', motes: 0 },
   gutterhooks_cap: { tint: 0x5c7266, trim: 0x34423a, metal: 0.55, rough: 0.7, glow: 0x6ef0d4, glowI: 0.5, rung: 5, form: 'gutterhook' },
 };
 
-export const LOOK_SLOT_ORDER = ['weapon', 'head', 'chest', 'legs'] as const;
+export const LOOK_SLOT_ORDER = ['weapon', 'head', 'chest', 'legs', 'hands', 'feet'] as const;
 
 export function tierRung(tier: number): number {
   return Math.max(0, Math.min(TIER_LOOKS.length - 1, Math.floor(tier) || 0));
