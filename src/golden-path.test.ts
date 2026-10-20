@@ -2,7 +2,7 @@
 // Exits non-zero on the first failed assertion. Extended every milestone.
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState, Enemy } from './sim';
 import { addItem, countItem, removeItem, INVENTORY_SIZE } from './sim/inventory';
-import { ITEMS, DROP_TABLES, BRONZE_SET, COPPER_SET, STEEL_SET, TIER_COLORS, deriveStats, describeStats, emptyEquipment } from './sim/items';
+import { ITEMS, DROP_TABLES, BRONZE_SET, COPPER_SET, STEEL_SET, MARSHHIDE_SET, THORNHIDE_SET, MOORHIDE_SET, ARMOR_K, MAX_REDUCTION, TIER_COLORS, deriveStats, describeStats, emptyEquipment, type EquipSlot } from './sim/items';
 import {
   ABILITIES, ENEMY_TYPES, SPAWNS, aggroRadius, castName, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
   FALL_GRAVITY, GRAVITY, JUMP_AIRTIME, JUMP_HEIGHT, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW, powerForLevel, xpParity,
@@ -483,6 +483,22 @@ section('M2 items: drops, pickup, inventory, equipment, stats from gear');
     iron3 = damageTaken(['iron_helm', 'iron_chestplate', 'iron_greaves']);
   assert(naked > hide && hide > iron3, `armour reduces damage taken over 20s of wolf (none ${naked}, hide ${hide}, iron ${iron3})`);
   assert(iron3 < naked * 0.8, `iron set cuts incoming damage by >20% (${((1 - iron3 / naked) * 100).toFixed(0)}%)`);
+
+  // HOM-107, the armour cap: 0.80, which is armour 160. It was 0.75 (120), and at starmetal (100) Thornhide (25) and Moorhide (33) both came to the cap, so Moorhide bought nothing.
+  // The kit is the best piece in every slot that exists, so it grows by itself when starmetal ships (HOM-109) and the check keeps guarding the cap.
+  const capArmor = Math.round(ARMOR_K * MAX_REDUCTION / (1 - MAX_REDUCTION));
+  const armorOf = (id: string) => ITEMS[id].stats?.armor ?? 0;
+  const bestIn = (slot: EquipSlot) => Object.keys(ITEMS).filter(id => ITEMS[id].slot === slot).reduce((best, id) => armorOf(id) > armorOf(best) ? id : best);
+  const kitWith = (hands: readonly string[]) => {
+    const kit = emptyEquipment();
+    for (const slot of ['head', 'chest', 'legs'] as const) kit[slot] = bestIn(slot);
+    [kit.hands, kit.feet] = hands;
+    return deriveStats(kit);
+  };
+  assert(MAX_REDUCTION === 0.8 && capArmor === 160, `the cap is ${MAX_REDUCTION}, which is armour ${capArmor}`);
+  const moor = kitWith(MOORHIDE_SET), thorn = kitWith(THORNHIDE_SET), marsh = kitWith(MARSHHIDE_SET);
+  assert(moor.reduction < MAX_REDUCTION && moor.armor < capArmor, `the best six-slot kit in the game (${bestIn('head')}, ${bestIn('chest')}, ${bestIn('legs')} and Moorhide) is armour ${moor.armor}, ${(100 * moor.reduction).toFixed(1)}% off: under the cap of ${capArmor}`);
+  assert(moor.reduction > thorn.reduction + 0.005 && thorn.reduction > marsh.reduction + 0.005, `and each leather rung is still worth something on it: Moorhide ${(100 * moor.reduction).toFixed(1)}%, Thornhide ${(100 * thorn.reduction).toFixed(1)}%, Marsh-hide ${(100 * marsh.reduction).toFixed(1)}%`);
 }
 
 // ---------------------------------------------------------------------------
@@ -3354,7 +3370,7 @@ section('HOM-46 adamant: Mining 28 (HOM-56), a smithed set, and gear that asks f
 {
   const sets = ['adamant_helm', 'adamant_chestplate', 'adamant_greaves', 'adamant_blade'];
   assert(sets.every(id => ITEMS[id].req?.combat === 14 && ITEMS[id].tier === 5), 'every adamant piece is tier 5 and needs combat 14');
-  assert(Object.entries(ITEMS).filter(([id]) => !sets.includes(id) && id !== 'marrows_edge' && id !== 'rotroot_edge' && id !== 'kings_crown' && !id.startsWith('stormiron_')).every(([, d]) => d.req === undefined), 'nothing older has a requirement (Marrow\'s Edge, HOM-64, the Rotroot Edge, HOM-66, the stormiron set, HOM-95, and the King\'s Crown, HOM-99, are newer and ask for combat 18, 26, 23 and 30): no old save is touched');
+  assert(Object.entries(ITEMS).filter(([id]) => !sets.includes(id) && id !== 'marrows_edge' && id !== 'rotroot_edge' && id !== 'kings_crown' && !id.startsWith('stormiron_') && !([...MARSHHIDE_SET, ...THORNHIDE_SET, ...MOORHIDE_SET] as string[]).includes(id)).every(([, d]) => d.req === undefined), 'nothing older has a requirement (Marrow\'s Edge, HOM-64, the Rotroot Edge, HOM-66, the stormiron set, HOM-95, the King\'s Crown, HOM-99, and the three regional leather pairs, HOM-107, are newer and ask for combat 18, 26, 23, 30 and 18, 24, 32): no old save is touched');
   assert(['stormiron_helm', 'stormiron_chestplate', 'stormiron_greaves', 'stormiron_blade'].every(id => ITEMS[id].req?.combat === 23 && ITEMS[id].tier === 5), 'every stormiron piece is tier 5 and needs combat 23');
   assert(deriveStats({ ...emptyEquipment(), head: 'adamant_helm', chest: 'adamant_chestplate', legs: 'adamant_greaves' }).armor === 68 && ITEMS.adamant_blade.stats!.damage === 40, 'the set is 16 + 30 + 22 = 68 armour, the blade 40: the bible\'s numbers');
   assert(deriveStats({ ...emptyEquipment(), weapon: 'adamant_blade' }).weaponDamage > deriveStats({ ...emptyEquipment(), weapon: 'warden_edge' }).weaponDamage, 'the Adamant Blade beats the Warden\'s Edge');

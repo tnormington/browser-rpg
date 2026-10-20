@@ -57,8 +57,12 @@ const herbItems = (): Record<string, ItemDef> => ({
 
 export const ITEMS: Record<string, ItemDef> = {
   // materials (M3 smithing uses iron_ore + coal; they come from mining nodes, not drops)
-  boar_hide: { name: 'Boar Hide', stack: 50, dropWeight: 40, tier: 0, value: 2, desc: 'Coarse hide. Crafting material.' },
-  wolf_pelt: { name: 'Wolf Pelt', stack: 50, dropWeight: 40, tier: 0, value: 3, desc: 'Thick grey fur. Crafting material.' },
+  // the hides (HOM-102, HOM-107): a vendor pays a few gold for one and the tanning rack in Highmoor turns it into the gear's leather, so each one says where it goes
+  boar_hide: { name: 'Boar Hide', stack: 50, dropWeight: 40, tier: 0, value: 2, desc: "Coarse hide. Highmoor's tanning rack will want this: keep it, a vendor pays next to nothing." },
+  wolf_pelt: { name: 'Wolf Pelt', stack: 50, dropWeight: 40, tier: 0, value: 3, desc: "Thick grey fur. Highmoor's tanning rack will want this: keep it, a vendor pays next to nothing." },
+  marsh_hide: { name: 'Marsh Hide', stack: 50, dropWeight: 0, tier: 0, value: 4, desc: "Slick, dark hide off the Strand's and the Fens' beasts. Highmoor's tanning rack will want this: keep it, a vendor pays next to nothing." },
+  thorn_hide: { name: 'Thorn Hide', stack: 50, dropWeight: 0, tier: 0, value: 5, desc: "Tough, barbed hide off the Thornwood's and the Barrowdowns' beasts. Highmoor's tanning rack will want this: keep it, a vendor pays next to nothing." },
+  moor_hide: { name: 'Moor Hide', stack: 50, dropWeight: 0, tier: 0, value: 6, desc: "Heavy, weathered hide off the Moor's beasts. Highmoor's tanning rack will want this: keep it, a vendor pays next to nothing." },
   copper_ore: { name: 'Copper Ore', stack: 50, dropWeight: 0, tier: 0, value: 3, desc: 'Soft red ore from the clearing. Smelted on its own it makes copper; with tin it makes bronze.' },
   copper_bar: { name: 'Copper Bar', stack: 50, dropWeight: 0, tier: 0, value: 7, desc: 'Two ore, smelted on their own. Soft, but it is the one metal Hale can make without leaving.' },
   tin_ore: { name: 'Tin Ore', stack: 50, dropWeight: 0, tier: 0, value: 5, desc: 'Pale, soft ore. On its own it is nothing: smelted with copper it makes bronze.' },
@@ -105,6 +109,17 @@ export const ITEMS: Record<string, ItemDef> = {
   hide_boots: { name: 'Hide Boots', slot: 'feet', stats: { armor: 3 }, stack: 1, dropWeight: 0, tier: 1, value: 14, desc: 'Cut and stitched from boar leather.' },
   wolfskin_gloves: { name: 'Wolfskin Gloves', slot: 'hands', stats: { armor: 5 }, stack: 1, dropWeight: 0, tier: 2, value: 24, desc: 'Wolf leather, fur turned inward.' },
   wolfskin_boots: { name: 'Wolfskin Boots', slot: 'feet', stats: { armor: 7 }, stack: 1, dropWeight: 0, tier: 2, value: 34, desc: 'Wolf leather, fur turned inward.' },
+  // the regional hides (HOM-102 2.2, HOM-107): the sets are cut from these, five hides a pair. A tanned hide is worth twice the raw one and a piece twice its leather. Equip combat 18, 24, 32:
+  // the band each set belongs to, so a burst of tanning cannot hand a player Moorhide at combat 28
+  marsh_leather: { name: 'Marsh Leather', stack: 50, dropWeight: 0, tier: 0, value: 8, desc: 'A marsh hide, cured at a tanning rack in Highmoor. Dark and slick, it sheds water.' },
+  marshhide_gloves: { name: 'Marsh-hide Gloves', slot: 'hands', stats: { armor: 8 }, stack: 1, dropWeight: 0, tier: 3, value: 32, req: { combat: 18 }, desc: 'Marsh leather, cut close and sealed at the seams.' },
+  marshhide_boots: { name: 'Marsh-hide Boots', slot: 'feet', stats: { armor: 10 }, stack: 1, dropWeight: 0, tier: 3, value: 48, req: { combat: 18 }, desc: 'Marsh leather, cut close and sealed at the seams.' },
+  thorn_leather: { name: 'Thorn Leather', stack: 50, dropWeight: 0, tier: 0, value: 10, desc: 'A thorn hide, cured at a tanning rack in Highmoor. Stiff, and the barbs are still in it.' },
+  thornhide_gloves: { name: 'Thornhide Gloves', slot: 'hands', stats: { armor: 11 }, stack: 1, dropWeight: 0, tier: 4, value: 40, req: { combat: 24 }, desc: 'Thorn leather, barbs turned outward.' },
+  thornhide_boots: { name: 'Thornhide Boots', slot: 'feet', stats: { armor: 14 }, stack: 1, dropWeight: 0, tier: 4, value: 60, req: { combat: 24 }, desc: 'Thorn leather, barbs turned outward. Nothing in the Thornwood will bite through them.' },
+  moor_leather: { name: 'Moor Leather', stack: 50, dropWeight: 0, tier: 0, value: 12, desc: 'A moor hide, cured at a tanning rack in Highmoor. Heavy, and slow to wear through.' },
+  moorhide_gloves: { name: 'Moorhide Gloves', slot: 'hands', stats: { armor: 15 }, stack: 1, dropWeight: 0, tier: 5, value: 48, req: { combat: 32 }, desc: 'Moor leather, weathered grey-green and stiff as bark. The best gloves a leatherworker in Highmoor can make.' },
+  moorhide_boots: { name: 'Moorhide Boots', slot: 'feet', stats: { armor: 18 }, stack: 1, dropWeight: 0, tier: 5, value: 72, req: { combat: 32 }, desc: 'Moor leather, weathered grey-green and stiff as bark. The best boots a leatherworker in Highmoor can make.' },
   // armour
   leather_cap: { name: 'Leather Cap', slot: 'head', stats: { armor: 2 }, stack: 1, dropWeight: 10, tier: 1, value: 5, desc: 'Stitched hide.' },
   hide_jerkin: { name: 'Hide Jerkin', slot: 'chest', stats: { armor: 4 }, stack: 1, dropWeight: 8, tier: 1, value: 10, desc: 'Stitched hide.' },
@@ -149,9 +164,12 @@ export const ADAMANT_SET = ['adamant_helm', 'adamant_greaves', 'adamant_chestpla
 /** The stormiron set, in smithing order. */
 export const STORMIRON_SET = ['stormiron_helm', 'stormiron_greaves', 'stormiron_chestplate'] as const;
 
-/** The leatherworker's sets, gloves then boots: Hide at Leatherworking 1, Wolfskin at 10. */
+/** The leatherworker's sets, gloves then boots: Hide at Leatherworking 1, Wolfskin at 10, Marsh-hide at 18, Thornhide at 26, Moorhide at 34. */
 export const HIDE_SET = ['hide_gloves', 'hide_boots'] as const;
 export const WOLFSKIN_SET = ['wolfskin_gloves', 'wolfskin_boots'] as const;
+export const MARSHHIDE_SET = ['marshhide_gloves', 'marshhide_boots'] as const;
+export const THORNHIDE_SET = ['thornhide_gloves', 'thornhide_boots'] as const;
+export const MOORHIDE_SET = ['moorhide_gloves', 'moorhide_boots'] as const;
 
 export const TIER_COLORS = [0xc8c8c8, 0xe8e8e8, 0x4aa8ff, 0xffa030, 0xb48cff, 0x3ee0c0]; // material, common, good, rare, epic, legendary (spectral jade; art's TIER5_COLOR in gear-look.ts)
 
@@ -205,8 +223,8 @@ export const DROP_TABLES: Record<string, DropTable> = {
   old_grey: { rolls: 3, nothing: 52, entries: [
     { id: 'wolf_pelt', qty: [3, 5], weight: 20 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_sword', weight: 6 }, { id: 'steel_sword', weight: 5 },
   ] },
-  shore_crab: { rolls: 2, nothing: 31, entries: [
-    { id: 'boar_hide', qty: [1, 3], weight: 30 }, { id: 'hide_jerkin', weight: 8 }, { id: 'hide_leggings' }, { id: 'leather_cap' }, { id: 'iron_sword', weight: 3 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 2 },
+  shore_crab: { rolls: 2, nothing: 39, entries: [
+    { id: 'boar_hide', qty: [1, 3], weight: 30 }, { id: 'marsh_hide', qty: [1, 3], weight: 20 }, { id: 'hide_jerkin', weight: 8 }, { id: 'hide_leggings' }, { id: 'leather_cap' }, { id: 'iron_sword', weight: 3 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 2 },
   ] },
   drowned_sailor: { rolls: 2, nothing: 73, entries: [
     { id: 'hide_jerkin', weight: 8 }, { id: 'hide_leggings' }, { id: 'rusty_blade' }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 2 }, { id: 'steel_sword', weight: 1 },
@@ -214,71 +232,71 @@ export const DROP_TABLES: Record<string, DropTable> = {
   tide_hag: { rolls: 2, nothing: 83, entries: [
     { id: 'hide_jerkin', weight: 8 }, { id: 'leather_cap' }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
   ] },
-  barnacle_ogre: { rolls: 3, nothing: 52, entries: [
-    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'steel_sword', weight: 5 },
+  barnacle_ogre: { rolls: 3, nothing: 51, entries: [
+    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'marsh_hide', qty: [2, 4], weight: 10 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'steel_sword', weight: 5 },
   ] },
   gutterhook: { rolls: 3, nothing: 45, entries: [
-    { id: 'wolf_pelt', qty: [3, 5], weight: 15 }, { id: 'iron_greaves', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'steel_sword', weight: 8 },
+    { id: 'wolf_pelt', qty: [3, 5], weight: 15 }, { id: 'marsh_hide', qty: [3, 5], weight: 10 }, { id: 'iron_greaves', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'steel_sword', weight: 8 },
   ] },
   // the fens and the Thornwood, the same rule: each table's `nothing` is solved to land within 1 % of 0.6 x level + 3 (an elite 3x, a rare 4x). No new gear tier is
   // dropped above steel, so these are the road's tables with the odds moved.
-  fen_stalker: { rolls: 2, nothing: 34, entries: [
-    { id: 'wolf_pelt', qty: [1, 3], weight: 40 }, { id: 'hide_jerkin', weight: 8 }, { id: 'leather_cap' }, { id: 'hide_leggings' }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 2 }, { id: 'steel_sword', weight: 1 },
+  fen_stalker: { rolls: 2, nothing: 38, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 40 }, { id: 'marsh_hide', qty: [1, 3], weight: 26 }, { id: 'hide_jerkin', weight: 8 }, { id: 'leather_cap' }, { id: 'hide_leggings' }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 2 }, { id: 'steel_sword', weight: 1 },
   ] },
   bog_witch: { rolls: 2, nothing: 68, entries: [
     { id: 'hide_jerkin', weight: 8 }, { id: 'leather_cap' }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
   ] },
-  mire_troll: { rolls: 2, nothing: 77, entries: [
-    { id: 'wolf_pelt', qty: [1, 3], weight: 20 }, { id: 'iron_helm', weight: 5 }, { id: 'iron_greaves', weight: 5 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 4 }, { id: 'steel_sword', weight: 2 },
+  mire_troll: { rolls: 2, nothing: 78, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 20 }, { id: 'marsh_hide', qty: [1, 3], weight: 13 }, { id: 'iron_helm', weight: 5 }, { id: 'iron_greaves', weight: 5 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 4 }, { id: 'steel_sword', weight: 2 },
   ] },
-  bogfather: { rolls: 3, nothing: 43, entries: [
-    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'steel_sword', weight: 6 },
+  bogfather: { rolls: 3, nothing: 40, entries: [
+    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'marsh_hide', qty: [2, 4], weight: 10 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'steel_sword', weight: 6 },
   ] },
-  mother_mire: { rolls: 3, nothing: 40, entries: [
-    { id: 'wolf_pelt', qty: [3, 5], weight: 15 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 10 },
+  mother_mire: { rolls: 3, nothing: 38, entries: [
+    { id: 'wolf_pelt', qty: [3, 5], weight: 15 }, { id: 'marsh_hide', qty: [3, 5], weight: 10 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 10 },
   ] },
-  thornback: { rolls: 2, nothing: 31, entries: [
-    { id: 'boar_hide', qty: [1, 3], weight: 30 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 3 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 2 }, { id: 'steel_sword', weight: 1 },
+  thornback: { rolls: 2, nothing: 36, entries: [
+    { id: 'boar_hide', qty: [1, 3], weight: 30 }, { id: 'thorn_hide', qty: [1, 3], weight: 15 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 3 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 2 }, { id: 'steel_sword', weight: 1 },
   ] },
-  blight_stag: { rolls: 2, nothing: 53, entries: [
-    { id: 'wolf_pelt', qty: [1, 3], weight: 30 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
+  blight_stag: { rolls: 2, nothing: 57, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 30 }, { id: 'thorn_hide', qty: [1, 3], weight: 15 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
   ] },
   rotwood_cultist: { rolls: 2, nothing: 63, entries: [
     { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 4 }, { id: 'iron_greaves', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
   ] },
-  thorn_warden: { rolls: 3, nothing: 38, entries: [
-    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 7 },
+  thorn_warden: { rolls: 3, nothing: 37, entries: [
+    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'thorn_hide', qty: [2, 4], weight: 8 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 7 },
   ] },
-  elder_thornback: { rolls: 3, nothing: 25, entries: [
-    { id: 'boar_hide', qty: [3, 5], weight: 20 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_sword', weight: 6 }, { id: 'steel_sword', weight: 10 },
+  elder_thornback: { rolls: 3, nothing: 24, entries: [
+    { id: 'boar_hide', qty: [3, 5], weight: 20 }, { id: 'thorn_hide', qty: [3, 5], weight: 10 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_sword', weight: 6 }, { id: 'steel_sword', weight: 10 },
   ] },
   // the Barrowdowns and the Moor, the same rule (HOM-95): `nothing` solved to land within 1 % of 0.6 x level + 3 (an elite 3x, a rare 4x). Still nothing above steel is dropped.
   barrow_wight: { rolls: 2, nothing: 57, entries: [
     { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 4 }, { id: 'iron_greaves', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
   ] },
-  grave_hound: { rolls: 2, nothing: 24, entries: [
-    { id: 'wolf_pelt', qty: [1, 3], weight: 40 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
+  grave_hound: { rolls: 2, nothing: 26, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 40 }, { id: 'thorn_hide', qty: [1, 3], weight: 20 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
   ] },
   cairn_brute: { rolls: 2, nothing: 60, entries: [
-    { id: 'wolf_pelt', qty: [1, 3], weight: 20 }, { id: 'iron_helm', weight: 5 }, { id: 'iron_greaves', weight: 5 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 4 }, { id: 'steel_sword', weight: 3 },
+    { id: 'wolf_pelt', qty: [1, 3], weight: 20 }, { id: 'thorn_hide', qty: [1, 3], weight: 10 }, { id: 'iron_helm', weight: 5 }, { id: 'iron_greaves', weight: 5 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 4 }, { id: 'steel_sword', weight: 3 },
   ] },
-  barrow_lord: { rolls: 3, nothing: 27, entries: [
-    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 7 },
+  barrow_lord: { rolls: 3, nothing: 25, entries: [
+    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'thorn_hide', qty: [2, 4], weight: 8 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 7 },
   ] },
-  hollow_knight: { rolls: 3, nothing: 21, entries: [
-    { id: 'wolf_pelt', qty: [3, 5], weight: 15 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 10 },
+  hollow_knight: { rolls: 3, nothing: 19, entries: [
+    { id: 'wolf_pelt', qty: [3, 5], weight: 15 }, { id: 'thorn_hide', qty: [3, 5], weight: 8 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 10 },
   ] },
-  moor_ram: { rolls: 2, nothing: 22, entries: [
-    { id: 'boar_hide', qty: [1, 3], weight: 30 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 3 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 2 }, { id: 'steel_sword', weight: 2 },
+  moor_ram: { rolls: 2, nothing: 25, entries: [
+    { id: 'boar_hide', qty: [1, 3], weight: 30 }, { id: 'moor_hide', qty: [1, 3], weight: 15 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 3 }, { id: 'iron_helm', weight: 3 }, { id: 'iron_greaves', weight: 3 }, { id: 'iron_chestplate', weight: 2 }, { id: 'steel_sword', weight: 2 },
   ] },
   moor_raider: { rolls: 2, nothing: 47, entries: [
     { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 4 }, { id: 'iron_greaves', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
   ] },
-  ridge_ogre: { rolls: 2, nothing: 51, entries: [
-    { id: 'wolf_pelt', qty: [1, 3], weight: 20 }, { id: 'iron_helm', weight: 5 }, { id: 'iron_greaves', weight: 5 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 4 }, { id: 'steel_sword', weight: 3 },
+  ridge_ogre: { rolls: 2, nothing: 52, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 20 }, { id: 'moor_hide', qty: [1, 3], weight: 10 }, { id: 'iron_helm', weight: 5 }, { id: 'iron_greaves', weight: 5 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 4 }, { id: 'steel_sword', weight: 3 },
   ] },
   stonehorn: { rolls: 3, nothing: 23, entries: [
-    { id: 'boar_hide', qty: [3, 5], weight: 15 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 7 },
+    { id: 'boar_hide', qty: [3, 5], weight: 15 }, { id: 'moor_hide', qty: [3, 5], weight: 8 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 7 },
   ] },
   // the Grotto's boss shard (6.1): 35 % a kill, one shard, three to a blade: about nine kills on a ten-minute respawn. The one roll, so nothing else competes with it.
   captain_marrow: { rolls: 1, nothing: 65, entries: [{ id: 'marrow_shard', weight: 35 }] },
@@ -296,7 +314,8 @@ export interface DerivedStats {
 }
 
 export const ARMOR_K = 40;        // reduction = armor / (armor + ARMOR_K)
-export const MAX_REDUCTION = 0.75;
+// 0.80 is armour 160 (HOM-107). At 0.75 (armour 120) starmetal with Thornhide and starmetal with Moorhide both met the cap, and twelve levels of Leatherworking bought nothing.
+export const MAX_REDUCTION = 0.8;
 
 export type Equipment = Record<EquipSlot, string | null>;
 export const emptyEquipment = (): Equipment => ({ weapon: null, head: null, chest: null, legs: null, hands: null, feet: null });

@@ -125,6 +125,26 @@ export const RECIPES: Recipe[] = [
     inputs: [{ id: 'wolf_leather', qty: 2 }], output: { id: 'wolfskin_gloves', qty: 1 } },
   { id: 'wolfskin_boots', name: 'Wolfskin Boots', skill: 'leatherworking', station: 'rack', level: 11, time: 8, xp: 79,
     inputs: [{ id: 'wolf_leather', qty: 3 }], output: { id: 'wolfskin_boots', qty: 1 } },
+  // the regional hides (HOM-102 2.2, HOM-107): each tans at the level its set starts at, so nothing is tanned below its gate. XP by the same rule with the factors falling as the hides get
+  // more plentiful (tanning 0.15 / 0.10 and a piece 0.21 / 0.14 at Thornhide / Moorhide): the experience a hide is worth falls to keep the kills a level costs about level
+  { id: 'marsh_leather', name: 'Tan Marsh Hide', skill: 'leatherworking', station: 'rack', level: 18, time: 3, xp: 115,
+    inputs: [{ id: 'marsh_hide', qty: 1 }], output: { id: 'marsh_leather', qty: 1 } },
+  { id: 'marshhide_gloves', name: 'Marsh-hide Gloves', skill: 'leatherworking', station: 'rack', level: 18, time: 8, xp: 158,
+    inputs: [{ id: 'marsh_leather', qty: 2 }], output: { id: 'marshhide_gloves', qty: 1 } },
+  { id: 'marshhide_boots', name: 'Marsh-hide Boots', skill: 'leatherworking', station: 'rack', level: 19, time: 9, xp: 174,
+    inputs: [{ id: 'marsh_leather', qty: 3 }], output: { id: 'marshhide_boots', qty: 1 } },
+  { id: 'thorn_leather', name: 'Tan Thorn Hide', skill: 'leatherworking', station: 'rack', level: 26, time: 3, xp: 150,
+    inputs: [{ id: 'thorn_hide', qty: 1 }], output: { id: 'thorn_leather', qty: 1 } },
+  { id: 'thornhide_gloves', name: 'Thornhide Gloves', skill: 'leatherworking', station: 'rack', level: 26, time: 9, xp: 208,
+    inputs: [{ id: 'thorn_leather', qty: 2 }], output: { id: 'thornhide_gloves', qty: 1 } },
+  { id: 'thornhide_boots', name: 'Thornhide Boots', skill: 'leatherworking', station: 'rack', level: 27, time: 10, xp: 230,
+    inputs: [{ id: 'thorn_leather', qty: 3 }], output: { id: 'thornhide_boots', qty: 1 } },
+  { id: 'moor_leather', name: 'Tan Moor Hide', skill: 'leatherworking', station: 'rack', level: 34, time: 3, xp: 220,
+    inputs: [{ id: 'moor_hide', qty: 1 }], output: { id: 'moor_leather', qty: 1 } },
+  { id: 'moorhide_gloves', name: 'Moorhide Gloves', skill: 'leatherworking', station: 'rack', level: 34, time: 10, xp: 306,
+    inputs: [{ id: 'moor_leather', qty: 2 }], output: { id: 'moorhide_gloves', qty: 1 } },
+  { id: 'moorhide_boots', name: 'Moorhide Boots', skill: 'leatherworking', station: 'rack', level: 35, time: 11, xp: 337,
+    inputs: [{ id: 'moor_leather', qty: 3 }], output: { id: 'moorhide_boots', qty: 1 } },
 ];
 
 export const FORGE_REACH = 6; // centre-to-centre; the hut is 2.6 radius

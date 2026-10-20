@@ -51,7 +51,7 @@ async function botInPage(cfg) {
     let w = 0, a = 0, sw = 2.4;
     for (const id of Object.values(GEAR[line ? 'base' : gear])) { const st = ITEMS[id].stats; w += st.damage ?? 0; a += st.armor ?? 0; if (st.speed) sw = st.speed; }
     if (line) { w = 36 + 2.6 * (level - 16); a = 60 + 2.2 * (level - 16); }
-    Object.assign(p.stats, { weaponDamage: w, armor: a, reduction: Math.min(0.75, a / (a + 40)), swingInterval: sw });
+    Object.assign(p.stats, { weaponDamage: w, armor: a, reduction: Math.min(0.8, a / (a + 40)), swingInterval: sw });
     p.hp = p.maxHp; p.energy = p.maxEnergy; p.cd.fill(0); p.gcd = 0; p.queued = null; p.autoAttack = false; p.swing = 0; p.buffs = [];
     p.dead = false; p.outOfCombat = 99; p.inCombat = false; s.targetId = null; s.moveTarget = null; s.interact = null; s.drops = [];
     p.inventory.fill(null);
