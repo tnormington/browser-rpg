@@ -11,7 +11,7 @@ export const MOUNT_CAST = 1.0; // seconds standing still to climb up
 export interface MountDef { id: string; name: string; speed: number; level: number; total?: number; price: number; vendor: string }
 export const MOUNTS: MountDef[] = [
   { id: 'courser', name: 'Thornwick Courser', speed: 10, level: 20, price: 1000, vendor: 'thorn_stable' },
-  { id: 'destrier', name: 'Highmoor Destrier', speed: 13, level: 0, total: 250, price: 3000, vendor: 'high_stable' },
+  { id: 'destrier', name: 'Highmoor Destrier', speed: 13, level: 0, total: 285, price: 3000, vendor: 'high_stable' },
 ];
 export const mountById = (id: string) => MOUNTS.find(m => m.id === id);
 /** What a stablemaster sells. */

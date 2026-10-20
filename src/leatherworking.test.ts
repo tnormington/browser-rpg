@@ -203,10 +203,10 @@ section('The three hides (HOM-107): marsh, thorn and moor, their leathers and th
   assert(back.player.equipment.feet === 'moorhide_boots', 'and the pair survives a save');
 }
 
-section('The second stable: total level 250 and 3,000 gold');
+section('The second stable: total level 285 and 3,000 gold');
 {
   const m = MOUNTS.find(x => x.id === 'destrier')!;
-  assert(m.speed === 13 && m.total === 250 && m.price === 3000 && m.vendor === 'high_stable', 'the second mount: total level 250, 3,000 gold, 13 u/s (bible 4)');
+  assert(m.speed === 13 && m.total === 285 && m.price === 3000 && m.vendor === 'high_stable', 'the second mount: total level 285, 3,000 gold, 13 u/s (bible 4)');
   assert(dist(HIGH_STABLE, LANDMARKS.highStable) === 0 && dist(HIGH_STABLE, LANDMARKS.highSquare) < 35 && HIGH_STABLE.x < LANDMARKS.highSquare.x - 20, 'the stablemaster stands at the town\'s west edge');
   const rich = (gold: number, total: number) => {
     const s = quiet(HIGH_STABLE, gold);
@@ -215,14 +215,14 @@ section('The second stable: total level 250 and 3,000 gold');
     setSkill(s, 'combat', total - per * (SKILL_IDS.length - 1)); // whatever is left over rides on combat, so the total is exact
     return s;
   };
-  const a = rich(5000, 249);
-  assert(totalLevel(a.player.skills) === 249, 'a total of 249');
+  const a = rich(5000, 284);
+  assert(totalLevel(a.player.skills) === 284, 'a total of 284');
   tick(a, { shop: [{ k: 'mount', id: 'destrier' }] });
-  assert(a.player.mounts.length === 0 && a.player.gold === 5000 && failed(a)?.reason === 'mount', '249 is turned away and keeps its gold');
-  const b = rich(2999, 250);
+  assert(a.player.mounts.length === 0 && a.player.gold === 5000 && failed(a)?.reason === 'mount', '284 is turned away and keeps its gold');
+  const b = rich(2999, 285);
   tick(b, { shop: [{ k: 'mount', id: 'destrier' }] });
   assert(b.player.mounts.length === 0 && b.player.gold === 2999 && failed(b)?.reason === 'gold', '2,999 gold buys nothing');
-  const c = rich(3000, 250); c.player.x = HIGH_STABLE.x + SHOP_REACH + 3;
+  const c = rich(3000, 285); c.player.x = HIGH_STABLE.x + SHOP_REACH + 3;
   tick(c, { shop: [{ k: 'mount', id: 'destrier' }] });
   assert(c.player.mounts.length === 0 && failed(c)?.reason === 'range', 'out of reach it is refused');
   c.player.x = HIGH_STABLE.x + 2.5;
@@ -230,7 +230,7 @@ section('The second stable: total level 250 and 3,000 gold');
   tick(th, { shop: [{ k: 'mount', id: 'destrier' }] });
   assert(th.player.mounts.length === 0 && failed(th)?.reason === 'range', 'Thornwick\'s stablemaster does not sell it');
   tick(c, { shop: [{ k: 'mount', id: 'destrier' }] });
-  assert(c.player.mounts.join() === 'destrier' && c.player.gold === 0 && c.events.some(e => e.t === 'stable'), 'at 250 with 3,000 in reach it is bought and paid for');
+  assert(c.player.mounts.join() === 'destrier' && c.player.gold === 0 && c.events.some(e => e.t === 'stable'), 'at 285 with 3,000 in reach it is bought and paid for');
   tick(c, { shop: [{ k: 'mount', id: 'destrier' }] });
   assert((c.player.mounts as string[]).length === 1, 'once');
   c.player.mounts.push('courser');

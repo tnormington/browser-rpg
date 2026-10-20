@@ -67,7 +67,7 @@ await page.waitForTimeout(400);
 await page.screenshot({ path: join(shots, 'leather-worn.png') });
 await page.keyboard.press('Escape');
 
-// 3. the stable: 2,999 gold and a total level that is enough buys nothing; 3,000 gold and a total of 249 buys nothing; both buys the horse
+// 3. the stable: 2,999 gold and a total level that is enough buys nothing; 3,000 gold and a total of 284 buys nothing; both buys the horse
 const stable = L.highStable;
 const open = async () => {
   await stand(stable.x + 4, stable.z + 4, Math.PI / 4);
@@ -78,26 +78,26 @@ const open = async () => {
 const buy = async () => { await page.locator('.recipe', { hasText: 'Highmoor Destrier' }).locator('.rbtn').first().click({ force: true }).catch(() => fail('no Buy on the Destrier row')); await page.waitForTimeout(500); };
 const setTotal = n => sim(n => { const p = window.__debug.sim.player; for (const id of Object.keys(p.skills)) { p.skills[id].level = 1; } p.skills.combat.level = n - (Object.keys(p.skills).length - 1); }, n);
 await sim(() => { window.__debug.sim.player.gold = 2999; });
-await setTotal(250);
+await setTotal(285);
 await open();
 await page.screenshot({ path: join(shots, 'leather-stable-poor.png') });
 await buy();
 let st = await state();
 if (st.mounts.length || st.gold !== 2999) fail(`2,999 gold bought something: ${JSON.stringify(st)}`);
 await sim(() => { window.__debug.sim.player.gold = 5000; });
-await setTotal(249);
+await setTotal(284);
 await page.waitForTimeout(400);
 await page.screenshot({ path: join(shots, 'leather-stable-low.png') });
 await buy();
 st = await state();
-if (st.mounts.length || st.gold !== 5000) fail(`a total level of 249 bought something: ${JSON.stringify(st)}`);
-await setTotal(250);
+if (st.mounts.length || st.gold !== 5000) fail(`a total level of 284 bought something: ${JSON.stringify(st)}`);
+await setTotal(285);
 await sim(() => { window.__debug.sim.player.gold = 3000; });
 await page.waitForTimeout(400);
 await page.screenshot({ path: join(shots, 'leather-stable-ready.png') });
 await buy();
 st = await state();
-if (st.mounts.join() !== 'destrier' || st.gold !== 0) fail(`3,000 gold at total level 250 did not buy the horse: ${JSON.stringify(st)}`);
+if (st.mounts.join() !== 'destrier' || st.gold !== 0) fail(`3,000 gold at total level 285 did not buy the horse: ${JSON.stringify(st)}`);
 await page.keyboard.press('Escape');
 await sim(() => { const p = window.__debug.sim.player; p.mounted = true; });
 await stand(stable.x + 8, stable.z + 8, 0.6, 1500);
