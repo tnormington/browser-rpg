@@ -1,4 +1,4 @@
-// Rendering only: reads GameState, never mutates it.
+﻿// Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
@@ -77,6 +77,10 @@ const mesh = (g: THREE.BufferGeometry, color: number, cls: MatClass, shadow: 'ca
   return m;
 };
 
+/** The ground hazards that are a thing falling (not a cloud or a burst): their mark draws a stone dropping into the ring from FALL_HEIGHT. */
+const FALLING = new Set(['Falling Stone', 'Falling Rock']), FALL_HEIGHT = 5;
+/** How far each cave room's floor sits above the last. The ground marks (boss circles, drop rings) draw at 0.06-0.08, so the whole stack must stay under that: at 0.02 a thirteenth room was at 0.26 and the Rotroot's and the Hold's circles were buried. */
+const FLOOR_STEP = 0.004;
 // Directional light sits at a fixed offset from its shadow target and follows the player, so the shadow frustum stays tight.
 const SUN_OFFSET = new THREE.Vector3(-38, 36, 26); // ~37 degrees: long silhouettes, but shadow bands stay short enough not to swallow the combat arena
 const SHADOW_EXTENT = 28, SHADOW_MAP = 2048;
@@ -713,7 +717,7 @@ export class Renderer {
       a.setHex(FLOORS[dungeon][0]); b.setHex(FLOORS[dungeon][1]);
       const w = r.x1 - r.x0, d = r.z1 - r.z0;
       const g = new THREE.PlaneGeometry(w, d, Math.max(1, Math.round(w / 3)), Math.max(1, Math.round(d / 3))).rotateX(-Math.PI / 2)
-        .translate((r.x0 + r.x1) / 2, 0.02 * (i + 1), (r.z0 + r.z1) / 2);
+        .translate((r.x0 + r.x1) / 2, FLOOR_STEP * (i + 1), (r.z0 + r.z1) / 2);
       const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
       for (let v = 0; v < pos.count; v++) {
         c.copy(a).lerp(b, Math.abs(Math.sin(pos.getX(v) * 12.9898 + pos.getZ(v) * 78.233 + i * 977) * 43758.5453) % 1);
@@ -1209,6 +1213,16 @@ export class Renderer {
     return { root, fill, outline };
   }
 
+  /** The stone a Falling Stone / Falling Rock mark brings down: sized to the ring it lands in, a tall dark slab so it reads against the floor as it falls. A child of the mark's root. */
+  private makeFallingStone(r: number): THREE.Mesh {
+    const rock = mesh(new THREE.DodecahedronGeometry(r * 0.3), 0x8a929c, 'rock', 'cast');
+    (rock.material as Mat).emissive.setHex(0x242b34); // lit from nowhere in the dark of the Hold, a falling stone is otherwise a hole in the picture
+    rock.scale.set(1, 1.35, 1);
+    rock.userData.rest = r * 0.3 * 1.35 * 0.8; // resting on the ground, a little sunk
+    rock.raycast = () => {};
+    return rock;
+  }
+
   /** Build an enemy's actor the first time the player comes within ACTOR_RANGE of it (and dress it if its model has already loaded). */
   private ensureActor(e: Enemy, s: GameState): Actor | undefined {
     if (Math.hypot(e.x - s.player.x, e.z - s.player.z) > ACTOR_RANGE) return undefined;
@@ -1270,7 +1284,9 @@ export class Renderer {
         this.particles.burst(ev.x, 0.15, ev.z, { color: [P.ash], count: 8, speed: 2.2, flat: true, life: 0.35 });
       }
       else if (ev.t === 'slam') {
-        this.particles.burst(ev.x, 0.3, ev.z, { color: [P.ash, P.bloodLight, P.ember], count: 40, speed: 7, up: 2, life: 0.8 });
+        const hz = ENEMY_TYPES[s.enemies.find(e => e.id === ev.id)?.type ?? '']?.hazard, stone = !!hz && FALLING.has(hz.name) && hz.radius === ev.radius; // the stone landing, not the boss's own slam
+        if (stone) this.particles.burst(ev.x, 0.3, ev.z, { color: [P.ash, P.boulder], count: 36, speed: 6, up: 3, gravity: -9, life: 0.7 });
+        else this.particles.burst(ev.x, 0.3, ev.z, { color: [P.ash, P.bloodLight, P.ember], count: 40, speed: 7, up: 2, life: 0.8 });
         this.rings.pulse(ev.x, 0.15, ev.z, P.blood, ev.radius * 1.15, 0.5, ev.radius * 0.3);
         this.shakeMag = Math.max(this.shakeMag, Math.hypot(ev.x - s.player.x, ev.z - s.player.z) < ev.radius ? 0.35 : 0.2);
       } else if (ev.t === 'interrupt') {
@@ -1713,11 +1729,18 @@ export class Renderer {
       (a.tele.outline.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * pulse;
     }
     const gc = e.cast?.kind === 'ground' && !dead ? e.cast : null; // the mark under the player: drawn from state, so it needs no event
-    if (gc) a.ground ??= this.makeTele(gc.radius!);
+    if (gc) {
+      a.ground ??= this.makeTele(gc.radius!);
+      if (FALLING.has(ENEMY_TYPES[e.type].hazard?.name ?? '') && !a.ground.rock) a.ground.root.add(a.ground.rock = this.makeFallingStone(gc.radius!));
+    }
     if (a.ground) {
       a.ground.root.visible = !!gc;
       if (gc) {
         a.ground.root.position.set(gc.x!, 0.08, gc.z!);
+        if (a.ground.rock) { // the stone drops from out of the frame and quickens as it falls, so it is the thing the eye follows down to the ring; the cast ending is the landing
+          a.ground.rock.position.y = FALL_HEIGHT * (1 - wind * wind) + a.ground.rock.userData.rest;
+          a.ground.rock.rotation.set(wind * 2.4, wind * 3.1, 0);
+        }
         a.ground.fill.scale.set(wind, 1, wind);
         (a.ground.fill.material as THREE.MeshBasicMaterial).opacity = 0.2 + 0.4 * wind;
         (a.ground.outline.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * pulse;
@@ -1740,7 +1763,7 @@ interface Actor {
   ring: THREE.Mesh;
   tele?: { root: THREE.Group; fill: THREE.Mesh; outline: THREE.Mesh };
   /** The mark a 'ground' cast lays under the player: made on first use, at the spot the sim fixed. */
-  ground?: { root: THREE.Group; fill: THREE.Mesh; outline: THREE.Mesh };
+  ground?: { root: THREE.Group; fill: THREE.Mesh; outline: THREE.Mesh; rock?: THREE.Mesh };
   scale: number; glow: number; // the look's scale, and the emissive an idle model rests at
   mats: Mat[];
   type: string;

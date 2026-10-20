@@ -250,6 +250,29 @@ function barrowLord(): Silhouette {
   };
 }
 
+const CAIRN_STONE = 0x4a5058; // darker than the moor's STONE: the Hold's own point light lifts it, and the King's rig is pale
+/**
+ * The Cairn King: the barrow's own dead, buried under his hill until the stones grew into him. Not the Barrow Lord's iron crown and cloak: a trilithon for a crown (two standing stones and
+ * a lintel over the skull), a sarcophagus lid worn as a breastplate, kerbstones heaped on both shoulders and a cairn of three stacked stones on the back, with a hanging fringe of
+ * grave-cloth. Broad and stone-grey where the lord is tall and rust-red, so the two read apart at the length of the chamber. Pale light in the eyes and in a rune on the lid.
+ */
+function cairnKing(): Silhouette {
+  const sh = BRUTE.sh, head = BRUTE.head;
+  const crown = [1, -1].map(s => put(new THREE.BoxGeometry(0.2, 0.85, 0.22), s * 0.3, head + 0.08, 0, 0, 0, s * 0.06))
+    .concat([put(new THREE.BoxGeometry(0.98, 0.18, 0.3), 0, head + 0.58, 0, 0, 0, 0.04), put(new THREE.BoxGeometry(0.32, 0.16, 0.26), -0.1, head + 0.74, 0, 0, 0.4, 0.1)]);
+  const lid = put(new THREE.BoxGeometry(1.15, 1.25, 0.2), 0, sh - 0.35, 0.36, -0.08);
+  const kerbs = [1, -1].flatMap(s => [put(new THREE.BoxGeometry(0.7, 0.3, 0.8), s * 0.78, sh + 0.12, 0, 0, s * 0.2, s * 0.3), lump(s * 0.98, sh + 0.35, 0.05, 0.3, 0.8), put(new THREE.BoxGeometry(0.4, 0.4, 0.5), s * 0.98, sh - 0.2, 0.1, 0, 0, s * 0.12)]);
+  const cairn = [[0, sh + 0.0, -0.5, 0.48], [0.08, sh + 0.52, -0.48, 0.36], [-0.04, sh + 0.86, -0.46, 0.25]].map(([x, y, z, r]) => lump(x, y, z, r, 0.75));
+  const shroud = [put(new THREE.BoxGeometry(1.1, 1.4, 0.05).translate(0, -0.7, 0), 0, sh - 0.1, -0.35, 0.12), ...hangers(0, BRUTE.belt, 0.3, 0.7, 9, 0.7)];
+  // a carved stem down the lid with slanted ticks off one side (ogham, the barrow-builders' script), lit from within: a rune, not a cross
+  const ogham = [put(new THREE.BoxGeometry(0.06, 0.7, 0.03), -0.2, sh - 0.35, 0.47), ...[0, 1, 2, 3].map(i => put(new THREE.BoxGeometry(0.2, 0.05, 0.03), -0.1, sh - 0.12 - i * 0.16, 0.47, 0, 0, 0.5))];
+  return {
+    squash: [1.2, 0.95, 1.12], lean: 0.08,
+    layers: [{ color: CAIRN_STONE, parts: [...crown, lid, ...kerbs, ...cairn] }, { color: SHROUD, parts: shroud }, { color: MOSS, parts: [lump(0.9, sh + 0.52, 0.05, 0.12), lump(-0.5, sh + 0.28, -0.7, 0.14)] },
+      { color: GRAVE, parts: [...eyes(head - 0.38, 0.33, 0.1, 0.06), ...ogham], lit: true }],
+  };
+}
+
 /** The Hollow Knight: nobody inside. A tall helm with a slit that is lit from within and a plume of rags, a breastplate and great round pauldrons, a tabard gone to strips; the pale rig gives the plate its colour. */
 function hollowKnight(): Silhouette {
   const sh = BRUTE.sh, head = BRUTE.head;
@@ -292,7 +315,7 @@ function stonehorn(): Silhouette {
 
 /** Enemy type id -> its silhouette. A type not listed draws as its rig, tinted and scaled. */
 export const SILHOUETTES: Record<string, () => Silhouette> = {
-  barrow_wight: barrowWight, grave_hound: graveHound, cairn_brute: cairnBrute, barrow_lord: barrowLord, hollow_knight: hollowKnight,
+  barrow_wight: barrowWight, grave_hound: graveHound, cairn_brute: cairnBrute, barrow_lord: barrowLord, cairn_king: cairnKing, hollow_knight: hollowKnight,
   moor_ram: moorRam, moor_raider: moorRaider, ridge_ogre: ridgeOgre, stonehorn,
   shore_crab: crab,
   fen_stalker: fenStalker, blight_stag: blightStag,
