@@ -29,6 +29,7 @@ await page.evaluate(async ([X, Z]) => {
   window.shelf = {
     alembic: put(d.view.buildProp('alembic'), 0, 0), herbFen: put(d.view.buildProp('herbPatchFen'), 24, 0), herbThorn: put(d.view.buildProp('herbPatchThorn'), 48, 0),
     thornoak: put(d.view.buildProp('thornoak'), 72, 0), pine: put(spawn(pine).root, 78, 0), rack: put(d.view.buildProp('tanningRack'), 96, 0),
+    bush: put(d.view.buildProp('bush'), 120, 0), bushDry: put(d.view.buildProp('bushDry'), 123, 0), torch: put(d.view.buildProp('torch'), 126, 0),
   };
   window.x = X; window.z = Z;
 }, [X, Z]);
@@ -51,4 +52,6 @@ await shoot('thornoak-vs-pine', 72, { cam: 13, h: 4, at: 3.0, dx: 3 });
 await shoot('thornoak', 72, { cam: 9, h: 3, at: 3.0 });
 await shoot('tanning-rack', 96, { cam: 5.5, h: 2.2, at: 1.3, yaw: 0.5 });
 await shoot('tanning-rack-play', 96, { cam: 11, h: 5.5, at: 1.0, yaw: 0.3 });
+await shoot('bushes-and-torch', 123, { cam: 7, h: 2.4, at: 1.2, yaw: 0.4 });
+await shoot('torch', 126, { cam: 4, h: 2, at: 1.6, yaw: 0.4 });
 await browser.close(); await server.close();

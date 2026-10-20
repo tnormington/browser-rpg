@@ -28,6 +28,8 @@ export const BUILD_RANGE = 80;
 export const SHOW_RANGE = 62;
 /** The sea off Saltmarrow's shore, and the stand-in colours for what the clearing has no use for. */
 const SEA = 0x1b2c3a, SAND = 0x6b6654, DECK = 0x5a4a38, DECK_DARK = 0x3e3329, PLASTER = 0x92948f, ROOF = 0x4e5b69, LANTERN = 0xff9a3c;
+/** A torch's pool: redder than a lantern's, because it is a flame and not a wick behind horn. */
+const TORCH_LIGHT = 0xff6a24;
 /** Saltmarrow's value ladder: pale limewash walls over a dark stone footing, black timber, slate roofs, a weathered hull; the sea's foam is the palest thing in the frame. */
 const FOOTING = 0x59626b, TIMBER = 0x2c241e, HULL = 0x52483e, FOAM = 0xa9bcc6, STONE_MARK = 0x7d858c;
 /** A town's building colours: Saltmarrow's limewash and slate, Thornwick's warm plaster and dark thatch. */
@@ -105,6 +107,11 @@ function lampPost(bag: Bag, x: number, z: number, y = 0, pool = 4.5) {
   bag.wood.push(place(new THREE.CylinderGeometry(0.08, 0.12, 3.1, 5), x, y + 1.55, z), place(new THREE.BoxGeometry(0.5, 0.08, 0.08), x + 0.2, y + 3.05, z));
   bag.glow.push(place(new THREE.OctahedronGeometry(0.26), x + 0.4, y + 2.85, z));
   bag.pool.push(lampPool(x + 0.3, z, pool, 0.3, y + 0.05));
+}
+/** A torch on a post (props.ts) and the warm pool it throws: the lamp's counterpart out where the town's lamps do not reach. */
+function torchPost(bag: Bag, x: number, z: number, rot = 0, pool = 3.6) {
+  placeProp(bag, 'torch', x, z, rot);
+  bag.pool.push(lampPool(x, z, pool, 0.26, 0.05, TORCH_LIGHT));
 }
 /** Rotate a local (x, z) offset about y by `rot`, as `place` does, giving the world offset. */
 const rotXZ = (lx: number, lz: number, rot: number): [number, number] => [lx * Math.cos(rot) + lz * Math.sin(rot), -lx * Math.sin(rot) + lz * Math.cos(rot)];
@@ -330,6 +337,8 @@ export class WorldView {
           bag.jamb.push(place(new THREE.BoxGeometry(3.3, 0.55, 0.9), o.x, 2.55, mz));
           bag.dark.push(place(new THREE.BoxGeometry(1.7, 0.06, 2.4), o.x, 0.03, mz + dir * 1.2)); // the threshold, trodden black, so the mouth has a floor in front of it
           bag.dark.push(place(new THREE.BoxGeometry(1.7, 2.1, 1.2), o.x, 1.05, mz - dir * 0.3));
+          // half the mounds have been opened and a pair of torches left burning at the mouth: the only warm light in grave country, and what tells one barrow from the next at range
+          if (h < 0.5) for (const s of [-1, 1]) torchPost(bag, o.x + s * 2.4, mz + dir * 0.5, 0, 4);
           return;
         }
         case 'hut': case 'house': case 'inn': building(o, ry * 0.12, bag); return;
@@ -347,6 +356,7 @@ export class WorldView {
       }
     });
     if (r.road) this.waymarks(bag, rect, mainRect(r), r.road.axis, r.id === 'greywater' ? 100 : 0);
+    if (r.id === 'greywater' || r.id === 'saltmarrow') this.roadDressing(bag, rect, r);
     if (r.id === 'dunmere') this.fenDressing(bag, rect, r);
     if (r.id === 'thornwick') this.woodDressing(bag, rect, r);
     if (r.id === 'barrowdowns') this.barrowDressing(bag, rect, r);
@@ -365,6 +375,27 @@ export class WorldView {
       const x = axis === 'x' ? s : road + 6.5, z = axis === 'x' ? road - 6.5 : s, rot = axis === 'x' ? 0 : -Math.PI / 2;
       bag.stone.push(place(new THREE.BoxGeometry(0.7, 1.6, 0.7), x, 0.8, z), place(new THREE.BoxGeometry(0.9, 0.2, 0.9), x, 1.7, z));
       bag.wood.push(place(new THREE.BoxGeometry(1.5, 0.32, 0.08).translate(0.45, 1.25, 0.38), x, 0, z, rot), place(new THREE.ConeGeometry(0.2, 0.4, 3).rotateZ(-Math.PI / 2).translate(1.4, 1.25, 0.38), x, 0, z, rot));
+    }
+  }
+
+  /**
+   * The road country's verges. The Greywater Road and the Strand are the two regions with no scatter of their own, so the ground between the
+   * waymarks was bare to the boulders: a bush, a dry bush or a tuft of grass in every 9-unit cell, kept off the road itself, the beach, a town
+   * square, a camp and anything standing. Waist-high at most and with nothing to collide with, like the Thornwood's brush.
+   */
+  private roadDressing(bag: Bag, rect: Rect, r: Region) {
+    const CELL = 9, camps = r.spawns ?? [], road = r.road, square = r.safe?.[0];
+    for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
+      const k = hash(i * 3.7 + j * 12.1 + 7), x = (i + 0.15 + 0.7 * hash(i * 2.7 + j * 4.3)) * CELL, z = (j + 0.15 + 0.7 * hash(j * 3.9 + i * 2.1)) * CELL;
+      if (k > 0.52 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
+      if (road && Math.abs((road.axis === 'x' ? z : x) - road.at) < 7) continue;
+      if (r.id === 'saltmarrow' && x > SALTMARROW.x + 4) continue;   // the beach, the quay and the sea
+      if (square && Math.hypot(x - square.x, z - square.z) < square.r + 6) continue;
+      if (camps.some(c => Math.hypot(c.x - x, c.z - z) < 5) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + 1.5)) continue;
+      const ry = k * 40;
+      if (k < 0.2) placeProp(bag, 'bush', x, z, ry, 0.85 + k * 1.4);
+      else if (k < 0.34) placeProp(bag, 'bushDry', x, z, ry, 0.8 + k);
+      else for (let n = 0; n < 5; n++) { const a = n * 1.3 + ry; bag.brush.push(place(new THREE.ConeGeometry(0.11, 0.6 + hash(n + k * 8) * 0.3, 3).rotateZ(Math.sin(a) * 0.4).rotateX(Math.cos(a) * 0.4), x + Math.cos(a) * 0.3, 0.3, z + Math.sin(a) * 0.3)); }
     }
   }
 
@@ -418,7 +449,7 @@ export class WorldView {
     const CELL = 7, sq = LANDMARKS.thornSquare, camps = r.spawns ?? [], herbs = r.herbs ?? [];
     for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
       const k = hash(i * 5.3 + j * 11.9 + 1), x = (i + 0.15 + 0.7 * hash(i * 3.3 + j * 2.1)) * CELL, z = (j + 0.15 + 0.7 * hash(j * 4.7 + i * 1.3)) * CELL;
-      if (k > 0.6 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
+      if (k > 0.68 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
       if (Math.hypot(x - sq.x, z - sq.z) < 38 || (Math.abs(x - THORNWICK.x) < 6 && z < THORNWICK.z - 20) || (x > THORNWICK.x + 52 && Math.abs(z - THORNWICK.z) < 9)) continue;
       if (camps.some(c => Math.hypot(c.x - x, c.z - z) < 5) || herbs.some(h => Math.hypot(h.x - x, h.z - z) < 3) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + 1.5)) continue;
       const ry = k * 40;
@@ -427,9 +458,9 @@ export class WorldView {
         for (let n = 0; n < 7; n++) { const a = n * 0.9 + ry; bag.thorn.push(place(new THREE.ConeGeometry(0.06, 1.3 + hash(n + i * 3 + j) * 0.7, 3).rotateZ(Math.sin(a) * 0.9).rotateX(Math.cos(a) * 0.9), x + Math.cos(a) * 0.6, 0.7, z + Math.sin(a) * 0.6)); }
       } else if (k < 0.47) { // a fallen bough: a trunk on the ground with a broken limb
         bag.bark.push(place(new THREE.CylinderGeometry(0.22, 0.3, 3.6, 5).rotateZ(Math.PI / 2 - 0.05), x, 0.28, z, ry), place(new THREE.CylinderGeometry(0.06, 0.1, 1.2, 4).rotateZ(0.9), x + Math.cos(ry) * 0.8, 0.7, z - Math.sin(ry) * 0.8, ry));
-      } else { // close brush: a fan of dark fronds
+      } else if (k < 0.6) { // close brush: a fan of dark fronds
         for (let n = 0; n < 6; n++) { const a = n * 1.05 + ry; bag.brush.push(place(new THREE.ConeGeometry(0.2, 1.1, 3).rotateZ(Math.sin(a) * 0.55).rotateX(Math.cos(a) * 0.55), x + Math.cos(a) * 0.3, 0.55, z + Math.sin(a) * 0.3)); }
-      }
+      } else placeProp(bag, 'bush', x, z, ry, 0.9 + hash(i * 2.2 + j) * 0.5); // a bush in leaf under the canopy
     }
   }
 
@@ -461,12 +492,13 @@ export class WorldView {
     const CELL = 6, camps = r.spawns ?? [], sq = LANDMARKS.highSquare;
     for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
       const k = hash(i * 4.9 + j * 8.3 + 5), x = (i + 0.15 + 0.7 * hash(i * 3.7 + j * 2.3)) * CELL, z = (j + 0.15 + 0.7 * hash(j * 6.1 + i * 1.1)) * CELL;
-      if (k > 0.55 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
+      if (k > 0.62 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
       if (Math.hypot(x - sq.x, z - sq.z) < 14 || (Math.abs(z - HIGHMOOR.z) < 5 && x < HIGHMOOR.x + 12) || camps.some(c => Math.hypot(c.x - x, c.z - z) < 4) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + 1.5)) continue;
       const ry = k * 50;
       if (k < 0.4) for (let n = 0; n < 5; n++) { const a = n * 1.3 + ry; bag.heather.push(place(new THREE.IcosahedronGeometry(1, 0), x + Math.cos(a) * 0.7, 0.25, z + Math.sin(a) * 0.7, a, 0.55 + hash(n + k * 9) * 0.3, 0.32, 0.55)); }
       else if (k < 0.48) for (let n = 0; n < 3; n++) bag.rock.push(place(new THREE.DodecahedronGeometry(1), x + n * 0.9, 0.2, z + (n % 2) * 0.5, ry + n, 0.5 + hash(n + k) * 0.4, 0.3, 0.5));
-      else bag.rock.push(place(new THREE.BoxGeometry(1.8, 0.6, 0.45), x, 0.3, z, ry), place(new THREE.BoxGeometry(1.4, 0.45, 0.45), x + 1.7, 0.22, z + 0.2, ry + 0.2));
+      else if (k < 0.55) bag.rock.push(place(new THREE.BoxGeometry(1.8, 0.6, 0.45), x, 0.3, z, ry), place(new THREE.BoxGeometry(1.4, 0.45, 0.45), x + 1.7, 0.22, z + 0.2, ry + 0.2));
+      else placeProp(bag, 'bushDry', x, z, ry, 0.75 + hash(i + j * 3.3) * 0.4); // gorse, half bare: what grows on a heath that cannot keep a leaf
     }
   }
 

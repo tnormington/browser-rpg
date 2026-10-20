@@ -570,6 +570,8 @@ export class Renderer {
     // the east gate: two stone posts and a lintel across the 6-unit gap, so the way out reads as a way out
     for (const z of [4.4, 11.6]) add(mesh(new THREE.CylinderGeometry(0.45, 0.6, 3.6, 6), P.stone, 'stone'), 30, 1.8, z);
     add(mesh(new THREE.BoxGeometry(0.6, 0.45, 7.8), P.bark, 'wood'), 30, 3.6, 8);
+    // a torch on each gate post and on each flank of the cave mouth: the clearing's two ways out, lit, and the only warm light the forge does not throw
+    for (const [x, z] of [[29.1, 4.4], [29.1, 11.6], [-23, -23.4], [-13, -23.4]]) this.standTorch(x, z);
     // dev stress only (?stress=N): scatter extra decorative boulders so boulder count scales with N like everything else
     if (WORLD_HALF > 30) {
       const factor = (WORLD_HALF / 30) ** 2, ring = Math.ceil(2 * WORLD_HALF / 3 + 1) * 4;
@@ -1094,6 +1096,14 @@ export class Renderer {
       orb.raycast = () => {};
       hand.add(orb);
     }
+  }
+
+  /** A torch standing in the clearing (props.ts): lit geometry only, like the braziers that carry no light, so the frame's light budget is untouched. */
+  private standTorch(x: number, z: number) {
+    const t = this.buildProp('torch');
+    t.position.set(x, 0, z);
+    t.rotation.y = x * 1.7 + z;   // no two face the same way
+    this.scene.add(t);
   }
 
   /** A built prop (props.ts) as a group of one mesh per layer, ready to stand on a station or a node. Its materials are its own. */

@@ -10,6 +10,7 @@ export interface Prop { layers: PropLayer[] }
 
 const BRASS = 0x8a6f3c, COPPER = 0x7a4f34, GLASS_LIQUID = 0x2fa89e, EMBER = 0xff8a30, TABLE = 0x3d3328, STONE = 0x4b525b;
 const LEAF = 0x44624c, LEAF_DARK = 0x2b4136, LEAF_BLIGHT = 0x546238, OAK_BARK = 0x5a4b3c, OAK_LEAF = 0x3b5238, BUD = 0x36907f, BUD_THORN = 0x6a58a8;
+const LEAF_DRY = 0x5a5c42, BUSH_STEM = 0x463a2d, TORCH_WOOD = 0x4a3b2e, TORCH_IRON = 0x3a3b40;
 
 /**
  * The alembic: an alchemist's still on a stone-footed bench. A brass pot over a low fire, a swan neck bending over to a receiving flask,
@@ -120,8 +121,53 @@ function tanningRack(): Prop {
   ] };
 }
 
+/**
+ * A bush: a mound of leaf clumps over a few woody stems, with twigs breaking the dome so it is not a ball. Waist-high at most,
+ * like the Thornwood's brush, so an enemy is never hidden behind one. `green` is in leaf and `dry` is half bare, more twig than
+ * leaf and paler: the same plant in country that cannot keep it.
+ */
+function bush(kind: 'green' | 'dry'): Prop {
+  const dry = kind === 'dry', spread = dry ? 0.8 : 0.95, top = dry ? 0.95 : 1.05;
+  const stems = Array.from({ length: 3 }, (_, i) => stick(Math.sin(i * 2.1) * 0.16, 0, Math.cos(i * 2.1) * 0.16, 0.5, 0.055, Math.cos(i * 2.1) * 0.2, Math.sin(i * 2.1) * 0.22));
+  // twigs out of the mound's shoulders, longer and more of them on a dry one: what stops it reading as a ball of moss
+  const twigs = Array.from({ length: dry ? 9 : 5 }, (_, i) => {
+    const a = i * 1.4 + (dry ? 0.5 : 0);
+    return stick(Math.cos(a) * spread * 0.5, 0.35, Math.sin(a) * spread * 0.5, (dry ? 0.75 : 0.5) + (i % 3) * 0.12, 0.035, Math.sin(a) * 0.9, Math.cos(a) * 0.9);
+  });
+  const clumps = [[0, 0.5, 0, 0.58], [-0.5, 0.42, 0.22, 0.4], [0.46, 0.4, -0.2, 0.42], [0.1, 0.44, -0.5, 0.36], [-0.14, 0.34, 0.5, 0.34], [0.05, 0.72, 0.06, 0.4]]
+    .filter((_, i) => !dry || i % 2 === 0)   // a dry bush keeps every other clump: the gaps are the look
+    .map(([x, y, z, r]) => lump(x * spread, y * top, z * spread, r * (dry ? 0.85 : 1), 0.7));
+  return { layers: [
+    { name: 'wood', color: BUSH_STEM, cls: 'wood', parts: [...stems, ...twigs] },
+    { name: 'leaf', color: dry ? LEAF_DRY : LEAF, cls: 'foliage', parts: clumps },
+  ] };
+}
+
+/**
+ * A torch on a post: a stake with two iron bands, a cage of four struts over it and a pitch head burning in the cage. The one
+ * warm thing where there is no lamp and no forge, so it is kept small and its flame sits under the bloom threshold like the
+ * braziers'. Feet at y 0, the flame near y 2.3; its pool of light on the ground is the placer's to add (world-view.ts `torchPost`).
+ */
+function torch(): Prop {
+  const post = [put(new THREE.CylinderGeometry(0.075, 0.1, 2.1, 6).translate(0, 1.05, 0), 0, 0, 0), put(new THREE.ConeGeometry(0.14, 0.26, 5).rotateX(Math.PI), 0, 0.08, 0)];
+  const iron = [
+    ...[0.75, 1.5].map(y => put(new THREE.CylinderGeometry(0.1, 0.1, 0.07, 6), 0, y, 0)),   // the bands down the stake
+    put(new THREE.CylinderGeometry(0.21, 0.13, 0.1, 6), 0, 2.1, 0),   // the cage's rim
+    ...Array.from({ length: 4 }, (_, i) => { const a = i * Math.PI / 2; return put(new THREE.BoxGeometry(0.04, 0.34, 0.04), Math.cos(a) * 0.17, 2.22, Math.sin(a) * 0.17, Math.sin(a) * 0.2, 0, -Math.cos(a) * 0.2); }),
+  ];
+  const pitch = [put(new THREE.CylinderGeometry(0.13, 0.09, 0.3, 6), 0, 2.2, 0)];
+  const flame = [put(new THREE.OctahedronGeometry(0.17).scale(1, 1.9, 1), 0, 2.46, 0), put(new THREE.OctahedronGeometry(0.1).scale(1, 1.5, 1), 0.04, 2.72, -0.03)];
+  return { layers: [
+    { name: 'post', color: TORCH_WOOD, cls: 'wood', parts: post },
+    { name: 'iron', color: TORCH_IRON, cls: 'metal', parts: iron },
+    { name: 'pitch', color: 0x241c16, cls: 'wood', parts: pitch },
+    { name: 'flame', color: EMBER, cls: 'glow', parts: flame },
+  ] };
+}
+
 /** Prop id -> its build. A prop is built per use (cheap: a handful of merged layers) and the renderer shares nothing between uses. */
 export const PROPS = {
   alembic, herbPatchFen: () => herbPatch('fen'), herbPatchThorn: () => herbPatch('thorn'), thornoak, tanningRack,
+  bush: () => bush('green'), bushDry: () => bush('dry'), torch,
 } satisfies Record<string, () => Prop>;
 export type PropId = keyof typeof PROPS;
