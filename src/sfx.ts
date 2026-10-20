@@ -3,6 +3,7 @@
 // and M mutes. Samples are fetched and decoded lazily after the context exists; until decoded a sound is skipped.
 import type { GameEvent } from './sim';
 import { ABILITIES } from './sim/data';
+import { REGIONS } from './sim/world';
 
 // ---- tuning table: change numbers here, by ear ----
 /** minGap ms between plays of a group, maxVoices simultaneously sounding in it. */
@@ -17,6 +18,7 @@ const GROUPS = {
   smith:     { minGap: 800, maxVoices: 3 },
   step:      { minGap: 250, maxVoices: 2 },   // footfalls land every ~450 ms running; the gap only guards a burst
   hoof:      { minGap: 150, maxVoices: 4 },   // a beat lands every ~270 ms at 10 u/s, each a clop pair
+  leather:   { minGap: 300, maxVoices: 2 },
   mount:     { minGap: 300, maxVoices: 2 },
   gather:    { minGap: 400, maxVoices: 2 },   // strikes land every 1.1 s
   kill:      { minGap: 150, maxVoices: 2 },
@@ -53,9 +55,14 @@ const SOUNDS = {
   stepCave:  { files: ['step-cave-1', 'step-cave-2'], vol: 0.3, jitter: 0.08 },
   hoof:      { files: ['hoof-1', 'hoof-2', 'hoof-3'], vol: 0.4, jitter: 0.06, rate: 0.8 },   // a hollow clop: the wood footstep, pitched down for weight
   hoofLead:  { files: ['hoof-1', 'hoof-2', 'hoof-3'], vol: 0.3, jitter: 0.06, rate: 0.95, delay: 0.11 },   // the fore-hoof half a beat behind: a canter, not a patter
+  hoofHeavy: { files: ['hoof-1', 'hoof-2', 'hoof-3'], vol: 0.5, jitter: 0.05, rate: 0.62 },   // the destrier: the same wood footstep pitched much lower, a heavier animal and not the courser played faster
+  hoofHeavyLead: { files: ['hoof-1', 'hoof-2', 'hoof-3'], vol: 0.35, jitter: 0.05, rate: 0.74, delay: 0.14 },
+  barding:   { files: ['interrupt'], vol: 0.12, jitter: 0.1, rate: 1.9, delay: 0.05 },   // plate on the horse's chest, a faint chink with every beat
   saddle:    { files: ['thud'], vol: 0.5, jitter: 0.04, rate: 0.9 },   // leather taking weight
   tack:      { files: ['cook-start'], vol: 0.3, jitter: 0.04, rate: 1.3, delay: 0.08 },   // a buckle
   unsaddle:  { files: ['thud'], vol: 0.5, jitter: 0.04, rate: 0.75 },
+  rackStart: { files: ['thud'], vol: 0.4, jitter: 0.05, rate: 1.15 },   // a hide slapped onto the rack
+  rackDone:  { files: ['thud'], vol: 0.5, jitter: 0.04, rate: 0.95 },   // the finished piece laid down, then the buckle
   mine:      { files: ['mine-1', 'mine-2', 'mine-3'], vol: 0.55, jitter: 0.05 },
   chop:      { files: ['chop'], vol: 0.55, jitter: 0.06 },
   fishCast:  { files: ['swing-2'], vol: 0.3, jitter: 0.04, rate: 0.7 },   // a line whipping out
@@ -88,9 +95,12 @@ const AMBIENCE: Record<string, { file: string; vol: number }> = {
   saltmarrow: { file: 'coast-ambience', vol: 0.4 },
   dunmere: { file: 'fen-ambience', vol: 0.4 },
   thornwick: { file: 'forest-ambience', vol: 0.4 },
-  barrowdowns: { file: 'road-ambience', vol: 0.35 },
-  highmoor: { file: 'road-ambience', vol: 0.35 },
+  barrowdowns: { file: 'barrows-ambience', vol: 0.4 },
+  highmoor: { file: 'moor-ambience', vol: 0.35 },
 };
+/** Every cave room (Hollow, Grotto, Rotroot, and Cairn Hold once it lands) shares one bed: no cave region has an entry above. */
+const CAVE_BED = { file: 'cave-ambience', vol: 0.4 };
+const bedFor = (id: string | null) => !id ? undefined : AMBIENCE[id] ?? (REGIONS.find(r => r.id === id)?.cave ? CAVE_BED : undefined);
 const AMBIENCE_FADE = 1.5;   // seconds to cross between beds
 
 const MASTER_GAIN = 0.8;
@@ -165,7 +175,7 @@ export function setAmbience(region: string | null) {
 
 function syncAmbience() {
   if (!ctx || !master || ctx.state !== 'running') return;
-  const cfg = wantBed ? AMBIENCE[wantBed] : undefined;
+  const cfg = bedFor(wantBed);
   const buf = cfg && buffers.get(cfg.file);
   if (cfg && !buf) { setTimeout(syncAmbience, 500); return; }   // still decoding
   if (bed && bed.file === cfg?.file) return;
@@ -265,10 +275,8 @@ function tone(freq: number, dur: number, type: OscillatorType, vol: number, slid
 const arpeggio = (notes: number[], step: number, type: OscillatorType, vol: number) =>
   notes.forEach((f, i) => tone(f, step * 2.2, type, vol, f, i * step));
 
-/** Mounted, as told by the sim's 'mount' events: while it is true the footfalls are a horse's. */
-let riding = false;
-
-export function playEvents(events: GameEvent[]) {
+/** mount is the id of the mount being ridden, null on foot. Read from the state each tick, not from 'mount' events, so a save loaded mounted already sounds mounted. */
+export function playEvents(events: GameEvent[], mount: string | null = null) {
   for (const ev of events) {
     switch (ev.t) {
       case 'hit':
@@ -295,6 +303,7 @@ export function playEvents(events: GameEvent[]) {
       case 'begin':
         if (ev.skill === 'fishing') play('fish', [SOUNDS.fishCast]);
         else if (ev.skill === 'cooking') play('cook', [SOUNDS.cookStart]);
+        else if (ev.skill === 'leatherworking') play('leather', [SOUNDS.rackStart]);
         break;
       case 'catch': play('fish', [SOUNDS.fishCatch], { noGap: true }); break;
       case 'flight': play('flight', [ev.phase === 'start' ? SOUNDS.takeoff : SOUNDS.landing], { noGap: true }); break;
@@ -308,15 +317,17 @@ export function playEvents(events: GameEvent[]) {
       case 'loot': play('loot', [SOUNDS.loot]); break;
       case 'crafted':
         if (ev.skill === 'cooking') { play('cook', [SOUNDS.cookDone]); break; }
-        if (ev.skill === 'alchemy' || ev.skill === 'leatherworking') { play('loot', [SOUNDS.loot]); break; } // no free bubbling or stitching yet: a brew or a tanned hide is the loot chime, not a smith's clang
+        if (ev.skill === 'leatherworking') { play('leather', [SOUNDS.rackDone, SOUNDS.tack]); break; }
+        if (ev.skill === 'alchemy') { play('loot', [SOUNDS.loot]); break; } // no free bubbling yet: a brew is the loot chime, not a smith's clang
         play('smith', [SOUNDS.smith1, { ...SOUNDS.smith2, delay: SMITH_STEP }, { ...SOUNDS.smith1, delay: SMITH_STEP * 2 }]);
         break;
       case 'forge': play('smith', [SOUNDS.forge]); break;
       case 'step':
-        if (riding) play('hoof', [SOUNDS.hoof, SOUNDS.hoofLead]);
+        if (mount === 'destrier') play('hoof', [SOUNDS.hoofHeavy, SOUNDS.hoofHeavyLead, SOUNDS.barding]);
+        else if (mount) play('hoof', [SOUNDS.hoof, SOUNDS.hoofLead]);
         else play('step', [ev.surface === 'cave' ? SOUNDS.stepCave : SOUNDS.stepGrass]);
         break;
-      case 'mount': riding = ev.on; play('mount', ev.on ? [SOUNDS.saddle, SOUNDS.tack] : [SOUNDS.unsaddle], { noGap: true }); break;
+      case 'mount': play('mount', ev.on ? [SOUNDS.saddle, SOUNDS.tack] : [SOUNDS.unsaddle], { noGap: true }); break;
       case 'gather': if (ev.skill === 'mining' || ev.skill === 'woodcutting') play('gather', [ev.skill === 'mining' ? SOUNDS.mine : SOUNDS.chop]); break; // no free splash yet: a shoal is quiet, and so is a patch of herb
       case 'death':
         play('stinger', [SOUNDS.death], { steal: true, noGap: true });

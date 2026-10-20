@@ -8,6 +8,7 @@ import type { WeatherKind } from './weather';
 import { loadGame, loadQuality, saveGame, saveQuality, wipeSave } from './storage';
 import { playEvents, setAmbience, toggleMute, unlockAudio } from './sfx';
 import { GATES, LANDMARKS, WITHERING, regionAt } from './sim/world';
+import { bestMount } from './sim/mounts';
 import { applyStress } from './sim/stress';
 import { ITEMS } from './sim/items';
 import { bestFoodSlot } from './sim/consumables';
@@ -212,7 +213,7 @@ function frame(now: number) {
     view.snapshot(state);
     view.onEvents(state.events, state);
     hud.onEvents(state.events, state);
-    playEvents(state.events);
+    playEvents(state.events, state.player.mounted ? bestMount(state.player)?.id ?? 'courser' : null);
     const region = regionAt(state.player.x, state.player.z)?.id ?? null;
     if (region !== lastRegion) setAmbience(lastRegion = region);
     trace?.tick(state.events);

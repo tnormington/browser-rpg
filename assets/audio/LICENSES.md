@@ -55,3 +55,15 @@ All four are CC0, cut to a 20 s seamless loop (2 s triangle crossfade, mono, 32 
 | road-ambience.ogg | "Birds and wind - ambient", Birds and Wind - Ambient.ogg (24 s from 0:10) � https://opengameart.org/content/birds-and-wind-ambient-birds-wind-and-synth (file: https://opengameart.org/sites/default/files/Birds%20and%20Wind%20-%20Ambient_1.ogg) | Spring Spring | CC0 | 2026-10-19 |
 | fen-ambience.ogg | "Swamp Environment Audio", swamp.ogg (22 s from 1:25) - https://opengameart.org/content/swamp-environment-audio (file: https://opengameart.org/sites/default/files/swamp.ogg) | LokiF | CC0 | 2026-10-19 |
 | forest-ambience.ogg | "Forest Ambience", Forest_Ambience.mp3 (22 s from 0:10) - https://opengameart.org/node/23888 (file: https://opengameart.org/sites/default/files/Forest_Ambience.mp3) | TinyWorlds | CC0 | 2026-10-19 |
+
+### Added 2026-10-20 (HOM-101)
+
+Same recipe as above (20 s seamless loop, 2 s triangle crossfade, mono, 32 kHz, -26 LUFS, Vorbis q2). Source recordings are not in the repo.
+
+| File | Source | Author | Licence | Fetched |
+|---|---|---|---|---|
+| barrows-ambience.ogg | "Space Graveyard - Ambient Track", space_graveyard_4.mp3 (22 s from 1:52) - https://opengameart.org/content/space-graveyard-ambient-track (file: https://opengameart.org/sites/default/files/space_graveyard_4.mp3) | TinyWorlds | CC0 | 2026-10-20 |
+| moor-ambience.ogg | "Wind", Wind.ogg and Wind2.ogg from wind.zip (two 6.6 s gusts chained A-B-A-B with 1.5 s crossfades) - https://opengameart.org/content/wind (file: https://opengameart.org/sites/default/files/wind.zip) | IgnasD | CC0 | 2026-10-20 |
+| cave-ambience.ogg | "Loopable Dungeon Ambience", dungeon_ambient_1.ogg (22 s from 0:29) - https://opengameart.org/content/loopable-dungeon-ambience (file: https://opengameart.org/sites/default/files/dungeon_ambient_1_0.ogg) | JaggedStone | CC0 | 2026-10-20 |
+
+The tanning-rack and destrier cues reuse Kenney samples already listed above (thud.ogg, cook-start.ogg, interrupt.ogg, hoof-*.ogg) at other pitches; no new files.
