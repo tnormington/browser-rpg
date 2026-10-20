@@ -25,6 +25,7 @@ export class ForgeUi {
     this.panel.style.display = 'none';
   }
 
+  get dockEl() { return this.panel; }
   get isOpen() { return this.open; }
 
   setOpen(on: boolean) {

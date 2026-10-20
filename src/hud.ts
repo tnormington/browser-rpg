@@ -27,7 +27,8 @@ import { AdminUi } from './admin-ui';
 import type { AdminAction } from './sim/admin';
 import { SpellbookUi } from './spellbook-ui';
 import { Minimap } from './minimap';
-import { HudWindow, el, dragData, parseDrag } from './dom';
+import { DockWindow, HudWindow, el, dragData, parseDrag } from './dom';
+import { Dock } from './dock';
 import { loadBar, loadBarKeys, saveBar, saveBarKeys } from './storage';
 import { BarEntry, DEFAULT_KEYS, barWorthy, bindKey, bindRefusal, keyLabel, sameEntry, sanitizeBar, sanitizeKeys } from './bar-layout';
 
@@ -196,6 +197,9 @@ export class Hud {
   private minimap: Minimap;
   /** Every panel Esc shuts, in the order they are built. */
   private windows: HudWindow[] = [];
+  /** The windows that open in the dock (dock.ts), which settles them after anything opens or closes one. */
+  private dockWindows: DockWindow[] = [];
+  private dock: Dock;
   private goldEl: HTMLElement;
   private statusEl: HTMLElement;
   private castBar: ReturnType<typeof bar>;
@@ -255,24 +259,32 @@ export class Hud {
     this.unlockBanner = el(this.root, 'banner unlockbanner');
     this.warn = el(this.root, 'warn');
     this.hurt = el(this.root, 'hurt');
-    this.log = el(this.root, 'msglog');
-    this.invUi = new InventoryUi(this.root, actions.inv, actions.sell);
-    this.skillsUi = new SkillsUi(this.root);
-    this.talentsUi = new TalentsUi(this.root, { learn: actions.talent, reset: actions.talentReset });
-    this.shopUi = new ShopUi(this.root, actions.buy, actions.learn, actions.repair, actions.buyMount);
-    this.flightUi = new FlightUi(this.root, actions.fly);
+    // the rail is the left column: the quest tracker on top, the message log under it. They are flex items of one box, so they cannot print over each other.
+    const rail = el(this.root, 'rail');
+    this.log = el(rail, 'msglog');
+    this.dock = new Dock(this.root);
+    const dock = this.dock.el;
+    this.invUi = new InventoryUi(dock, actions.inv, actions.sell);
+    this.skillsUi = new SkillsUi(dock);
+    this.talentsUi = new TalentsUi(dock, { learn: actions.talent, reset: actions.talentReset });
+    this.shopUi = new ShopUi(dock, actions.buy, actions.learn, actions.repair, actions.buyMount);
+    this.flightUi = new FlightUi(dock, actions.fly);
     this.mapUi = new MapUi(this.root, actions.map);
     const craft = (r: string, n: number) => { this.acting = true; actions.craft(r, n); };
-    this.forgeUi = new ForgeUi(this.root, 'forge', 'Forge', craft);
-    this.rangeUi = new ForgeUi(this.root, 'range', 'Cooking Range', craft);
-    this.alembicUi = new ForgeUi(this.root, 'alembic', 'Alembic', craft);
-    this.rackUi = new ForgeUi(this.root, 'rack', 'Tanning Rack', craft);
+    this.forgeUi = new ForgeUi(dock, 'forge', 'Forge', craft);
+    this.rangeUi = new ForgeUi(dock, 'range', 'Cooking Range', craft);
+    this.alembicUi = new ForgeUi(dock, 'alembic', 'Alembic', craft);
+    this.rackUi = new ForgeUi(dock, 'rack', 'Tanning Rack', craft);
     this.castBar = bar(this.root, 'castbar');
-    this.questUi = new QuestUi(this.root, actions.questAdvance);
-    this.bookUi = new SpellbookUi(this.root, () => this.bar, a => this.keyForAbility(a), a => this.assign(this.slotOfAbility(a), null));
-    if (actions.admin) this.adminUi = new AdminUi(this.root, actions.admin);
+    this.questUi = new QuestUi(rail, dock, actions.questAdvance);
+    this.bookUi = new SpellbookUi(dock, () => this.bar, a => this.keyForAbility(a), a => this.assign(this.slotOfAbility(a), null));
+    if (actions.admin) this.adminUi = new AdminUi(this.root, dock, actions.admin);
     this.menuUi = new MenuUi(this.root, actions);
     this.windows = [this.mapUi, this.menuUi, this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi,
+      this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char,
+      ...(this.adminUi ? [this.adminUi] : [])];
+    // every window the dock lays out: all of them but the map (a screen of its own) and the help (a veil over everything)
+    this.dockWindows = [this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi,
       this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char,
       ...(this.adminUi ? [this.adminUi] : [])];
     this.renderBar();
@@ -283,6 +295,7 @@ export class Hud {
     else if (which === 'talents') this.talentsUi.toggle();
     else if (which === 'book') this.bookUi.toggle();
     else this.invUi.toggle(which);
+    this.dock.settle(this.dockWindows);
   }
 
   toggleHelp() { this.menuUi.toggle(); }
@@ -795,6 +808,7 @@ export class Hud {
     this.rackUi.update(s);
     this.shopUi.update(s);
     this.flightUi.update(s);
+    this.dock.settle(this.dockWindows);
     this.mapUi.update(s);
     this.adminUi?.update(s);
     this.updateCastBar(s);

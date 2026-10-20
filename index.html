@@ -12,8 +12,15 @@
              ink     --ink --ink-dim --ink-bright     accent --gold --gold-hi --gold-dim --gold-wash     state --bad --blood --moss --arcane --ember --violet --heal
              type    --fs-xs 9 (micro) --fs-sm 11 (meta, hints) --fs-md 13 (body) --fs-lg 15 (names, titles) --fs-xl 18 --fs-2xl 22 --fs-3xl 30 --fs-4xl 42 --fs-5xl 56 (banners)
              space   --sp-1..6 = 2 4 6 8 12 16, --gutter = the margin to the window edge     shape --r (3px) --r-sm (2px)     depth --lift-1 (small) --lift-2 (panel)
-     CLASSES .panel     a window that opens over the world: iron chrome, bounded by the window, scrolls inside itself, its .ptitle row stays put.
-                        Set --ptop / --pbottom for where it starts and what it leaves clear; --chrome-edge to tint its border (station, vendor).
+             layout  --rail-w (the left column: quest tracker over message log)  --frame-bottom, --fw (the unit frames)  --stack (what the dock leaves clear below it: the frames, their buffs and the bars under them)
+     LAYOUT  Five boxes, each owning a rectangle, so nothing is placed by a guess about what else is on screen (HOM-108; bench/hud-layout.mjs holds it at six window sizes):
+             .rail     left column, top to just above the swing bar: .tracker, then .msglog, as flex items of one box. The log takes what the tracker leaves and scrolls in it.
+             .dock     the open middle: from the rail to the minimap, from the top gutter to --stack above the frames. Every .panel but the help is a flex item of it, so a panel is bounded
+                       by it and two panels cannot overlap. Where they do not all fit across, dock.ts docks the HUD (.hud.docked: the rail steps aside) and then shuts the oldest.
+             .frame    the unit frames, above the action bar. The player's is centred on the screen, or pushed right of the rail where the window is too narrow for both. Buffs and the
+                       food wait hang above the frame, inside the --stack gap.
+             .actionbar, .minimap, .menubar, .xp, .swing  fixed to their edges.
+     CLASSES .panel     a window: iron chrome, a child of the dock, bounded by it, scrolls inside itself, its .ptitle row stays put. --chrome-edge tints its border (station, vendor).
              .ptitle    the title row; titleRow() in dom.ts builds it with its .pclose.     .rgroup  a small caps group heading inside a panel
              .recipe    a list row (forge, shop, flights, spell book): .rhead (.rname + .rreq), .rstat lines, .rbtns.  .locked dims it; .bad marks what you lack
              .btn       every button. + .pri (the action you came for: Make, Buy, Learn)  + .sm  + .block (full width, left)  + .off (cannot be used now)
@@ -36,6 +43,10 @@
   --fs-xs:9px;--fs-sm:11px;--fs-md:13px;--fs-lg:15px;--fs-xl:18px;--fs-2xl:22px;--fs-3xl:30px;--fs-4xl:42px;--fs-5xl:56px;
   --sp-1:2px;--sp-2:4px;--sp-3:6px;--sp-4:8px;--sp-5:12px;--sp-6:16px;--gutter:12px;
   --r:3px;--r-sm:2px;
+  --minimap-w:140px;--rail-w:clamp(250px,calc(50vw - 150px),300px);--rail-bottom:112px;
+  --fw:200px;--ftotal:calc(var(--fw) + 2*var(--sp-3) + 2px);--frame-bottom:134px;--stack:246px; /* the frame is 71px tall; its buffs 36 above it; the dock ends --stack above the window's floor */
+  --frame-l:max(calc(50% - var(--sp-4) - var(--ftotal)),calc(var(--gutter) + var(--rail-w) + var(--sp-5)));
+  --dock-l:calc(var(--gutter) + var(--rail-w) + var(--sp-5));--dock-r:calc(var(--gutter) + var(--minimap-w) + var(--sp-4));
   --lift-1:inset 0 0 0 1px #000,0 2px 6px rgba(0,0,0,.6);--lift-2:inset 0 0 0 1px #000,0 4px 14px rgba(0,0,0,.7);
 }
 html,body{margin:0;height:100%;overflow:hidden;background:#000}
@@ -63,20 +74,26 @@ canvas{display:block}
 .bar.thin{--bar-h:5px;margin-top:var(--sp-1);border-radius:0}
 
 /* ---- unit frames, minimap ---- */
-/* the unit frames sit above the action bar, centred on it: you, then what you are hitting. Both are anchored to the screen's
-   middle (not laid out as a pair) so the player's frame does not slide when the target's comes and goes. */
-.frame{position:absolute;bottom:134px;width:230px;box-sizing:content-box}
-.frame.player{right:50%;margin-right:var(--sp-4)}.frame.target{left:50%;margin-left:var(--sp-4);display:none;--chrome-edge:var(--blood-dark)}
+/* the unit frames sit above the action bar, centred on it: you, then what you are hitting. Both are anchored (not laid out as a pair) so the player's frame
+   does not slide when the target's comes and goes. Where the window is too narrow to centre them clear of the rail, both shift right together (--frame-l).
+   A frame is name (and gold), health, then energy (the target's cast) = 71px, however much it is carrying: buffs and the food wait hang above it, in the --stack gap. */
+@media (min-width:1400px){:root{--fw:230px}}
+@media (max-width:1399px){.frame .name{font-size:var(--fs-md)}} /* the narrow frame is 200 wide: "Adventurer  Lv 28" and "Gold 4000" share its first line */
+.frame{position:absolute;bottom:var(--frame-bottom);width:var(--fw);box-sizing:content-box;padding:var(--sp-3);display:grid;grid-template-columns:1fr auto;column-gap:var(--sp-3);align-items:baseline}
+.frame>*{grid-column:1/-1}
+.frame.player{left:var(--frame-l)}.frame.target{left:calc(var(--frame-l) + var(--ftotal) + var(--sp-6));display:none;--chrome-edge:var(--blood-dark)}
+.frame .bar{--bar-h:16px;margin-top:var(--sp-2)}.frame .energy,.frame .enemycast{--bar-h:14px}
 .minimap{position:absolute;top:var(--gutter);right:var(--gutter);width:140px;height:140px;border-radius:50%;background:var(--iron-solid);border:2px solid var(--edge);box-shadow:var(--lift-1);overflow:hidden}
 .minimap canvas{display:block;width:140px;height:140px}
 .mmzone{position:absolute;left:0;right:0;bottom:5px;text-align:center;font-size:var(--fs-sm);color:var(--gold);letter-spacing:.04em}
-.name{font-size:var(--fs-lg);font-weight:bold;margin-bottom:var(--sp-2);letter-spacing:.03em}.name.hard{color:var(--bad)}
-.frame .gold{color:var(--gold);margin-top:var(--sp-1)}.frame .status{color:var(--moss);font-size:var(--fs-sm);margin-top:var(--sp-1);min-height:13px}
+.name{font-size:var(--fs-lg);font-weight:bold;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.name.hard{color:var(--bad)}
+.frame.player .name{grid-column:1}.frame .gold{grid-column:2;color:var(--gold);font-size:var(--fs-sm)}
+.frame .status{position:absolute;right:0;bottom:calc(100% + var(--sp-2));color:var(--moss);font-size:var(--fs-sm);text-shadow:0 0 3px #000,0 1px 2px #000}
 .hp{--fill:var(--fill-hp)}.energy{--fill:var(--fill-energy)}.enemyhp{--fill:var(--fill-blood)}
 .xp{--bar-h:12px;position:absolute;left:12%;right:max(12%,350px);bottom:6px;margin-top:0;--fill:var(--fill-xp)}
 .xp.skill{--fill:var(--fill-skill)} /* the bar is following a gathering/crafting skill, not combat */
 /* buffs and debuffs under a unit frame: icon, seconds left, and a bar that empties over the effect's run */
-.buffs{display:flex;gap:var(--sp-2);margin-top:var(--sp-3)}.buffs:empty{display:none}
+.buffs{position:absolute;left:0;bottom:calc(100% + var(--sp-2));display:flex;gap:var(--sp-2)}.buffs:empty{display:none}
 .buff{position:relative;width:28px;height:32px;background:var(--iron-lift);border:1px solid var(--edge);border-radius:var(--r);text-align:center;overflow:hidden}
 .buff.bad{border-color:var(--blood-dark)}
 .buff .bicon{font-size:var(--fs-lg);line-height:19px}.buff .bclock{font-size:var(--fs-xs);line-height:9px;color:var(--ink)}
@@ -132,9 +149,12 @@ canvas{display:block}
 .nodeplate .psub{font-size:var(--fs-sm);color:var(--moss)}
 
 /* ---- panels ---- */
-/* Every panel is bounded by the window and scrolls inside itself: --ptop is where it starts, --pbottom what it leaves clear below
-   (the action bar, or for a centred panel the unit frames above it too). Its title stays put while the body scrolls. */
-.panel{--ptop:90px;--pbottom:108px;--pad:var(--sp-4);position:absolute;top:var(--ptop);max-height:calc(100vh - var(--ptop) - var(--pbottom) - 18px);padding:var(--pad);pointer-events:auto;text-shadow:none}
+/* Every panel is a flex item of the dock (see LAYOUT above): the dock bounds its height, so it scrolls inside itself, and its width is the one thing a panel sets.
+   Its title stays put while the body scrolls. The help is the exception: a veil over everything, placed by its own rule. */
+.dock{position:absolute;left:var(--dock-l);right:var(--dock-r);top:var(--gutter);bottom:var(--stack);display:flex;justify-content:flex-end;align-items:flex-start;gap:var(--sp-5);pointer-events:none}
+.hud.docked{--dock-l:var(--gutter)}
+.panel{--pad:var(--sp-4);position:absolute;padding:var(--pad);pointer-events:auto;text-shadow:none}
+.dock>.panel{position:relative;box-sizing:border-box;flex:none;max-width:100%;max-height:100%}.dock.measure>.panel{max-width:none}
 .ptitle{display:flow-root;font-size:var(--fs-lg);font-weight:bold;margin-bottom:var(--sp-3);color:var(--gold);letter-spacing:.05em}
 .panel>.ptitle{position:sticky;top:calc(-1*var(--pad));z-index:1;margin:calc(-1*var(--pad)) calc(-1*var(--pad)) var(--sp-3);padding:var(--pad) var(--pad) var(--sp-2);background:var(--iron-solid);border-bottom:1px solid var(--edge-dim)}
 .pclose{float:right;cursor:pointer;color:var(--ink-dim);font-weight:normal}.pclose:hover{color:var(--gold)}
@@ -142,8 +162,8 @@ canvas{display:block}
 .tpoints{float:right;font-size:var(--fs-md);font-weight:normal;color:var(--ink-dim);letter-spacing:0}.tpoints.ready{color:var(--gold)}
 .dhint{float:right;font-size:var(--fs-sm);font-weight:normal;color:var(--ink-dim)}
 .rgroup{margin:var(--sp-4) 0 var(--sp-2);padding-bottom:var(--sp-1);border-bottom:1px solid var(--edge);font-size:var(--fs-sm);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim)}.rgroup:first-child{margin-top:0}
-.invpanel{right:var(--gutter);width:268px}.charpanel{right:calc(268px + 2*var(--gutter));width:210px}
-.invpanel,.charpanel{--ptop:170px} /* clear of the minimap above */
+/* left to right in the dock: what a station or a shop opens (order 0), the lists that are read (skills, talents), then the sheet and the bag nearest the minimap */
+.invpanel{order:9;width:268px}.charpanel{order:8;width:210px}
 .invgold{color:var(--gold);margin:-3px 0 var(--sp-3)}
 .grid{display:grid;grid-template-columns:repeat(4,60px);gap:var(--sp-2)}
 .cell{position:relative;width:60px;height:60px;box-sizing:border-box;background:var(--iron-lift);border:2px solid var(--edge-dim);border-radius:var(--r);text-align:center;overflow:hidden;cursor:pointer}
@@ -153,6 +173,7 @@ canvas{display:block}
 .cell .qty{position:absolute;top:1px;left:3px;font-size:var(--fs-sm);font-weight:bold;color:var(--gold)}
 .equip{display:grid;grid-template-columns:repeat(3,60px);gap:var(--sp-3);justify-content:center;margin-bottom:var(--sp-4)} /* six slots, two rows of three: the stats under it stay in reach at 800x560 */
 .eqcell .eqlabel{position:absolute;top:1px;left:0;right:0;font-size:var(--fs-xs);opacity:.7}.eqcell .icon{line-height:56px}
+@media (max-height:760px){.charpanel{width:300px}.equip{grid-template-columns:repeat(6,44px);gap:var(--sp-2)}.equip .cell{width:44px;height:44px}.equip .eqcell .icon{font-size:var(--fs-xl);line-height:48px}} /* a short window: the six slots in one row, so the stats stay in reach */
 .srow{display:flex;justify-content:space-between;margin-top:var(--sp-2)}.sv{color:var(--gold)}
 .tip{position:fixed;display:none;z-index:10;max-width:220px;pointer-events:none}
 .tname{font-weight:bold;font-size:var(--fs-lg)}.tslot{opacity:.6;font-size:var(--fs-sm)}.tstat{color:var(--moss);margin-top:var(--sp-1)}.tdesc{opacity:.7;margin-top:var(--sp-2);font-style:italic}.tcmp{margin-top:var(--sp-2)}.tcmp.bad{color:var(--bad)}.tcmp.good{color:var(--moss)}.thint{margin-top:var(--sp-2);opacity:.5;font-size:var(--fs-sm)}
@@ -160,18 +181,20 @@ canvas{display:block}
 .ctxmenu{position:fixed;display:none;z-index:11;padding:0;pointer-events:auto}
 .mrow{padding:var(--sp-2) 14px;cursor:pointer}.mrow:hover{background:var(--iron-hover)}.mrow.bad{color:var(--bad)}
 .mhead{padding:var(--sp-3) 14px;font-size:var(--fs-sm);color:var(--ink-dim);border-bottom:1px solid var(--edge)}
-.skillspanel{--ptop:330px;left:var(--gutter);width:220px}
+.skillspanel{order:5;width:220px}
+@media (max-height:760px){.skillspanel{width:440px}.skillgrid{display:grid;grid-template-columns:1fr 1fr;column-gap:var(--sp-6)}} /* a short window: the list in two columns, not a scroll */
+@media (max-height:640px){.skillspanel{width:620px}.skillgrid{grid-template-columns:repeat(3,minmax(0,1fr))}.skillgrid .skillrow{margin-bottom:var(--sp-2)}} /* a shorter one: three (the dock is 628 wide at 800) */
 .skillrow{margin-bottom:7px}.skillhead{display:flex;justify-content:space-between}.skilllvl{color:var(--gold);font-weight:bold}
 .skillbar{--bar-h:12px;--fill:var(--fill-skill)}.skillbar.thin{--bar-h:5px}
 .skilltotal{margin-bottom:var(--sp-4);padding-bottom:var(--sp-3);border-bottom:1px solid var(--edge-dim)}.skilltotal .skillname{font-weight:bold}.skilllvl.done{color:var(--moss)}
 .skillnote{margin-top:var(--sp-2);font-size:var(--fs-sm);color:var(--ink-dim)}
-.talentpanel{--ptop:76px;--pbottom:250px;left:50%;transform:translateX(-50%);width:760px}
-.ttrees{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-4)}
+.talentpanel{order:5;width:760px}
+.ttrees{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-4)}
 .ttree{background:var(--iron-glass);border:1px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-3)}
 .tthead{display:flex;justify-content:space-between;font-weight:bold}.ttspent{color:var(--gold)}
 .ttblurb{font-size:var(--fs-sm);opacity:.6;margin:var(--sp-1) 0 var(--sp-3);min-height:26px}
 /* a tier is a row of two, the capstone a row of one; the mark between rows is what that tier costs to open */
-.ttier{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-2);margin-bottom:5px}.ttier.cap{grid-template-columns:1fr}
+.ttier{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2);margin-bottom:5px}.ttier.cap{grid-template-columns:1fr}
 .ttiermark{font-size:var(--fs-xs);text-align:center;color:var(--ink-dim);opacity:.55;letter-spacing:.06em;margin-bottom:var(--sp-1)}
 .talent{position:relative;background:var(--iron-lift);border:2px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-2) var(--sp-3);cursor:pointer}
 .talent:hover{border-color:var(--edge-hi)}
@@ -179,12 +202,12 @@ canvas{display:block}
 .talent.shut{opacity:.45;cursor:default}.talent.shut:hover{border-color:var(--edge-dim)}
 .talent.taken.shut{opacity:.8}
 .tlname{font-size:var(--fs-sm);font-weight:bold;padding-right:26px;min-height:26px}.tlrank{position:absolute;top:var(--sp-2);right:var(--sp-3);font-size:var(--fs-sm);color:var(--gold)}
+@media (max-width:820px){.talent{padding:var(--sp-2)}.tlname{padding-right:0;min-height:0}.tlrank{position:static;margin-top:var(--sp-1)}} /* the panel is under 660 wide: a name and its rank no longer fit on one line */
 .tlreq{font-size:var(--fs-xs);color:var(--ink-dim);opacity:.7}.tlreq.bad{color:var(--bad);opacity:1}
 .treset{text-align:center;margin-top:var(--sp-4)}
-.shoppanel{--ptop:100px;--pbottom:250px;--chrome-edge:var(--gold-dim);left:286px;width:290px}.shopgold{color:var(--gold);margin-bottom:var(--sp-1)}.shophint{font-size:var(--fs-sm);opacity:.6;margin-bottom:var(--sp-3)}
-/* centred, but never left of the quest tracker's column (as the dialogue is) */
-.forgepanel{--pbottom:250px;--chrome-edge:var(--ember-dim);left:max(286px,calc(50% - 175px));width:330px}
-.bookpanel{--pbottom:250px;left:286px;width:300px}
+.shoppanel{--chrome-edge:var(--gold-dim);width:290px}.shopgold{color:var(--gold);margin-bottom:var(--sp-1)}.shophint{font-size:var(--fs-sm);opacity:.6;margin-bottom:var(--sp-3)}
+.forgepanel{--chrome-edge:var(--ember-dim);width:330px}
+.bookpanel{width:300px}
 .bookpanel .recipe[draggable="true"]{cursor:grab}
 .recipe{background:var(--iron-lift);border:1px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-3)}.recipe.locked{opacity:.8}
 .rhead{display:flex;justify-content:space-between}.rname{font-weight:bold}.rreq{color:var(--moss)}.rreq.bad,.rin.bad,.psub.bad{color:var(--bad)}
@@ -194,7 +217,7 @@ canvas{display:block}
 /* ---- the admin / QA panel (admin-ui.ts): a dev-build panel, so it takes the panel chrome and adds only the form rows the others have no use for ---- */
 /* its button sits in the menu bar's row, in the corner opposite it: the bottom-left is clear of the action bar above and of the XP bar, which starts at 12% */
 .devbar{position:absolute;left:var(--gutter);bottom:var(--sp-2);pointer-events:auto}
-.adminpanel{--ptop:76px;--pbottom:250px;left:286px;width:300px}
+.adminpanel{order:1;width:300px}
 .afield{display:flex;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-3)}
 .afield input,.afield select{flex:1;min-width:0;box-sizing:border-box;padding:var(--sp-2) var(--sp-3);background:var(--iron-lift);border:1px solid var(--edge);border-radius:var(--r);font-family:var(--serif);font-size:var(--fs-md);color:var(--ink)}
 .afield input[type=number]{flex:0 0 68px}
@@ -210,19 +233,22 @@ canvas{display:block}
 .castbar{--bar-h:18px;--fill:var(--fill-cast);position:absolute;left:50%;bottom:110px;width:240px;margin-left:-120px;margin-top:0;display:none}.castbar .fill{width:0}.castbar.ride{--fill:var(--fill-ride)}
 
 /* ---- message log, quest tracker, dialogue ---- */
-/* above the action bar's row and left of the player frame (248 wide with its padding, ending 8px short of the screen's middle): the lines are clickable, so a log over a slot would eat the click. The width gives way as the window narrows. */
-.msglog{position:absolute;left:var(--gutter);bottom:100px;width:min(300px,calc(50vw - 280px));max-height:150px;pointer-events:auto;padding:var(--sp-2) var(--sp-3);background:var(--iron-glass);border-radius:var(--r)}
+/* The rail is the left column, from the top gutter to above the swing bar (the log's lines are clickable, so a log over a slot would eat the click). It is as wide as the
+   window allows (--rail-w: 250 at 800, 300 from 900), and the unit frames give way to it, not the other way round. The tracker is as tall as its lines, the log takes the
+   rest, up to 150px, and scrolls in it: a keeper's four-line sentence is no longer squeezed into a 120px column (HOM-108). */
+.rail{position:absolute;left:var(--gutter);top:var(--gutter);bottom:var(--rail-bottom);width:var(--rail-w);display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;pointer-events:none}
+.hud.docked .rail{display:none} /* the dock needs the room: dock.ts sets .docked only while an open window cannot fit beside the rail */
+.msglog{order:1;flex:0 1 auto;min-height:0;box-sizing:border-box;width:100%;max-height:150px;pointer-events:auto;padding:var(--sp-2) var(--sp-3);background:var(--iron-glass);border-radius:var(--r)}
 .msglog:empty{display:none}
 .logline{margin-top:var(--sp-1);color:var(--ink)}.log-xp{color:var(--violet)}.log-loot{color:var(--moss)}.log-drop{color:var(--gold-hi)}.log-kill{color:var(--ink-dim)}.log-lvl{color:var(--gold);font-weight:bold}.log-quest{color:var(--arcane);font-weight:bold}.log-bad{color:var(--bad)}
-.tracker{position:absolute;top:var(--gutter);left:var(--gutter);width:238px;padding:var(--sp-4) 10px;border-left:3px solid var(--arcane)}
+.tracker{order:0;flex:none;box-sizing:border-box;width:min(100%,264px);padding:var(--sp-4) 10px;border-left:3px solid var(--arcane)}
 .tracker.ready{border-left-color:var(--gold);animation:readypulse 1.4s ease-in-out infinite}
 @keyframes readypulse{50%{box-shadow:inset 0 0 0 1px #000,0 0 12px #b8601a}}
 .qtitle{font-weight:bold;color:var(--gold);margin-bottom:5px}.qline{margin-top:var(--sp-2)}.qline.done{color:var(--moss);opacity:.8}
 .qnav{display:none;align-items:center;gap:var(--sp-4);margin-top:var(--sp-4);padding-top:var(--sp-3);border-top:1px solid var(--edge);color:var(--arcane)}
 .qarrow{display:inline-block;font-size:var(--fs-xl);color:var(--gold);transition:transform .1s}
-/* Above the unit frames, centred on the screen -- but never left of the quest tracker's column: in a short window the panel
-   rides up level with the tracker, and in a narrow one its centred left edge would otherwise run under it. */
-.panel.dialogue{box-sizing:border-box;left:max(286px,calc(50% - 269px));top:auto;bottom:250px;transform:none;width:538px;max-width:calc(100vw - 298px)}
+/* A dialogue is a window in the dock like any other, but it sits on the dock's floor (just above the unit frames) and in the middle of what room it has. */
+.panel.dialogue{width:538px;align-self:flex-end;margin-inline:auto}
 .dline{margin-bottom:var(--sp-4);font-size:var(--fs-lg);line-height:1.4}
 .dopt{color:var(--gold-hi)}.dopt.treset,.dopt.helpok{text-align:center}
 
@@ -239,7 +265,7 @@ canvas{display:block}
 .questbanner{top:20%;color:var(--arcane);text-shadow:0 0 22px #1a8fc0,0 3px 4px #000}.questbanner.show{animation:lvl 3.2s ease-out}
 
 /* ---- the world map screen and the flight ride (flight-ui.ts): the map scene is drawn in place of the game, so the game's own overlays step aside ---- */
-.hud.mapmode .tracker,.hud.mapmode .actionbar,.hud.mapmode .swing,.hud.mapmode .frame.target,.hud.mapmode .msglog,.hud.mapmode .panel,.hud.mapmode .menubar,.hud.mapmode .devbar,.hud.mapmode .xp,.hud.mapmode .minimap{display:none!important}
+.hud.mapmode .rail,.hud.mapmode .dock,.hud.mapmode .actionbar,.hud.mapmode .swing,.hud.mapmode .frame.target,.hud.mapmode .panel,.hud.mapmode .menubar,.hud.mapmode .devbar,.hud.mapmode .xp,.hud.mapmode .minimap{display:none!important}
 .maplayer,.ridelayer{position:absolute;inset:0;pointer-events:none}
 .maptitle,.ridetitle{position:absolute;left:0;right:0;text-align:center;font-size:var(--fs-3xl);color:var(--gold);text-shadow:0 0 14px #000,0 2px 3px #000}
 .maptitle{top:22px;letter-spacing:.2em}.ridetitle{top:40px;letter-spacing:.12em}

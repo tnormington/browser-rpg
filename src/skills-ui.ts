@@ -20,8 +20,9 @@ export class SkillsUi {
     const head = el(total, 'skillhead');
     el(head, 'skillname', 'Total level');
     this.total = { sum: el(head, 'skilllvl'), fill: el(el(total, 'bar thin skillbar'), 'fill'), note: el(total, 'skillnote') };
+    const grid = el(this.panel, 'skillgrid'); // one column; two where the window is short, so a list of skills never scrolls
     for (const id of SKILL_IDS) {
-      const row = el(this.panel, 'skillrow');
+      const row = el(grid, 'skillrow');
       const head = el(row, 'skillhead');
       el(head, 'skillname', `${SKILLS[id].icon} ${SKILLS[id].name}`);
       const lvl = el(head, 'skilllvl');
@@ -31,6 +32,7 @@ export class SkillsUi {
     this.panel.style.display = 'none';
   }
 
+  get dockEl() { return this.panel; }
   get isOpen() { return this.panel.style.display !== 'none'; }
   setOpen(on: boolean) { this.panel.style.display = on ? 'block' : 'none'; }
   toggle() { this.setOpen(!this.isOpen); }

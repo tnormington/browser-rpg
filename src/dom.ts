@@ -6,10 +6,16 @@ export interface HudWindow {
   setOpen(on: boolean): void;
 }
 
-/** A HudWindow backed by nothing but a panel's display. */
-export const panelWindow = (panel: HTMLElement): HudWindow => ({
+/** A HudWindow that lives in the dock (dock.ts): `dockEl` is the panel the dock measures and lays out. */
+export interface DockWindow extends HudWindow {
+  readonly dockEl: HTMLElement;
+}
+
+/** A DockWindow backed by nothing but a panel's display. */
+export const panelWindow = (panel: HTMLElement): DockWindow => ({
   get isOpen() { return panel.style.display !== 'none'; },
   setOpen(on: boolean) { panel.style.display = on ? 'block' : 'none'; },
+  dockEl: panel,
 });
 
 export function el(parent: HTMLElement, cls: string, text = ''): HTMLDivElement {

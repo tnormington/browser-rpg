@@ -7,7 +7,7 @@ import { INVENTORY_SIZE, InvAction, ItemStack } from './sim/inventory';
 import { EQUIP_SLOTS, EquipSlot, ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { reductionOf, swingInterval } from './sim/combat';
 import { nearVendor } from './sim/shop';
-import { HudWindow, dragData, el, panelWindow, parseDrag } from './dom';
+import { DockWindow, dragData, el, panelWindow, parseDrag } from './dom';
 
 const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖', hands: '🧤', feet: '🥾' };
 const SLOT_LABEL: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs', hands: 'Hands', feet: 'Feet' };
@@ -26,7 +26,7 @@ export class InventoryUi {
   private menu: HTMLElement;
   private sig = '';
   /** The two panels as HUD windows, so Esc can shut them like any other. */
-  readonly panels: Record<'inv' | 'char', HudWindow>;
+  readonly panels: Record<'inv' | 'char', DockWindow>;
 
   constructor(root: HTMLElement, private send: (a: InvAction) => void, private sell: (slot: number, qty: number) => void) {
     this.invPanel = el(root, 'panel invpanel');

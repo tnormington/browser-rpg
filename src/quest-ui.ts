@@ -23,15 +23,16 @@ export class QuestUi {
   private trackerSig = '';
   private replyCloses = false; // the reply followed an accepted quest step: Okay ends the conversation
 
-  constructor(root: HTMLElement, private advance: (what: boolean | 'road') => void) {
-    this.tracker = el(root, 'chrome tracker');
+  /** The tracker goes in the rail (with the message log, which it can never overlap there); the dialogue is a window in the dock. */
+  constructor(rail: HTMLElement, dock: HTMLElement, private advance: (what: boolean | 'road') => void) {
+    this.tracker = el(rail, 'chrome tracker');
     this.title = el(this.tracker, 'qtitle');
     this.lines = el(this.tracker, 'qlines');
     this.nav = el(this.tracker, 'qnav');
     this.arrow = el(this.nav, 'qarrow', '▲');
     this.navText = el(this.nav, 'qnavtext');
 
-    this.panel = el(root, 'panel dialogue');
+    this.panel = el(dock, 'panel dialogue');
     this.titleEl = el(this.panel, 'ptitle');
     el(this.titleEl, 'dhint', 'Esc to close');
     this.text = el(this.panel, 'dtext');
@@ -39,6 +40,7 @@ export class QuestUi {
     this.panel.style.display = 'none';
   }
 
+  get dockEl() { return this.panel; }
   get isOpen() { return this.open; }
 
   setOpen(on: boolean, s?: GameState, who = 'hale') {

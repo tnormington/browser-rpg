@@ -52,6 +52,7 @@ export class TalentsUi {
     this.panel.style.display = 'none';
   }
 
+  get dockEl() { return this.panel; }
   get isOpen() { return this.panel.style.display !== 'none'; }
   setOpen(on: boolean) { this.panel.style.display = on ? 'block' : 'none'; this.sig = ''; }
   toggle() { this.setOpen(!this.isOpen); }

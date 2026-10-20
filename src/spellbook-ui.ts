@@ -23,6 +23,7 @@ export class SpellbookUi implements HudWindow {
     this.panel.style.display = 'none';
   }
 
+  get dockEl() { return this.panel; }
   get isOpen() { return this.win.isOpen; }
   setOpen(on: boolean) { this.win.setOpen(on); this.sig = ''; }
   toggle() { this.setOpen(!this.isOpen); }

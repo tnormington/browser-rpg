@@ -59,6 +59,15 @@ for (const [width, height] of SIZES) {
   await shot('8-shop-ctxmenu'); await closeAll();
   await page.evaluate(() => { const d = window.__debug; d.sim.quest.stage = 'forge'; d.sim.player.x = 5.5; d.sim.player.z = 2; d.step(); d.step(); });
   await key('KeyV'); await shot('9-dialogue'); await closeAll();
+  // the worst case the HUD holds at once (HOM-108): the tallest tracker, a full log, both unit frames with the player's buffs and the food wait up
+  await page.evaluate(() => {
+    const d = window.__debug, s = d.sim, p = s.player;
+    p.buffs = [{ id: 'well_fed', left: 600 }, { id: 'guard', left: 3 }]; p.foodCd = 30; s.targetId = s.enemies[0].id;
+    const log = document.querySelector('.msglog');
+    for (let i = 0; i < 12; i++) { const l = document.createElement('div'); l.className = 'logline log-quest'; l.textContent = 'Cairnwarden Ysolt: "The Cairn Hold is not for anyone under combat level 29. What sleeps in it has waited this long."'; log.append(l); }
+    log.scrollTop = log.scrollHeight; d.step();
+  });
+  await shot('10-worst-case');
   await page.close();
 }
 await browser.close(); await server.close();

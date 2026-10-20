@@ -40,13 +40,13 @@ export class AdminUi {
   /** Set when the panel opens: the level box takes the level the player actually has, once. */
   private fresh = false;
 
-  constructor(root: HTMLElement, private send: (a: AdminAction) => void) {
+  constructor(root: HTMLElement, dock: HTMLElement, private send: (a: AdminAction) => void) {
     // its own corner, opposite the game's menu bar: the menu bar has no room left before the XP bar, and this button is not the game's
     const open = el(el(root, 'devbar'), 'btn mbtn', 'Admin');
     open.title = 'QA tools: set your level, teleport, add items  (the ` key)';
     open.addEventListener('click', () => this.toggle());
 
-    this.panel = el(root, 'panel adminpanel');
+    this.panel = el(dock, 'panel adminpanel');
     titleRow(this.panel, 'Admin  (`)', () => this.setOpen(false));
     this.now = el(this.panel, 'anow');
 
@@ -75,6 +75,7 @@ export class AdminUi {
     this.panel.style.display = 'none';
   }
 
+  get dockEl() { return this.panel; }
   get isOpen() { return this.open; }
 
   setOpen(on: boolean) {
