@@ -9,6 +9,11 @@
 // loop (real KeyboardEvents and MouseEvents on the page, rAF out) and measures them in sim ticks, not wall time.
 //   node bench/combat.mjs --mode ttk  --types marsh_hog,road_wolf --n 20 [--level N] [--gear base|adamant|marrow] [--speed 3] [--port 4175] [--tactics] --skip-build
 //   node bench/combat.mjs --mode loop --types marsh_hog --n 12 [--health 0.8]
+// camp / ride / clusters (HOM-88): spawns within --link units (13) of each other form a camp; --size 3 keeps the camps of exactly three.
+//   node bench/combat.mjs --mode clusters [--size 3 --link 13]   list the camps and their members without fighting
+//   node bench/combat.mjs --mode camp --n 5 [--gearlo base --gearhi adamant,marrow --standoff 13 --tactics]   a whole camp at once from 13 u off: deaths, % HP taken, clear time
+//   node bench/combat.mjs --mode ride --n 3   mounted 45 u short of a camp, W held to a point 45 past it, dead centre and 12 u off-line: HP lost, first hit, thrown, reached the far side
+// Elites (toll_captain, barnacle_ogre, bogfather) and rares (old_grey, gutterhook, mother_mire) need no new mode: --mode ttk --types toll_captain,old_grey --n 10.
 // Rotation: auto-attack, Pummel on a wind-up, Crushing Blow > Serrated Throw > Strike. --tactics adds Second Wind below 45 % HP and Cleave against two adjacent enemies.
 // Not modelled: stepping out of a slam / ground circle, food, potions, talents.
 // ttk: isolated 1v1 (everything else in the world pinned dead), player placed 7 units off; per fight: first swing -> kill, damage taken, % of max HP.
@@ -196,8 +201,73 @@ async function botInPage(cfg) {
     return fights;
   };
 
+  // HOM-88: camps of three, found by clustering the spawn list (link distance 25), fought together and ridden through
+  const clusters = size => {
+    const es = s.enemies, grp = es.map((_, i) => i), find = i => (grp[i] === i ? i : (grp[i] = find(grp[i])));
+    es.forEach((a, i) => es.forEach((b, j) => { if (i < j && Math.hypot(a.spawnX - b.spawnX, a.spawnZ - b.spawnZ) <= cfg.link) grp[find(i)] = find(j); }));
+    const by = {}; es.forEach((e, i) => (by[find(i)] ??= []).push(e));
+    return Object.values(by).filter(g => g.length === size).map(g => ({ members: g, cx: g.reduce((a, e) => a + e.spawnX, 0) / g.length, cz: g.reduce((a, e) => a + e.spawnZ, 0) / g.length }));
+  };
+  const nameOf = c => c.members.map(e => e.type).join('+') + `@${c.cx.toFixed(0)},${c.cz.toFixed(0)}`;
+  const clearSpot = (x, z, reg) => d.world.regionAt(x, z) === reg && !(reg.obstacles ?? []).some(o => Math.hypot(o.x - x, o.z - z) < o.r + 1.5);
+  const clearLine = (a, b, reg) => { const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 2); for (let i = 0; i <= n; i++) if (!clearSpot(a.x + (b.x - a.x) * i / n, a.z + (b.z - a.z) * i / n, reg)) return false; return true; };
+
+  const campFight = async (c, level, gear) => {
+    setup(level, gear); c.members.forEach(resetEnemy); pin(o => c.members.includes(o));
+    const reg = d.world.regionAt(c.cx, c.cz), R = cfg.standoff;
+    const spot = [0, 1, 2, 3, 4, 5, 6, 7].map(k => ({ x: c.cx + Math.cos(k * Math.PI / 4) * R, z: c.cz + Math.sin(k * Math.PI / 4) * R })).find(q => clearSpot(q.x, q.z, reg));
+    if (!spot) return { name: nameOf(c), error: 'no stand-off point' };
+    p.x = spot.x; p.z = spot.z; p.facing = Math.atan2(c.cx - p.x, c.cz - p.z);
+    newRec(); const start = s.tick; let minHp = p.hp;
+    const alive = () => c.members.filter(e => e.state !== 'dead');
+    while (alive().length && !p.dead && s.tick - start < 150 * 30) {
+      const near = alive().sort((a, b) => dist(a, p) - dist(b, p))[0]; fightStep(near); minHp = Math.min(minHp, p.hp); await frame();
+    }
+    hold('KeyW', false);
+    const left = alive().length;
+    const r = { name: nameOf(c), level, gear, tactics: !!cfg.tactics, died: p.dead, killed: c.members.length - left, clear: left ? null : (Math.max(...rec.kills.map(k => k.tick)) - start) / 30, secs: (s.tick - start) / 30, takenPct: 100 * rec.taken / p.maxHp, minHpPct: 100 * minHp / p.maxHp };
+    for (let i = 0; i < 20; i++) await frame();
+    return r;
+  };
+
+  // ride: mounted 45 units short of the camp, W held toward a point 45 past it (straight through the middle, or 12 to the side); keeps running on foot if thrown
+  const rideTrial = async (c, level, gear, offset) => {
+    setup(level, gear); c.members.forEach(resetEnemy); pin(o => c.members.includes(o));
+    p.mounts = ['courser']; p.mounted = true;
+    const reg = d.world.regionAt(c.cx, c.cz); let line = null;
+    for (const L of [45, 35, 25]) for (let k = 0; k < 8 && !line; k++) {
+      const ux = Math.cos(k * Math.PI / 4), uz = Math.sin(k * Math.PI / 4), px = -uz, pz = ux;
+      const a = { x: c.cx - ux * L + px * offset, z: c.cz - uz * L + pz * offset }, b = { x: c.cx + ux * L + px * offset, z: c.cz + uz * L + pz * offset };
+      if (clearLine(a, b, reg)) line = { a, b, L };
+    }
+    if (!line) return { name: nameOf(c), offset, error: 'no clear line through the region' };
+    p.x = line.a.x; p.z = line.a.z; p.facing = Math.atan2(line.b.x - p.x, line.b.z - p.z);
+    newRec(); const start = s.tick; let firstHit = null, thrown = null;
+    while (!p.dead && dist(p, line.b) > 3 && s.tick - start < 90 * 30) {
+      faceYaw(line.b.x, line.b.z); hold('KeyW', true);
+      if (firstHit === null && rec.taken > 0) firstHit = { t: +((s.tick - start) / 30).toFixed(1), toGoal: +dist(p, line.b).toFixed(1), toCamp: +Math.hypot(p.x - c.cx, p.z - c.cz).toFixed(1) };
+      if (thrown === null && !p.mounted) thrown = +((s.tick - start) / 30).toFixed(1);
+      await frame();
+    }
+    hold('KeyW', false);
+    const chasers = c.members.filter(e => e.state === 'chase');
+    const r = { name: nameOf(c), level, gear, offset, line: line.L, reached: !p.dead && dist(p, line.b) <= 3, died: p.dead, secs: (s.tick - start) / 30, takenPct: 100 * rec.taken / p.maxHp, firstHit, thrownAt: thrown, stillMounted: p.mounted, chasersAtGoal: chasers.length, chaserGap: chasers.map(e => +dist(e, p).toFixed(1)) };
+    for (let i = 0; i < 20; i++) await frame();
+    return r;
+  };
+
   const out = [];
-  if (cfg.mode === 'ttk') {
+  if (cfg.mode === 'camp' || cfg.mode === 'ride') {
+    for (const c of clusters(cfg.size)) {
+      const level = Math.max(...c.members.map(e => cfg.levels[e.type] ?? 1));
+      for (const gear of level >= 18 ? cfg.gearHi : cfg.gearLo) for (let i = 0; i < cfg.n; i++) {
+        if (cfg.mode === 'camp') out.push(await campFight(c, level, gear));
+        else for (const off of [0, 12]) out.push(await rideTrial(c, level, gear, off));
+      }
+    }
+  } else if (cfg.mode === 'clusters') {
+    for (const c of clusters(cfg.size)) out.push({ name: nameOf(c), members: c.members.map(e => [e.id, e.type]) });
+  } else if (cfg.mode === 'ttk') {
     for (const run of cfg.runs) {
       const spawns = s.enemies.filter(e => e.type === run.type);
       for (let i = 0; i < run.n; i++) out.push(await trial(spawns[i % spawns.length], run.level, run.gear));
@@ -216,8 +286,14 @@ async function runBot(page) {
   const runs = types.map(type => ({ type, n, gear, level: opt('level', '') ? Number(opt('level', '')) : levels[type] }));
   page.on('console', m => { if (m.type() === 'error') console.error('page:', m.text()); });
   const t0 = Date.now();
-  const res = await page.evaluate(botInPage, { mode, runs, thr, tactics: process.argv.includes('--tactics') });
+  const res = await page.evaluate(botInPage, { mode, runs, thr, tactics: process.argv.includes('--tactics'), n, levels, standoff: Number(opt('standoff', 13)), link: Number(opt('link', 13)), size: Number(opt('size', 3)), gearLo: opt('gearlo', 'base').split(','), gearHi: opt('gearhi', 'adamant,marrow').split(',') });
   const wall = ((Date.now() - t0) / 1000).toFixed(0);
+  if (mode === 'camp' || mode === 'ride' || mode === 'clusters') {
+    writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify(res, null, 1));
+    for (const r of res) console.log(JSON.stringify(r));
+    console.log(`wall ${wall}s at speed ${speed}`);
+    return;
+  }
   writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify({ mode, gear, thr, speed, n, tactics: process.argv.includes('--tactics'), runs, res }, null, 1));
   const stat = a => { a = a.filter(x => x != null); if (!a.length) return { n: 0 }; const m = a.reduce((x, y) => x + y, 0) / a.length, sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, a.length - 1)); return { n: a.length, mean: +m.toFixed(2), sd: +sd.toFixed(2), min: +Math.min(...a).toFixed(1), max: +Math.max(...a).toFixed(1) }; };
   if (mode === 'ttk') {
@@ -294,3 +370,5 @@ console.log('links:', links.map(l => `${l.t.toFixed(0)}ms:${l.ms.toFixed(1)}`).j
 const tr = JSON.parse((await import('node:fs')).readFileSync(join(shots, `trace-${tag}.json`), 'utf8'));
 console.log('in-game trace:', tr.meta.frames, 'frames,', tr.meta.bufferSeconds, 's, gpuTimer:', tr.meta.gpuTimer, ', heap:', tr.meta.jsHeap, ',', tr.meta.renderer);
 console.table(tr.spikes.slice(0, 6).map(x => ({ dt: x.dt, work: x.jsWorkMs, sim: x.simMs, draw: x.drawMs, gpu: x.gpuMs, link: x.linkMsInFrame, heapD: x.heapDeltaMB, progD: x.programsDelta, events: x.events.join(','), longTask: x.longTasks.map(k => k.ms).join('/') })));
+
+
