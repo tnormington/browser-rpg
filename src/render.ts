@@ -26,6 +26,7 @@ import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
 import { WorldView, flightMasterFigure, headstones, Kit } from './world-view';
 import { WorldMap, mapPosition } from './world-map';
 import { landingSpot } from './sim/flight';
+import { bakeUV, hasSurface, surfaceFor } from './surface';
 
 /**
  * Every colour in the scene, in one place. Desaturated, cold and narrow: the world sits in a tight dark band so that
@@ -56,6 +57,7 @@ type Mat = THREE.MeshStandardMaterial;
 /** Roughness / metalness per material class. */
 const MATERIALS = {
   ground: [0.95, 0], dirt: [0.98, 0], foliage: [0.85, 0], wood: [0.8, 0], rock: [0.9, 0], stone: [0.85, 0],
+  plaster: [0.92, 0], roof: [0.88, 0],
   metal: [0.4, 0.9], ore: [0.55, 0.6], coal: [0.3, 0.1], cloth: [0.9, 0], skin: [0.6, 0], hide: [0.92, 0],
   gem: [0.3, 0.2], glow: [0.6, 0], beacon: [0.6, 0], dark: [1, 0],
 } as const;
@@ -67,13 +69,16 @@ const FACETED = new Set<MatClass>(['rock', 'stone', 'foliage', 'ore', 'coal', 'g
 const material = (color: number, cls: MatClass): Mat => {
   const [roughness, metalness] = MATERIALS[cls];
   const m = new THREE.MeshStandardMaterial({ color, roughness, metalness, flatShading: FACETED.has(cls) });
+  // the class's shared detail and normal maps (surface.ts): flat colour, with relief for the key light to catch
+  const s = surfaceFor(cls);
+  if (s) { m.map = s.map; m.normalMap = s.normalMap; }
   // glow: a lit emitter, self-lit and capped under the bloom threshold (glow.ts). beacon: a thin marker meant to cross it and bloom.
   if (cls === 'glow' || cls === 'beacon') { m.emissive.setHex(color); m.emissiveIntensity = cls === 'beacon' ? BEACON_INTENSITY : cappedIntensity(color, BEACON_INTENSITY); }
   if (cls === 'glow') m.color.multiplyScalar(EMITTER_DIFFUSE); // an emitter shows its own light, not the room's: a light parked beside it would otherwise wash it to white
   return m;
 };
 const mesh = (g: THREE.BufferGeometry, color: number, cls: MatClass, shadow: 'cast' | 'receive' | 'both' | 'none' = 'both') => {
-  const m = new THREE.Mesh(g, material(color, cls));
+  const m = new THREE.Mesh(hasSurface(cls) ? bakeUV(g) : g, material(color, cls));
   m.castShadow = shadow === 'cast' || shadow === 'both';
   m.receiveShadow = shadow === 'receive' || shadow === 'both';
   return m;
@@ -588,10 +593,10 @@ export class Renderer {
       const r = this.jitter(this.caveWallPts.length + 40);
       this.caveWallPts.push({ x: p.x + (alongX ? Math.sign(p.x - cx) * 0.5 : 0), z: p.z + (alongX ? 0 : Math.sign(p.z - cz) * 0.5), r, w: 3.4 + r * 1.4 });
     }
-    this.buildCaveWalls(new THREE.DodecahedronGeometry(1), material(P.caveWall, 'rock'), 2);
+    this.buildCaveWalls(bakeUV(new THREE.DodecahedronGeometry(1)), material(P.caveWall, 'rock'), 2);
 
     // standing stones: one instanced draw
-    const stones = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.75, 1.05, 1, 6), material(P.caveWall, 'rock'), CAVE_PILLARS.length);
+    const stones = new THREE.InstancedMesh(bakeUV(new THREE.CylinderGeometry(0.75, 1.05, 1, 6)), material(P.caveWall, 'rock'), CAVE_PILLARS.length);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(), pos = new THREE.Vector3();
     CAVE_PILLARS.forEach((o, i) => {
       const h = PILLAR_HEIGHT * (0.85 + this.jitter(i + 7) * 0.3);

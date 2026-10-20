@@ -14,6 +14,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { HIGHMOOR, LANDMARKS, REGIONS, Gate, Obstacle, Rect, Region, SALTMARROW, SPIRE, THORNWICK } from './sim/world';
 import { PROPS, PropId } from './props';
 import { mergeParts } from './creatures';
+import { bakeUV } from './surface';
 
 /** The few things this file needs from the renderer: its mesh factory (materials and shadows stay in render.ts) and its palette. */
 export interface Kit {
@@ -597,9 +598,9 @@ export class WorldView {
     };
     one(bag.rock, P.slate, 'rock');
     one(bag.bark, P.bark, 'wood');
-    one(bag.wall, pal.wall, 'stone');
+    one(bag.wall, pal.wall, 'plaster');   // limewash and render, not cut stone: the footing below it is what is coursed
     one(bag.stone, pal.foot, 'stone');
-    one(bag.roof, pal.roof, 'stone');
+    one(bag.roof, pal.roof, 'roof');
     one(bag.hull, HULL, 'stone');
     one(bag.wood, TIMBER, 'wood');
     one(bag.sign, P.gold, 'cloth', 'cast');
@@ -639,7 +640,7 @@ export class WorldView {
     for (let x = rect.x0; x <= rect.x1 + 1e-6; x += 4) { if (!long || north) edge(x, rect.z0); if (!long || south) edge(x, rect.z1); }
     for (let z = rect.z0; z <= rect.z1 + 1e-6; z += 4) { if (long || west) edge(rect.x0, z); if (long || east) edge(rect.x1, z); }
     if (!pts.length) return;
-    const im = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1.6), this.kit.mesh(new THREE.BufferGeometry(), this.kit.P.boulder, 'rock').material, pts.length);
+    const im = new THREE.InstancedMesh(bakeUV(new THREE.DodecahedronGeometry(1.6)), this.kit.mesh(new THREE.BufferGeometry(), this.kit.P.boulder, 'rock').material, pts.length);
     pts.forEach((p, i) => { const k = hash(i * 7 + p.x), s = 0.8 + k * 0.45; im.setMatrixAt(i, M.compose(V.set(p.x, 0.8 * s, p.z), Q.setFromAxisAngle(UP, k * 40), S.set(s, s, s))); });
     im.castShadow = im.receiveShadow = true;
     im.matrixAutoUpdate = false;
