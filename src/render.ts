@@ -17,6 +17,7 @@ import { Animator } from './anim';
 import { SILHOUETTES, Silhouette, mergeParts } from './creatures';
 import { PROPS, PropId } from './props';
 import { PlayerGear } from './gear';
+import { MountRig } from './mount';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
 import { WorldView, flightMasterFigure, headstones, Kit } from './world-view';
@@ -267,6 +268,8 @@ export class Renderer {
   private npcGroup!: THREE.Group;
   private npcAnim?: Animator;
   private playerAnim?: Animator;
+  private mount?: MountRig;
+  private mountWanted = false;
   private gear?: PlayerGear;
   private playerWasDead = false;
   /** Resolves once every model slot has either swapped in or failed (and kept its primitive). Models stream in; the first frame never waits. */
@@ -842,6 +845,31 @@ export class Renderer {
     this.hide(this.player);
     this.player.add(inst.root);
     this.playerAnim = new Animator(inst.root, inst.clips, SLOTS.player.anim);
+  }
+
+  /**
+   * Put the player on the first mount (or take him off). The horse loads the first time it is asked for; until it has, he stays
+   * on foot. `speed` is the mount's travel speed in world units per second, which sets the gait's playback rate.
+   */
+  setMounted(on: boolean, speed = 10) {
+    this.mountWanted = on;
+    if (!on) {
+      if (this.mount) this.mount.root.visible = false;
+      this.playerAnim?.ride(null);
+      return;
+    }
+    const seat = (rig: MountRig) => {
+      if (!this.mountWanted || !this.playerAnim) return;
+      rig.root.visible = true;
+      this.playerAnim.ride(rig.seat);
+    };
+    if (this.mount) return seat(this.mount);
+    loadSlot('horse').then(p => {
+      if (this.mount) return;
+      this.mount = new MountRig(p, speed);
+      this.player.add(this.mount.root);
+      seat(this.mount);
+    }).catch(err => console.warn('model slot "horse" skipped, the rider stays on foot:', err));
   }
 
   private dressNpc(p: Prepared) {
@@ -1466,6 +1494,7 @@ export class Renderer {
     if (pa) {
       if (pl.dead !== this.playerWasDead) { if (pl.dead) pa.die(); else pa.revive(); this.playerWasDead = pl.dead; }
       pa.locomotion(pl.moving && !pl.dead, 6);
+      if (this.mount?.root.visible) { this.mount.update(dtFx, pl.moving && !pl.dead); pa.rideBob(this.mount.bob); }
       pa.update(dtFx);
       pa.airborne(pl.airborne ? pl.vy : 0);
       // auto-attack's swing timer is the sim's, so the wind-up can start early enough that the strike lands on the beat

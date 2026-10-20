@@ -45,6 +45,18 @@ export const TELLS: Record<string, TellPose> = {
   net: { arms: { L: [0.85, 0.25, 0.5], R: [-0.85, 0.25, 0.5] }, lean: 0.25, sink: 0.1, swell: 0.05, shake: 0.02 },
 };
 
+/**
+ * Where a rider sits, in the fit wrapper's frame (world units): the point the hips settle on, `y` up from the feet's standing plane and `z` forward.
+ * The saddle's own height is the mount's business (mount.ts); the Animator only knows how to bend a standing rig into a seat.
+ */
+export interface Seat { y: number; z: number }
+/** The seated pose: each limb's direction in the body's frame (+x its left, +y up, +z forward), mirrored for the right. Thighs straddle, shins hang back, hands rest forward on the reins. */
+const SEATED: Record<string, [number, number, number]> = {
+  UpperLeg: [0.85, -0.4, 0.6], LowerLeg: [0.4, -1, -0.2], Foot: [0.05, -0.3, 1],
+  UpperArm: [0.3, -0.85, 0.4], LowerArm: [0.1, -0.35, 1],
+};
+const SEAT_LEAN = 0.09; // radians the spine tips forward over the pommel
+
 const UPPER_BODY = /Abdomen|Torso|Neck|Head|Shoulder|Arm|Palm|Hand|Finger|Thumb/;
 const FADE = 0.18;
 const TWIST_END = 0.85; // clip time at which the swing's hip turn has unwound
@@ -85,11 +97,16 @@ export class Animator {
   private primed = 0;
   private wind = 0;
   private windKind: string | null = null;
+  private seat: Seat | null = null;
+  private seatBob = 0;
+  private hipY = 0; // standing hip height above the feet, taken at the bind pose
+  private spine?: THREE.Quaternion; // the Abdomen's bind rotation: the seated lean is set from it, never stacked on the last frame's
 
   constructor(private root: THREE.Object3D, clips: Map<string, THREE.AnimationClip>, private def: AnimDef) {
     this.clips = clips;
     this.mixer = new THREE.AnimationMixer(root);
-    const wanted = new Set(['Abdomen', 'Torso', 'UpperArmL', 'LowerArmL', 'UpperArmR', 'LowerArmR']);
+    const wanted = new Set(['Abdomen', 'Torso', 'UpperArmL', 'LowerArmL', 'UpperArmR', 'LowerArmR', 'PalmL', 'PalmR',
+      'UpperLegL', 'LowerLegL', 'LowerLegL_end', 'FootL', 'FootL_end', 'UpperLegR', 'LowerLegR', 'LowerLegR_end', 'FootR', 'FootR_end']);
     root.traverse(o => { if (wanted.has(o.name) && !this.bones.has(o.name)) this.bones.set(o.name, o); });
     const names = [def.idle, def.move, ...(def.attack ?? []).filter(n => !def.upper?.includes(n)), def.hit, def.death, def.jump].filter((n): n is string => !!n);
     for (const n of names) {
@@ -99,6 +116,12 @@ export class Animator {
     this.mixer.addEventListener('finished', e => {
       if (e.action === this.current && !this.holding) { this.oneShot = false; this.loop(); }
     });
+    this.spine = this.bones.get('Abdomen')?.quaternion.clone();
+    const legs = ['UpperLegL', 'UpperLegR'].map(n => this.bones.get(n));
+    if (legs[0] && legs[1]) {
+      root.updateWorldMatrix(true, true);
+      this.hipY = (root.worldToLocal(legs[0].getWorldPosition(_a)).y + root.worldToLocal(legs[1].getWorldPosition(_b)).y) / 2;
+    }
     this.loop();
   }
 
@@ -107,6 +130,11 @@ export class Animator {
   get hasDeath() { return this.hasDeathClip || this.def.lie !== undefined; }
   private get hasDeathClip() { return !!this.def.death && this.actions.has(this.def.death); }
   private get hasHitClip() { return !!this.def.hit && this.actions.has(this.def.hit); }
+
+  /** Put the rig in a saddle (or stand it back up with null). Seated, it idles whatever the speed: the mount is what moves. */
+  ride(seat: Seat | null) { this.seat = seat; if (!seat) this.seatBob = 0; this.loop(); }
+  /** How far the saddle has risen off its rest height this frame (the mount's gait), world units. */
+  rideBob(dy: number) { this.seatBob = dy; }
 
   /** Locomotion state, called every frame. `speed` is world units per second. */
   locomotion(moving: boolean, speed = 0) {
@@ -223,8 +251,8 @@ export class Animator {
     const squash = 0.2 * ld, stretch = 0.1 * this.air;
     r.position.set(
       tell ? tell.shake * w * Math.sin(this.time * 70) : 0,
-      (fk > 0 ? d.lie! * smooth(fk) + hop : 0) + bob - (tell ? tell.sink * w : 0),
-      lg - 0.3 * h);
+      (fk > 0 ? d.lie! * smooth(fk) + hop : 0) + bob - (tell ? tell.sink * w : 0) + (this.seat ? this.seat.y - this.hipY + this.seatBob : 0),
+      lg - 0.3 * h + (this.seat?.z ?? 0));
     r.rotation.set(0.15 * lg - 0.38 * h - (tell ? tell.lean * w : 0), 0, this.hit.dir * 0.16 * h + this.flip * fall * Math.PI / 2);
     const sxz = 1 + squash * 0.6 - stretch * 0.4 + (tell ? tell.swell * w : 0);
     r.scale.set(sxz, 1 - squash + stretch - 0.06 * h + (tell ? tell.swell * w * 0.5 : 0), sxz);
@@ -237,7 +265,29 @@ export class Animator {
       const spin = (t < hit ? -0.3 + 0.7 * smooth(Math.max(0, t - hit + 0.22) / 0.22) : 0.4 * (1 - smooth((t - hit) / (TWIST_END - hit)))) * this.twist.amp;
       bone('Abdomen', 0, spin * 0.6, 0); bone('Torso', 0, spin * 0.6, 0);
     }
+    if (this.seat) this.sit();
     if (tell && w > 0) for (const side of ['L', 'R'] as const) if (tell.arms[side]) this.aim(`UpperArm${side}`, `LowerArm${side}`, tell.arms[side]!, w);
+  }
+
+  /** Bend the standing rig into the saddle: legs astride, hands forward, the spine tipped over the pommel. Runs after the clip, so it holds whatever the idle is doing. */
+  private sit() {
+    for (const side of ['L', 'R'] as const) {
+      const mx = side === 'L' ? 1 : -1, mirror = ([x, y, z]: [number, number, number]): [number, number, number] => [x * mx, y, z];
+      this.aim(`UpperLeg${side}`, `LowerLeg${side}`, mirror(SEATED.UpperLeg), 1);
+      this.aim(`LowerLeg${side}`, `LowerLeg${side}_end`, mirror(SEATED.LowerLeg), 1);
+      // the foot is its own bone, not a child of the shin: carry it to the shin's end, then point the toes
+      const foot = this.bones.get(`Foot${side}`), end = this.bones.get(`LowerLeg${side}_end`);
+      if (foot?.parent && end) {
+        end.updateWorldMatrix(true, false);
+        foot.parent.updateWorldMatrix(true, false);
+        foot.position.copy(foot.parent.worldToLocal(end.getWorldPosition(_a)));
+      }
+      this.aim(`Foot${side}`, `Foot${side}_end`, mirror(SEATED.Foot), 1);
+      this.aim(`UpperArm${side}`, `LowerArm${side}`, mirror(SEATED.UpperArm), 1);
+      this.aim(`LowerArm${side}`, `Palm${side}`, mirror(SEATED.LowerArm), 1);
+    }
+    const b = this.bones.get('Abdomen');
+    if (b && this.spine) b.quaternion.copy(this.spine).multiply(_q.setFromEuler(_e.set(SEAT_LEAN, 0, 0)));
   }
 
   /**
@@ -277,7 +327,7 @@ export class Animator {
   }
 
   private loop(speed = 0) {
-    const name = this.moving ? this.def.move : this.def.idle;
+    const name = this.moving && !this.seat ? this.def.move : this.def.idle;
     const scale = this.moving && this.def.moveSpeed && speed > 0 ? speed / this.def.moveSpeed : 1;
     this.play(name, { once: false, speed: scale });
   }

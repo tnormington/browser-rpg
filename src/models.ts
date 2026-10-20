@@ -28,6 +28,8 @@ export interface SlotDef {
   anim?: AnimDef;
   /** Cut the 'Armor' mesh in two by bone weight: the leg triangles become their own mesh and material ('ArmorLegs'), so legs and chest can be dressed apart. */
   splitLegs?: boolean;
+  /** Ignore the file's vertex colours: a pack that bakes its colours dark would otherwise tint every named colour black. */
+  plain?: boolean;
 }
 
 const SKIN = 0xb89a7e;
@@ -45,6 +47,11 @@ export const SLOTS = {
     anim: { idle: 'Idle', move: 'Walk', moveSpeed: 4, attack: ['Shoot_OneHanded'], hit: 'RecieveHit', death: 'Defeat', impact: { Shoot_OneHanded: 0.3 } } },
   // a smaller, paler wolf
   pup: { file: 'wolf', height: 0.8, yaw: -Math.PI / 2, look: { sat: 0.35, light: 0.85, named: { Wolf: 0xa8a290 } }, anim: { idle: 'Idle', move: 'Walking', moveSpeed: 5, lie: 0.3 } },
+  // the first mount (Thornwick, 10 u/s): the pack's plainer horse, a dun with a dark mane. 'Material.003' is the coat and 'Material.006' mane, tail and
+  // hooves, so a skin (section 6.3) is a new pair of colours here plus its own tack layers in mount.ts. The second mount must be a different animal or
+  // carry visibly better tack: nothing here should be pushed as far as this model can go.
+  horse: { file: 'horse', height: 2.3, plain: true, look: { sat: 0.55, light: 1.3, named: { 'Material.003': 0x6a5848, 'Material.006': 0x1c1a18 } },
+    anim: { idle: 'Idle', move: 'Run', moveSpeed: 7, death: 'Death', jump: 'Jump' } },
   tree: { file: 'pine', height: 5.6, look: { sat: 0.45, light: 1.3, named: { Wood: 0x4a3b2e, Green: 0x2f4538 } } },
   stump: { file: 'stump', height: 0.8, look: { sat: 0.45, light: 1.3, named: { Wood: 0x4a3b2e, LightWood: 0x6a5a48, Green: 0x2f4538 } } },
   ironRock: { file: 'rock5', footprint: 2.6, look: { sat: 0.5, light: 1.7, named: { Rock: 0x6a7078 } } },
@@ -115,7 +122,7 @@ function restyle(src: THREE.MeshStandardMaterial, def: SlotDef, soft: boolean): 
   const named = def.look.named?.[src.name];
   const m = new THREE.MeshStandardMaterial({
     map: named === undefined ? src.map : null, // a hard colour replaces the pack's texture too (the anvil's stock texture is lime green)
-    vertexColors: !!src.vertexColors, roughness: def.roughness ?? 0.85, metalness: def.metal ?? 0.05, flatShading: !soft,
+    vertexColors: !def.plain && !!src.vertexColors, roughness: def.roughness ?? 0.85, metalness: def.metal ?? 0.05, flatShading: !soft,
   });
   if (named !== undefined) m.color.setHex(named);
   else {

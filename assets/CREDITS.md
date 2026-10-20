@@ -17,6 +17,7 @@ Only the files actually used are committed; the full downloads are not in the re
 | `rock5.glb`, `rock3.glb`, `rock2.glb`, `rock6.glb` | Iron rock, coal seam, cave-mouth rocks, boundary boulders | `Rock_5/3/2/6.fbx` | Ultimate Nature Pack | https://opengameart.org/content/low-poly-nature-pack-1 | CC0 |
 | `blacksmith.glb` | Forge | `Blacksmith.fbx` | Medieval Village Pack | https://opengameart.org/content/lowpoly-medieval-village-pack | CC0 |
 | `anvil.glb` | Anvil | `Anvil.fbx` | Fantasy Props MegaKit (Standard) | https://opengameart.org/content/fantasy-props-megakit | CC0 |
+| `horse.glb` | First mount | `Horse` (shipped as glTF, unmodified) | Quaternius, via Poly Pizza | https://poly.pizza/m/F8HAAcLeBL | CC0 |
 
 
 ## Processing
