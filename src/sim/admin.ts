@@ -7,7 +7,8 @@ import { MAX_LEVEL, xpForLevel } from './xp';
 import { ITEMS } from './items';
 import { addItem } from './inventory';
 import { refreshPlayerStats } from './combat';
-import { PLAYER_RADIUS, REGIONS, Rect, TOWNS, clampToWorld, resolveCollisions } from './world';
+import { ENEMY_TYPES, EnemyDef, SPAWNS } from './data';
+import { DUNGEONS, PLAYER_RADIUS, REGIONS, Rect, Region, TOWNS, clampToWorld, regionAt, regionById, resolveCollisions } from './world';
 
 /** The most of one item a single grant may add: more than a bag of full stacks holds, and far more than a test needs. */
 export const MAX_GRANT = 999;
@@ -64,8 +65,8 @@ export function giveItem(s: GameState, id: string, qty: number) {
   if (left > 0) s.events.push({ t: 'invfull' });
 }
 
-/** Somewhere the panel can send you: `group` is the heading it sits under. */
-export interface Destination { group: string; name: string; x: number; z: number }
+/** Somewhere the panel can send you: `group` is the heading it sits under, `detail` what is standing there. */
+export interface Destination { group: string; name: string; detail: string; x: number; z: number }
 
 const area = (r: Rect) => (r.x1 - r.x0) * (r.z1 - r.z0);
 /** The middle of the largest rectangle of a region's floor: a corridor into it is not where "take me to the Fens" means. */
@@ -74,8 +75,65 @@ const middleOf = (rects: Rect[]) => {
   return clampToWorld({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2 });
 };
 
-/** Everywhere the panel offers: each town's waking spot, then the middle of every region, dungeon rooms and all. */
-export const destinations = (): Destination[] => [
-  ...TOWNS.map(t => ({ group: 'Towns', name: t.name, x: t.wake.x, z: t.wake.z })),
-  ...REGIONS.map(r => ({ group: 'Regions', name: r.name, ...middleOf(r.footprint) })),
-];
+/**
+ * The respawn that tells a name apart from the trash around it. It is data.ts's own rule read back: trash comes back in
+ * 30 to 45 seconds, an elite in 120, a boss in 10 minutes and a rare in 30. So every elite, boss and rare is listed
+ * against the place it holds, and no Marsh Hog is.
+ */
+export const NAMED_RESPAWN = 120;
+
+/** Every spawn read once: what stands there, and the region the HUD would name for the spot it stands on. */
+const posts = () => SPAWNS
+  .map(sp => ({ def: ENEMY_TYPES[sp.type], type: sp.type, where: regionAt(sp.x, sp.z), x: sp.x, z: sp.z }))
+  .filter((p): p is typeof p & { where: Region } => p.where !== null);
+
+/** The levels a place covers: "lv 18-21", "lv 32" where everything there is one level, or '' where nothing stands there. */
+const band = (defs: EnemyDef[]): string => {
+  if (!defs.length) return '';
+  const levels = defs.map(d => d.level), lo = Math.min(...levels), hi = Math.max(...levels);
+  return `lv ${lo === hi ? lo : `${lo}-${hi}`}`;
+};
+
+/** What is waiting somewhere: the levels it covers, then its bosses, rares and elites, weakest first and each named once. */
+const detailOf = (defs: EnemyDef[]): string => {
+  const named = [...new Set(defs.filter(d => d.respawn >= NAMED_RESPAWN).sort((a, b) => a.level - b.level).map(d => d.name))];
+  return [band(defs) || 'no enemies', ...(named.length ? [named.join(', ')] : [])].join('  -  ');
+};
+
+/** The heading the bosses, rares and elites sit under, each one a jump to the ground it holds. */
+export const BOSS_GROUP = 'Bosses, rares and elites';
+
+/**
+ * One entry per named enemy per region: the post it stands on, so testing a fight is a jump and not a hunt. The middle of
+ * the Greywater Road is three hundred units from Old Grey, which is what made the list hard to use. Weakest first.
+ */
+const bossPosts = (all: ReturnType<typeof posts>): Destination[] => {
+  const one = new Map<string, typeof all[number]>(); // the first of a kind in a region: the Galley's two ogres are one line, not two
+  for (const p of all) {
+    const key = `${p.type} ${p.where.id}`;
+    if (p.def.respawn >= NAMED_RESPAWN && !one.has(key)) one.set(key, p);
+  }
+  return [...one.values()]
+    .sort((a, b) => a.def.level - b.def.level)
+    .map(p => ({ group: BOSS_GROUP, name: p.def.name, detail: `lv ${p.def.level}  -  ${p.where.name}`, x: p.x, z: p.z }));
+};
+
+/**
+ * Everywhere the panel offers: each town's waking spot, every named enemy's own post, the middle of every region out of
+ * doors, then each dungeon's rooms under a heading of their own, so the room a boss is in is found by the dungeon it
+ * belongs to. Every entry carries what stands there, read off SPAWNS, so an enemy moved or added shows up here with no edit.
+ */
+export const destinations = (): Destination[] => {
+  const all = posts();
+  const defsIn = (id: string) => all.filter(p => p.where.id === id).map(p => p.def);
+  const townName = (id: string) => TOWNS.find(t => t.id === id)?.name ?? id;
+  return [
+    ...TOWNS.map(t => ({ group: 'Towns', name: t.name, detail: detailOf(defsIn(regionAt(t.wake.x, t.wake.z)?.id ?? '')), x: t.wake.x, z: t.wake.z })),
+    ...bossPosts(all),
+    ...REGIONS.filter(r => !r.dungeon).map(r => ({ group: 'Regions', name: r.name, detail: detailOf(defsIn(r.id)), ...middleOf(r.footprint) })),
+    ...DUNGEONS.map(d => ({ d, rooms: d.rooms.map(r => regionById(r.name)) })).flatMap(({ d, rooms }) => {
+      const group = `${d.name}  (${townName(d.parent)}, ${band(rooms.flatMap(r => defsIn(r.id))) || 'empty'})`;
+      return rooms.map(r => ({ group, name: r.name, detail: detailOf(defsIn(r.id)), ...middleOf(r.footprint) }));
+    }),
+  ];
+};

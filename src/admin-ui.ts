@@ -93,7 +93,7 @@ export class AdminUi {
     this.now.textContent = `Combat ${p.combat.level}  -  at ${Math.round(p.x)}, ${Math.round(p.z)} in ${regionAt(p.x, p.z)?.name ?? 'nowhere'}`;
   }
 
-  /** Towns first, then every region, each option carrying its place in the list. */
+  /** Towns first, then every region and each dungeon's rooms, every option carrying its place in the list and what stands there. */
   private buildDestinations(parent: HTMLElement): HTMLSelectElement {
     const sel = document.createElement('select');
     const groups = new Map<string, HTMLOptGroupElement>();
@@ -107,7 +107,8 @@ export class AdminUi {
       }
       const opt = document.createElement('option');
       opt.value = String(i);
-      opt.textContent = d.name;
+      opt.textContent = `${d.name}  -  ${d.detail}`;
+      opt.title = opt.textContent; // the closed box is only 200px: the whole line is the hover
       group.appendChild(opt);
     });
     parent.appendChild(sel);

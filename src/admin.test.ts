@@ -2,9 +2,9 @@
 // sim step like any other action, and that every place the panel offers is somewhere you can actually stand.
 // Run with `npm run verify`.
 import { GameState, NO_INPUT, createState, step } from './sim';
-import { AdminAction, MAX_GRANT, destinations, giveItem, setCombatLevel, teleport } from './sim/admin';
+import { AdminAction, BOSS_GROUP, MAX_GRANT, NAMED_RESPAWN, destinations, giveItem, setCombatLevel, teleport } from './sim/admin';
 import { MAX_LEVEL, xpForLevel } from './sim/xp';
-import { ABILITIES } from './sim/data';
+import { ABILITIES, ENEMY_TYPES, SPAWNS } from './sim/data';
 import { countItem } from './sim/inventory';
 import { ITEMS } from './sim/items';
 import { GATES, REGIONS, TOWNS, regionAt } from './sim/world';
@@ -126,7 +126,7 @@ section('Granting items');
 section('Everywhere the panel can send you');
 {
   const list = destinations();
-  const towns = list.filter(d => d.group === 'Towns'), regions = list.filter(d => d.group === 'Regions');
+  const towns = list.filter(d => d.group === 'Towns'), regions = list.filter(d => d.group !== 'Towns' && d.group !== BOSS_GROUP);
   assert(towns.length === TOWNS.length && regions.length === REGIONS.length, `every town and every region is offered: ${towns.length} + ${regions.length}`);
   const off = list.filter(d => !regionAt(d.x, d.z));
   assert(off.length === 0, `and every one of the ${list.length} is on walkable floor${off.length ? `: ${off.map(d => d.name).join(', ')}` : ''}`);
@@ -136,6 +136,40 @@ section('Everywhere the panel can send you');
     return Math.hypot(s.player.x - d.x, s.player.z - d.z) > 4; // pushed out of a prop is fine; shoved across the map is not
   });
   assert(stuck.length === 0, `and the player lands at each of them${stuck.length ? `, except ${stuck.map(d => d.name).join(', ')}` : ''}`);
+}
+{
+  // HOM-115: the list says what is where, so a boss is found without knowing the map by heart
+  const list = destinations();
+  // every enemy on a 10-minute respawn or longer: the three dungeon bosses and the rares out of doors
+  const bosses = [...new Set(SPAWNS.map(sp => sp.type).filter(t => ENEMY_TYPES[t].respawn >= 600))].map(t => ENEMY_TYPES[t].name);
+  const missing = bosses.filter(name => !list.some(d => d.detail.includes(name)));
+  assert(missing.length === 0, `all ${bosses.length} bosses and rares are named against the place they stand${missing.length ? `, bar ${missing.join(', ')}` : ''}`);
+
+  const king = list.find(d => d.detail.includes('The Cairn King'))!;
+  assert(king.name === "The King's Chamber" && king.detail === 'lv 32  -  The Cairn King', `the King's room reads "${king.name}  -  ${king.detail}"`);
+  assert(king.group.startsWith('The Cairn Hold') && king.group.includes('Highmoor') && king.group.includes('lv 30-32'),
+    `and sits under its dungeon's heading: "${king.group}"`);
+  assert(list.every(d => d.detail.length > 0), 'and every place says something: the empty ones say so');
+  const throat = list.find(d => d.name === 'The Throat')!;
+  assert(throat.detail === 'no enemies', `a corridor with nothing in it says "${throat.detail}"`);
+}
+{
+  // HOM-115: and the fight itself is a jump, not a hunt across the region it is somewhere in
+  const posts = destinations().filter(d => d.group === BOSS_GROUP);
+  const named = SPAWNS.filter(sp => ENEMY_TYPES[sp.type].respawn >= NAMED_RESPAWN);
+  assert(posts.length > 0 && posts.every(p => named.some(sp => ENEMY_TYPES[sp.type].name === p.name && sp.x === p.x && sp.z === p.z)),
+    `all ${posts.length} boss posts stand on the spawn they name`);
+  assert(posts.every(p => p.detail.includes(regionAt(p.x, p.z)!.name)), 'and each says the region it is in');
+  assert(posts.every((p, i) => i === 0 || Number(posts[i - 1].detail.match(/lv (\d+)/)![1]) <= Number(p.detail.match(/lv (\d+)/)![1])),
+    'the list runs weakest first, so it reads as the order you would meet them');
+
+  const s = quiet();
+  const king = posts.find(p => p.name === 'The Cairn King')!;
+  teleport(s, king.x, king.z);
+  assert(regionAt(s.player.x, s.player.z)?.id === 'chamber', "jumping to the King puts you in the King's Chamber, on his mark");
+  const grey = posts.find(p => p.name === 'Old Grey')!;
+  const road = destinations().find(d => d.name === 'Greywater Road')!;
+  assert(Math.hypot(grey.x - road.x, grey.z - road.z) > 50, `the rare's post is ${Math.round(Math.hypot(grey.x - road.x, grey.z - road.z))} units off the middle of its road: the walk the list used to cost you`);
 }
 
 console.log(`\nAll ${checks} admin-tool checks passed.`);
