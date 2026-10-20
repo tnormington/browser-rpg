@@ -1,0 +1,6 @@
+#!/bin/sh
+# Every commit, make sure the playtest server is still up — see CLAUDE.md. Backgrounded and
+# always exit 0: this must never fail or delay a commit.
+server="$(git rev-parse --path-format=absolute --git-common-dir)/../scripts/dev-server.mjs"
+[ -f "$server" ] && (node "$server" ensure >/dev/null 2>&1 &)
+exit 0
