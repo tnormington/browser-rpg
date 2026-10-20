@@ -75,3 +75,5 @@ Same recipe (20 s seamless loop, 2 s triangle crossfade, mono, 32 kHz, -26 LUFS,
 | File | Source | Author | Licence | Fetched |
 |---|---|---|---|---|
 | hale-ambience.ogg | "Ambient Bird Sounds", birds-isaiah658.ogg (22 s from 0:04) - https://opengameart.org/content/ambient-bird-sounds (file: https://opengameart.org/sites/default/files/birds-isaiah658_0.ogg) | isaiah658 | CC0 | 2026-10-20 |
+| cairnwaste-ambience.ogg | "wind1", wind3.wav (24 s from 0:10, 2 s crossfaded loop) - https://opengameart.org/content/wind1 (file: https://opengameart.org/sites/default/files/wind3.wav) | uploader of "wind1" (synthesized in PureData; page names no author) | CC0 | 2026-10-20 |
+| spire-ambience.ogg | "4 Atmospheric ghostly loops", atmoseerie03 from independent_nu_ljudbank-atmosphere_moody.7z (20 s, 2 s crossfaded loop) - https://opengameart.org/content/4-atmospheric-ghostly-loops (file: https://opengameart.org/sites/default/files/independent_nu_ljudbank-atmosphere_moody.7z) | Independent.nu (submitted by qubodup) | CC0 | 2026-10-20 |

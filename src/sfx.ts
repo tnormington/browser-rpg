@@ -3,7 +3,7 @@
 // and M mutes. Samples are fetched and decoded lazily after the context exists; until decoded a sound is skipped.
 import type { GameEvent } from './sim';
 import { ABILITIES } from './sim/data';
-import { REGIONS } from './sim/world';
+import { bedFor } from './ambience';
 
 // ---- tuning table: change numbers here, by ear ----
 /** minGap ms between plays of a group, maxVoices simultaneously sounding in it. */
@@ -91,26 +91,6 @@ const BODY: Record<string, Body> = {
 const bodyOf = (species: string): Body => BODY[species] ?? 'beast';
 const slamVol =(radius: number) => Math.min(1, 0.5 + radius / 12);
 
-/** Looping beds by region id (a region with no entry is silent), and the level each plays at. */
-const AMBIENCE: Record<string, { file: string; vol: number }> = {
-  greywater: { file: 'road-ambience', vol: 0.35 },
-  saltmarrow: { file: 'coast-ambience', vol: 0.4 },
-  dunmere: { file: 'fen-ambience', vol: 0.4 },
-  thornwick: { file: 'forest-ambience', vol: 0.4 },
-  barrowdowns: { file: 'barrows-ambience', vol: 0.4 },
-  highmoor: { file: 'moor-ambience', vol: 0.35 },
-  // stand-ins (HOM-111): the wastes and the Spire have no bed of their own yet, so they borrow the nearest country's; a card for the Sound Designer
-  cairnwaste: { file: 'barrows-ambience', vol: 0.35 },
-  spire: { file: 'moor-ambience', vol: 0.3 },
-  hale: { file: 'hale-ambience', vol: 0.35 },   // a zone key, not a region: ridge, clearing and seams all fall through to it
-};
-/** Every cave room (Hollow, Grotto, Rotroot, Cairn Hold) shares one bed: no cave region has an entry above. */
-const CAVE_BED = { file: 'cave-ambience', vol: 0.4 };
-/** A region's own bed, else the cave bed, else its zone's: so a district (the Waysides, the Thornwood Seams) sounds like the land it sits in. */
-const bedFor = (id: string | null) => {
-  const r = id ? REGIONS.find(x => x.id === id) : undefined;
-  return !id ? undefined : AMBIENCE[id] ?? (r?.cave ? CAVE_BED : r && AMBIENCE[r.zone]);
-};
 const AMBIENCE_FADE = 1.5;   // seconds to cross between beds
 
 const MASTER_GAIN = 0.8;
