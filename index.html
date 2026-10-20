@@ -65,11 +65,14 @@ canvas{display:block}
 .plate .pbar{width:60px;height:5px;background:#08090b;border:1px solid #000;box-shadow:0 0 0 1px var(--edge);margin:2px auto 0}.plate .fill{height:100%;background:var(--blood)}
 .plate.sel .pname{color:#e8523f;font-weight:bold}
 .floater.loot{color:var(--moss);font-size:18px}.floater.dropname{color:#e8d9a0;font-size:13px}
-.panel{position:absolute;top:90px;background:var(--iron);border:1px solid var(--edge);box-shadow:inset 0 0 0 1px #000,0 4px 14px rgba(0,0,0,.7);border-radius:2px;padding:8px;pointer-events:auto;text-shadow:none}
+/* Every panel is bounded by the window and scrolls inside itself: --ptop is where it starts, --pbottom what it leaves clear below
+   (the action bar, or for a centred panel the unit frames above it too). Its title stays put while the body scrolls. */
+.panel{--ptop:90px;--pbottom:108px;position:absolute;top:var(--ptop);max-height:calc(100vh - var(--ptop) - var(--pbottom) - 18px);overflow-y:auto;scrollbar-width:thin;background:var(--iron);border:1px solid var(--edge);box-shadow:inset 0 0 0 1px #000,0 4px 14px rgba(0,0,0,.7);border-radius:2px;padding:8px;pointer-events:auto;text-shadow:none}
 .invpanel{right:12px;width:268px}.charpanel{right:292px;width:210px}
 .invgold{color:var(--gold);font-size:12px;margin:-3px 0 6px}
 .psort{float:right;margin-top:-1px;padding:1px 8px;background:var(--iron-lift);border:1px solid var(--edge);border-radius:2px;font-size:11px;font-weight:normal;color:var(--ink);letter-spacing:0;cursor:pointer}.psort:hover{background:#3a362c;color:var(--gold)}
-.invpanel,.charpanel{top:170px;max-height:calc(100vh - 278px);overflow-y:auto;scrollbar-width:thin} /* clear of the minimap above and the action bar below */
+.invpanel,.charpanel{--ptop:170px} /* clear of the minimap above */
+.panel>.ptitle{position:sticky;top:-8px;z-index:1;margin:-8px -8px 6px;padding:8px 8px 4px;background:var(--iron-solid)}
 .ptitle{font-weight:bold;margin-bottom:6px;color:var(--gold);letter-spacing:.05em}
 .grid{display:grid;grid-template-columns:repeat(4,60px);gap:4px}
 .cell{position:relative;width:60px;height:60px;box-sizing:border-box;background:var(--iron-lift);border:2px solid #2e3034;border-radius:2px;text-align:center;overflow:hidden;cursor:pointer}
@@ -84,10 +87,10 @@ canvas{display:block}
 .ctxmenu{position:fixed;display:none;z-index:11;background:rgba(8,8,10,.96);border:1px solid var(--edge-hi);border-radius:2px;pointer-events:auto}
 .mrow{padding:4px 14px;font-size:12px;cursor:pointer}.mrow:hover{background:#2c2a24}.mrow.bad{color:#e0604f}
 .mhead{padding:5px 14px;font-size:11px;color:var(--ink-dim);border-bottom:1px solid var(--edge)}
-.skillspanel{left:12px;top:330px;width:220px}
+.skillspanel{--ptop:330px;left:12px;width:220px}
 .skillrow{margin-bottom:7px}.skillhead{display:flex;justify-content:space-between;font-size:13px}.skilllvl{color:var(--gold);font-weight:bold}
 .skillbar{height:12px}.skillbar .fill{background:linear-gradient(#5a7a96,#3a566e)}.skillbar .label{line-height:12px;font-size:9px}
-.talentpanel{left:50%;top:90px;transform:translateX(-50%);width:570px;border-color:var(--edge-hi)}
+.talentpanel{--pbottom:250px;left:50%;transform:translateX(-50%);width:570px;border-color:var(--edge-hi)}
 .tpoints{float:right;font-size:12px;font-weight:normal;color:var(--ink-dim);letter-spacing:0}.tpoints.ready{color:var(--gold)}
 .ttrees{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .ttree{background:rgba(8,9,11,.5);border:1px solid #2e3034;border-radius:2px;padding:6px}
@@ -100,12 +103,14 @@ canvas{display:block}
 .talent.taken.shut{opacity:.8}
 .tlname{font-size:12px;font-weight:bold}.tlrank{position:absolute;top:4px;right:6px;font-size:11px;color:var(--gold)}
 .treset{text-align:center;margin-top:8px}
-.shoppanel{left:262px;top:100px;width:290px;max-height:calc(100vh - 220px);overflow-y:auto;scrollbar-width:thin;border-color:#6a5a22}.shopgold{color:var(--gold);margin-bottom:2px}.shophint{font-size:11px;opacity:.6;margin-bottom:6px}
+.shoppanel{--ptop:100px;left:262px;width:290px;border-color:#6a5a22}.shopgold{color:var(--gold);margin-bottom:2px}.shophint{font-size:11px;opacity:.6;margin-bottom:6px}
 .tval{margin-top:4px;color:var(--gold);font-size:11px}.frame .gold{color:var(--gold);font-size:12px;margin-top:3px}.frame .status{color:#93b58c;font-size:11px;margin-top:3px;min-height:13px}
-.forgepanel{left:50%;top:90px;transform:translateX(-50%);width:330px;border-color:#5a3a22}
-.bookpanel{left:262px;top:90px;width:300px;max-height:calc(100vh - 200px);overflow-y:auto;scrollbar-width:thin;border-color:var(--edge-hi)}
+/* centred, but never left of the quest tracker's column (as the dialogue is) */
+.forgepanel{--pbottom:250px;left:max(286px,calc(50% - 175px));width:330px;border-color:#5a3a22}
+.bookpanel{left:262px;width:300px;border-color:var(--edge-hi)}
 .bookpanel .recipe[draggable="true"]{cursor:grab}
 .pclose{float:right;cursor:pointer;color:var(--ink);opacity:.6}.pclose:hover{opacity:1}
+.rgroup{margin:8px 0 4px;padding-bottom:2px;border-bottom:1px solid var(--edge);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim)}.rgroup:first-child{margin-top:0}
 .recipe{background:var(--iron-lift);border:1px solid #34363a;border-radius:2px;padding:6px 8px;margin-bottom:6px}.recipe.locked{opacity:.8}
 .rhead{display:flex;justify-content:space-between}.rname{font-weight:bold}.rreq{font-size:12px;color:var(--moss)}.rreq.bad,.rin.bad,.psub.bad{color:#e0604f}
 .rstat{color:var(--moss);font-size:12px}.rinputs{margin-top:3px;font-size:12px}.rin{display:inline-block;margin-right:10px;color:var(--moss)}
@@ -130,7 +135,7 @@ canvas{display:block}
 .dhint{float:right;font-size:11px;font-weight:normal;color:var(--ink-dim)}
 .dline{margin-bottom:8px;font-size:14px;line-height:1.4}
 .dopt{margin-top:5px;padding:5px 8px;border-radius:2px;background:var(--iron-lift);border:1px solid #34363a;cursor:pointer;font-size:13px;color:#e8d9a0}.dopt:hover{background:#3a362c}
-.helpoverlay{left:50%;top:50%;transform:translate(-50%,-50%);width:560px;padding:16px 20px;border:1px solid var(--edge-hi);z-index:20}
+.helpoverlay{max-height:calc(100vh - 24px - 34px);left:50%;top:50%;transform:translate(-50%,-50%);width:560px;padding:16px 20px;border:1px solid var(--edge-hi);z-index:20}
 .helptitle{font-size:22px;font-weight:bold;color:var(--gold);margin-bottom:6px;letter-spacing:.06em}.helpgoal{font-size:14px;margin-bottom:10px;line-height:1.4}
 .helpgrid{display:grid;grid-template-columns:150px 1fr;gap:4px 12px;font-size:13px}.hkey{color:var(--gold);font-weight:bold}
 .helpnote{margin-top:10px;font-size:12px;opacity:.7}.helpok{text-align:center}
