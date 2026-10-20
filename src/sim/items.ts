@@ -96,8 +96,8 @@ export const ITEMS: Record<string, ItemDef> = {
   marrows_edge: { name: "Marrow's Edge", slot: 'weapon', stats: { damage: 50, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 560, req: { combat: 18 }, desc: "Adamant folded round three shards of Captain Marrow's anchor. The best blade a smith in Saltmarrow can make." },
   // the stormiron set (3.3): tier 5 again, the next metal after adamant. A blade of 58 against Marrow's Edge 50; equip combat 23, one under the committed player's arrival
   stormiron_blade: { name: 'Stormiron Blade', slot: 'weapon', stats: { damage: 58, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 480, req: { combat: 23 }, desc: 'Three bars of barrow stormiron and a log for the hilt. Narrow, pale and very sharp.' },
-  // the Rotroot's capstone (3.3): damage 72, Smithing 42, equip combat 26 (one under the Mother's level; the committed player arrives at 27). Stormiron is not built yet: adamant stands in for its bars
-  rotroot_edge: { name: 'Rotroot Edge', slot: 'weapon', stats: { damage: 72, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 760, req: { combat: 26 }, desc: "Metal folded round three shards of the Rotroot Mother's heartwood. The best blade a smith in Thornwick can make." },
+  // the Rotroot's capstone (3.3): damage 72, Smithing 42, equip combat 26 (one under the Mother's level; the committed player arrives at 27)
+  rotroot_edge: { name: 'Rotroot Edge', slot: 'weapon', stats: { damage: 72, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 760, req: { combat: 26 }, desc: "Stormiron folded round three shards of the Rotroot Mother's heartwood. The best blade a smith in Thornwick can make." },
   // leatherworking (bible 3.2, HOM-96): hides tanned at Highmoor's rack, then gloves and boots. Nothing sells a hide: they are only ever dropped
   tanned_hide: { name: 'Tanned Hide', stack: 50, dropWeight: 0, tier: 0, value: 4, desc: 'A boar hide, cured at a tanning rack in Highmoor. Gloves and boots are made from it.' },
   wolf_leather: { name: 'Wolf Leather', stack: 50, dropWeight: 0, tier: 0, value: 6, desc: 'A wolf pelt, cured at a tanning rack in Highmoor. Thicker than boar leather.' },
@@ -129,6 +129,9 @@ export const ITEMS: Record<string, ItemDef> = {
   stormiron_helm: { name: 'Stormiron Helm', slot: 'head', stats: { armor: 20 }, stack: 1, dropWeight: 0, tier: 5, value: 230, req: { combat: 23 }, desc: 'Smithed from barrow stormiron. Swept-back spikes, and light for its worth.' },
   stormiron_chestplate: { name: 'Stormiron Chestplate', slot: 'chest', stats: { armor: 38 }, stack: 1, dropWeight: 0, tier: 5, value: 470, req: { combat: 23 }, desc: 'Smithed from barrow stormiron. Pale plate, and the best chest a smith in Thornwick can make.' },
   stormiron_greaves: { name: 'Stormiron Greaves', slot: 'legs', stats: { armor: 28 }, stack: 1, dropWeight: 0, tier: 5, value: 340, req: { combat: 23 }, desc: 'Smithed from barrow stormiron.' },
+  // the Cairn King's named piece (6.2): armour 24 as written, against the stormiron helm's 20. Tier 5, not the bible's 6: the ladder ends at 5 (TIER_COLORS, TIER_LOOKS), and a sixth rung is the
+  // artist's, as is a bespoke look (it wears the tier-5 fallback). Sells for 4x the helm (6.1). Equip combat 30: the first level of the Hold's band, two under the King.
+  kings_crown: { name: "The King's Crown", slot: 'head', stats: { armor: 24 }, stack: 1, dropWeight: 0, tier: 5, value: 920, req: { combat: 30 }, desc: "A circlet of grey iron, cold as the barrow it was buried in. The Cairn King wore it into the dark, and it still keeps the shape of his head." },
 };
 
 /** The copper set, in smithing order: the bottom rung, made from Hale's own rock. */
@@ -279,8 +282,10 @@ export const DROP_TABLES: Record<string, DropTable> = {
   ] },
   // the Grotto's boss shard (6.1): 35 % a kill, one shard, three to a blade: about nine kills on a ten-minute respawn. The one roll, so nothing else competes with it.
   captain_marrow: { rolls: 1, nothing: 65, entries: [{ id: 'marrow_shard', weight: 35 }] },
-  // the Rotroot's: the same 35 % roll (6.1). The blade it is for waits on stormiron.
+  // the Rotroot's: the same 35 % roll (6.1), for the blade that stormiron bars now smith.
   rotroot_mother: { rolls: 1, nothing: 65, entries: [{ id: 'heartwood_shard', weight: 35 }] },
+  // the Cairn King's named piece (6.1: a boss's is 1 in 10 a kill, the one roll). There is no pity counter yet (the bible's 30-kill guarantee is its own card).
+  cairn_king: { rolls: 1, nothing: 90, entries: [{ id: 'kings_crown', weight: 10 }] },
 };
 
 export interface DerivedStats {

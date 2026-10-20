@@ -373,6 +373,14 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     hazard: { name: 'Spore Cloud', windup: 1.5, every: 7, first: 6, damage: 150, radius: 3.5, range: 16 },
     ranged: { name: 'Hex Bolt', range: 14, windup: 0.9 },
     look: { model: 'brute', scale: 1.6, tint: 0x4a6a3a } },
+  // The Cairn Hold (levels 30 to 32, section 3.4): its trash is the Moor's Ridge Ogre, the King is the bible's row, HP, hit, swing, heavy / ground and XP as written. The same three tells as the other
+  // bosses at a larger size: the Crown Slam under his feet (Pummel it, or step out), the Falling Stone marked on the ground under you (keep moving), the Grave Bolt at anyone who stands off.
+  cairn_king: { name: 'The Cairn King', level: 32, hp: 23290, damage: 58, attackInterval: 2.4, speed: 4.0,
+    aggroRadius: 12, leash: 24, attackRange: 3.8, radius: 2.1, xp: 520, respawn: 600,
+    heavy: { name: 'Crown Slam', windup: 1.8, every: 10, first: 4, damage: 460, radius: 6.5 },
+    hazard: { name: 'Falling Stone', windup: 1.5, every: 7, first: 6, damage: 200, radius: 3.5, range: 16 },
+    ranged: { name: 'Grave Bolt', range: 14, windup: 0.9 },
+    look: { model: 'brute', scale: 1.8, tint: 0x8a8a78 } },
 };
 
 /**

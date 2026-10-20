@@ -3,6 +3,7 @@
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState } from './sim';
 import { ABILITIES, GCD, QUEUE_WINDOW } from './sim/data';
 import { ITEMS } from './sim/items';
+import { addItem, countItem } from './sim/inventory';
 import { RECIPES } from './sim/crafting';
 import { THORNWICK, LANDMARKS, dungeonAt, dungeonById, regionAt } from './sim/world';
 import { ROTROOT_COMBAT, dungeonOpen } from './sim/dungeon';
@@ -176,6 +177,16 @@ section('the Rotroot Mother and her Edge');
   const edge = ITEMS.rotroot_edge, r = RECIPES.find(x => x.id === 'rotroot_edge')!;
   assert(edge.stats!.damage === 72 && edge.req!.combat === 26 && edge.slot === 'weapon' && edge.tier === 5, 'the Rotroot Edge: damage 72, equip combat 26 (the bible 3.3)');
   assert(r.skill === 'smithing' && r.level === 42 && r.inputs.some(i => i.id === 'heartwood_shard' && i.qty === 3) && r.output.id === 'rotroot_edge', 'smithed at Smithing 42 from three Heartwood shards');
+  assert(r.inputs.length === 2 && r.inputs.some(i => i.id === 'stormiron_bar' && i.qty === 3), 'with three stormiron bars (HOM-99: they were adamant while stormiron was unbuilt), and nothing else');
+  const forge = quiet(26, 6602), fp = forge.player;
+  fp.x = LANDMARKS.forge.x - 2; fp.z = LANDMARKS.forge.z; fp.skills.smithing.level = 42; fp.skills.smithing.xp = xpForLevel(42);
+  for (const [id, qty] of [['adamant_bar', 3], ['heartwood_shard', 3]] as const) addItem(fp.inventory, id, qty);
+  tick(forge, { craft: { recipe: 'rotroot_edge', count: 1 } });
+  assert(!forge.player.inventory.some(st => st?.id === 'rotroot_edge') && forge.player.action === null, 'three adamant bars and three shards no longer make it');
+  addItem(fp.inventory, 'stormiron_bar', 3);
+  tick(forge, { craft: { recipe: 'rotroot_edge', count: 1 } });
+  run(forge, 16);
+  assert(countItem(fp.inventory, 'rotroot_edge') === 1 && countItem(fp.inventory, 'stormiron_bar') === 0 && countItem(fp.inventory, 'heartwood_shard') === 0 && countItem(fp.inventory, 'adamant_bar') === 3, 'three stormiron bars and three shards do, and the adamant is left in the bag');
   assert(ITEMS.heartwood_shard.stack === 50, 'shards stack');
   // she does all three tells: the Hex Bolt at a player who stands off, the Root Slam and the Spore Cloud on one who stays in reach
   const m = quiet(26, 6603), mm = m.enemies.find(e => e.type === 'rotroot_mother')!;
@@ -252,7 +263,7 @@ section('Q5, The Rotroot: the reeve, the cult, the hand-in');
   assert(dungeonOpen(s, rotroot) && activeQuestView(s).target !== null, 'and the mouth is open, with the Mother as the tracker\'s next mark');
   const rt = deserialize(serialize(s))!;
   assert((rt.quest.sixth as string) === 'cleared' && rt.quest.kills.rotwood_cultist === ROT_GOALS.rotwood_cultist, 'the chain survives a save and load');
-  const old = JSON.parse(serialize(s)); delete old.quest.sixth;
+  const old = JSON.parse(serialize(s)); delete old.quest.sixth; delete old.quest.seventh; // (a save from before Q5 has no Q6 either)
   assert(deserialize(JSON.stringify(old))!.quest.sixth === 'offer', 'a save from before it, with the Strand cleared, finds it on offer');
   const bad = JSON.parse(serialize(quiet(3))); bad.quest.sixth = 'hunt';
   assert(deserialize(JSON.stringify(bad)) === null, 'a save with it open before the Strand is cleared is refused');

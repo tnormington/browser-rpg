@@ -8,7 +8,7 @@ import { NODE_TYPES } from './sim/gathering';
 import { RECIPES, STATIONS, nearStation, recipeById, stationOf } from './sim/crafting';
 import { HERBS, VIAL } from './sim/herbs';
 import { THORN_STOCK, THORN_VENDOR, HARBOUR_STOCK, SHOP_STOCK, VENDORS, buyPrice } from './sim/shop';
-import { LANDMARKS, regionAt, regionById } from './sim/world';
+import { LANDMARKS, REGIONS, regionAt, regionById } from './sim/world';
 import { deserialize, serialize } from './sim/save';
 
 let checks = 0;
@@ -64,7 +64,7 @@ section('HOM-65 the patches are placed where the bible says');
   assert(at('thornmint').length >= 4 && at('thornmint').every(r => r === 'thornwick'), 'Thornmint in the Thornwood');
   const garden = s.nodes.filter(n => n.type === 'marrowleaf');
   assert(garden.length >= 4 && garden.every(n => regionAt(n.x, n.z)?.id === 'thornwick' && Math.hypot(n.x - LANDMARKS.alembic.x, n.z - LANDMARKS.alembic.z) < 30), 'Marrowleaf is the garden by the alembic');
-  assert(regionById('dunmere').herbs!.length + regionById('thornwick').herbs!.length === s.nodes.filter(n => NODE_TYPES[n.type].skill === 'herbalism').length, 'every herb patch that was drawn is now a node');
+  assert(REGIONS.reduce((n, r) => n + (r.herbs?.length ?? 0), 0) === s.nodes.filter(n => NODE_TYPES[n.type].skill === 'herbalism').length, 'every herb patch that was drawn is now a node (the fens\', the Thornwood\'s, and (HOM-99) the Ghostcap of the Grotto and the Cairn Hold)');
 }
 
 section('HOM-65 herbalism: click a patch, stand, get herb');

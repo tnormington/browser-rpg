@@ -31,6 +31,8 @@ export interface Gate {
   refuse: string;
   /** Set when nothing lies behind the gate yet: even a player who has the level is told this and kept back. */
   closed?: string;
+  /** A condition besides `combat`, by the key sim/gates.ts's GATE_NEEDS names (a writ, a quest). A key with no entry there never opens: a typo fails shut. */
+  need?: string;
 }
 // Ore rocks (gatherable, see sim/gathering.ts).
 export interface RockSpot extends Obstacle { type: 'copper' | 'tin' | 'iron' | 'coal' | 'adamant' | 'stormiron' }
@@ -38,7 +40,7 @@ export interface RockSpot extends Obstacle { type: 'copper' | 'tin' | 'iron' | '
 /** A gathering spot you stand beside and cannot stand on: a shoal in the water. Unlike a rock it is not a collider. `type` is a NODE_TYPES key. */
 export interface NodeSpot extends Obstacle { type: string }
 const HERB_RADIUS = 1;
-export interface HerbSpot { kind: 'fen' | 'thorn'; type: string; x: number; z: number }
+export interface HerbSpot { kind: 'fen' | 'thorn' | 'ghost'; type: string; x: number; z: number }
 
 export interface Region {
   id: string;
@@ -413,14 +415,15 @@ function barrowMounds(): Obstacle[] {
 const BARROW_MOUNDS = barrowMounds();
 const barrowRoad = verge(BARROWDOWNS, barrowSpawns, BARROW_MOUNDS, { axis: 'x', reach: 440, near: 12, far: 38 });
 
-/** Highmoor's keepers: the Cairn Hold's door, and the north gate to the Cairnwaste. Nothing is built behind either, and they say so. */
+/**
+ * Highmoor's keepers: the Cairn Hold's door (a level gate: Ysolt lets anyone of combat 29 and over down the stair), and the north gate to the Cairnwaste (a writ: Corvin
+ * lets through whoever the Steward has signed for, the bible's Q6, `need: 'writ'`). Nothing is built north of Corvin's line yet but the corridor's last eight units.
+ */
 const HIGH_GATES: Gate[] = [
   { id: 'cairnhold', axis: 'z', at: HIGHMOOR.z - 76, span: [HIGHMOOR.x - 33, HIGHMOOR.x - 27], from: 1, combat: 29, keeper: 'Cairnwarden Ysolt', post: { x: HIGHMOOR.x - 28.8, z: HIGHMOOR.z - 73 },
-    refuse: 'The Cairn Hold is not for anyone under combat level 29. What sleeps in it has waited this long: it can wait for you to be ready.',
-    closed: 'The Hold is sealed, and I am the one who keeps it so. Nobody has gone in since the winter the mound closed over the door, and nothing has come out. Come back when I know more.' },
-  { id: 'cairnwaste', axis: 'z', at: HIGHMOOR.z - 76, span: [HIGHMOOR.x + 27, HIGHMOOR.x + 33], from: 1, combat: 0, keeper: 'Watchman Corvin', post: { x: HIGHMOOR.x + 28.8, z: HIGHMOOR.z - 73 },
-    refuse: 'The north road is closed.',
-    closed: 'The road north to the Cairnwaste is closed, by the town\'s order, and nobody gets past me without a writ. There is no writ yet. Whatever is up there, the town has not seen fit to say.' },
+    refuse: 'The Cairn Hold is not for anyone under combat level 29. What sleeps in it has waited this long: it can wait for you to be ready.' },
+  { id: 'cairnwaste', axis: 'z', at: HIGHMOOR.z - 76, span: [HIGHMOOR.x + 27, HIGHMOOR.x + 33], from: 1, combat: 0, keeper: 'Watchman Corvin', post: { x: HIGHMOOR.x + 28.8, z: HIGHMOOR.z - 73 }, need: 'writ',
+    refuse: 'The north road is closed by the town\'s order, and nobody gets past me without the Steward\'s writ. Steward Garrow keeps the square: there is a task before a writ is signed.' },
 ];
 /** Highmoor (bible 2.1): the town is the west half, a safe circle of 35 about the square; the Moor fills the east. Local coordinates. */
 const HIGH_SPAWNS = [
@@ -441,6 +444,10 @@ const highLandmarks = {
   highStable: { ...at(HIGHMOOR, -52, -16), r: 0.7 },
   /** The tanning rack: the leatherworker's station. */
   rack: at(HIGHMOOR, -13, 12), // the first of the three the town is dressed with (world-view.ts draws them: HOM-97)
+  /** The Steward, on the north side of the square: the town's one quest giver (the writ for the north road, the bible's Q6). */
+  highSteward: { ...at(HIGHMOOR, -18, -12), r: 0.7 },
+  /** The provisioner, south-west of the square: buys the bag, mends the gear. */
+  highVendor: { ...at(HIGHMOOR, -32, 8), r: 0.7 },
 };
 const HIGH_RACK: Obstacle = { ...highLandmarks.rack, r: 1.6, kind: 'rack' };
 const graveHigh: Pt = at(HIGHMOOR, -58, 36);
@@ -456,6 +463,20 @@ function moorRocks(): Obstacle[] {
   return out;
 }
 const MOOR_ROCKS = moorRocks();
+
+/**
+ * The Cairn Hold (bible 1.2): three rooms behind Ysolt's gate, in Highmoor's frame (local coordinates). The stair goes down from the end of the north-west corridor (the gate's line is
+ * z -76, the corridor ends at -84), the ossuary and the King's chamber step west and east of it so that each pair of rooms overlaps by a doorway and no more, as the Grotto's do.
+ */
+const STAIR_DOOR = at(HIGHMOOR, -30, -83);
+const OSSUARY_DOOR = at(HIGHMOOR, -30, -99);
+const CHAMBER_DOOR = at(HIGHMOOR, -28, -121);
+const OSSUARY_STONES: Obstacle[] = [at(HIGHMOOR, -41, -108), at(HIGHMOOR, -32, -112), at(HIGHMOOR, -38, -117)].map(p => ({ ...p, r: 1.4 }));
+const CHAMBER_STONES: Obstacle[] = [at(HIGHMOOR, -27, -131), at(HIGHMOOR, -11, -131), at(HIGHMOOR, -27, -141), at(HIGHMOOR, -11, -141)].map(p => ({ ...p, r: 1.6 }));
+/** Ghostcap (bible 2.2, Herbalism 34): only in the dungeons, so it is a reason to go back. Two patches in the Grotto's galley, one in Marrow's hold; one in the ossuary and two in the King's chamber, either side of its door. */
+const grotHerb = (lx: number, lz: number): HerbSpot => ({ kind: 'ghost', type: 'ghostcap', ...at(SALTMARROW, lx, lz) });
+const holdHerb = (lx: number, lz: number): HerbSpot => ({ kind: 'ghost', type: 'ghostcap', ...at(HIGHMOOR, lx, lz) });
+const GROTTO_GHOSTCAP = [grotHerb(-26.2, -108), grotHerb(-44, -91.5), grotHerb(-9.5, -110.5)];
 
 /**
  * The world. Order matters: node ids follow region order (each region's rocks, then its trees), so new ground goes last and every
@@ -639,7 +660,7 @@ export const REGIONS: Region[] = [
     id: 'galley', name: 'The Galley', cave: true, dungeon: 'grotto', zone: 'grotto', cell: 0.25,
     footprint: [rectAt(SALTMARROW, -46, -24, -110, -88)],
     obstacles: GALLEY_STONES, tall: [], trees: [], rocks: [], landmarks: {},
-    connections: [{ to: 'gangway', at: GALLEY_DOOR }, { to: 'hold', at: HOLD_DOOR }],
+    connections: [{ to: 'gangway', at: GALLEY_DOOR }, { to: 'hold', at: HOLD_DOOR }, { to: 'grottoghost', at: GROTTO_GHOSTCAP[0] }],
     spawns: worldSpawns(SALTMARROW, [['barnacle_ogre', -31, -101], ['barnacle_ogre', -41, -108], ['tide_hag', -34, -91]]),
   },
   {
@@ -687,7 +708,7 @@ export const REGIONS: Region[] = [
   },
   {
     // Highmoor and the Moor (HOM-95). The town is safe ground: a flight master, a graveyard, the trainer, the second stablemaster and the tanning rack (HOM-96). The hard gates
-    // are two 6-unit passages through the north wall, each held by a keeper and each shut: the Cairn Hold's door (combat 29) and the road to the Cairnwaste (Q6).
+    // are two 6-unit passages through the north wall, each held by a keeper: the Cairn Hold's door (combat 29, HOM-99) and the road to the Cairnwaste (the writ, Q6; nothing is built past it yet).
     id: 'highmoor', name: 'Highmoor', cave: false, zone: 'highmoor',
     footprint: [
       { x0: HIGHMOOR.x - 70, x1: HIGHMOOR.x + 70, z0: HIGHMOOR.z - 70, z1: HIGHMOOR.z + 70 },
@@ -695,12 +716,13 @@ export const REGIONS: Region[] = [
     ],
     obstacles: [
       ...HIGH_HOUSES, HIGH_RACK, ...MOOR_ROCKS, ...HIGH_HEADSTONES, { ...highLandmarks.flightHigh, kind: 'person' }, { ...highLandmarks.highTrainer, kind: 'person' }, { ...highLandmarks.highStable, kind: 'person' },
+      { ...highLandmarks.highSteward, kind: 'person' }, { ...highLandmarks.highVendor, kind: 'person' },
       ...HIGH_GATES.map(g => ({ ...g.post, r: 0.55, kind: 'person' as const })),
     ],
     tall: [...HIGH_HOUSES, ...MOOR_ROCKS.filter(o => o.r >= 1.8)],
     trees: [], rocks: [],
     landmarks: { ...highLandmarks, gate: { x: HIGHMOOR.x - 65, z: HIGHMOOR.z } },
-    connections: [{ to: 'barrowdowns', at: { x: HIGHMOOR.x - 65, z: HIGHMOOR.z } }],
+    connections: [{ to: 'barrowdowns', at: { x: HIGHMOOR.x - 65, z: HIGHMOOR.z } }, { to: 'stair', at: STAIR_DOOR }],
     safe: [{ ...highLandmarks.highSquare, r: 35 }, { ...graveHigh, r: GRAVE_SAFE_R }],
     spawns: highSpawns,
     gates: HIGH_GATES,
@@ -712,6 +734,39 @@ export const REGIONS: Region[] = [
     obstacles: [], tall: [], trees: [], rocks: THORN_SEAM,
     landmarks: {},
     connections: [{ to: 'thornwick', at: THORN_SEAM[1] }],
+  },
+  {
+    // The Cairn Hold (HOM-99), after everything else so no older node or enemy id moves. Its own routing zone at the cave's fine cell, like the Grotto's. The stair holds a Ridge Ogre,
+    // the ossuary two more, the chamber the King. The door is Ysolt's gate (combat 29), not a dungeon gate: she holds the corridor the stair opens off.
+    id: 'stair', name: 'The Barrow Stair', cave: true, dungeon: 'cairnhold', zone: 'cairnhold', cell: 0.25,
+    footprint: [rectAt(HIGHMOOR, -34, -26, -100, -82)],
+    obstacles: [], tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'highmoor', at: STAIR_DOOR }, { to: 'ossuary', at: OSSUARY_DOOR }],
+    spawns: worldSpawns(HIGHMOOR, [['ridge_ogre', -30, -93]]),
+  },
+  {
+    id: 'ossuary', name: 'The Ossuary', cave: true, dungeon: 'cairnhold', zone: 'cairnhold', cell: 0.25,
+    footprint: [rectAt(HIGHMOOR, -46, -24, -122, -98)],
+    obstacles: OSSUARY_STONES, tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'stair', at: OSSUARY_DOOR }, { to: 'chamber', at: CHAMBER_DOOR }],
+    spawns: worldSpawns(HIGHMOOR, [['ridge_ogre', -36, -106], ['ridge_ogre', -30, -116]]),
+    herbs: [holdHerb(-44, -101)],
+  },
+  {
+    id: 'chamber', name: "The King's Chamber", cave: true, dungeon: 'cairnhold', zone: 'cairnhold', cell: 0.25,
+    footprint: [rectAt(HIGHMOOR, -32, -6, -148, -120)],
+    obstacles: CHAMBER_STONES, tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'ossuary', at: CHAMBER_DOOR }],
+    spawns: worldSpawns(HIGHMOOR, [['cairn_king', -19, -143]]),
+    herbs: [holdHerb(-30, -123), holdHerb(-8.5, -123)],
+  },
+  {
+    // The Grotto's ghostcap (HOM-99), a district of the galley and Marrow's hold: it adds no floor of its own, and is listed last so no older node moves.
+    id: 'grottoghost', name: 'The Grotto Ghostcap', cave: false, zone: 'grotto', district: true,
+    footprint: [rectAt(SALTMARROW, -46, -24, -110, -88), rectAt(SALTMARROW, -30, -8, -134, -108)],
+    obstacles: [], tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'galley', at: GROTTO_GHOSTCAP[0] }],
+    herbs: GROTTO_GHOSTCAP,
   },
 ];
 // the hollow's and hall's standing stones are tall (they break sight lines)
@@ -875,6 +930,9 @@ const DUNGEON_DEFS: Omit<Dungeon, 'rooms'>[] = [
   { id: 'rotroot', name: 'The Rotroot', parent: 'thornwick', fade: { from: THORNWICK.z + 70, to: THORNWICK.z + 82 },
     rock: rectAt(THORNWICK, 6, 48, 70, 136),
     gate: { need: 'rotroot', blurb: 'Roots as thick as a man lie across the mouth, and something under them breathes. Only a fighter of combat level 22 or more would go in.' } },
+  // no `gate`: Ysolt's line across the corridor (HIGH_GATES) is the door, and a dungeon gate would be a second one to keep in step with it
+  { id: 'cairnhold', name: 'The Cairn Hold', parent: 'highmoor', fade: { from: HIGHMOOR.z - 84, to: HIGHMOOR.z - 96 },
+    rock: rectAt(HIGHMOOR, -50, -2, -152, -84) },
 ];
 
 export const DUNGEONS: Dungeon[] = DUNGEON_DEFS.map(d => ({ ...d, rooms: caves.filter(r => r.dungeon === d.id).map(r => ({ name: r.id, rect: r.footprint[0] })) }));

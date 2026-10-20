@@ -83,9 +83,9 @@ export const RECIPES: Recipe[] = [
   // the capstone: Smithing 30 is one past the chestplate's 29 (3.3), and the shards are the limit, not the forge. XP is 0.4 x the 1,470 from 30 to 31
   { id: 'marrows_edge', name: "Marrow's Edge", skill: 'smithing', level: 30, time: 14, xp: 590,
     inputs: [{ id: 'adamant_bar', qty: 3 }, { id: 'marrow_shard', qty: 3 }], output: { id: 'marrows_edge', qty: 1 } },
-  // the Rotroot's capstone (3.3): Smithing 42, one past stormiron's 41, XP 0.4 x the 4,810 from 42 to 43. Stormiron is not built yet, so the three bars are adamant for now
+  // the Rotroot's capstone (3.3): Smithing 42, one past stormiron's 41, XP 0.4 x the 4,810 from 42 to 43. Its three bars are stormiron (HOM-99; they were adamant while stormiron was unbuilt)
   { id: 'rotroot_edge', name: 'Rotroot Edge', skill: 'smithing', level: 42, time: 15, xp: 1924,
-    inputs: [{ id: 'adamant_bar', qty: 3 }, { id: 'heartwood_shard', qty: 3 }], output: { id: 'rotroot_edge', qty: 1 } },
+    inputs: [{ id: 'stormiron_bar', qty: 3 }, { id: 'heartwood_shard', qty: 3 }], output: { id: 'rotroot_edge', qty: 1 } },
   { id: 'adamant_greaves', name: 'Adamant Greaves', skill: 'smithing', level: 27, time: 9, xp: 385,
     inputs: [{ id: 'adamant_bar', qty: 3 }], output: { id: 'adamant_greaves', qty: 1 } },
   { id: 'adamant_chestplate', name: 'Adamant Chestplate', skill: 'smithing', level: 29, time: 11, xp: 465,

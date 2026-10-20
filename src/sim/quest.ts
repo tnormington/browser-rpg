@@ -1,6 +1,6 @@
 // The quest chain that stitches the golden path together, the NPC's dialogue, and the tracker view. Pure sim.
 import type { GameState } from '../sim';
-import { LANDMARKS, inCave } from './world';
+import { GATES, LANDMARKS, inCave } from './world';
 import { ENEMY_TYPES } from './data';
 import { SkillId, grantXp } from './skills';
 import { NODE_TYPES } from './gathering';
@@ -26,31 +26,37 @@ export type Quest4Stage = 'offer' | 'carry' | 'report' | 'cleared';
 export type Quest5Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
 /** The bible's Q5, The Rotroot: Thornwick's reeve, once Brine and Bone is handed in; it opens the Rotroot's mouth and pays 1,200 combat XP. */
 export type Quest6Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
-export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage; third: Quest3Stage; fourth: Quest4Stage; fifth: Quest5Stage; sixth: Quest6Stage }
+/** The bible's Q6, The Moor Writ: Highmoor's Steward, once the Rotroot is handed in; it opens Corvin's gate north and pays 1,500 combat XP. */
+export type Quest7Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
+export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage; third: Quest3Stage; fourth: Quest4Stage; fifth: Quest5Stage; sixth: Quest6Stage; seventh: Quest7Stage }
 export const QUEST_STAGES: QuestStage[] = ['offer', 'hunt', 'report1', 'forge', 'brute', 'report2', 'done'];
 export const QUEST2_STAGES: Quest2Stage[] = ['locked', 'offer', 'delve', 'armour', 'warden', 'report', 'cleared'];
 export const QUEST3_STAGES: Quest3Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
 export const QUEST4_STAGES: Quest4Stage[] = ['offer', 'carry', 'report', 'cleared'];
 export const QUEST5_STAGES: Quest5Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
 export const QUEST6_STAGES: Quest6Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
+export const QUEST7_STAGES: Quest7Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
 
 /** True once the first quest has got as far as `stage`. */
 export const questReached = (s: GameState, stage: QuestStage) => QUEST_STAGES.indexOf(s.quest.stage) >= QUEST_STAGES.indexOf(stage);
 
-export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked', third: 'locked', fourth: 'offer', fifth: 'locked', sixth: 'locked' });
+export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked', third: 'locked', fourth: 'offer', fifth: 'locked', sixth: 'locked', seventh: 'locked' });
 
 export const QUEST_NAME = 'The Brute of the Cave Mouth';
 export const NPC = { name: 'Warden Hale', x: LANDMARKS.npc.x, z: LANDMARKS.npc.z, r: LANDMARKS.npc.r };
 export const HARBOURMASTER = { name: 'Harbourmaster Pell', x: LANDMARKS.harbourmaster.x, z: LANDMARKS.harbourmaster.z, r: LANDMARKS.harbourmaster.r };
 /** Thornwick's reeve: the town's one quest giver, who gives the Rotroot's chain once Brine and Bone is done. */
 export const THORN_REEVE = { name: 'Reeve Maud Alder', x: LANDMARKS.thornReeve.x, z: LANDMARKS.thornReeve.z, r: LANDMARKS.thornReeve.r };
-export type NpcId = 'hale' | 'harbour' | 'thorn';
+/** Highmoor's Steward: the town's one quest giver, who gives the writ for the north road once the Rotroot is done. */
+export const HIGH_STEWARD = { name: 'Steward Hild Garrow', x: LANDMARKS.highSteward.x, z: LANDMARKS.highSteward.z, r: LANDMARKS.highSteward.r };
+export type NpcId = 'hale' | 'harbour' | 'thorn' | 'high';
 /** Everyone with something to say, by id. Hale's warden is the first: an interaction with no one named falls back to him. */
-export const NPCS: { id: NpcId; name: string; x: number; z: number; r: number }[] = [{ id: 'hale', ...NPC }, { id: 'harbour', ...HARBOURMASTER }, { id: 'thorn', ...THORN_REEVE }];
+export const NPCS: { id: NpcId; name: string; x: number; z: number; r: number }[] = [{ id: 'hale', ...NPC }, { id: 'harbour', ...HARBOURMASTER }, { id: 'thorn', ...THORN_REEVE }, { id: 'high', ...HIGH_STEWARD }];
 export const TALK_RANGE = 7;                       // centre to centre: advancing the quest needs this
 export const HUNT_GOALS: Record<string, number> = { boar: 4, wolf: 3 };
 const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves', ravager: 'Cave Ravagers', footpad: 'Footpads', toll_captain: 'Toll Captain', drowned_sailor: 'Drowned Sailors', tide_hag: 'Tide Hags', barnacle_ogre: 'Barnacle Ogre',
-  thornback: 'Thornback Boars', rotwood_cultist: 'Rotwood Cultists', thorn_warden: 'Thorn Warden' };
+  thornback: 'Thornback Boars', rotwood_cultist: 'Rotwood Cultists', thorn_warden: 'Thorn Warden',
+  moor_raider: 'Moor Raiders', moor_ram: 'Moor Rams', ridge_ogre: 'Ridge Ogres', stonehorn: 'Stonehorn' };
 /**
  * What the Forgemaster's Blade costs in raw terms (see RECIPES): three steel bars, each an iron bar (two ore) and two coal, and a log. The plan is
  * padded past that (six iron bars, four steel) so the bars it asks for are also the practice the gates want (Steel Smithing 8, the blade Smithing 9).
@@ -107,6 +113,11 @@ export const QUEST6_NAME = 'The Rotroot';
 export const ROT_GOALS: Record<string, number> = { rotwood_cultist: 4, thornback: 3, thorn_warden: 1 };
 export const RECOMMENDED_COMBAT_6 = 22;
 export const REWARD6: { skill: SkillId; xp: number }[] = [{ skill: 'combat', xp: 1200 }];
+export const QUEST7_NAME = 'The Moor Writ';
+/** What the Steward wants thinned before a writ is signed: the moor's raiders, the rams they run, the ogres on the ridge and the Stonehorn that keeps the north track. */
+export const MOOR_GOALS: Record<string, number> = { moor_raider: 4, moor_ram: 3, ridge_ogre: 2, stonehorn: 1 };
+export const RECOMMENDED_COMBAT_7 = 29;
+export const REWARD7: { skill: SkillId; xp: number }[] = [{ skill: 'combat', xp: 1500 }];
 const haveGoods = (s: GameState) => ERRAND_GOODS.every(g => countItem(s.player.inventory, g.item) >= g.n);
 
 /** Inventory plus what is worn: a piece you put on has not stopped being yours. */
@@ -127,8 +138,8 @@ const hasBlade = (s: GameState) =>
 // ---------- transitions ----------
 
 /** Which quest an event belongs to travels with it: both chains share stage 'done', so the HUD cannot work it out from state. */
-const QUEST_NAMES = [QUEST_NAME, QUEST2_NAME, QUEST3_NAME, QUEST4_NAME, QUEST5_NAME, QUEST6_NAME];
-const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', chain: 1 | 2 | 3 | 4 | 5 | 6 = 1) =>
+const QUEST_NAMES = [QUEST_NAME, QUEST2_NAME, QUEST3_NAME, QUEST4_NAME, QUEST5_NAME, QUEST6_NAME, QUEST7_NAME];
+const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', chain: 1 | 2 | 3 | 4 | 5 | 6 | 7 = 1) =>
   s.events.push({ t: 'quest', what, name: QUEST_NAMES[chain - 1] });
 
 /** Kill credit. Hunt counts boars/wolves; the Brute only counts once the quest says so. */
@@ -163,6 +174,11 @@ export function questOnKill(s: GameState, type: string) {
     q.kills[type] = (q.kills[type] ?? 0) + 1;
     if (Object.entries(ROT_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n)) { q.sixth = 'report'; questEvent(s, 'stage', 6); }
     else questEvent(s, 'progress', 6);
+  }
+  if (q.seventh === 'hunt' && MOOR_GOALS[type] && (q.kills[type] ?? 0) < MOOR_GOALS[type]) {
+    q.kills[type] = (q.kills[type] ?? 0) + 1;
+    if (Object.entries(MOOR_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n)) { q.seventh = 'report'; questEvent(s, 'stage', 7); }
+    else questEvent(s, 'progress', 7);
   }
 }
 
@@ -202,6 +218,15 @@ export function advanceQuest(s: GameState, what: boolean | 'road' = true) {
     }
     return;
   }
+  if (who === 'high') { // Highmoor's Steward: the writ's chain is the only one they move
+    if (q.seventh === 'offer') { q.seventh = 'hunt'; questEvent(s, 'accept', 7); }
+    else if (q.seventh === 'report') {
+      q.seventh = 'cleared';
+      for (const r of REWARD7) if (grantXp(s, r.skill, r.xp, HIGH_STEWARD.x, HIGH_STEWARD.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
+      questEvent(s, 'complete', 7);
+    }
+    return;
+  }
   if (!nearNpc(s)) return;
   if (q.stage === 'offer') { q.stage = 'hunt'; questEvent(s, 'accept'); }
   else if (q.stage === 'report1') { q.stage = 'forge'; questEvent(s, 'stage'); }
@@ -233,6 +258,7 @@ export function updateQuest(s: GameState) {
   if (q.second === 'cleared' && q.third === 'locked') q.third = 'offer'; // the road east opens once the Hollow is quiet: nothing is announced, the harbourmaster's mark is the news
   if (q.third === 'cleared' && q.fifth === 'locked') q.fifth = 'offer'; // and the Strand's work, once the road is
   if (q.fifth === 'cleared' && q.sixth === 'locked') q.sixth = 'offer'; // and Thornwick's, once the Strand is
+  if (q.sixth === 'cleared' && q.seventh === 'locked') q.seventh = 'offer'; // and Highmoor's, once the Thornwood is
 }
 
 // ---------- dialogue ----------
@@ -398,6 +424,7 @@ export const activeDialogue = (s: GameState): Dialogue =>
 /** What a given giver has to say: the Warden's two chains, or the harbourmaster's one (a plain greeting before the road opens). */
 export const dialogueAt = (s: GameState, who: string): Dialogue => {
   if (who === 'thorn') return s.quest.sixth === 'locked' ? THORN_DIALOGUE : DIALOGUE6[s.quest.sixth];
+  if (who === 'high') return s.quest.seventh === 'locked' ? HIGH_DIALOGUE : DIALOGUE7[s.quest.seventh];
   if (who !== 'harbour') { // the Warden's own words, and the errand as one more thing to ask him while it is on offer
     const d = activeDialogue(s);
     return s.quest.fourth === 'offer' ? { ...d, options: [...d.options, ERRAND_OFFER] } : d;
@@ -437,6 +464,39 @@ const DIALOGUE6: Record<Exclude<Quest6Stage, 'locked'>, Dialogue> = {
     options: [{ label: 'Farewell.' }],
   },
 };
+const HIGH_DIALOGUE: Dialogue = {
+  lines: [
+    'Highmoor is a town that keeps its own counsel, and its own accounts. You came over the barrows on foot? Then you have seen what the dead do to a road.',
+    'The north road is shut by my order, and I sign no writ for anyone I have not seen at work. There is a task on this desk for someone who has finished their business in the Thornwood: come back when the Rotroot is quiet.',
+  ],
+  options: [{ label: 'Farewell.' }],
+};
+const DIALOGUE7: Record<Exclude<Quest7Stage, 'locked'>, Dialogue> = {
+  offer: {
+    lines: [
+      'You are the one who came through the Rotroot. Good: I do not have to explain what a bad road is.',
+      'The north road out of this town runs to the Cairnwaste, and I closed it myself, the winter the raiders took the track. Watchman Corvin keeps it, and he will let nobody past without my writ.',
+      'I will sign for you, but not for a stranger the moor has not tested. Four Moor Raiders, three Moor Rams, two Ridge Ogres and the Stonehorn that keeps the north track. Bring me that done, and the writ is yours.',
+    ],
+    options: [
+      { label: "I'll clear the moor.", advance: true,
+        reply: 'The raiders shoot from range: close the gap, or break their line of sight. The ogres slam the ground: Pummel the slam, or step out of the circle. The Stonehorn gores, and marks the ground under you a moment later: keep moving. Rest between pulls.' },
+      { label: 'Not yet.' },
+    ],
+  },
+  hunt: {
+    lines: ['The Moor is the east half of the town\'s ground: raiders and rams on the near ground, ogres further out, the Stonehorn on the north track. Four, three, two and the one.'],
+    options: [{ label: 'I am on it.' }],
+  },
+  report: {
+    lines: ['The moor is quiet? Then Corvin has his answer, and I have mine.', 'Take this, and take the writ: I have put your name in his book. The north road is open to you.'],
+    options: [{ label: 'Thank you.', advance: true, reply: 'Corvin keeps the gate in the north wall, east of the square. The Cairnwaste is a hard country, and what sleeps in the Hold under Ysolt\'s watch can wait for you or not, as you choose: she will let you down the stair if you are combat level 29 or better.' }],
+  },
+  cleared: {
+    lines: ['Your name is in Corvin\'s book, and the north road is open to you. Mind the Cairnwaste: it is a long way from any town.'],
+    options: [{ label: 'Farewell.' }],
+  },
+};
 const harbourDialogue = (s: GameState): Dialogue =>
   s.quest.third === 'locked'
     ? { lines: ['Welcome to Saltmarrow, traveller. Mind the Strand after dark: the sea gives back what it takes, and not kindly.', 'Come and see me once you have dealt with whatever troubles Hale: there is work on the road.'], options: [{ label: 'Farewell.' }] }
@@ -463,11 +523,14 @@ export function harbourMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
   return t === 'offer' ? 'offer' : t === 'report' ? 'ready' : t === 'hunt' ? 'wait' : null;
 }
 
+/** The mark over a giver whose one chain is at `t`: '!' to offer, '?' to hand in, grey while it is under way. */
+const chainMark = (t: Quest6Stage | Quest7Stage): 'offer' | 'ready' | 'wait' | null => t === 'offer' ? 'offer' : t === 'report' ? 'ready' : t === 'hunt' ? 'wait' : null;
+
 /** The mark over Thornwick's reeve, by the same rule as the harbourmaster's. */
-export function reeveMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
-  const t = s.quest.sixth;
-  return t === 'offer' ? 'offer' : t === 'report' ? 'ready' : t === 'hunt' ? 'wait' : null;
-}
+export const reeveMarker = (s: GameState) => chainMark(s.quest.sixth);
+
+/** The mark over Highmoor's Steward. */
+export const stewardMarker = (s: GameState) => chainMark(s.quest.seventh);
 
 /** Which marker floats over the Warden: '!' he has something to offer, '?' he is waiting for you, grey he is not, none for nothing left to say. */
 export function npcMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
@@ -585,6 +648,7 @@ export function activeQuestView(s: GameState): QuestView {
   const q = s.quest;
   if ((q.fourth === 'carry' || q.fourth === 'report') && s.player.x > EAST_OF_HALE) return errandView(s); // out on the road the errand is what you are doing
   if (q.stage !== 'done' || q.second === 'locked') return questView(s);
+  if (q.sixth === 'cleared' && q.seventh !== 'locked') return moorView(s);
   if (q.fifth === 'cleared' && q.sixth !== 'locked') return rotrootView(s);
   if (q.third === 'cleared' && q.fifth !== 'locked') return brineView(s);
   if (q.second === 'cleared' && q.third !== 'locked') return saltRoadView(s);
@@ -707,6 +771,29 @@ function rotrootView(s: GameState): QuestView {
     case 'report': return v([{ text: 'The Thornwood is quiet', done: true }, talk(`Return to ${THORN_REEVE.name} for your reward`)], target, true);
     case 'cleared': return v([{ text: 'Quest complete. The mouth in the roots is open.', done: true }, { text: 'The Rotroot Mother holds the last chamber (south edge of the Thornwood)', done: false }], enemyTarget(s, 'rotroot_mother'));
     default: return v([talk(`Speak to ${THORN_REEVE.name} in Thornwick`)], target, true); // offer
+  }
+}
+
+/** The seventh chain's tracker (the bible's Q6): the moor's raiders and ogres, then the Steward, then Corvin's open gate. */
+function moorView(s: GameState): QuestView {
+  const q = s.quest, lvl = s.player.combat.level, stageNo = QUEST7_STAGES.indexOf(q.seventh); // 'offer' is 1: stage 0 is the lock
+  const total = QUEST7_STAGES.indexOf('cleared') - 1;
+  const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
+  const target = { x: HIGH_STEWARD.x, z: HIGH_STEWARD.z, label: HIGH_STEWARD.name }, corvin = GATES.find(g => g.id === 'cairnwaste')!;
+  const v = (lines: QuestLine[], t: QuestView['target'], ready = false): QuestView =>
+    ({ title: QUEST7_NAME, lines, target: t, ready, stageNo, progress: q.seventh === 'cleared' ? '' : `(${stageNo}/${total})` });
+  switch (q.seventh) {
+    case 'hunt': {
+      const open = Object.entries(MOOR_GOALS).find(([t, n]) => (q.kills[t] ?? 0) < n);
+      const lines: QuestLine[] = [
+        ...Object.entries(MOOR_GOALS).map(([t, n]) => ({ text: `${PLURAL[t]} slain: ${Math.min(n, q.kills[t] ?? 0)}/${n}`, done: (q.kills[t] ?? 0) >= n })),
+        ...(lvl < RECOMMENDED_COMBAT_7 ? [{ text: `Recommended Combat ${RECOMMENDED_COMBAT_7} (you are ${lvl})`, done: false }] : []),
+      ];
+      return v(lines, open ? enemyTarget(s, open[0]) : null);
+    }
+    case 'report': return v([{ text: 'The moor is quiet', done: true }, talk(`Return to ${HIGH_STEWARD.name} for your writ`)], target, true);
+    case 'cleared': return v([{ text: 'Quest complete. The writ is signed: the north road is open.', done: true }, { text: 'Watchman Corvin keeps the gate (the north wall of Highmoor)', done: false }], { x: corvin.post.x, z: corvin.post.z, label: corvin.keeper });
+    default: return v([talk(`Speak to ${HIGH_STEWARD.name} in Highmoor`)], target, true); // offer
   }
 }
 

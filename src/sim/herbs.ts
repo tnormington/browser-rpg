@@ -1,6 +1,6 @@
 // The herbs and their potions (docs/world-design.md 2.2), as one table like fish.ts: each is a herb patch (NODE_TYPES), a raw item and a potion (ITEMS),
 // and one alchemy recipe (RECIPES). Those tables spread the rows from here, so an herb is added in one place. Pure data: imports nothing.
-// Only the first three have ground to grow on yet (Thornwick's garden, the Fens, the Thornwood); the rest wait for their regions.
+// Only four have ground to grow on yet (Thornwick's garden, the Fens, the Thornwood, and the Grotto and Cairn Hold for Ghostcap); Sunpetal and Dragonroot wait for their regions.
 // The potions have no effect yet: drinking them is the consumables card's (a shared potion cooldown, buffs usable in combat).
 
 export interface HerbDef {
@@ -16,6 +16,8 @@ export const HERBS: HerbDef[] = [
   { id: 'marrowleaf', name: 'Marrowleaf', level: 1, xp: 10, value: 3, potion: { id: 'healing_draught', name: 'Healing Draught', xp: 20 } },
   { id: 'fenbloom', name: 'Fenbloom', level: 10, xp: 24, value: 12, potion: { id: 'draught_of_vigour', name: 'Draught of Vigour', xp: 50 } },
   { id: 'thornmint', name: 'Thornmint', level: 18, xp: 54, value: 20, potion: { id: 'stoneskin', name: 'Stoneskin', xp: 115 } },
+  // dungeon-only (the Drowned Grotto and the Cairn Hold): 0.12 and 0.25 of the 2,182 from level 34 to 35, by the same rule as the rows above
+  { id: 'ghostcap', name: 'Ghostcap', level: 34, xp: 262, value: 36, potion: { id: 'greater_healing', name: 'Greater Healing', xp: 545 } },
 ];
 
 /** The empty vial a potion is poured into: the one input Thornwick's provisioner sells. Worth 1, so it costs 4. */

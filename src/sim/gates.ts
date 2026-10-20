@@ -9,8 +9,14 @@ import { TICK_DT } from './data';
 const TELL_EVERY = 2.5;
 const toldAt = new WeakMap<GameState, Map<string, number>>();
 
-/** Does this player pass this gate? Under the level, or with the way shut, no. */
-export const gateOpen = (s: GameState, g: (typeof GATES)[number]) => !g.closed && s.player.combat.level >= g.combat;
+/** What each gate's `need` asks for besides the level. A key with no entry here never opens: a typo fails shut, not open. */
+const GATE_NEEDS: Record<string, (s: GameState) => boolean> = {
+  writ: s => s.quest.seventh === 'cleared', // Corvin's: the Steward has signed it (the bible's Q6)
+};
+
+/** Does this player pass this gate? Under the level, or with the way shut, or without what it asks for, no. */
+export const gateOpen = (s: GameState, g: (typeof GATES)[number]) =>
+  !g.closed && s.player.combat.level >= g.combat && (!g.need || (GATE_NEEDS[g.need]?.(s) ?? false));
 
 /** After the player has moved from (px, pz): if the step crossed a gate they may not pass, put them back on its near side and have the keeper speak. */
 export function holdAtGates(s: GameState, px: number, pz: number) {

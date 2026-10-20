@@ -1943,9 +1943,9 @@ section('HOM-15 enemy mechanic: the ground mark punishes standing still');
   }
   assert(castName(ENEMY_TYPES.ogre, 'heavy') === 'Boulder Slam' && castName(seer, 'ground') === 'Withering Ground' && castName(seer, 'bolt') === 'Hex Bolt' && castName(ENEMY_TYPES.boar, 'ground') === 'Wild Boar',
     'castName gives the right name for every kind of wind-up and never throws, for any enemy');
-  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'barrow_lord,bog_witch,bogfather,captain_marrow,mother_mire,rotroot_mother,seer,stonehorn,thorn_warden,tide_hag,warden', 'only the Seer, the Warden, (HOM-46) the Tide Hag and (HOM-63) the Bog Witch, Bogfather, Mother Mire Thorn Warden and (HOM-64) Captain Marrow and (HOM-75) the Rotroot Mother and (HOM-95) the Barrow Lord and Stonehorn mark the ground');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'barrow_lord,bog_witch,bogfather,cairn_king,captain_marrow,mother_mire,rotroot_mother,seer,stonehorn,thorn_warden,tide_hag,warden', 'only the Seer, the Warden, (HOM-46) the Tide Hag and (HOM-63) the Bog Witch, Bogfather, Mother Mire Thorn Warden and (HOM-64) Captain Marrow and (HOM-75) the Rotroot Mother and (HOM-95) the Barrow Lord and Stonehorn and (HOM-99) the Cairn King mark the ground');
   assert(Object.values(ENEMY_TYPES).every(d => !d.look || ['wolf', 'hexer', 'brute', 'boar', 'pup'].includes(d.look.model)), 'every cave look reuses a model that is already loaded: no new art');
-  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 36 && ['boar', 'wolf', 'brute', 'pup', 'hexer'].every(k => !ENEMY_TYPES[k].look), 'the five cave enemies, (HOM-46) the ten of the road and the Strand and (HOM-63) the ten of the fens and the Thornwood and (HOM-64) Captain Marrow and (HOM-75) the Rotroot Mother and (HOM-95) the nine of the Barrowdowns and the Moor say how to draw themselves, and the original five rigs do not');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 37 && ['boar', 'wolf', 'brute', 'pup', 'hexer'].every(k => !ENEMY_TYPES[k].look), 'the five cave enemies, (HOM-46) the ten of the road and the Strand and (HOM-63) the ten of the fens and the Thornwood and (HOM-64) Captain Marrow and (HOM-75) the Rotroot Mother and (HOM-95) the nine of the Barrowdowns and the Moor and (HOM-99) the Cairn King say how to draw themselves, and the original five rigs do not');
 }
 
 // ---------------------------------------------------------------------------
@@ -3354,7 +3354,7 @@ section('HOM-46 adamant: Mining 28 (HOM-56), a smithed set, and gear that asks f
 {
   const sets = ['adamant_helm', 'adamant_chestplate', 'adamant_greaves', 'adamant_blade'];
   assert(sets.every(id => ITEMS[id].req?.combat === 14 && ITEMS[id].tier === 5), 'every adamant piece is tier 5 and needs combat 14');
-  assert(Object.entries(ITEMS).filter(([id]) => !sets.includes(id) && id !== 'marrows_edge' && id !== 'rotroot_edge' && !id.startsWith('stormiron_')).every(([, d]) => d.req === undefined), 'nothing older has a requirement (Marrow\'s Edge, HOM-64, the Rotroot Edge, HOM-66, and the stormiron set, HOM-95, are newer and ask for combat 18, 26 and 23): no old save is touched');
+  assert(Object.entries(ITEMS).filter(([id]) => !sets.includes(id) && id !== 'marrows_edge' && id !== 'rotroot_edge' && id !== 'kings_crown' && !id.startsWith('stormiron_')).every(([, d]) => d.req === undefined), 'nothing older has a requirement (Marrow\'s Edge, HOM-64, the Rotroot Edge, HOM-66, the stormiron set, HOM-95, and the King\'s Crown, HOM-99, are newer and ask for combat 18, 26, 23 and 30): no old save is touched');
   assert(['stormiron_helm', 'stormiron_chestplate', 'stormiron_greaves', 'stormiron_blade'].every(id => ITEMS[id].req?.combat === 23 && ITEMS[id].tier === 5), 'every stormiron piece is tier 5 and needs combat 23');
   assert(deriveStats({ ...emptyEquipment(), head: 'adamant_helm', chest: 'adamant_chestplate', legs: 'adamant_greaves' }).armor === 68 && ITEMS.adamant_blade.stats!.damage === 40, 'the set is 16 + 30 + 22 = 68 armour, the blade 40: the bible\'s numbers');
   assert(deriveStats({ ...emptyEquipment(), weapon: 'adamant_blade' }).weaponDamage > deriveStats({ ...emptyEquipment(), weapon: 'warden_edge' }).weaponDamage, 'the Adamant Blade beats the Warden\'s Edge');
@@ -3799,8 +3799,8 @@ section('HOM-64 dungeons as data: the Hollow is the first, the Drowned Grotto th
 {
   const hollow = dungeonById('hollow'), grotto = dungeonById('grotto');
   const isOpen = (s: GameState) => dungeonOpen(s, grotto);
-  assert(DUNGEONS.length === 3 && hollow.rooms.map(r => r.name).join() === 'throat,hollow,neck,hall' && grotto.rooms.map(r => r.name).join() === 'gangway,galley,hold', 'two dungeons: the Hollow is the four rooms it always was, the Grotto is three, and the Rotroot (HOM-75) the third');
-  assert(CAVE_ROOMS.length === 10 && CAVE_ROOMS.every(r => DUNGEONS.some(d => d.id === r.dungeon)) && REGIONS.filter(r => r.cave).every(r => !!r.dungeon), 'every cave room belongs to a dungeon, and the flat list is all of them');
+  assert(DUNGEONS.length === 4 && hollow.rooms.map(r => r.name).join() === 'throat,hollow,neck,hall' && grotto.rooms.map(r => r.name).join() === 'gangway,galley,hold', 'two dungeons: the Hollow is the four rooms it always was, the Grotto is three, the Rotroot (HOM-75) the third and the Cairn Hold (HOM-99) the fourth');
+  assert(CAVE_ROOMS.length === 13 && CAVE_ROOMS.every(r => DUNGEONS.some(d => d.id === r.dungeon)) && REGIONS.filter(r => r.cave).every(r => !!r.dungeon), 'every cave room belongs to a dungeon, and the flat list is all of them');
   assert(grotto.parent === 'saltmarrow' && grotto.rooms.every(r => r.rect.x0 >= SALTMARROW.x - 70 && r.rect.x1 <= SALTMARROW.x + 30), 'the Grotto sits in Saltmarrow\'s frame');
   const mid = (r: { x0: number; x1: number; z0: number; z1: number }) => ({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2 });
   assert(grotto.rooms.every(r => dungeonAt(mid(r.rect).x, mid(r.rect).z) === grotto && inCave(mid(r.rect).x, mid(r.rect).z)) && dungeonAt(-18, -80) === hollow && dungeonAt(0, 8) === null && dungeonAt(SALTMARROW.x - 25, SALTMARROW.z) === null, 'a point is in the dungeon whose floor it is on, and nowhere in a town');

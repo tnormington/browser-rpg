@@ -112,20 +112,22 @@ section('the gate on Thornwick\'s east edge and the walk to Highmoor');
 }
 
 // ---------------------------------------------------------------------------
-section('Highmoor\'s two gates: refused with a line, honest that nothing is behind them');
+section('Highmoor\'s two gates: the Hold\'s door is a level (HOM-99), the north road a writ (Q6)');
 {
-  const walkNorth = (g: typeof CAIRN, level: number) => {
+  const walkNorth = (g: typeof CAIRN, level: number, writ = false) => {
     const s = quiet(level), mid = (g.span[0] + g.span[1]) / 2;
+    if (writ) s.quest.seventh = 'cleared';
     s.player.x = mid; s.player.z = g.at + 6;
     let said: ReturnType<typeof gateEvent>;
     for (let i = 0; i < 90; i++) { tick(s, { dirX: 0, dirZ: -1 }); said ??= gateEvent(s); }
     return { s, said };
   };
-  assert(CAIRN.combat === 29 && CAIRN.closed && CAIRN.from === 1 && NORTH.closed && NORTH.from === 1 && NORTH.combat === 0, 'the Cairn Hold\'s door asks combat 29 and the north gate asks a quest (Q6), and both are shut for good');
-  const c20 = walkNorth(CAIRN, 20), c30 = walkNorth(CAIRN, 30), n40 = walkNorth(NORTH, 40);
+  assert(CAIRN.combat === 29 && !CAIRN.closed && !CAIRN.need && CAIRN.from === 1 && NORTH.from === 1 && NORTH.combat === 0 && NORTH.need === 'writ' && !NORTH.closed, 'the Cairn Hold\'s door asks combat 29 and nothing else, and the north gate asks the Steward\'s writ (Q6) at any level');
+  const c20 = walkNorth(CAIRN, 20), c29 = walkNorth(CAIRN, 29), n40 = walkNorth(NORTH, 40), w = walkNorth(NORTH, 29, true);
   assert(c20.said?.text === CAIRN.refuse && c20.said.keeper === 'Cairnwarden Ysolt' && c20.said.need === 29 && c20.s.player.z > CAIRN.at, `at 20 the Cairn Hold's keeper says: "${c20.said?.text}"`);
-  assert(c30.said?.text === CAIRN.closed && c30.s.player.z > CAIRN.at, `at 30 she says there is nothing to go in to: "${c30.said?.text}"`);
-  assert(n40.said?.text === NORTH.closed && n40.said.keeper === 'Watchman Corvin' && n40.s.player.z > NORTH.at, `the north gate is shut at any level: "${n40.said?.text}"`);
+  assert(!c29.said && c29.s.player.z < CAIRN.at - 3, 'at 29 she says nothing and the way down is open');
+  assert(n40.said?.text === NORTH.refuse && n40.said.keeper === 'Watchman Corvin' && n40.said.need === 0 && n40.s.player.z > NORTH.at, `the north gate is shut at any level without the writ: "${n40.said?.text}"`);
+  assert(!w.said && w.s.player.z < NORTH.at - 3, 'with the writ signed, Corvin lets the player through');
   const wall = (g: typeof CAIRN) => { const s = quiet(40); s.player.x = g.span[0] - 12; s.player.z = g.at + 4; run(s, 3, { dirX: 0, dirZ: -1 }); return s.player.z; };
   assert(wall(CAIRN) > CAIRN.at + 1 && wall(NORTH) > NORTH.at + 1, 'and the walls either side hold: there is no way round either line');
 }
@@ -157,7 +159,7 @@ section('stormiron: Mining 40, and the smithing it opens');
   const nodes = createNodes(), storm = nodes.filter(n => n.type === 'stormiron');
   const inTwo = (n: { x: number; z: number }) => ['barrowdowns', 'thornwick'].includes(regionAt(n.x, n.z)?.id ?? '');
   assert(storm.length === 15 && storm.every(inTwo) && storm.filter(n => regionAt(n.x, n.z)?.id === 'barrowdowns').length === 12, 'fifteen veins: three in the Thornwood and twelve in the barrows');
-  assert(nodes.slice(-15).every(n => n.type === 'stormiron'), 'they are the last nodes of all, so no older id moved');
+  assert(nodes.slice(nodes.length - 21, nodes.length - 6).every(n => n.type === 'stormiron'), 'they come after every older node (only the six Ghostcap patches of HOM-99 follow), so no older id moved');
   assert(storm.every(n => !COLLIDERS.some(o => o.kind !== undefined && o.kind !== 'rock' && Math.hypot(o.x - n.x, o.z - n.z) < o.r + n.r)), 'and none is inside a tree, a mound or a house');
   const s = quiet(25);
   s.player.skills.mining.level = 39;
