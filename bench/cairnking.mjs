@@ -48,6 +48,15 @@ await stand(5, 6); await shot('king-side');
 await stand(0, 10);
 for (const w of [0.15, 0.5, 0.8, 0.97]) { await pin('ground', w); await shot(`stone-${Math.round(w * 100)}`); }
 await pin('heavy', 0.7); await shot('slam');
+// the three rooms, walked into from the south: nothing awake, so the picture is the rooms
+for (const [name, x, z] of [['stair', -28, -88], ['ossuary', -30, -97], ['chamber', -28, -122]]) {
+  await page.evaluate(([x, z]) => {
+    const s = window.__debug.sim, p = s.player;
+    for (const e of s.enemies) { e.state = 'dead'; e.respawnIn = 1e9; e.deadFor = 99; }
+    p.x = 1910 + x; p.z = 1008 + z; window.__debug.view.yaw = 0;
+  }, [x, z]);
+  await page.waitForTimeout(900); await shot(`room-${name}`);
+}
 if (errors.length) { console.error(`page errors: ${errors.join('; ')}`); process.exitCode = 1; }
 console.log(process.exitCode ? 'cairnking bench FAILED' : 'cairnking shots written');
 await browser.close();

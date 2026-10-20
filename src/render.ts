@@ -1,4 +1,4 @@
-﻿// Rendering only: reads GameState, never mutates it.
+// Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
@@ -80,7 +80,7 @@ const mesh = (g: THREE.BufferGeometry, color: number, cls: MatClass, shadow: 'ca
 /** The ground hazards that are a thing falling (not a cloud or a burst): their mark draws a stone dropping into the ring from FALL_HEIGHT. */
 const FALLING = new Set(['Falling Stone', 'Falling Rock']), FALL_HEIGHT = 5;
 /** How far each cave room's floor sits above the last. The ground marks (boss circles, drop rings) draw at 0.06-0.08, so the whole stack must stay under that: at 0.02 a thirteenth room was at 0.26 and the Rotroot's and the Hold's circles were buried. */
-const FLOOR_STEP = 0.004;
+const FLOOR_STEP = 0.004, RUNE_Y = 0.055;
 // Directional light sits at a fixed offset from its shadow target and follows the player, so the shadow frustum stays tight.
 const SUN_OFFSET = new THREE.Vector3(-38, 36, 26); // ~37 degrees: long silhouettes, but shadow bands stay short enough not to swallow the combat arena
 const SHADOW_EXTENT = 28, SHADOW_MAP = 2048;
@@ -603,7 +603,47 @@ export class Renderer {
     this.scene.add(this.lantern);
     this.buildGrotto();
     this.buildRotroot();
-    for (const room of CAVE_ROOMS.filter(r => r.dungeon === 'cairnhold')) { // the Hold's dressing is the Artist's to come: a light in each room, so the King's chamber is readable
+    this.buildCairnHold();
+  }
+
+  /**
+   * The Cairn Hold's dressing, three merged draws (cut stone, bone, rune light) and a light in each room. A passage grave: a kerb of low slabs down both walls, trilithon gates (two uprights and a
+   * lintel) across the stair and the ossuary, heaps of bone against the ossuary's walls, and under the King a low dais with a ring of pale rune. Everything keeps to the walls but the dais.
+   */
+  private buildCairnHold() {
+    const rooms = CAVE_ROOMS.filter(r => r.dungeon === 'cairnhold');
+    const cut: THREE.BufferGeometry[] = [], bone: THREE.BufferGeometry[] = [], rune: THREE.BufferGeometry[] = [];
+    let n = 0;
+    const rnd = () => this.jitter(1300 + n++);
+    for (const { rect: r, name } of rooms) {
+      const w = r.x1 - r.x0, d = r.z1 - r.z0, cx = (r.x0 + r.x1) / 2;
+      // the kerb: slabs laid end to end along both long walls, each a different length and a little out of true, with gaps where the rock has taken them
+      for (const side of [1, -1] as const) for (let z = r.z0 + 3.5; z < r.z1 - 3; z += 2.2 + rnd() * 1.2) {
+        if (rnd() < 0.2) continue;
+        cut.push(new THREE.BoxGeometry(0.7 + rnd() * 0.3, 0.35 + rnd() * 0.35, 1.5 + rnd() * 0.9).rotateY((rnd() - 0.5) * 0.25)
+          .translate(side > 0 ? r.x1 - 1.1 : r.x0 + 1.1, 0.25, z));
+      }
+      // trilithon gates across the passage rooms: the uprights stand in the wall's own line, the lintel spans the room's width
+      if (name !== 'chamber') for (let z = r.z0 + 5; z < r.z1 - 4; z += name === 'stair' ? 6 : 8) {
+        const span = Math.min(w - 2.4, 8);
+        for (const side of [1, -1]) cut.push(new THREE.BoxGeometry(0.9, 3.6 + rnd() * 0.5, 1.1).rotateY(rnd() * 0.2).translate(cx + side * span / 2, 1.9, z));
+        cut.push(new THREE.BoxGeometry(span + 1.6, 0.7, 1.2).translate(cx, 4.0, z));
+      }
+      // the ossuary: heaps of bone against the walls, skulls and long bones in a tumble
+      if (name === 'ossuary') for (let i = 0; i < 9; i++) {
+        const side = i % 2 ? 1 : -1, x = side > 0 ? r.x1 - 2.1 : r.x0 + 2.1, z = r.z0 + 3 + rnd() * (d - 6);
+        for (let k = 0; k < 7; k++) bone.push(new THREE.IcosahedronGeometry(0.2 + rnd() * 0.12, 0).translate(x + (rnd() - 0.5) * 1.1, 0.15 + rnd() * 0.35, z + (rnd() - 0.5) * 1.3));
+        for (let k = 0; k < 3; k++) bone.push(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 4).rotateZ(Math.PI / 2).rotateY(rnd() * 3).translate(x + (rnd() - 0.5) * 1.2, 0.08, z + (rnd() - 0.5) * 1.4));
+      }
+      // the chamber: a floor of cold rune at the King's end, two rings and a spoke of ticks, laid flat and under the ground marks (RUNE_Y) so a boss circle is never buried by the dressing
+      if (name === 'chamber') {
+        const kz = r.z0 + 5, dais = 6.2;
+        for (const [rad, tube] of [[dais - 0.5, 0.07], [3.4, 0.06]]) rune.push(new THREE.RingGeometry(rad - tube, rad + tube, 36).rotateX(-Math.PI / 2).translate(cx, RUNE_Y, kz));
+        for (let i = 0; i < 12; i++) rune.push(new THREE.PlaneGeometry(0.2, 0.5).rotateX(-Math.PI / 2).rotateY(i * Math.PI / 6).translate(cx + Math.sin(i * Math.PI / 6) * 4.8, RUNE_Y, kz + Math.cos(i * Math.PI / 6) * 4.8));
+      }
+    }
+    this.scene.add(mesh(mergeGeometries(cut)!, 0x5a6068, 'stone', 'both'), mesh(mergeGeometries(bone.map(g => g.index ? g.toNonIndexed() : g))!, 0xa59f8a, 'rock', 'cast'), mesh(mergeGeometries(rune)!, 0xb4dcf0, 'glow', 'none'));
+    for (const room of rooms) {
       const l = new THREE.PointLight(CAIRN.light.color, CAIRN.light.intensity, CAIRN.light.distance);
       l.position.set((room.rect.x0 + room.rect.x1) / 2, CAIRN.light.y, (room.rect.z0 + room.rect.z1) / 2);
       this.scene.add(l);
@@ -1215,8 +1255,9 @@ export class Renderer {
 
   /** The stone a Falling Stone / Falling Rock mark brings down: sized to the ring it lands in, a tall dark slab so it reads against the floor as it falls. A child of the mark's root. */
   private makeFallingStone(r: number): THREE.Mesh {
-    const rock = mesh(new THREE.DodecahedronGeometry(r * 0.3), 0x8a929c, 'rock', 'cast');
-    (rock.material as Mat).emissive.setHex(0x242b34); // lit from nowhere in the dark of the Hold, a falling stone is otherwise a hole in the picture
+    // Lambert, not the rock class: the Hold's room light hangs a few units overhead, and a standard material's specular blows the stone's top face to white as it falls past it
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(r * 0.3), new THREE.MeshLambertMaterial({ color: 0x14181c, emissive: 0x222a33, flatShading: true }));
+    rock.castShadow = true;
     rock.scale.set(1, 1.35, 1);
     rock.userData.rest = r * 0.3 * 1.35 * 0.8; // resting on the ground, a little sunk
     rock.raycast = () => {};
