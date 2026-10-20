@@ -66,7 +66,7 @@ addEventListener('beforeunload', save);
 addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 const canvas = view.renderer.domElement;
 if (debug && params.has('weather')) view.weather.set(params.get('weather') as WeatherKind, true); // ?weather=clear|overcast|rain|fog pins it for the bench
-if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scene, view, sim: state, step: () => step(state, readInput()), stress, items: ITEMS, world: { WITHERING, GATES, LANDMARKS } };
+if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scene, view, sim: state, step: () => step(state, readInput()), stress, items: ITEMS, world: { WITHERING, GATES, LANDMARKS, regionAt } };
 
 // --- input -> sim Input ---
 /** G: eat the best food the bag has and the moment allows. */

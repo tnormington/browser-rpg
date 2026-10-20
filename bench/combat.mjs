@@ -7,7 +7,7 @@
 //
 // --mode ttk|loop turns it into a balance bot (HOM-53) instead: an in-page player that fights the road's and the Strand's enemies through the same
 // loop (real KeyboardEvents and MouseEvents on the page, rAF out) and measures them in sim ticks, not wall time.
-//   node bench/combat.mjs --mode ttk  --types marsh_hog,road_wolf --n 20 [--level N] [--gear base|adamant] [--speed 3] [--port 4175] [--tactics] --skip-build
+//   node bench/combat.mjs --mode ttk  --types marsh_hog,road_wolf --n 20 [--level N] [--gear base|adamant|marrow] [--speed 3] [--port 4175] [--tactics] --skip-build
 //   node bench/combat.mjs --mode loop --types marsh_hog --n 12 [--health 0.8]
 // Rotation: auto-attack, Pummel on a wind-up, Crushing Blow > Serrated Throw > Strike. --tactics adds Second Wind below 45 % HP and Cleave against two adjacent enemies.
 // Not modelled: stepping out of a slam / ground circle, food, potions, talents.
@@ -35,6 +35,7 @@ async function botInPage(cfg) {
   const GEAR = {
     base: { weapon: 'warden_edge', head: 'mithril_helm', chest: 'mithril_chestplate', legs: 'mithril_greaves' },
     adamant: { weapon: 'adamant_blade', head: 'adamant_helm', chest: 'adamant_chestplate', legs: 'adamant_greaves' },
+    marrow: { weapon: 'marrows_edge', head: 'adamant_helm', chest: 'adamant_chestplate', legs: 'adamant_greaves' },
   };
   const setup = (level, gear) => { // the shortcut the report discloses: level and gear set directly, bag emptied
     p.combat.level = level; p.combat.xp = cum[level]; p.maxHp = 100 + 15 * (level - 1);
@@ -113,8 +114,15 @@ async function botInPage(cfg) {
     setup(level, gear);
     resetEnemy(e); pin(o => o === e);
     const toward = e.spawnX > 880 ? { x: 881 - e.spawnX, z: 8 - e.spawnZ } : { x: 0, z: Math.sign(8 - e.spawnZ) || 1 }; // toward the town, or the road's axis
-    const n = Math.hypot(toward.x, toward.z);
-    p.x = e.spawnX + (toward.x / n) * 7; p.z = e.spawnZ + (toward.z / n) * 7; p.facing = Math.atan2(e.spawnX - p.x, e.spawnZ - p.z);
+    const base =Math.atan2(toward.z, toward.x);
+    // Rotwood Cultist spawn 92 (HOM-85) took 63-92 s to kill and dealt 0: it sits in the Root Warren, whose floor is a 22-wide room, and 7 units "toward the road"
+    // put the player in the Thornwood above it, a different region the cultist neither reaches nor sees across. So the stand-off point is the first of
+    // the toward-direction and then every 45 degrees round it that is on the enemy's own floor and clear of the region's standing stones; none is a bench fault.
+    const reg = d.world.regionAt(e.spawnX, e.spawnZ);
+    const spot = [0, 1, -1, 2, -2, 3, -3, 4].map(k => ({ x: e.spawnX + Math.cos(base + k * Math.PI / 4) * 7, z: e.spawnZ + Math.sin(base + k * Math.PI / 4) * 7 }))
+      .find(c => d.world.regionAt(c.x, c.z) === reg && !(reg.obstacles ?? []).some(o => Math.hypot(o.x - c.x, o.z - c.z) < o.r + 1.5));
+    if (!spot) throw new Error(`ttk: no stand-off point on ${e.type} #${e.id}'s own floor (${reg?.id}) at (${e.spawnX.toFixed(1)}, ${e.spawnZ.toFixed(1)})`);
+    p.x = spot.x; p.z = spot.z; p.facing = Math.atan2(e.spawnX - p.x, e.spawnZ - p.z);
     newRec(); const start = s.tick;
     while (!rec.kills.some(k => k.id === e.id) && !p.dead && s.tick - start < 120 * 30) { fightStep(e); await frame(); }
     hold('KeyW', false);
