@@ -17,8 +17,8 @@ import { Animator } from './anim';
 import { SILHOUETTES, Silhouette, mergeParts } from './creatures';
 import { PROPS, PropId } from './props';
 import { PlayerGear } from './gear';
-import { MountRig } from './mount';
-import { moveSpeed } from './sim/mounts';
+import { MountRig, MOUNT_LOOKS, mountLookId } from './mount';
+import { bestMount, moveSpeed } from './sim/mounts';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
 import { WorldView, flightMasterFigure, headstones, Kit } from './world-view';
@@ -271,7 +271,7 @@ export class Renderer {
   private npcGroup!: THREE.Group;
   private npcAnim?: Animator;
   private playerAnim?: Animator;
-  private mount?: MountRig;
+  private mounts = new Map<string, MountRig>(); // by look id: each horse is built the first time it is ridden
   private mountWanted = false;
   private gear?: PlayerGear;
   private playerWasDead = false;
@@ -852,28 +852,31 @@ export class Renderer {
   }
 
   /**
-   * Put the player on the first mount (or take him off). The horse loads the first time it is asked for; until it has, he stays
-   * on foot. `speed` is the mount's travel speed in world units per second, which sets the gait's playback rate.
+   * Put the player on a mount (or take him off). A horse loads the first time it is asked for; until it has, he stays on foot. `speed`
+   * is the mount's travel speed in world units per second, which sets the gait's playback rate; `id` picks which horse (mount.ts).
    */
-  setMounted(on: boolean, speed = 10) {
+  setMounted(on: boolean, speed = 10, id?: string) {
     this.mountWanted = on;
+    for (const rig of this.mounts.values()) rig.root.visible = false;
     if (!on) {
-      if (this.mount) this.mount.root.visible = false;
       this.playerAnim?.ride(null);
       return;
     }
+    const key = mountLookId(id, speed), look = MOUNT_LOOKS[key];
     const seat = (rig: MountRig) => {
       if (!this.mountWanted || !this.playerAnim) return;
       rig.root.visible = true;
       this.playerAnim.ride(rig.seat);
     };
-    if (this.mount) return seat(this.mount);
-    loadSlot('horse').then(p => {
-      if (this.mount) return;
-      this.mount = new MountRig(p, speed);
-      this.player.add(this.mount.root);
-      seat(this.mount);
-    }).catch(err => console.warn('model slot "horse" skipped, the rider stays on foot:', err));
+    const have = this.mounts.get(key);
+    if (have) return seat(have);
+    loadSlot(look.slot).then(p => {
+      if (this.mounts.has(key)) return;
+      const rig = new MountRig(p, speed, look);
+      this.mounts.set(key, rig);
+      this.player.add(rig.root);
+      seat(rig);
+    }).catch(err => console.warn(`model slot "${look.slot}" skipped, the rider stays on foot:`, err));
   }
 
   private dressNpc(p: Prepared) {
@@ -1494,7 +1497,7 @@ export class Renderer {
     if (pa) {
       if (pl.dead !== this.playerWasDead) { if (pl.dead) pa.die(); else pa.revive(); this.playerWasDead = pl.dead; }
       pa.locomotion(pl.moving && !pl.dead, 6);
-      if (this.mount?.root.visible) { this.mount.update(dtFx, pl.moving && !pl.dead); pa.rideBob(this.mount.bob); }
+      for (const rig of this.mounts.values()) if (rig.root.visible) { rig.update(dtFx, pl.moving && !pl.dead); pa.rideBob(rig.bob); }
       pa.update(dtFx);
       pa.airborne(pl.airborne ? pl.vy : 0);
       // auto-attack's swing timer is the sim's, so the wind-up can start early enough that the strike lands on the beat
@@ -1547,7 +1550,7 @@ export class Renderer {
     // orbit camera; y clamped above ground so it never clips through
     // it rides half of a jump: a pure translation (the view angle never changes), so the hop reads without the horizon lurching
     const cp = Math.cos(this.pitch), lift = pl.y * CAMERA_JUMP_FOLLOW;
-    if (pl.mounted !== this.rideShown) { this.rideShown = pl.mounted; this.setMounted(pl.mounted, moveSpeed(pl)); }
+    if (pl.mounted !== this.rideShown) { this.rideShown = pl.mounted; this.setMounted(pl.mounted, moveSpeed(pl), bestMount(pl)?.id); }
     this.mountedBlend += ((pl.mounted ? 1 : 0) - this.mountedBlend) * Math.min(1, dtFx * MOUNT_CAMERA_EASE);
     const fov = CAMERA_FOV + this.mountedBlend * MOUNT_FOV_OPEN;
     if (Math.abs(fov - this.camera.fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }

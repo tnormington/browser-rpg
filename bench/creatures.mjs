@@ -26,6 +26,10 @@ const WAVE = [
   ['fen_stalker', 'wolf', 1.0, 0x6a7a70], ['bog_witch', 'hexer', 1.1, 0x4a6a58], ['mire_troll', 'brute', 1.0, 0x4e6a48], ['bogfather', 'brute', 1.3, 0x3e5a52],
   ['mother_mire', 'brute', 1.7, 0x56604a], ['thornback', 'boar', 1.4, 0x4a4a38], ['blight_stag', 'wolf', 1.3, 0x6a5a48], ['rotwood_cultist', 'hexer', 1.0, 0x5a3a30],
   ['thorn_warden', 'brute', 1.3, 0x3e4a32], ['elder_thornback', 'boar', 2.0, 0x5a4a3a], ['shore_crab', 'boar', 0.8, 0xb8603a],
+  // HOM-97: the Barrowdowns and Highmoor Moor (3.4). The dead are cold greys; the moor's living are wool and horn
+  ['barrow_wight', 'hexer', 1.0, 0x5a6a78], ['grave_hound', 'wolf', 1.0, 0x8a8e90], ['cairn_brute', 'brute', 1.0, 0x7a8088], ['barrow_lord', 'brute', 1.4, 0x8a94a8],
+  ['hollow_knight', 'brute', 1.5, 0xa8aeb8], ['moor_ram', 'boar', 1.5, 0xa09a8a], ['moor_raider', 'hexer', 1.0, 0x6a5a48], ['ridge_ogre', 'brute', 1.2, 0x6a5848],
+  ['stonehorn', 'boar', 2.2, 0x7a7a74],
 ];
 const want = process.argv.slice(2);
 await page.evaluate(async WAVE => {

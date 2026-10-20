@@ -1,4 +1,4 @@
-﻿// Silhouettes for the enemies that share a rig with another: a tint and a scale do not make a different creature at play distance, so each
+// Silhouettes for the enemies that share a rig with another: a tint and a scale do not make a different creature at play distance, so each
 // of these adds the shapes that do (antlers, thorns, a mantle of moss, a crown) and squashes the rig where its proportions are wrong.
 // Rendering only. Everything is in the rig's own units (its fitted height: boar 1, wolf 1.25, brute 2.7, hexer 2.2; +z is forward) and is
 // carried by the actor's group, so the look's scale applies to it as to the model.
@@ -201,8 +201,99 @@ function rotwoodCultist(): Silhouette {
   const boughs = [1, -1].flatMap(s => [...bough(s, sh, 0.5), ...bough(s, sh - 0.15, 1.0), stick(s * 0.14, sh + 0.05, -0.3, 0.9, 0.055, 0.45, -s * 0.2)]);
   return { layers: [{ color: BARK, parts: boughs }, { color: MOSS, parts: [lump(0.35, sh + 0.05, -0.2, 0.15), lump(-0.35, sh + 0.05, -0.2, 0.15), lump(0, sh, -0.3, 0.18)] }], handLight: { color: HEX, size: 0.18 } };
 }
+// The Barrowdowns and the Moor (HOM-97). The dead there are cold stone, rust and bone-grey; the living are wool, horn and hide, so the two regions
+// read apart at play distance before a nameplate does. Light is grave-pale (the arcane family), never warm.
+const STONE = 0x6a7078, RUST = 0x5a4638, SHROUD = 0x2a2c34, WOOL = 0x8a867a, GRAVE = 0xb4dcf0;
+
+/** A rib: an arc over the back, in the plane across the body at `z`, standing proud of the flank. */
+const rib = (z: number, y: number, r: number, sy = 1.1) => put(new THREE.TorusGeometry(r, 0.03, 4, 8, Math.PI), 0, y, z, 0, 0, 0, 1, sy, 1);
+/** A curled horn: a thick arc, in the plane of the head's side, `side` +1 / -1, with a cone for the tip. */
+const curl = (x: number, y: number, z: number, side: number, r: number, tube: number): THREE.BufferGeometry[] =>
+  [put(new THREE.TorusGeometry(r, tube, 4, 8, Math.PI * 1.5), x, y, z, 0, Math.PI / 2 * side, side * 0.35, 1, 1, 1)];
+
+/** Barrow Wight: a grave-shroud of dark cerecloth hanging off the shoulders in rags, a rusted circlet of spikes, and two pale lights where the face was. A pale light in the hand. */
+function barrowWight(): Silhouette {
+  const sh = HEXER.sh, circlet = Array.from({ length: 7 }, (_, i) => spike(Math.sin(i * 0.9) * 0.22, HEXER.hat - 0.05, Math.cos(i * 0.9) * 0.22 - 0.02, 0.28 + (i % 2) * 0.12, 0.04));
+  return {
+    squash: [0.9, 1.04, 0.9], lean: 0.1,
+    layers: [{ color: SHROUD, parts: [put(new THREE.ConeGeometry(0.85, 1.4, 7, 1, true).translate(0, -0.7, 0), 0, sh + 0.12, -0.08), ...hangers(0, sh - 0.2, -0.05, 0.62, 10, 1.0)] },
+      { color: RUST, parts: circlet }, { color: GRAVE, parts: eyes(HEXER.hat - 0.18, 0.2, 0.08, 0.05), lit: true }],
+    handLight: { color: GRAVE, size: 0.17 },
+  };
+}
+
+/** Grave Hound: a starved wolf, ribs standing over the back and a ridge of spine, a bone plate over the muzzle, tall and thin, pale lights for eyes. */
+function graveHound(): Silhouette {
+  const ribs = [0.45, 0.28, 0.11, -0.06, -0.23].map((z, i) => rib(z, 0.5, 0.36 - i * 0.015));
+  const spine = Array.from({ length: 7 }, (_, i) => spike(0, 0.84 - i * 0.015, 0.6 - i * 0.18, 0.3, 0.05, 0.4));
+  const skull = [put(new THREE.BoxGeometry(0.2, 0.12, 0.42), 0, 0.88, 1.03, 0.25), put(new THREE.BoxGeometry(0.26, 0.08, 0.18), 0, 1.03, 0.84)];
+  return { squash: [0.8, 1.18, 1.1], layers: [{ color: BONE, parts: [...ribs, ...spine, ...skull] }, { color: GRAVE, parts: eyes(0.98, 0.9, 0.09, 0.05), lit: true }] };
+}
+
+/** Cairn Brute: a cairn carried on its back, stacked stones shrinking upward, slabs of stone laid over the shoulders and one set as a shield on the forearm. Slow, grey, and it looks like part of the barrow. */
+function cairnBrute(): Silhouette {
+  const sh = BRUTE.sh;
+  const cairn = [[0, sh + 0.05, -0.5, 0.52], [0.1, sh + 0.55, -0.48, 0.4], [-0.08, sh + 0.9, -0.46, 0.3], [0.04, sh + 1.18, -0.45, 0.2]].map(([x, y, z, r]) => lump(x, y, z, r, 0.75));
+  const slabs = [1, -1].flatMap(s => [put(new THREE.BoxGeometry(0.62, 0.2, 0.7), s * 0.7, sh + 0.12, 0, 0, 0, s * 0.28), put(new THREE.BoxGeometry(0.2, 0.5, 0.5), s * 0.86, sh - 0.4, 0.2, 0, 0, s * 0.06)]);
+  return { squash: [1.15, 0.92, 1.1], lean: 0.2, layers: [{ color: STONE, parts: [...cairn, ...slabs] }, { color: MOSS, parts: [lump(0.2, sh + 0.35, -0.7, 0.16), lump(-0.5, sh + 0.2, 0.0, 0.14)] }] };
+}
+
+/** Barrow Lord: the king under the hill. An iron crown with tall points, a ragged cloak down the back to the heels, rust-red pauldrons of plate, a lit torc at the throat. */
+function barrowLord(): Silhouette {
+  const sh = BRUTE.sh, head = BRUTE.head;
+  const crown = [...Array.from({ length: 7 }, (_, i) => spike(Math.sin(i * 0.9) * 0.27, head - 0.02, Math.cos(i * 0.9) * 0.27, i % 2 ? 0.45 : 0.75, 0.06)), put(new THREE.CylinderGeometry(0.29, 0.29, 0.1, 7, 1, true), 0, head - 0.02, 0)];
+  const pauldrons = [1, -1].flatMap(s => [put(new THREE.BoxGeometry(0.62, 0.16, 0.7), s * 0.7, sh + 0.12, 0, 0, 0, s * 0.3), put(new THREE.BoxGeometry(0.5, 0.14, 0.62), s * 0.86, sh - 0.06, 0, 0, 0, s * 0.55), spike(s * 0.78, sh + 0.2, 0, 0.5, 0.09, 0, -s * 0.3)]);
+  const cloak = [put(new THREE.BoxGeometry(0.95, 1.7, 0.05).translate(0, -0.85, 0), 0, sh + 0.05, -0.45, 0.18), ...hangers(0, 0.4, -0.55, 0.5, 8, 0.5)];
+  return {
+    squash: [1.08, 1.0, 1.05],
+    layers: [{ color: SHROUD, parts: cloak }, { color: RUST, parts: [...crown, ...pauldrons] }, { color: GRAVE, parts: [...eyes(head - 0.38, 0.33, 0.1, 0.06), put(new THREE.TorusGeometry(0.3, 0.03, 4, 8), 0, sh + 0.1, 0.05, Math.PI / 2)], lit: true }],
+  };
+}
+
+/** The Hollow Knight: nobody inside. A tall helm with a slit that is lit from within and a plume of rags, a breastplate and great round pauldrons, a tabard gone to strips; the pale rig gives the plate its colour. */
+function hollowKnight(): Silhouette {
+  const sh = BRUTE.sh, head = BRUTE.head;
+  const helm = [put(new THREE.CylinderGeometry(0.3, 0.34, 0.55, 6), 0, head - 0.1, 0.02), put(new THREE.ConeGeometry(0.3, 0.3, 6), 0, head + 0.3, 0.02), put(new THREE.BoxGeometry(0.2, 0.18, 0.06), 0, head - 0.2, 0.3)];
+  const plate = [put(new THREE.BoxGeometry(1.0, 0.85, 0.32), 0, sh - 0.3, 0.3), ...[1, -1].flatMap(s => [lump(s * 0.78, sh + 0.05, 0, 0.42, 0.8), put(new THREE.BoxGeometry(0.2, 0.6, 0.4), s * 0.84, sh - 0.45, 0.1)])];
+  const rags = [...hangers(0, sh - 0.7, 0.25, 0.45, 7, 0.9), ...[0, 1, 2, 3].map(i => stick((i - 1.5) * 0.09, head + 0.35, -0.12, 0.7 - i * 0.05, 0.05, 0.9 + i * 0.1, (i - 1.5) * 0.15))];
+  return { squash: [1.05, 1.0, 1.0], layers: [{ color: STONE, parts: [...helm, ...plate] }, { color: SHROUD, parts: rags }, { color: GRAVE, parts: [put(new THREE.BoxGeometry(0.2, 0.04, 0.03), 0, head - 0.15, 0.345)], lit: true }] };
+}
+
+/** Moor Ram: a heavy fleece over the back and shoulders in lumps, and a great pair of horns curled in front of the ears. Wool-pale, so the herd reads against dark heather. */
+function moorRam(): Silhouette {
+  const fleece = [[0.0, 0.78, -0.2, 0.42], [0.3, 0.7, 0.05, 0.3], [-0.3, 0.7, 0.05, 0.3], [0.0, 0.72, 0.3, 0.3], [0.28, 0.68, -0.4, 0.28], [-0.28, 0.68, -0.4, 0.28]].map(([x, y, z, r]) => lump(x, y, z, r, 0.85));
+  const horns = [1, -1].flatMap(s => curl(s * 0.3, 0.62, 0.5, s, 0.4, 0.1));
+  return { squash: [1.0, 1.1, 1.0], layers: [{ color: WOOL, parts: fleece }, { color: HORN, parts: horns }] };
+}
+
+/** Moor Raider: a bowman of the hill clans: a fur mantle over the shoulders, a great bow slung across the back and a quiver, bare iron points on the hood. */
+function moorRaider(): Silhouette {
+  const sh = HEXER.sh;
+  const bow = put(new THREE.TorusGeometry(0.62, 0.035, 4, 10, Math.PI * 1.1), -0.05, sh - 0.2, -0.3, 0, Math.PI / 2, 0.3, 1, 1.3, 1);
+  const quiver = [put(new THREE.CylinderGeometry(0.1, 0.08, 0.6, 5), 0.2, sh - 0.1, -0.32, 0.3, 0, -0.2), ...[0, 1, 2, 3].map(i => stick(0.2 + (i - 1.5) * 0.04, sh + 0.12, -0.4, 0.3, 0.015, 0.3, -0.2))];
+  return { squash: [1.0, 1.0, 1.0], layers: [{ color: WOOL, parts: [...mantle(sh + 0.02, 0.5, 0.38, 8, 0.2)] }, { color: BARK, parts: [bow, ...quiver] }, { color: RUST, parts: [spike(0.12, HEXER.hat + 0.2, 0, 0.3, 0.05), spike(-0.12, HEXER.hat + 0.2, 0, 0.3, 0.05)] }] };
+}
+
+/** Ridge Ogre: a horned helm, a fur mantle, and a gut-belt hung with skulls. A bigger shape than the cairn brute, with a horn silhouette against the sky on a ridge, not the cairn's stack. */
+function ridgeOgre(): Silhouette {
+  const sh = BRUTE.sh, head = BRUTE.head;
+  const horns = [1, -1].flatMap(s => [stick(s * 0.3, head - 0.08, 0, 0.6, 0.09, 0, -s * 0.9), stick(s * 0.62, head + 0.38, 0, 0.5, 0.07, 0, s * 0.35)]);
+  const skulls = [-0.55, -0.2, 0.2, 0.55].map(x => put(new THREE.IcosahedronGeometry(0.11, 0), x, BRUTE.belt - 0.05 + Math.abs(x) * -0.05, 0.38));
+  return { squash: [1.1, 1.0, 1.1], lean: 0.12, layers: [{ color: HORN, parts: horns }, { color: WOOL, parts: [...mantle(sh, 0.68, 0.52, 8, 0.28, 0.4)] }, { color: BONE, parts: skulls }, { color: SHROUD, parts: [put(new THREE.BoxGeometry(1.0, 0.12, 0.1), 0, BRUTE.belt, 0.38)] }] };
+}
+
+/** Stonehorn: the moor's old bull, with a single great horn of grey stone from the brow, slabs of the hill grown along its back, and rubble heaped at the shoulder. */
+function stonehorn(): Silhouette {
+  const horn = put(new THREE.ConeGeometry(0.16, 1.0, 5).translate(0, 0.5, 0), 0, 0.62, 0.78, -1.15);
+  const slabs = Array.from({ length: 6 }, (_, i) => put(new THREE.BoxGeometry(0.5 - i * 0.03, 0.14, 0.34), (i % 2 - 0.5) * 0.14, 0.78 + (i % 3) * 0.04, 0.5 - i * 0.2, 0.1, (i - 2.5) * 0.08, (i % 2 - 0.5) * 0.3));
+  const rubble = [lump(0.38, 0.72, 0.3, 0.26), lump(-0.38, 0.7, 0.28, 0.24), lump(0.0, 0.9, 0.1, 0.22), lump(0.3, 0.5, 0.55, 0.14), lump(-0.32, 0.52, 0.5, 0.14)];
+  return { squash: [1.0, 1.1, 1.0], layers: [{ color: STONE, parts: [horn, ...slabs, ...rubble] }, { color: MOSS, parts: [lump(0.0, 1.02, 0.0, 0.14), lump(0.34, 0.9, 0.32, 0.1)] }] };
+}
+
 /** Enemy type id -> its silhouette. A type not listed draws as its rig, tinted and scaled. */
 export const SILHOUETTES: Record<string, () => Silhouette> = {
+  barrow_wight: barrowWight, grave_hound: graveHound, cairn_brute: cairnBrute, barrow_lord: barrowLord, hollow_knight: hollowKnight,
+  moor_ram: moorRam, moor_raider: moorRaider, ridge_ogre: ridgeOgre, stonehorn,
   shore_crab: crab,
   fen_stalker: fenStalker, blight_stag: blightStag,
   thornback: () => thornback(false), elder_thornback: () => thornback(true),

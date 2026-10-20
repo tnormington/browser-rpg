@@ -18,6 +18,7 @@ Only the files actually used are committed; the full downloads are not in the re
 | `blacksmith.glb` | Forge | `Blacksmith.fbx` | Medieval Village Pack | https://opengameart.org/content/lowpoly-medieval-village-pack | CC0 |
 | `anvil.glb` | Anvil | `Anvil.fbx` | Fantasy Props MegaKit (Standard) | https://opengameart.org/content/fantasy-props-megakit | CC0 |
 | `horse.glb` | First mount | `Horse` (shipped as glTF, unmodified) | Quaternius, via Poly Pizza | https://poly.pizza/m/F8HAAcLeBL | CC0 |
+| destrier.glb | Second mount | Horse (shipped as glTF, unmodified) | Quaternius, via Poly Pizza | https://poly.pizza/m/qvTrSG9pZF | CC0 |
 
 
 ## Processing

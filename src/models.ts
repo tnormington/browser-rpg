@@ -52,6 +52,12 @@ export const SLOTS = {
   // carry visibly better tack: nothing here should be pushed as far as this model can go.
   horse: { file: 'horse', height: 2.3, plain: true, look: { sat: 0.55, light: 1.3, named: { 'Material.003': 0x6a5848, 'Material.006': 0x1c1a18 } },
     anim: { idle: 'Idle', move: 'Run', moveSpeed: 7, death: 'Death', jump: 'Jump' } },
+  // the second mount (Highmoor, 13 u/s): a different animal, not a tint. The pack's fuller horse (2,182 triangles against the first's 690, eight
+  // named materials instead of two): a near-black coat with ash markings and a pale mane, so the head and the flowing hair read at a distance. Its
+  // tack (barding, a war saddle, a plume) is built in mount.ts.
+  destrier: { file: 'destrier', height: 2.55, plain: true, look: { sat: 0.5, light: 1, named: { Main: 0x626a74, Main_Dark: 0x2c2f35, Main_Light: 0x9aa2aa, Hair: 0xdcdfe2, Muzzle: 0x3a3c42,
+    Hooves: 0x14151a, Eye_Black: 0x08090b, Eye_White: 0xb4c4d4 } },
+    anim: { idle: 'Idle', move: 'Gallop', moveSpeed: 9, death: 'Death', jump: 'Gallop_Jump' } },
   tree: { file: 'pine', height: 5.6, look: { sat: 0.45, light: 1.3, named: { Wood: 0x4a3b2e, Green: 0x2f4538 } } },
   stump: { file: 'stump', height: 0.8, look: { sat: 0.45, light: 1.3, named: { Wood: 0x4a3b2e, LightWood: 0x6a5a48, Green: 0x2f4538 } } },
   ironRock: { file: 'rock5', footprint: 2.6, look: { sat: 0.5, light: 1.7, named: { Rock: 0x6a7078 } } },

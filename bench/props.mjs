@@ -1,4 +1,4 @@
-// The Fen and Thornwood props (src/props.ts), each shot alone at the open road, and the thornoak beside Hale's pine.  node bench/props.mjs
+// The Fen and Thornwood props and the tanning rack (src/props.ts), each shot alone at the open road, and the thornoak beside Hale's pine.  node bench/props.mjs
 // Shots -> bench/shots/props/.
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
@@ -28,7 +28,7 @@ await page.evaluate(async ([X, Z]) => {
   const put = (o, x, z) => { o.position.set(X + x, 0, Z + z); o.updateMatrix(); d.scene.add(o); return o; };
   window.shelf = {
     alembic: put(d.view.buildProp('alembic'), 0, 0), herbFen: put(d.view.buildProp('herbPatchFen'), 24, 0), herbThorn: put(d.view.buildProp('herbPatchThorn'), 48, 0),
-    thornoak: put(d.view.buildProp('thornoak'), 72, 0), pine: put(spawn(pine).root, 78, 0),
+    thornoak: put(d.view.buildProp('thornoak'), 72, 0), pine: put(spawn(pine).root, 78, 0), rack: put(d.view.buildProp('tanningRack'), 96, 0),
   };
   window.x = X; window.z = Z;
 }, [X, Z]);
@@ -49,4 +49,6 @@ await shoot('herb-fen', 24, { cam: 4, h: 1.8, at: 0.4 });
 await shoot('herb-thorn', 48, { cam: 4, h: 1.8, at: 0.4 });
 await shoot('thornoak-vs-pine', 72, { cam: 13, h: 4, at: 3.0, dx: 3 });
 await shoot('thornoak', 72, { cam: 9, h: 3, at: 3.0 });
+await shoot('tanning-rack', 96, { cam: 5.5, h: 2.2, at: 1.3, yaw: 0.5 });
+await shoot('tanning-rack-play', 96, { cam: 11, h: 5.5, at: 1.0, yaw: 0.3 });
 await browser.close(); await server.close();

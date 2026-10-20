@@ -94,8 +94,34 @@ function thornoak(): Prop {
   ] };
 }
 
+/**
+ * The tanning rack (Leatherworking, Highmoor): a timber frame with a raw hide stretched across it and laced to the posts, a fleshing beam leaning
+ * against one side, a half-barrel of tanning liquor, and strips of cured leather hung over the top rail. No glow and no fire: it is the plainest
+ * station in the game, and what marks it as a tannery from across a street is the pale stretched hide, the one big light shape in a brown-grey town.
+ * Front faces +z. Standing on a station it is about 3 wide and 2.6 high.
+ */
+function tanningRack(): Prop {
+  const posts = [-1.2, 1.2].map(x => put(new THREE.CylinderGeometry(0.09, 0.11, 2.6, 5).translate(0, 1.3, 0), x, 0, 0, 0, 0, x * 0.03));
+  const rails = [0.35, 2.3].map(y => put(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 5).rotateZ(Math.PI / 2), 0, y, 0));
+  const feet = [-1.2, 1.2].map(x => put(new THREE.BoxGeometry(0.16, 0.14, 1.0), x, 0.07, 0));
+  const beam = [put(new THREE.CylinderGeometry(0.1, 0.12, 2.2, 5).translate(0, 1.1, 0), 1.55, 0, 0.7, -0.5, 0, 0.15), put(new THREE.BoxGeometry(0.34, 0.05, 0.1), 1.55, 1.02, 0.18)]; // the fleshing beam and its knife
+  const tub = [put(new THREE.CylinderGeometry(0.55, 0.48, 0.7, 8).translate(0, 0.35, 0), -1.7, 0, 0.9), ...[0.15, 0.5].map(y => put(new THREE.CylinderGeometry(0.57 - y * 0.1, 0.57 - y * 0.1, 0.05, 8), -1.7, y, 0.9))];
+  // stretched: a body with the four legs pulled out to the corners (what makes it a pelt and not a board) and a ragged tail
+  const hide = [put(new THREE.BoxGeometry(1.7, 1.4, 0.05), 0, 1.33, 0.02), put(new THREE.ConeGeometry(0.25, 0.5, 4).rotateX(Math.PI), 0.4, 0.5, 0.02),
+    ...[[-1, 1], [1, 1], [-1, -1], [1, -1]].map(([sx, sy]) => put(new THREE.BoxGeometry(0.5, 0.45, 0.05), sx * 1.0, 1.33 + sy * 0.8, 0.02, 0, 0, sx * sy * 0.5))];
+  const lacing = [-0.9, -0.3, 0.3, 0.9].flatMap(x => [put(new THREE.BoxGeometry(0.03, 0.22, 0.04), x, 2.24, 0.03), put(new THREE.BoxGeometry(0.03, 0.22, 0.04), x, 0.46, 0.03)]);
+  const cured = [-0.8, -0.4, 0, 0.4, 0.8].map((x, i) => put(new THREE.BoxGeometry(0.2, 0.7 - (i % 2) * 0.18, 0.04).translate(0, -0.35, 0), x, 2.3, -0.12, 0, 0, (i - 2) * 0.03));
+  return { layers: [
+    { name: 'frame', color: TABLE, cls: 'wood', parts: [...posts, ...rails, ...feet, ...beam, ...tub] },
+    { name: 'hide', color: 0xb4a48a, cls: 'hide', parts: hide },
+    { name: 'lacing', color: 0x4a3a2c, cls: 'hide', parts: lacing },
+    { name: 'cured', color: 0x5e4630, cls: 'hide', parts: cured },
+    { name: 'liquor', color: 0x2a2018, cls: 'hide', parts: [put(new THREE.CylinderGeometry(0.46, 0.46, 0.03, 8), -1.7, 0.66, 0.9)] },
+  ] };
+}
+
 /** Prop id -> its build. A prop is built per use (cheap: a handful of merged layers) and the renderer shares nothing between uses. */
 export const PROPS = {
-  alembic, herbPatchFen: () => herbPatch('fen'), herbPatchThorn: () => herbPatch('thorn'), thornoak,
+  alembic, herbPatchFen: () => herbPatch('fen'), herbPatchThorn: () => herbPatch('thorn'), thornoak, tanningRack,
 } satisfies Record<string, () => Prop>;
 export type PropId = keyof typeof PROPS;
