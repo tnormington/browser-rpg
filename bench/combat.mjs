@@ -17,7 +17,9 @@
 // Rotation: auto-attack, Pummel on a wind-up, Crushing Blow > Serrated Throw > Strike. --tactics adds Second Wind below 45 % HP and Cleave against two adjacent enemies.
 // --gear line: weapon 36 + 2.6 (L - 16), armour 60 + 2.2 (L - 16) at the enemy's level (world-design 3.4's model). --mode ttk fires Second Wind on cooldown when none
 // of it is wasted (the elite rows are 'with a heal'); --no-heal is the no-heal column; other modes opt in with --heal. ttk prints mean and median together.
-// Not modelled: stepping out of a slam / ground circle, food, potions, talents.
+// --dodge none|slam|all (HOM-106, world-design 3.4a; ttk defaults to slam, the other modes to none): Pummel a telegraph if it will be off cooldown, else walk out of a slam
+// (all: and out of a marked circle) with W held and view.yaw toward the point. ttk prints gross and net damage, heals, and telegraphs seen / dodged / pummelled / landed.
+// Not modelled: food, potions, talents.
 // ttk: isolated 1v1 (everything else in the world pinned dead), player placed 7 units off; per fight: first swing -> kill, damage taken, % of max HP.
 // loop: the type's camps in their natural layout (other types pinned dead), kill -> loot (real clicks) -> walk (real clicks) -> wait for --health of max HP
 //   -> next fight; swing-to-swing time split into fight / loot / walk / regen-wait / engage. Writes bench/shots/bot-<mode>-<tag>.json.
@@ -68,18 +70,52 @@ async function botInPage(cfg) {
   const faceYaw = (x, z) => { view.yaw = Math.atan2(-(x - p.x), -(z - p.z)); };
 
   // what happened, from every event of every tick (a frame can span several ticks, and the sim clears its event list each one)
+  // HOM-106: telegraphs the player is reading, by enemy id. `plan` is decided once, on the first frame the bot sees it (world-design 3.4a).
+  const tele = new Map();
+  const teleZero = () => ({ seen: 0, pummelPlan: 0, dodgePlan: 0, late: 0, netted: 0, pummelled: 0, dodged: 0, landed: 0, missed: 0 });
   let rec = null;
-  const newRec = () => (rec = { firstSwing: null, kills: [], taken: 0, heavies: 0, interrupts: 0, casts: [0, 0, 0, 0, 0, 0, 0], swings: 0, dealt: 0 });
+  const newRec = () => { tele.clear(); return (rec = { firstSwing: null, kills: [], taken: 0, heavies: 0, interrupts: 0, casts: [0, 0, 0, 0, 0, 0, 0], swings: 0, dealt: 0, heals: 0, healed: 0, tele: {} }); };
   const push = s.events.push.bind(s.events);
   s.events.push = (...evs) => {
     for (const e of evs) if (rec) {
       if (e.t === 'swing') { rec.swings++; rec.firstSwing ??= s.tick; }
       else if (e.t === 'cast') { rec.casts[e.slot]++; if (e.slot <= 2) rec.firstSwing ??= s.tick; }
       else if (e.t === 'hit') { if (e.target === 'player') { rec.taken += e.amount; if (e.heavy) rec.heavies++; } else rec.dealt += e.amount; }
-      else if (e.t === 'interrupt') rec.interrupts++;
+      else if (e.t === 'heal') { rec.heals++; rec.healed += e.amount; }
+      else if (e.t === 'telegraph') { (rec.tele[e.kind] ??= teleZero()).seen++; tele.set(e.id, { ...e, plan: null }); }
+      else if (e.t === 'slam') { // lands hit or miss; the sim's own test: centre to centre within the radius
+        const pd = tele.get(e.id), k = (rec.tele[pd?.kind ?? 'heavy'] ??= teleZero()); tele.delete(e.id);
+        if (dist(e, p) <= e.radius) k.landed++; else { k.missed++; if (pd?.plan === 'dodge') k.dodged++; }
+      }
+      else if (e.t === 'interrupt') { rec.interrupts++; const pd = tele.get(e.id); if (pd) { rec.tele[pd.kind].pummelled++; tele.delete(e.id); } }
       else if (e.t === 'kill') rec.kills.push({ id: e.id, tick: s.tick });
     }
     return push(...evs);
+  };
+
+  // HOM-106, world-design 3.4a: what to do about a telegraph, decided once. Pummel first if it will be available; else step out (a slam always, a marked circle
+  // only with --dodge all); a dodge first seen later than 0.9 s into the wind-up is not a dodge and is counted as late, a netted player cannot dodge.
+  const planTelegraph = (pd, t, dd) => {
+    if (pd.kind !== 'heavy' && pd.kind !== 'ground') return 'none';
+    const k = rec.tele[pd.kind];
+    if (dd <= 3.5 && p.cd[5] <= 0.3 && p.energy >= 10) { k.pummelPlan++; return 'pummel'; }
+    if (!(cfg.dodge === 'all' || (cfg.dodge === 'slam' && pd.kind === 'heavy'))) return 'none';
+    if (p.root) { k.netted++; return 'none'; }
+    if ((t.cast?.t ?? 0) > 0.9) { k.late++; return 'none'; }
+    const R = pd.kind === 'heavy' ? cfg.heavyRadius[t.type] : pd.radius;
+    if (!(R > 0)) throw new Error(`dodge: no radius for ${t.type}'s ${pd.kind}`);
+    if (pd.kind === 'heavy') { // straight away from the enemy, along enemy -> player, to radius + 0.9
+      const n = dist(p, t) || 1;
+      pd.goal = { x: t.x + ((p.x - t.x) / n) * (R + 0.9), z: t.z + ((p.z - t.z) / n) * (R + 0.9) };
+    } else { // the point on the 2.4 circle round the enemy that is >= radius + 0.6 from the mark and nearest to the player; else straight away from the mark
+      const cands = [];
+      for (let a = 0; a < 360; a += 10) cands.push({ x: t.x + 2.4 * Math.cos(a * Math.PI / 180), z: t.z + 2.4 * Math.sin(a * Math.PI / 180) });
+      const far = cands.filter(c => Math.hypot(c.x - pd.x, c.z - pd.z) >= R + 0.6).sort((a, b) => dist(a, p) - dist(b, p))[0];
+      if (far) pd.goal = far;
+      else { const n = Math.hypot(pd.x - t.x, pd.z - t.z) || 1; pd.goal = { x: pd.x + ((pd.x - t.x) / n) * (R + 0.6), z: pd.z + ((pd.z - t.z) / n) * (R + 0.6) }; }
+    }
+    k.dodgePlan++;
+    return 'dodge';
   };
 
   // the player's hands: auto-attack, then Pummel on a wind-up, else Crushing Blow > Serrated Throw > Strike (the bible's greedy loop), queued inside the GCD window
@@ -99,9 +135,11 @@ async function botInPage(cfg) {
       hold('KeyW', dist(c, p) > 2.2);
       return c;
     }
-    faceYaw(t.x, t.z);
     const dd = dist(t, p);
-    hold('KeyW', dd > 2.2);
+    const pd = tele.get(t.id);
+    if (pd && !pd.plan) pd.plan = planTelegraph(pd, t, dd);
+    if (pd?.plan === 'dodge') { faceYaw(pd.goal.x, pd.goal.z); hold('KeyW', dist(p, pd.goal) > 0.4); } // held with view.yaw toward the point, as a person steers; back to the enemy once the slam event clears it
+    else { faceYaw(t.x, t.z); hold('KeyW', dd > 2.2); }
     // KeyX is the attack key (KeyR is an ability-bar slot, so this used to cast whatever R holds and never arm anything). It is a toggle that the sim
     // only applies on its next tick, so assert the state wanted: tap only when disarmed, and not again until that tap has had ticks to land.
     if (!p.autoAttack && dd <= 3 && s.tick - lastAttackTap >= 6) { lastAttackTap = s.tick; tap('KeyX'); }
@@ -140,7 +178,8 @@ async function botInPage(cfg) {
     hold('KeyW', false);
     const killed = rec.kills.find(k => k.id === e.id);
     const r = { type: e.type, id: e.id, level, gear, maxHp: p.maxHp, killed: !!killed, died: p.dead, ttk: killed && rec.firstSwing != null ? (killed.tick - rec.firstSwing) / 30 : null,
-      lead: rec.firstSwing != null ? (rec.firstSwing - start) / 30 : null, taken: rec.taken, takenPct: 100 * rec.taken / p.maxHp, heavies: rec.heavies, interrupts: rec.interrupts, casts: rec.casts, swings: rec.swings, dealt: rec.dealt };
+      lead: rec.firstSwing != null ? (rec.firstSwing - start) / 30 : null, taken: rec.taken, takenPct: 100 * rec.taken / p.maxHp, netPct: 100 * (rec.taken - rec.healed) / p.maxHp, heals: rec.heals, healedPct: 100 * rec.healed / p.maxHp,
+      heavies: rec.heavies, interrupts: rec.interrupts, casts: rec.casts, swings: rec.swings, dealt: rec.dealt, tele: rec.tele };
     for (let i = 0; i < 20; i++) await frame();
     return r;
   };
@@ -289,11 +328,19 @@ async function botInPage(cfg) {
 async function runBot(page) {
   const data = readFileSync(join(root, 'src', 'sim', 'data.ts'), 'utf8'), levels = {};
   for (const m of data.matchAll(/^ {2}(\w+): \{ name: '[^']*', level: (\d+),/gm)) levels[m[1]] = Number(m[2]);
+  const heavyRadius = {}; // a heavy's radius is not in its telegraph event, so read it from the same table the levels come from
+  let cur = null;
+  for (const line of data.split('\n')) {
+    const m = line.match(/^ {2}(\w+): \{ name: '/); if (m) cur = m[1];
+    const h = cur && line.match(/heavy: \{[^}]*radius: ([\d.]+)/); if (h) heavyRadius[cur] = Number(h[1]);
+  }
+  const dodge = opt('dodge', mode === 'ttk' ? 'slam' : 'none'); // the brackets are the slam-dodging player's (world-design 3.4a); 'none' is the bench as it was
+  if (!['none', 'slam', 'all'].includes(dodge)) throw new Error(`--dodge none|slam|all, not ${dodge}`);
   const types = opt('types', 'marsh_hog').split(','), n = Number(opt('n', 20)), gear = opt('gear', 'base'), thr = Number(opt('health', 0.8));
   const runs = types.map(type => ({ type, n, gear, level: opt('level', '') ? Number(opt('level', '')) : levels[type] }));
   page.on('console', m => { if (m.type() === 'error') console.error('page:', m.text()); });
   const t0 = Date.now();
-  const res = await page.evaluate(botInPage, { mode, runs, thr, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), n, levels, standoff: Number(opt('standoff', 13)), link: Number(opt('link', 13)), size: Number(opt('size', 3)), gearLo: opt('gearlo', 'base').split(','), gearHi: opt('gearhi', 'adamant,marrow').split(',') });
+  const res = await page.evaluate(botInPage, { mode, runs, thr, dodge, heavyRadius, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), n, levels, standoff: Number(opt('standoff', 13)), link: Number(opt('link', 13)), size: Number(opt('size', 3)), gearLo: opt('gearlo', 'base').split(','), gearHi: opt('gearhi', 'adamant,marrow').split(',') });
   const wall = ((Date.now() - t0) / 1000).toFixed(0);
   if (mode === 'camp' || mode === 'ride' || mode === 'clusters') {
     writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify(res, null, 1));
@@ -301,11 +348,22 @@ async function runBot(page) {
     console.log(`wall ${wall}s at speed ${speed}`);
     return;
   }
-  writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify({ mode, gear, thr, speed, n, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), runs, res }, null, 1));
+  writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify({ mode, gear, thr, speed, n, dodge, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), runs, res }, null, 1));
   const stat = a => { a = a.filter(x => x != null); if (!a.length) return { n: 0 }; const m = a.reduce((x, y) => x + y, 0) / a.length, sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, a.length - 1)); const sorted = [...a].sort((x, y) => x - y), h = sorted.length >> 1, med = sorted.length % 2 ? sorted[h] : (sorted[h - 1] + sorted[h]) / 2;
     return { n: a.length, mean: +m.toFixed(2), median: +med.toFixed(2), sd: +sd.toFixed(2), min: +Math.min(...a).toFixed(1), max: +Math.max(...a).toFixed(1) }; };
   if (mode === 'ttk') {
-    console.table(runs.map(r => { const t = res.filter(x => x.type === r.type); return { type: r.type, level: r.level, gear, fights: t.length, died: t.filter(x => x.died).length, swings: JSON.stringify(stat(t.map(x => x.swings))), noSwing: t.filter(x => x.swings === 0).length, ttk: JSON.stringify(stat(t.map(x => x.ttk))), hpPct: JSON.stringify(stat(t.map(x => x.takenPct))) }; }));
+    // HOM-106: gross is damage taken, net is gross less health healed, both as % of max health; hpPct was gross and a heal never lowered it. Medians and means together.
+    const mm = a => { const s = stat(a); return s.n ? `${s.median} / ${s.mean}` : '-'; };
+    const sumTele = (t, kind) => t.reduce((a, x) => { const k = x.tele[kind]; if (k) for (const f in k) a[f] = (a[f] ?? 0) + k[f]; return a; }, {});
+    console.log(`--dodge ${dodge}; ttk, gross, net: median / mean`);
+    console.table(runs.map(r => { const t = res.filter(x => x.type === r.type), hv = sumTele(t, 'heavy'), gr = sumTele(t, 'ground'), tl = k => (k.seen ? `${k.seen} seen, ${k.dodged ?? 0} dodged, ${k.pummelled ?? 0} pummelled, ${k.landed ?? 0} landed, ${k.late ?? 0} late, ${k.netted ?? 0} netted` : '-');
+      return { type: r.type, level: r.level, gear, fights: t.length, died: t.filter(x => x.died).length, swings: mm(t.map(x => x.swings)), noSwing: t.filter(x => x.swings === 0).length, ttk: mm(t.map(x => x.ttk)), gross: mm(t.map(x => x.takenPct)), net: mm(t.map(x => x.netPct)),
+        heals: +(t.reduce((a, x) => a + x.heals, 0) / (t.length || 1)).toFixed(1), healedPct: +(t.reduce((a, x) => a + x.healedPct, 0) / (t.length || 1)).toFixed(0), slams: tl(hv), circles: tl(gr) }; }));
+    for (const r of runs) { // a bench that says it dodges and did not is lying; say so rather than print a table that looks fine
+      const t = res.filter(x => x.type === r.type), hv = sumTele(t, 'heavy'), gr = sumTele(t, 'ground');
+      if (dodge !== 'none' && (hv.seen ?? 0) > 0 && (hv.dodged ?? 0) + (hv.pummelled ?? 0) === 0) console.log(`BENCH LYING: ${r.type} --dodge ${dodge}: ${hv.seen} slam telegraphs, 0 dodged, 0 pummelled (${hv.late ?? 0} late, ${hv.netted ?? 0} netted)`);
+      if (dodge === 'all' && (gr.seen ?? 0) > 0 && (gr.dodged ?? 0) + (gr.pummelled ?? 0) === 0) console.log(`BENCH LYING: ${r.type} --dodge all: ${gr.seen} ground telegraphs, 0 dodged, 0 pummelled`);
+    }
   } else {
     console.table(res.map(r => { const f = r.fights.filter(x => x.loop != null); return { type: r.type, level: r.level, fights: r.fights.length, kills: r.fights.reduce((a, x) => a + x.kills, 0), loop: JSON.stringify(stat(f.map(x => x.loop))), fight: stat(f.map(x => x.parts.fight)).mean, loot: stat(f.map(x => x.parts.loot)).mean, walk: stat(f.map(x => x.parts.walk)).mean, regen: stat(f.map(x => x.parts.regenWait)).mean, engage: stat(f.map(x => x.parts.engage)).mean, respawn: stat(f.map(x => x.parts.respawnWait)).mean }; }));
   }
