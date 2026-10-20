@@ -7,7 +7,7 @@
 //
 // --mode ttk|loop turns it into a balance bot (HOM-53) instead: an in-page player that fights the road's and the Strand's enemies through the same
 // loop (real KeyboardEvents and MouseEvents on the page, rAF out) and measures them in sim ticks, not wall time.
-//   node bench/combat.mjs --mode ttk  --types marsh_hog,road_wolf --n 20 [--level N] [--gear base|adamant|marrow] [--speed 3] [--port 4175] [--tactics] --skip-build
+//   node bench/combat.mjs --mode ttk  --types marsh_hog,road_wolf --n 20 [--level N] [--gear base|adamant|marrow|line] [--no-heal] [--speed 3] [--port 4175] [--tactics] --skip-build
 //   node bench/combat.mjs --mode loop --types marsh_hog --n 12 [--health 0.8]
 // camp / ride / clusters (HOM-88): spawns within --link units (13) of each other form a camp; --size 3 keeps the camps of exactly three.
 //   node bench/combat.mjs --mode clusters [--size 3 --link 13]   list the camps and their members without fighting
@@ -15,6 +15,8 @@
 //   node bench/combat.mjs --mode ride --n 3   mounted 45 u short of a camp, W held to a point 45 past it, dead centre and 12 u off-line: HP lost, first hit, thrown, reached the far side
 // Elites (toll_captain, barnacle_ogre, bogfather) and rares (old_grey, gutterhook, mother_mire) need no new mode: --mode ttk --types toll_captain,old_grey --n 10.
 // Rotation: auto-attack, Pummel on a wind-up, Crushing Blow > Serrated Throw > Strike. --tactics adds Second Wind below 45 % HP and Cleave against two adjacent enemies.
+// --gear line: weapon 36 + 2.6 (L - 16), armour 60 + 2.2 (L - 16) at the enemy's level (world-design 3.4's model). --mode ttk fires Second Wind on cooldown when none
+// of it is wasted (the elite rows are 'with a heal'); --no-heal is the no-heal column; other modes opt in with --heal. ttk prints mean and median together.
 // Not modelled: stepping out of a slam / ground circle, food, potions, talents.
 // ttk: isolated 1v1 (everything else in the world pinned dead), player placed 7 units off; per fight: first swing -> kill, damage taken, % of max HP.
 // loop: the type's camps in their natural layout (other types pinned dead), kill -> loot (real clicks) -> walk (real clicks) -> wait for --health of max HP
@@ -44,9 +46,11 @@ async function botInPage(cfg) {
   };
   const setup = (level, gear) => { // the shortcut the report discloses: level and gear set directly, bag emptied
     p.combat.level = level; p.combat.xp = cum[level]; p.maxHp = 100 + 15 * (level - 1);
-    Object.assign(p.equipment, GEAR[gear]);
+    const line = gear === 'line'; // docs/world-design.md 3.4: the line gear for the enemy's own level, weapon 36 + 2.6 (L - 16), armour 60 + 2.2 (L - 16); looks like base, stats from the formula
+    Object.assign(p.equipment, GEAR[line ? 'base' : gear]);
     let w = 0, a = 0, sw = 2.4;
-    for (const id of Object.values(GEAR[gear])) { const st = ITEMS[id].stats; w += st.damage ?? 0; a += st.armor ?? 0; if (st.speed) sw = st.speed; }
+    for (const id of Object.values(GEAR[line ? 'base' : gear])) { const st = ITEMS[id].stats; w += st.damage ?? 0; a += st.armor ?? 0; if (st.speed) sw = st.speed; }
+    if (line) { w = 36 + 2.6 * (level - 16); a = 60 + 2.2 * (level - 16); }
     Object.assign(p.stats, { weaponDamage: w, armor: a, reduction: Math.min(0.75, a / (a + 40)), swingInterval: sw });
     p.hp = p.maxHp; p.energy = p.maxEnergy; p.cd.fill(0); p.gcd = 0; p.queued = null; p.autoAttack = false; p.swing = 0; p.buffs = [];
     p.dead = false; p.outOfCombat = 99; p.inCombat = false; s.targetId = null; s.moveTarget = null; s.interact = null; s.drops = [];
@@ -105,7 +109,8 @@ async function botInPage(cfg) {
       const w = p.gcd, en = Math.min(p.maxEnergy, p.energy + 8 * w);
       const ok = (slot, cost, range) => p.cd[slot] <= w + 0.02 && en >= cost && dd <= range;
       const adjacent = chasers.filter(e => dist(e, p) <= 3.5).length;
-      if (cfg.tactics && p.hp < 0.45 * p.maxHp && ok(3, 25, 99)) slotKey(3);          // --tactics: Second Wind when low, Cleave on a crowd
+      const windHeal = 45 * (1 + 0.07 * (p.combat.level - 1)); // Second Wind's heal (sim/data.ts: 45 x powerForLevel, no talents)
+      if (((cfg.heal && p.maxHp - p.hp >= windHeal) || (cfg.tactics && p.hp < 0.45 * p.maxHp)) && ok(3, 25, 99)) slotKey(3); // --heal: Second Wind on cooldown when none of it is wasted; --tactics: also when low, and Cleave on a crowd
       else if (cfg.tactics && adjacent >= 2 && ok(4, 25, 3.5)) slotKey(4);
       else if (ok(1, 30, 3)) slotKey(1);
       else if (ok(2, 20, 9) && !t.bleed) slotKey(2);
@@ -286,7 +291,7 @@ async function runBot(page) {
   const runs = types.map(type => ({ type, n, gear, level: opt('level', '') ? Number(opt('level', '')) : levels[type] }));
   page.on('console', m => { if (m.type() === 'error') console.error('page:', m.text()); });
   const t0 = Date.now();
-  const res = await page.evaluate(botInPage, { mode, runs, thr, tactics: process.argv.includes('--tactics'), n, levels, standoff: Number(opt('standoff', 13)), link: Number(opt('link', 13)), size: Number(opt('size', 3)), gearLo: opt('gearlo', 'base').split(','), gearHi: opt('gearhi', 'adamant,marrow').split(',') });
+  const res = await page.evaluate(botInPage, { mode, runs, thr, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), n, levels, standoff: Number(opt('standoff', 13)), link: Number(opt('link', 13)), size: Number(opt('size', 3)), gearLo: opt('gearlo', 'base').split(','), gearHi: opt('gearhi', 'adamant,marrow').split(',') });
   const wall = ((Date.now() - t0) / 1000).toFixed(0);
   if (mode === 'camp' || mode === 'ride' || mode === 'clusters') {
     writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify(res, null, 1));
@@ -294,8 +299,9 @@ async function runBot(page) {
     console.log(`wall ${wall}s at speed ${speed}`);
     return;
   }
-  writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify({ mode, gear, thr, speed, n, tactics: process.argv.includes('--tactics'), runs, res }, null, 1));
-  const stat = a => { a = a.filter(x => x != null); if (!a.length) return { n: 0 }; const m = a.reduce((x, y) => x + y, 0) / a.length, sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, a.length - 1)); return { n: a.length, mean: +m.toFixed(2), sd: +sd.toFixed(2), min: +Math.min(...a).toFixed(1), max: +Math.max(...a).toFixed(1) }; };
+  writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify({ mode, gear, thr, speed, n, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), runs, res }, null, 1));
+  const stat = a => { a = a.filter(x => x != null); if (!a.length) return { n: 0 }; const m = a.reduce((x, y) => x + y, 0) / a.length, sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, a.length - 1)); const sorted = [...a].sort((x, y) => x - y), h = sorted.length >> 1, med = sorted.length % 2 ? sorted[h] : (sorted[h - 1] + sorted[h]) / 2;
+    return { n: a.length, mean: +m.toFixed(2), median: +med.toFixed(2), sd: +sd.toFixed(2), min: +Math.min(...a).toFixed(1), max: +Math.max(...a).toFixed(1) }; };
   if (mode === 'ttk') {
     console.table(runs.map(r => { const t = res.filter(x => x.type === r.type); return { type: r.type, level: r.level, gear, fights: t.length, died: t.filter(x => x.died).length, ttk: JSON.stringify(stat(t.map(x => x.ttk))), hpPct: JSON.stringify(stat(t.map(x => x.takenPct))) }; }));
   } else {
