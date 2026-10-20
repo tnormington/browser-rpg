@@ -90,18 +90,20 @@ canvas{display:block}
 .actionbar{--slot:min(68px,calc((100vw - 2*var(--gutter) - (var(--slots) - 1)*var(--sp-4))/var(--slots)));position:absolute;left:50%;bottom:28px;width:calc(var(--slots)*var(--slot) + (var(--slots) - 1)*var(--sp-4) + 1px);transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-4);pointer-events:auto}
 .slot{position:relative;box-sizing:border-box;width:var(--slot);height:var(--slot);background:var(--iron);border:2px solid var(--edge);box-shadow:var(--lift-1);border-radius:var(--r);overflow:hidden;text-align:center;cursor:grab}
 .slot.empty{background:var(--iron-glass);border-style:dashed;border-color:var(--edge-dim);cursor:default}
-.slot .icon{font-size:var(--fs-3xl);line-height:46px}.slot .key{position:absolute;top:var(--sp-1);left:5px;font-weight:bold;font-size:var(--fs-md);color:var(--gold)}
+/* what is printed on a slot follows the slot: the token sizes are the 68px slot's, and they give way proportionally as the bar shrinks to fit the window (HOM-104: 52px at 800 wide) */
+.slot .icon{font-size:clamp(20px,calc(var(--slot)*.44),var(--fs-3xl));line-height:calc(var(--slot)*.68)}.slot .key{position:absolute;top:var(--sp-1);left:5px;font-weight:bold;font-size:clamp(11px,calc(var(--slot)*.19),var(--fs-md));color:var(--gold)}
 .slot .aname{position:absolute;bottom:var(--sp-1);width:100%;font-size:var(--fs-xs)}
-.slot .sweep{position:absolute;inset:0}.slot .cdtext{position:absolute;inset:0;font-size:var(--fs-2xl);font-weight:bold;display:flex;align-items:center;justify-content:center}
+.slot .sweep{position:absolute;inset:0}.slot .cdtext{position:absolute;inset:0;font-size:clamp(15px,calc(var(--slot)*.32),var(--fs-2xl));font-weight:bold;display:flex;align-items:center;justify-content:center}
 .slot.locked .icon,.slot.locked .aname,.slot.locked .key{opacity:.28}.slot.locked{border-color:var(--edge-dim);box-shadow:inset 0 0 0 1px #000}
 .slot .lock{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(6,6,8,.62);color:var(--gold)}
-.slot .lockicon{font-size:var(--fs-lg);line-height:17px}.slot .locklvl{font-size:var(--fs-md);font-weight:bold;letter-spacing:.04em}
+.slot .lockicon{font-size:clamp(12px,calc(var(--slot)*.22),var(--fs-lg));line-height:calc(var(--slot)*.25)}.slot .locklvl{font-size:clamp(10px,calc(var(--slot)*.19),var(--fs-md));font-weight:bold;letter-spacing:.04em}
 .slot.fresh{border-color:var(--gold);animation:freshslot .8s ease-in-out infinite}
 @keyframes freshslot{50%{box-shadow:inset 0 0 14px 2px rgba(240,200,90,.8),0 0 16px 3px rgba(240,170,60,.9)}}
 .slot.noenergy{border-color:var(--arcane-dim);filter:saturate(.3) brightness(.7)}.slot.outrange{border-color:var(--blood)}.slot.queued{border-color:var(--gold)}
 
 /* ---- banners, floaters, plates (the screen's loud voices: these keep their own colours) ---- */
 .msg{position:absolute;left:0;right:0;top:62%;text-align:center;font-size:var(--fs-2xl);font-weight:bold;color:var(--flare);opacity:0}
+.msg.speech{top:34%;box-sizing:border-box;padding:0 max(14%,var(--gutter));font-size:var(--fs-xl);font-weight:normal;font-style:italic;color:var(--ink-bright);text-shadow:0 0 8px #000,0 1px 3px #000} /* a keeper talking is not an error: no flare. It holds for seconds, so it sits above the unit frames instead of over their bars. */
 .banner{position:absolute;left:0;right:0;top:28%;text-align:center;font-size:var(--fs-5xl);font-weight:bold;color:var(--gold);opacity:0;letter-spacing:.08em;text-shadow:0 0 18px #b8601a,0 3px 4px #000}
 .banner.show{animation:lvl 2.4s ease-out}
 .unlockbanner{top:36%;font-size:var(--fs-4xl);color:var(--gold-hi);text-shadow:0 0 20px #d08a1a,0 3px 4px #000}.unlockbanner.show{animation:lvl 3.4s ease-out}
@@ -142,7 +144,7 @@ canvas{display:block}
 .cell .icon{font-size:var(--fs-2xl);line-height:36px}.cell .icon.ghost{opacity:.25;color:var(--ink)}
 .cell .iname{position:absolute;bottom:1px;left:0;right:0;font-size:var(--fs-xs);line-height:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cell .qty{position:absolute;top:1px;left:3px;font-size:var(--fs-sm);font-weight:bold;color:var(--gold)}
-.equip{display:grid;grid-template-columns:repeat(2,60px);gap:var(--sp-3) 10px;justify-content:center;margin-bottom:var(--sp-4)}
+.equip{display:grid;grid-template-columns:repeat(3,60px);gap:var(--sp-3);justify-content:center;margin-bottom:var(--sp-4)} /* six slots, two rows of three: the stats under it stay in reach at 800x560 */
 .eqcell .eqlabel{position:absolute;top:1px;left:0;right:0;font-size:var(--fs-xs);opacity:.7}.eqcell .icon{line-height:56px}
 .srow{display:flex;justify-content:space-between;margin-top:var(--sp-2)}.sv{color:var(--gold)}
 .tip{position:fixed;display:none;z-index:10;max-width:220px;pointer-events:none}
@@ -153,7 +155,9 @@ canvas{display:block}
 .mhead{padding:var(--sp-3) 14px;font-size:var(--fs-sm);color:var(--ink-dim);border-bottom:1px solid var(--edge)}
 .skillspanel{--ptop:330px;left:var(--gutter);width:220px}
 .skillrow{margin-bottom:7px}.skillhead{display:flex;justify-content:space-between}.skilllvl{color:var(--gold);font-weight:bold}
-.skillbar{--bar-h:12px;--fill:var(--fill-skill)}
+.skillbar{--bar-h:12px;--fill:var(--fill-skill)}.skillbar.thin{--bar-h:5px}
+.skilltotal{margin-bottom:var(--sp-4);padding-bottom:var(--sp-3);border-bottom:1px solid var(--edge-dim)}.skilltotal .skillname{font-weight:bold}.skilllvl.done{color:var(--moss)}
+.skillnote{margin-top:var(--sp-2);font-size:var(--fs-sm);color:var(--ink-dim)}
 .talentpanel{--ptop:76px;--pbottom:250px;left:50%;transform:translateX(-50%);width:760px}
 .ttrees{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-4)}
 .ttree{background:var(--iron-glass);border:1px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-3)}
@@ -186,7 +190,8 @@ canvas{display:block}
 .castbar{--bar-h:18px;--fill:var(--fill-cast);position:absolute;left:50%;bottom:110px;width:240px;margin-left:-120px;margin-top:0;display:none}.castbar .fill{width:0}.castbar.ride{--fill:var(--fill-ride)}
 
 /* ---- message log, quest tracker, dialogue ---- */
-.msglog{position:absolute;left:var(--gutter);bottom:34px;width:300px;max-height:150px;pointer-events:auto;padding:var(--sp-2) var(--sp-3);background:var(--iron-glass);border-radius:var(--r)}
+/* above the action bar's row and left of the player frame (248 wide with its padding, ending 8px short of the screen's middle): the lines are clickable, so a log over a slot would eat the click. The width gives way as the window narrows. */
+.msglog{position:absolute;left:var(--gutter);bottom:100px;width:min(300px,calc(50vw - 280px));max-height:150px;pointer-events:auto;padding:var(--sp-2) var(--sp-3);background:var(--iron-glass);border-radius:var(--r)}
 .msglog:empty{display:none}
 .logline{margin-top:var(--sp-1);color:var(--ink)}.log-xp{color:var(--violet)}.log-loot{color:var(--moss)}.log-drop{color:var(--gold-hi)}.log-kill{color:var(--ink-dim)}.log-lvl{color:var(--gold);font-weight:bold}.log-quest{color:var(--arcane);font-weight:bold}.log-bad{color:var(--bad)}
 .tracker{position:absolute;top:var(--gutter);left:var(--gutter);width:238px;padding:var(--sp-4) 10px;border-left:3px solid var(--arcane)}

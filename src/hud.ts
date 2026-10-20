@@ -27,6 +27,7 @@ import { SpellbookUi } from './spellbook-ui';
 import { Minimap } from './minimap';
 import { HudWindow, el } from './dom';
 import { loadBar, saveBar } from './storage';
+import { sanitizeBar } from './bar-layout';
 
 const PUMMEL = ABILITIES.findIndex(a => a.kind === 'interrupt');
 
@@ -77,24 +78,14 @@ const ICONS =['⚔', '🔨', '🗡', '❤', '🌀', '✊', '🌪', '🛡', '🫀
 /** The key for each bar slot, in order: a longer bar is more entries here, and the bar lays itself out. */
 export const BAR_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyT', 'Digit7', 'Digit8'];
 export const keyLabel = (barSlot: number) => BAR_KEYS[barSlot].replace(/^(Digit|Key)/, '');
-/** The layout a fresh player gets: every ability in order, and the rest of the bar left empty for the spell book. */
-const defaultBar = () => BAR_KEYS.map((_, i) => (i < ABILITIES.length ? i : null));
-/** A stored layout, or the default: anything that is not a bar of legal, unrepeated ability indices is thrown away. */
-function sanitizeBar(raw: unknown): (number | null)[] {
-  if (!Array.isArray(raw) || raw.length !== BAR_KEYS.length) return defaultBar();
-  const seen = new Set<number>();
-  return raw.map(v => {
-    if (!Number.isInteger(v) || v < 0 || v >= ABILITIES.length || seen.has(v)) return null;
-    seen.add(v);
-    return v as number;
-  });
-}
 const FAIL_TEXT = {
   range: 'Out of range', cooldown: 'Not ready yet', gcd: 'Not ready yet',
   energy: 'Not enough energy', target: 'No target', nocast: 'Nothing to interrupt',
 } as const;
 /** How long a freshly unlocked slot keeps glowing, and the gap between banners when one level hands over several abilities. */
 const UNLOCK_GLOW_MS = 4000, UNLOCK_BANNER_GAP_MS = 1900;
+/** Seconds the centre message holds at full strength before it fades out over the next two thirds of one. */
+const MSG_HOLD = 0.4;
 
 function bar(parent: HTMLElement, cls: string) {
   const outer = el(parent, `bar ${cls}`);
@@ -163,7 +154,7 @@ export class Hud {
   private xpSkill: SkillId = 'combat';
   /** One per bar slot (not per ability): `ability` is what it currently casts, null when the slot is empty. */
   private slots: { root: HTMLElement; icon: HTMLElement; aname: HTMLElement; sweep: HTMLElement; cdText: HTMLElement; lock: HTMLElement; lockText: HTMLElement; ability: number | null }[] = [];
-  private bar = sanitizeBar(loadBar());
+  private bar = sanitizeBar(loadBar(), BAR_KEYS.length, ABILITIES.length);
   private swingBar: ReturnType<typeof bar>;
   private msg: HTMLElement;
   private banner: HTMLElement;
@@ -171,6 +162,7 @@ export class Hud {
   private plates = new Map<number, { root: HTMLElement; fill: HTMLElement; cast: HTMLElement; castFill: HTMLElement }>();
   private floaters: Floater[] = [];
   private msgAge = 99;
+  private msgHold = MSG_HOLD;
   private log: HTMLElement;
   private questUi: QuestUi;
   private menuUi: MenuUi;
@@ -354,8 +346,11 @@ export class Hud {
     return line;
   }
 
-  say(text: string) {
+  /** The centre-screen message: a refusal or a cue, gone in a second. `speech` is a person talking (a keeper): it is set as speech, not as an error, and held long enough to read. */
+  say(text: string, speech = false) {
     this.msg.textContent = text;
+    this.msg.classList.toggle('speech', speech);
+    this.msgHold = speech ? Math.min(6, 1.5 + text.length / 30) : MSG_HOLD;
     this.msgAge = 0;
   }
 
@@ -440,8 +435,11 @@ export class Hud {
       } else if (ev.t === 'buff') {
         this.note(ev.on ? `${BUFFS[ev.id].name}: ${BUFFS[ev.id].desc}` : `${BUFFS[ev.id].name} has worn off.`, 'log-info');
       } else if (ev.t === 'gate') {
-        this.say(`${ev.keeper}: "${ev.text}"`);
-        this.note(`${ev.keeper}: "${ev.text}"${ev.need > 0 ? ` (combat ${ev.need} needed, you are ${s.player.combat.level})` : ''}`, 'log-quest'); // a gate that asks a quest, not a level, has need 0
+        this.say(`${ev.keeper}: "${ev.text}"`, true);
+        // the level is only held against a player who is short of it: a keeper who asks a quest, not a level, has need 0, and one who asks both
+        // (the Cairn Hold) says "sealed" to a player who has the level, which "(combat 29 needed, you are 31)" would contradict
+        const short = ev.need > s.player.combat.level;
+        this.note(`${ev.keeper}: "${ev.text}"${short ? ` (combat ${ev.need} needed, you are ${s.player.combat.level})` : ''}`, 'log-quest');
       } else if (ev.t === 'door') {
         this.say(ev.blurb);
         this.note(ev.blurb, 'log-info');
@@ -702,7 +700,7 @@ export class Hud {
     this.updateNodePlates(s, blockers);
 
     this.msgAge += dtSeconds;
-    this.msg.style.opacity = String(Math.max(0, Math.min(1, 1.6 - this.msgAge * 1.5)));
+    this.msg.style.opacity = String(Math.max(0, Math.min(1, 1 - (this.msgAge - this.msgHold) * 1.5)));
 
     this.deathOverlay.style.display = p.dead ? 'flex' : 'none';
     if (p.dead) this.deathOverlay.textContent = `You died.  Waking at ${nearestTown(p.x, p.z, s.found).name}'s graveyard in ${Math.ceil(p.respawnIn)}...  ${this.cost}`;

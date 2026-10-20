@@ -1,4 +1,5 @@
 // HOM-60: what the inventory panel's Sort button does, and what the unit frames read for buffs and debuffs.
+// HOM-104: what a saved action bar layout is worth once the bar has grown.
 // Run with `npm run verify`.
 import { createState, GameState } from './sim';
 import { INVENTORY_SIZE, Inventory, applyInvAction, newInventory, sortInventory } from './sim/inventory';
@@ -6,6 +7,7 @@ import { ITEMS } from './sim/items';
 import { BUFFS, FOOD_TIME, applyBuff } from './sim/consumables';
 import { ABILITIES, STAGGER_TIME } from './sim/data';
 import { enemyStatuses, playerStatuses } from './sim/status';
+import { defaultBar, sanitizeBar } from './bar-layout';
 
 let checks = 0;
 function assert(cond: unknown, msg: string): asserts cond {
@@ -118,4 +120,24 @@ section('Debuffs on the target: the bleed and the stagger');
   assert(enemyStatuses(e).length === 0, 'and it leaves the frame the moment it runs out');
 }
 
-console.log(`\nAll ${checks} inventory-sort and unit-frame checks passed.`);
+section('Saved bar layout: a longer bar keeps what the player arranged (HOM-104)');
+{
+  // the bar was eleven keys when this was saved: the player swapped Strike and Cleave, took the Pummel off, and left the new keys to come
+  const old = [4, 1, 2, 3, 0, null, 6, 7, 8, 9, 10];
+  const grown = sanitizeBar(old, 13, 13);
+  const none = (...v: unknown[]) => v.map(raw => sanitizeBar(raw, 13, 13).join()).every(j => j === defaultBar(13, 13).join());
+  assert(grown.length === 13, 'a layout saved for a shorter bar comes back as long as the bar is now');
+  assert(old.every((v, i) => grown[i] === v), 'every slot the player arranged is where they left it, the emptied one included');
+  assert(grown[11] === 11 && grown[12] === 12, 'the two new keys take the two abilities the save predates');
+  assert(!grown.includes(5), 'an ability the player took off the bar on purpose does not come back');
+  assert(new Set(grown.filter(v => v !== null)).size === grown.filter(v => v !== null).length, 'no ability is on the bar twice');
+
+  const full = [...Array(13).keys()].reverse();
+  assert(sanitizeBar(full, 13, 13).join() === full.join(), 'a layout that already fits the bar is kept as it is');
+  assert(sanitizeBar([0, 1, 2], 13, 3).join() === '0,1,2,,,,,,,,,,', 'a short bar with nothing new to add leaves the new keys empty');
+  assert(none([...full, 0]), 'a layout longer than the bar is thrown away');
+  assert(none(null, [], 'x'), 'nothing, an empty list or a non-list is the default');
+  assert(sanitizeBar([0, 0, 99, -1, 1.5], 13, 13).slice(0, 5).join() === '0,,,,', 'a repeat, an unknown ability or a non-integer is dropped from its slot');
+}
+
+console.log(`\nAll ${checks} inventory-sort, unit-frame and bar-layout checks passed.`);

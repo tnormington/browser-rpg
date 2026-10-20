@@ -6,7 +6,7 @@ import { ABILITIES } from './sim/data';
 import { FOOT_SPEED, mountsSoldBy } from './sim/mounts';
 import { ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { hasRoom } from './sim/inventory';
-import { totalLevel } from './sim/skills';
+import { SKILL_IDS, totalLevel } from './sim/skills';
 import { damagedGear, durabilityOf, repairCost } from './sim/durability';
 import { actionButton, el, titleRow } from './dom';
 
@@ -37,7 +37,7 @@ export class ShopUi {
     this.open = on;
     if (on && vendor) this.vendor = vendorById(vendor) ?? this.vendor;
     this.titleEl.firstChild?.nodeType === Node.TEXT_NODE ? (this.titleEl.firstChild.textContent = this.vendor.name) : this.titleEl.prepend(this.vendor.name);
-    this.hint.textContent = mountsSoldBy(this.vendor.id).length ? 'Mounts are bought here with gold, once you have the level. Press Z to ride.' : taughtBy(this.vendor.id).length ? 'Abilities are bought here with gold, once you have the level.' : 'Right-click an item in your bag to sell it.';
+    this.hint.textContent = mountsSoldBy(this.vendor.id).length ? 'Mounts are bought here with gold, once you meet what each one asks. Press Z to ride.' : taughtBy(this.vendor.id).length ? 'Abilities are bought here with gold, once you have the level.' : 'Right-click an item in your bag to sell it.';
     this.panel.style.display = on ? 'block' : 'none';
     this.sig = '';
   }
@@ -81,12 +81,22 @@ export class ShopUi {
       const total = totalLevel(p.skills), known = p.mounts.includes(m.id), ready = p.combat.level >= m.level && total >= (m.total ?? 0), can = !known && ready && p.gold >= m.price && near;
       const row = el(this.list, `recipe${can ? '' : ' locked'}`);
       const speed = `Rides at ${m.speed} against ${FOOT_SPEED} on foot.`;
-      row.title = `${speed} Not in combat; any hit or ability throws you off.`;
+      // the price is always the head: a mount asks for gold and a level, and a row that showed only the one you lack hid the other
+      const asks = [
+        ...(m.level > 0 ? [{ ok: p.combat.level >= m.level, text: `Combat level ${p.combat.level} / ${m.level}` }] : []),
+        ...(m.total ? [{ ok: total >= m.total, text: `Total level ${total} / ${m.total}` }] : []),
+      ];
+      row.title = [speed + ' Not in combat; any hit or ability throws you off.',
+        ...(m.total ? [`Total level is every skill's level added together (${SKILL_IDS.length} skills, each starting at 1): the Skills panel (K) keeps the count.`] : [])].join('\n');
       const head = el(row, 'rhead');
       el(head, 'rname', m.name);
-      el(head, `rreq${known || (ready && p.gold >= m.price) ? '' : ' bad'}`, known ? 'Owned' : ready ? `${m.price} gold` : m.total ? `total level ${total} / ${m.total}` : `combat level ${m.level}`);
+      el(head, `rreq${known || p.gold >= m.price ? '' : ' bad'}`, known ? 'Owned' : `${m.price} gold`);
       el(row, 'rstat', speed);
       if (known) continue;
+      if (asks.length) {
+        const wants = el(row, 'rinputs');
+        for (const a of asks) el(wants, `rin${a.ok ? '' : ' bad'}`, a.text);
+      }
       actionButton(el(row, 'rbtns'), 'Buy', can).addEventListener('click', () => this.buyMount(m.id));
     }
     if (this.vendor.stock.length) this.repairRow(p, near);
