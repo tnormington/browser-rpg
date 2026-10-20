@@ -22,3 +22,14 @@ A `post-commit` hook runs `dev:ensure` in the background as a safety net. Enable
 with `git config core.hooksPath .githooks`; it never blocks or delays a commit.
 
 Work in a `wt/*` worktree is not playable until it lands on `master` in the main checkout.
+
+## Reaching the remote
+
+Plain `git fetch`/`push` has no credentials and fails with `could not read Username for
+'https://github.com'`. Credentials are minted per-operation by a launcher shim, so route any
+command that touches the network through it:
+
+    node "$PAPERCLIP_GITHUB_LAUNCHER_DIR/git" -C <repo> fetch origin
+
+Local-only commands (`status`, `log`, `commit`, `rev-list`) work as normal. If you cannot reach the
+remote, say so rather than reporting measurements as verified against it.
