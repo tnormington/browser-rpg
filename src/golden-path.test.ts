@@ -77,6 +77,8 @@ function atLevel(s: GameState, level: number) {
   p.energy = p.maxEnergy;
 }
 const SLOT = { strike: 0, crushing: 1, throw: 2, wind: 3, cleave: 4, pummel: 5 };
+/** The bronze set without its sword: what a smith can wear off the bars the iron gate wants anyway (no log needed). */
+const BRONZE_ARMOUR = BRONZE_SET.filter(id => ITEMS[id].slot !== 'weapon');
 
 /**
  * Simple player policy, aware of the unlocks: Pummel a wind-up, heal when low, keep bleed up, Cleave into a crowd,
@@ -515,7 +517,12 @@ function atForge(s: GameState) {
   }
   return false;
 }
-/** A new smith's road to iron, as a player takes it (HOM-56): copper and tin until Mining opens the iron rock, then bronze at the forge until Smithing opens the iron bar. */
+/**
+ * A new smith's road to iron, as a player takes it (HOM-56): copper and tin until Mining opens the iron rock, then bronze at the forge until
+ * Smithing opens the iron bar, and then the rest of what the Warden said: wear what you make. Nine of those bars are the bronze set (bible 2.3),
+ * and it is the armour the Brute is fought in: since HOM-77 the ore is out on the road, where nothing aggroes, so the trips no longer level the
+ * player on the way.
+ */
 function bronzeToIron(s: GameState) {
   const ironBar = recipeById('iron_bar')!.level;
   for (let guard = 0; guard < 60 && (s.player.skills.mining.level < NODE_TYPES.iron.level || s.player.skills.smithing.level < ironBar); guard++) {
@@ -527,6 +534,9 @@ function bronzeToIron(s: GameState) {
       craft(s, 'bronze_bar', countOf(s, 'bronze_bar') + Math.min(countOf(s, 'copper_ore'), countOf(s, 'tin_ore')));
     }
   }
+  atForge(s);
+  for (const id of BRONZE_ARMOUR) craft(s, id, 1);
+  for (const id of BRONZE_ARMOUR) tick(s, { inv: [{ k: 'equip', slot: s.player.inventory.findIndex(x => x?.id === id) }] });
 }
 /** The whole first forge stage as a player plays it: bronze, then the plan's iron, coal and a log, then the bars and the blade. */
 function smithTheBlade(s: GameState) {
@@ -613,9 +623,9 @@ section('M3 gathering: nodes, timing, depletion, respawn, interruption');
   const def = NODE_TYPES.copper;
   const rock = nodesOf(s, 'copper')[0];
   assert(nodesOf(s, 'iron').length >= 3 && nodesOf(s, 'coal').length >= 2 && nodesOf(s, 'tree').length === TREES.length + REGIONS.find(r => r.id === 'wayside')!.trees.length, 'iron rocks, coal seams and trees are placed in the zone (and along the road)');
-  const cave = LANDMARKS.caveMouth;
-  assert(ROCKS.filter(r => r.type === 'iron' || r.type === 'coal').every(r => dist2(r, cave) < 20), 'iron and coal are hand-placed near the cave mouth');
-  assert(nodesOf(s, 'copper').length >= 3 && nodesOf(s, 'tin').length >= 3, 'copper and tin are placed in the clearing and on the ridge, three of each or more');
+  const road = REGIONS.find(r => r.id === 'wayside')!.rocks;
+  assert(ROCKS.every(r => r.type === 'copper') && ['tin', 'iron', 'coal'].every(t => road.some(r => r.type === t)), 'HOM-77: Hale has copper and nothing else; tin, iron and coal are out on the road');
+  assert(nodesOf(s, 'copper').length >= 3 && nodesOf(s, 'tin').length >= 3, 'copper is in the clearing and on the ridge, tin on the road, three of each or more');
   assert(ROCKS.every(r => dist2(r, enemyOf(s, 'brute')) > ENEMY_TYPES.brute.aggroRadius + 1), 'no ore node sits inside the Cave Brute aggro radius');
 
   const far = dist2(s.player, rock);
@@ -1014,6 +1024,7 @@ section('M4 FULL GOLDEN PATH: one continuous run as a new character');
   assert(lineTexts(s)[0].includes(`needs Mining ${NODE_TYPES.iron.level}`) && questView(s).target?.label === 'Copper Rock', 'tracker: iron is out of reach, practise on copper first');
   bronzeToIron(s); // what the tracker says: copper and tin, smelted to bronze, until iron opens
   assert(!lineTexts(s)[0].includes('needs Mining'), 'tracker: the gate note is gone once Mining opens iron');
+  assert(BRONZE_ARMOUR.every(id => Object.values(s.player.equipment).includes(id)), `and wore what it made, as the Warden said: the bronze set, ${s.player.stats.armor} armour`);
   milestone(`bronze first: Mining ${s.player.skills.mining.level}, Smithing ${s.player.skills.smithing.level}, ${countOf(s, 'bronze_bar')} bronze bars`);
   gatherUntil(s, 'iron', BLADE_PLAN.ore);
   assert(lineTexts(s)[0] === `Mine Iron Ore: ${BLADE_PLAN.ore}/${BLADE_PLAN.ore}`, 'tracker: iron done (' + lineTexts(s)[0] + ')');
@@ -1039,7 +1050,7 @@ section('M4 FULL GOLDEN PATH: one continuous run as a new character');
   assert(lineTexts(s).some(l => l === `Harden Steel Bars: ${BLADE_PLAN.steel}/${BLADE_PLAN.steel}`) && lineTexts(s).includes("Forge the Forgemaster's Blade"), 'tracker: steel done, blade is the last line');
   craft(s, 'forged_blade', 1);
   assert(stage(s) === 'brute' && countOf(s, 'forged_blade') === 1, "forged the blade: the quest moves to the Brute with no further talking needed");
-  milestone('blade forged');
+  milestone(`blade forged, combat level ${s.player.combat.level}`);
 
   // 6. equip it, and kill the thing that beat you
   assert(lineTexts(s).some(l => l.startsWith('Equip the blade')), 'tracker: equip the blade');
@@ -1825,15 +1836,15 @@ section('HOM-15 the cave stays out of the first quest');
 {
   const original = ['boar', 'boar', 'boar', 'wolf', 'wolf', 'wolf', 'brute', 'pup', 'pup', 'pup', 'hexer'];
   assert(SPAWNS.slice(0, original.length).map(x => x.type).join() === original.join(), 'the original eleven enemies keep their ids and places: the first 20 minutes are the same world');
-  const RIDGE = ROCKS.filter(r => r.type === 'iron' || r.type === 'coal'); // HOM-56: copper and tin were added to the surface after everything, so the ridge's own ore is the first seven nodes still
-  assert(NODE_TYPES.mithril && ROCKS.every(r => r.type !== 'mithril') && RIDGE.length === 7 && ROCKS.length === 13 && ROCKS.slice(0, 7).every(r => RIDGE.includes(r)), 'the ridge outside is unchanged: seven iron and coal rocks, no mithril, and copper and tin only after them');
+  const RIDGE = ROCKS.slice(0, 3); // the ridge's own rocks are the first nodes; the Seams' three were added after everything (HOM-56)
+  assert(NODE_TYPES.mithril && ROCKS.every(r => r.type === 'copper') && ROCKS.length === 6 && RIDGE.every(r => r.z < -22), 'the surface is copper only (HOM-77): three on the ridge, three in the Seams, no mithril outside');
   const s = createState(902);
   const way = REGIONS.find(r => r.id === 'wayside')!, W = way.rocks.length + way.trees.length; // HOM-57: the road's waysides come after everything, the Seams included
   const herbN = REGIONS.reduce((n, r) => n + (r.herbs?.length ?? 0), 0); // HOM-65: the herb patches of the Fens and the Thornwood come after the waysides
   assert(W >= 24 && s.nodes.slice(-W - herbN, -herbN).every(n => n.x > GREYWATER.x - 400 && n.x < GREYWATER.x + 400), 'the road\'s waysides are the last nodes of all but the herb patches');
   const kinds = s.nodes.map(n => n.type).slice(0, -W - herbN);
-  assert(kinds.slice(0, RIDGE.length + TREES.length).join() === [...RIDGE.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(RIDGE.length + TREES.length).every(t => t === 'mithril' || t === 'coal' || t === 'adamant' || t === 'copper' || t === 'tin' || NODE_TYPES[t].skill === 'fishing') && kinds.slice(-6).every(t => t === 'copper' || t === 'tin'), // HOM-46: Saltmarrow's adamant is added after the cave's, so it too leaves every older id alone; HOM-48: and its fishing spots after that; HOM-56: and copper and tin last of all
-    'cave nodes are added after every existing node, so old node ids (and saves) keep meaning the same rock');
+  assert(kinds.slice(0, RIDGE.length + TREES.length).join() === [...RIDGE.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(RIDGE.length + TREES.length).every(t => t === 'mithril' || t === 'adamant' || t === 'copper' || NODE_TYPES[t].skill === 'fishing') && kinds.slice(-3).every(t => t === 'copper'), // HOM-46: Saltmarrow's adamant is added after the cave's, so it too leaves every older id alone; HOM-48: and its fishing spots after that; HOM-56: and the Seams' copper last of all
+    'cave nodes are added after every existing node, so node ids follow region order');
   const caveFolk = SPAWNS.filter(sp => inCave(sp.x, sp.z));
   const ridge = [...ROCKS, ...TREES, LANDMARKS.npc];
   assert(caveFolk.every(sp => ridge.every(r => dist2(sp, r) > ENEMY_TYPES[sp.type].aggroRadius + 4)), 'no ridge rock, tree or the Warden Hale is within reach of a cave enemy waking up');
@@ -1934,7 +1945,7 @@ section('HOM-15 mithril: a Mining gate above coal, a Smithing ladder, and gear a
   assert(NODE_TYPES.mithril.level > NODE_TYPES.coal.level && NODE_TYPES.mithril.skill === 'mining' && NODE_TYPES.mithril.item === 'mithril_ore', `mithril is Mining ${NODE_TYPES.mithril.level}, above coal (${NODE_TYPES.coal.level})`);
   const veins = CAVE_ROCKS.filter(r => r.type === 'mithril').length;
   assert(veins * NODE_TYPES.mithril.charges >= MITHRIL_PLAN.ore, `${veins} veins of ${NODE_TYPES.mithril.charges} give ${veins * NODE_TYPES.mithril.charges} ore without waiting on a respawn: the plan wants ${MITHRIL_PLAN.ore}`);
-  assert(CAVE_ROCKS.some(r => r.type === 'coal'), 'there is coal inside the cave too');
+  assert(CAVE_ROCKS.every(r => r.type === 'mithril'), 'the Hollow is veins and nothing else: its coal went out to the road with the ridge\'s (HOM-77)');
 
   // the gate: a miner one level short is turned away, one at the level is not
   const g = quietState(911);
@@ -2390,7 +2401,7 @@ section('HOM-15 getting around: one click gets you out of the cave, and nothing 
   assert(route({ x: -18, z: -55 }, same)?.length === 1, 'within one room a walk goes straight at its target');
   assert(route({ x: 0, z: 6 }, { x: 10, z: 10 })?.length === 1, 'anywhere in the open a walk goes straight at its target: nothing changes outside the cave');
   const hop = route({ x: -18, z: -85 }, { x: 5, z: 2 })![0];
-  assert(inCave(hop.x, hop.z) && hop.z > -30 && Math.abs(hop.x + 18) < 3, 'from the hall to the clearing the first aim is the mouth: the rooms line up, so the walk runs the whole corridor in one leg');
+  assert(dist2(hop, LANDMARKS.caveMouth) < 3, 'from the hall to the clearing the first aim is the mouth: the rooms line up, so the walk runs the whole corridor in one leg');
 
   for (const [name, from, to] of [['the warden hall to the clearing', { x: -18, z: -85 }, { x: 0, z: 6 }], ['the clearing to the warden hall', { x: 0, z: 6 }, { x: -18, z: -85 }], ['the far corner of the hollow to the forge', { x: -30, z: -60 }, { x: LANDMARKS.forge.x - 4, z: LANDMARKS.forge.z + 4 }]] as const) {
     const s = quietState(960);
@@ -2530,11 +2541,11 @@ section('HOM-31 the delve: the first trip into the hollow is made before the set
     assert(!stuck && dist2(r.player, { x: tx, z: tz }) < 1.5, `a click at (${tx}, ${tz}) from the clearing walks there round the rocks (${dist2(r.player, { x: tx, z: tz }).toFixed(1)} away)`);
   }
   r.player.x = -10.65; r.player.z = -27.09;
-  tick(r, { interact: { k: 'node', id: r.nodes.find(n => n.type === 'coal' && n.x === -5)!.id } });
+  tick(r, { interact: { k: 'node', id: r.nodes.find(n => n.x === -5 && n.z === -27.5)!.id } });
   for (let n = 0; n < 30 * 30 && busy(r); n++) tick(r);
-  assert(dist2(r.player, { x: -5, z: -27.5 }) < 3.3, `from the pocket east of the mouth a click on the coal seam walks to it (${dist2(r.player, { x: -5, z: -27.5 }).toFixed(1)} away)`);
+  assert(dist2(r.player, { x: -5, z: -27.5 }) < 3.3, `from the pocket east of the mouth a click on the next rock along walks to it (${dist2(r.player, { x: -5, z: -27.5 }).toFixed(1)} away)`);
   const w = quietState(976);
-  tick(w, { clickTarget: { x: -9, z: -27.5 } }); // dead centre of an iron rock: cannot be stood on
+  tick(w, { clickTarget: { x: -5, z: -27.5 } }); // dead centre of a ridge rock: cannot be stood on
   let said = false;
   for (let n = 0; n < 30 * 20 && (w.moveTarget || w.player.moving); n++) { tick(w); said = said || w.events.some(e => e.t === 'stuck'); }
   assert(said, 'a click that cannot be walked is acknowledged with a stuck event, not dropped silently');
@@ -2609,7 +2620,7 @@ section('HOM-38 sight: cover breaks a line, waist-high ore does not');
   assert(clearLine({ x: pillar.x - 4, z: pillar.z - 4 }, { x: pillar.x + 4, z: pillar.z - 4 }), 'and leaves a line four units clear of it alone');
   const tree = TREES[0];
   assert(!clearLine({ x: tree.x - 5, z: tree.z }, { x: tree.x + 5, z: tree.z }), 'a tree trunk blocks the line');
-  const ore = ROCKS.find(r => r.type === 'coal')!;
+  const ore = ROCKS.find(r => r.x > 20)!; // one of the Seams' rocks, out in the open away from the mouth walls
   assert(clearLine({ x: ore.x - 5, z: ore.z }, { x: ore.x + 5, z: ore.z }), 'an ore seam is waist-high: you can see over it');
   assert(!clearLine({ x: 0, z: 0 }, { x: -18, z: -50 }), 'the clearing cannot see into the cave');
   assert(clearLine({ x: -18, z: -32 }, { x: -18, z: -44 }), 'but the throat can see along itself');
@@ -3166,7 +3177,8 @@ section('HOM-46 adamant: Mining 28 (HOM-56), a smithed set, and gear that asks f
   // the veins: five of them, after every older node, gated at Mining 17
   const g = createState(4612);
   const veins = nodesOf(g, 'adamant');
-  assert(veins.length === 5 && veins.every(n => n.id > 24) && g.nodes.slice(0, 24).every(n => n.type !== 'adamant') && NODE_TYPES.adamant.level === 28 && NODE_TYPES.adamant.item === 'adamant_ore', 'five adamant veins on the Strand\'s cliffs, ids after the old 24, Mining 28');
+  const beforeSalt = REGIONS.find(r => r.id === 'ridge')!.rocks.length + TREES.length + CAVE_ROCKS.length; // the ridge's rocks, Hale's trees and the cave's veins: everything placed before Saltmarrow
+  assert(veins.length === 5 && veins.every(n => n.id > beforeSalt) && g.nodes.slice(0, beforeSalt).every(n => n.type !== 'adamant') && NODE_TYPES.adamant.level === 28 && NODE_TYPES.adamant.item === 'adamant_ore', `five adamant veins on the Strand's cliffs, ids after the first ${beforeSalt}, Mining 28`);
   g.player.skills.mining.xp = xpForLevel(27); g.player.skills.mining.level = 27;
   g.player.x = veins[0].x; g.player.z = veins[0].z + 3;
   for (const e of g.enemies) { e.state = 'dead'; e.respawnIn = 1e9; }
@@ -3281,7 +3293,9 @@ section('HOM-57 the road has a reason: an errand from Hale to Saltmarrow, and or
   const west = GREYWATER.x - 400;
   const bands = new Set(spots.map(p => Math.floor((p.x - west) / 100)));
   assert(bands.size === 7 && !bands.has(4), `a stand in every hundred units of the road but the toll camp's (${bands.size} of 8 bands)`);
-  assert(way.rocks.every(r => r.type === 'copper' || r.type === 'tin' || r.type === 'iron') && way.rocks.filter(r => r.type === 'copper').length >= 8 && way.trees.length >= 8, 'copper and trees (Mining 1 and Woodcutting 1) in plenty, with tin and iron for later');
+  const kindsOn = (t: string) => way.rocks.filter(r => r.type === t).length;
+  assert(['tin', 'iron', 'coal'].every(t => kindsOn(t) >= 3) && kindsOn('copper') * NODE_TYPES.copper.charges >= 2 * ERRAND_GOODS[1].n && way.trees.length >= 8,
+    `HOM-77: the road carries the whole ladder above copper (${kindsOn('tin')} tin, ${kindsOn('iron')} iron, ${kindsOn('coal')} coal), and keeps copper and trees enough for the errand`);
   const s0 = createState(5701);
   const road = s0.enemies.filter(e => e.region === 'greywater');
   assert(spots.every(p => Math.abs(p.z - GREYWATER.z) >= 8 && road.every(e => Math.hypot(e.spawnX - p.x, e.spawnZ - p.z) > ENEMY_TYPES[e.type].aggroRadius + 4)), 'every node is off the road and out of every camp\'s aggro: a level-1 walker can stop at it');
@@ -3488,10 +3502,12 @@ section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each w
   // where a level-1 character meets it
   const s = quietState(5601), start = { x: s.player.x, z: s.player.z };
   const nearest = (type: string) => nodesOf(s, type).reduce((a, b) => dist2(a, start) < dist2(b, start) ? a : b);
-  assert(nodesOf(s, 'copper').length >= 3 && nodesOf(s, 'tin').length >= 3 && dist2(nearest('copper'), start) <= 40 && dist2(nearest('tin'), start) <= 40, `copper and tin are in Hale's clearing and on the ridge, ${dist2(nearest('copper'), start).toFixed(0)} and ${dist2(nearest('tin'), start).toFixed(0)} units from where a new game starts`);
-  assert(nodesOf(s, 'copper').some(n => dist2(n, LANDMARKS.forge) < 15) && nodesOf(s, 'copper').some(n => n.z < -20 && n.x < 15) && nodesOf(s, 'tin').some(n => dist2(n, LANDMARKS.forge) < 15) && nodesOf(s, 'tin').some(n => n.z < -20 && n.x < 15), 'both by the forge and on the ridge');
+  assert(nodesOf(s, 'copper').length >= 3 && dist2(nearest('copper'), start) <= 40, `copper is in Hale's clearing and on the ridge, ${dist2(nearest('copper'), start).toFixed(0)} units from where a new game starts`);
+  assert(nodesOf(s, 'copper').some(n => dist2(n, LANDMARKS.forge) < 15) && nodesOf(s, 'copper').some(n => n.z < -20 && n.x < 15), 'both by the forge and on the ridge');
+  // HOM-77: the second rung is the first reason to leave. Tin is out through the east gate, on the road, but the first stand is a short walk
+  assert(nodesOf(s, 'tin').length >= 3 && nodesOf(s, 'tin').every(n => regionAt(n.x, n.z)?.id === 'greywater') && dist2(nearest('tin'), start) < 120, `tin is on the Greywater Road, the nearest stand ${dist2(nearest('tin'), start).toFixed(0)} units out`);
   const wake = (n: { x: number; z: number }) => SPAWNS.slice(0, 11).every(sp => dist2(sp, n) > aggroRadius(ENEMY_TYPES[sp.type], 1) + 1);
-  assert(nodesOf(s, 'copper').concat(nodesOf(s, 'tin')).every(wake), 'no copper or tin rock is inside the aggro radius of any of the clearing\'s enemies, a level-1 character\'s included');
+  assert(nodesOf(s, 'copper').every(wake), 'no copper rock is inside the aggro radius of any of the clearing\'s enemies, a level-1 character\'s included');
 
   // the whole bronze road, played: copper until tin opens, tin, smelt, make the set, put it on, with iron never touched
   const g = quietState(5602);
@@ -3515,10 +3531,11 @@ section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each w
   old.player.equipment.chest = 'mithril_chestplate'; old.player.equipment.weapon = 'warden_edge';
   old.nodes[0].charges = 1; old.nodes[0].respawnIn = 0;
   const file = JSON.parse(serialize(old));
-  file.nodes = file.nodes.filter((n: { id: number }) => n.id <= 36); // a save from before copper and tin: the world had 36 nodes
+  const beforeSeams = 30; // a save from before the Seams: the world ended at Saltmarrow's fishing spots
+  file.nodes = file.nodes.filter((n: { id: number }) => n.id <= beforeSeams);
   const back = deserialize(JSON.stringify(file));
   const herbN = REGIONS.reduce((n, r) => n + (r.herbs?.length ?? 0), 0);
-  assert(back !== null && back.nodes.length === 42 + REGIONS.find(r => r.id === 'wayside')!.rocks.length + REGIONS.find(r => r.id === 'wayside')!.trees.length + herbN && back.nodes[0].charges === 1 && back.nodes.slice(36).every(n => n.charges === NODE_TYPES[n.type].charges), 'an old save still loads: its nodes keep their ids and state, and the six new ones stand full');
+  assert(back !== null && back.nodes.length === 33 + REGIONS.find(r => r.id === 'wayside')!.rocks.length + REGIONS.find(r => r.id === 'wayside')!.trees.length + herbN && back.nodes[0].charges === 1 && back.nodes.slice(beforeSeams).every(n => n.charges === NODE_TYPES[n.type].charges), 'an old save still loads: the nodes it names keep their state, and every later one stands full');
   assert(back !== null && back.player.skills.mining.level === 17 && back.player.skills.smithing.level === 19 && back.player.equipment.chest === 'mithril_chestplate' && back.player.equipment.weapon === 'warden_edge', 'a Mining 17, Smithing 19 character keeps both levels and the gear they wear: only the gates moved above them');
 }
 

@@ -55,7 +55,8 @@ const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves'
  * What the Forgemaster's Blade costs in raw terms (see RECIPES): three steel bars, each an iron bar (two ore) and two coal, and a log. The plan is
  * padded past that (six iron bars, four steel) so the bars it asks for are also the practice the gates want (Steel Smithing 8, the blade Smithing 9).
  * What it cannot pad is Mining: iron wants 7 and coal 10, so a new character comes to it by way of copper and tin, and the bronze they smelt
- * on the way is what carries Smithing up to the iron bar's gate.
+ * on the way is what carries Smithing up to the iron bar's gate. Hale has only copper (HOM-77), so everything above it is a walk out
+ * along the Greywater Road and back to the forge.
  */
 export const BLADE_PLAN = { ore: 12, coal: 8, logs: 1, bars: 6, steel: 4 };
 export const RECOMMENDED_COMBAT = 4; // finishing the hunt gets you there, and level 4 is what hands over the Pummel the Brute fight is built around; the blade is still what beats it
@@ -68,7 +69,7 @@ export const QUEST2_NAME = 'The Hollow Below';
 export const DELVE_GOALS: Record<string, number> = { ravager: 3 };
 /**
  * What the mithril set costs in raw terms (see RECIPES): nine bars (2 + 3 + 4 across helm, greaves and chestplate), each one ore
- * and two coal. Nine ore is exactly three veins' worth; the coal is the same ridge as the first quest, or the seams in the cave.
+ * and two coal. Nine ore is exactly three veins' worth; the coal is the same road's waysides as the first quest (HOM-77).
  */
 export const MITHRIL_PLAN = { ore: 9, coal: 18, bars: 9 };
 export const RECOMMENDED_COMBAT_2 = 9;
@@ -259,19 +260,19 @@ export const DIALOGUE: Record<QuestStage, Dialogue> = {
     lines: [
       'Well fought! The pack is scattered.',
       'But the Cave Brute, in the cave mouth to the north-west, is another matter. It crushed the last hunter who tried, and plain weapons barely scratch it.',
-      "You need a better blade. Iron and coal on the ridge by the cave, a log for the hilt, and the Forgemaster's Blade smithed at the forge to the east. If you have never swung a pick, start with the copper and tin by the forge: smelt them into bronze, and wear what you make.",
+      "You need a better blade. Hale has no iron left in it: only copper, by the forge and along the ridge. The iron and the coal are out east, in the waysides of the Greywater Road. Bring them back with a log for the hilt, and the Forgemaster's Blade is smithed at the forge to the east. If you have never swung a pick, start on the copper here, then the tin at the first wayside past the gate: smelt the pair into bronze, and wear what you make.",
       'And watch its fist. It raises it before every crushing slam: Pummel it (6) to break the swing, or step out of the circle on the ground.',
     ],
     options: [
       { label: "I'll forge the blade.", advance: true,
-        reply: `Click a rock to mine it. Iron wants Mining ${NODE_TYPES.iron.level} and coal Mining ${NODE_TYPES.coal.level}: copper and tin will get you there. At the forge, smelt Bronze Bars and make yourself a set, then Iron Bars, then Steel Bars (Smithing ${recipeById('steel_bar')!.level}), then forge the blade (Smithing ${recipeById('forged_blade')!.level}). Equip it from your inventory (I) before you face the Brute.` },
+        reply: `Click a rock to mine it. Iron wants Mining ${NODE_TYPES.iron.level} and coal Mining ${NODE_TYPES.coal.level}: copper and tin will get you there, the copper here and the tin out on the road. At the forge, smelt Bronze Bars and make yourself a set, then Iron Bars, then Steel Bars (Smithing ${recipeById('steel_bar')!.level}), then forge the blade (Smithing ${recipeById('forged_blade')!.level}). Equip it from your inventory (I) before you face the Brute.` },
       { label: 'Where is the forge?', reply: 'East of the clearing: the stone hut with the glowing furnace. Click it to open the forge.' },
     ],
   },
   forge: {
-    lines: ['How goes the forging? Iron ore and coal from the ridge by the cave, a log for the hilt, then the forge. Bronze first, if your arms are still soft.'],
+    lines: ['How goes the forging? Iron ore and coal from the waysides of the Greywater Road, a log for the hilt, then back to the forge. Bronze first, if your arms are still soft.'],
     options: [
-      { label: 'Where do I find ore?', reply: 'Copper and tin are the soft rocks by the forge, with a few more on the ridge. The grey rocks with orange flecks are iron, the black seams are coal: both lie along the ridge south-east of the cave mouth. Keep clear of the Brute itself.' },
+      { label: 'Where do I find ore?', reply: 'Copper is the soft rock by the forge, with a few more on the ridge, and that is every rock Hale has. Go east through the gate and work the stands along the road: tin and iron at the first of them, the black coal seams from the second on, and the richest at the far end. Keep to the road and the camps will leave you be.' },
       CLOSE('Back to work.'),
     ],
   },
@@ -304,9 +305,9 @@ export const DIALOGUE2: Record<Exclude<Quest2Stage, 'locked'>, Dialogue> = {
   },
   delve: {
     lines: ['Three Ravagers and nine ore, that is all I ask of the first trip. The veins are in the hollow, south-west of the passage.',
-      'A Gloom Archer stands sentry where the passage opens out: take it alone from the throat and rest before you go near the pack. Then Cleave the Ravagers, do not fight them one by one. Bring coal too: the ridge has it, and so does the far wall of the hollow.'],
+      'A Gloom Archer stands sentry where the passage opens out: take it alone from the throat and rest before you go near the pack. Then Cleave the Ravagers, do not fight them one by one. Bring coal too, and there is none of that down there: the Greywater Road\'s waysides are where the seams are.'],
     options: [
-      { label: 'Where do I find mithril?', reply: `Past the cave mouth, up the passage and into the big cavern: the blue-veined rocks in the south-west corner. Mining ${NODE_TYPES.mithril.level} to work them: if you are short, the seams on the ridge and in the hollow are practice.` },
+      { label: 'Where do I find mithril?', reply: `Past the cave mouth, up the passage and into the big cavern: the blue-veined rocks in the south-west corner. Mining ${NODE_TYPES.mithril.level} to work them: if you are short, the coal seams out along the road are the practice.` },
       CLOSE('Back to it.'),
     ],
   },
@@ -314,7 +315,7 @@ export const DIALOGUE2: Record<Exclude<Quest2Stage, 'locked'>, Dialogue> = {
     lines: ['Smelt the ore with coal at the forge, then smith the helm, greaves and chestplate. Each wants more Smithing than the last, but the bars will carry you there.',
       "The Hollow's archers and its seer are tuned to iron. You will want every plate of this before you go deeper."],
     options: [
-      { label: 'How much coal?', reply: 'Two coal to every bar, nine bars in all: eighteen. The ridge and the hollow both have seams.' },
+      { label: 'How much coal?', reply: 'Two coal to every bar, nine bars in all: eighteen. The seams are out on the Greywater Road, a stand every hundred paces from the second one on.' },
       CLOSE('Back to work.'),
     ],
   },

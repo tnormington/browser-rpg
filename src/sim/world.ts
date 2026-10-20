@@ -229,11 +229,15 @@ const HOLD_DOOR = at(SALTMARROW, -27, -109);
 const GALLEY_STONES: Obstacle[] = [at(SALTMARROW, -40, -97), at(SALTMARROW, -30, -94), at(SALTMARROW, -36, -105)].map(p => ({ ...p, r: 1.4 }));
 const HOLD_STONES: Obstacle[] = [at(SALTMARROW, -26, -118), at(SALTMARROW, -12, -118), at(SALTMARROW, -26, -128), at(SALTMARROW, -12, -128)].map(p => ({ ...p, r: 1.6 }));
 
-/** The road's waysides: [local x, side of the road, nodes from the road's edge outward along it]. Each stand is three or four nodes a few units apart. */
-const WAYSIDES: [number, 1 | -1, ('copper' | 'tin' | 'iron' | 'tree')[]][] = [
-  [-350, 1, ['copper', 'copper', 'tree']], [-230, -1, ['tree', 'copper', 'tin', 'tree']], [-120, 1, ['copper', 'tin', 'tree']],
-  [-20, -1, ['copper', 'tin', 'tree']], [120, 1, ['tree', 'copper', 'tin', 'tree']], [230, -1, ['copper', 'tin', 'tree']],
-  [300, 1, ['copper', 'tin', 'iron', 'tree']], [365, -1, ['copper', 'tree', 'iron']],
+/**
+ * The road's waysides: [local x, side of the road, nodes from the road's edge outward along it]. Each stand is three or four nodes a few units apart.
+ * Hale has copper and nothing else (HOM-77), so the road is where the metal ladder actually climbs: tin and iron on the first stands past the east
+ * gate, coal from the second on, and the far stands the richest. The stands and their geometry are unchanged; only what is in them moved.
+ */
+const WAYSIDES: [number, 1 | -1, ('copper' | 'tin' | 'iron' | 'coal' | 'tree')[]][] = [
+  [-350, 1, ['tin', 'iron', 'tree']], [-230, -1, ['tree', 'tin', 'coal', 'tree']], [-120, 1, ['copper', 'iron', 'tree']],
+  [-20, -1, ['tin', 'coal', 'tree']], [120, 1, ['tree', 'iron', 'copper', 'tree']], [230, -1, ['iron', 'coal', 'tree']],
+  [300, 1, ['copper', 'iron', 'coal', 'tree']], [365, -1, ['copper', 'tree', 'coal']],
 ];
 function waysides(): { rocks: RockSpot[]; trees: Obstacle[] } {
   const rocks: RockSpot[] = [], trees: Obstacle[] = [];
@@ -365,17 +369,15 @@ const THORN_GATE: Gate = {
  */
 export const REGIONS: Region[] = [
   {
-    // The rock face along the clearing's southern edge, with the cave mouth gap through it. Iron sits east of the gap, the harder
-    // coal seams further along the same ridge; all are placed (and reachable) outside the Cave Brute's aggro radius so mining
-    // is not a death trap. A district of the clearing: it adds no floor of its own.
+    // The rock face along the clearing's southern edge, with the cave mouth gap through it. It held the iron and coal until HOM-77 moved
+    // them out to the Greywater Road: Hale's rocks are copper and nothing else now, so the ladder starts here and climbs elsewhere.
+    // The three that stay keep their old places, outside the Cave Brute's aggro radius so mining is not a death trap.
+    // A district of the clearing: it adds no floor of its own.
     id: 'ridge', name: 'The Ridge', cave: false, zone: 'hale', cell: 0.25,
     footprint: [{ x0: -24, x1: 2, z0: -30, z1: -22 }],
     obstacles: MOUTH_WALLS, tall: MOUTH_WALLS, trees: [],
     rocks: [
-      { type: 'iron', x: -10, z: -25.5, r: 1.2 }, { type: 'iron', x: -9, z: -27.5, r: 1.2 },
-      { type: 'iron', x: -12.5, z: -28, r: 1.2 }, { type: 'iron', x: -7, z: -24, r: 1.2 },
-      { type: 'coal', x: -5, z: -27.5, r: 1.2 }, { type: 'coal', x: -2.5, z: -25.5, r: 1.2 },
-      { type: 'coal', x: -1, z: -28.5, r: 1.2 },
+      { type: 'copper', x: -10, z: -25.5, r: 1.2 }, { type: 'copper', x: -5, z: -27.5, r: 1.2 }, { type: 'copper', x: -1, z: -28.5, r: 1.2 },
     ],
     landmarks: ridgeLandmarks,
     connections: [{ to: 'clearing', at: { x: -18, z: -22 } }, { to: 'throat', at: { x: -18, z: -26 } }],
@@ -407,16 +409,15 @@ export const REGIONS: Region[] = [
     connections: [{ to: 'ridge', at: { x: -18, z: -26 } }, { to: 'hollow', at: { x: -18, z: -44 } }],
   },
   {
-    // The hollow is the main cavern. Standing stones are cover, and something to circle. Its ore is kept apart from the ridge's
-    // (the nodes are listed after the clearing's trees, see above). The first three veins make a seam along the south-west wall,
-    // in reach of the Ravager pack that guards them and of nothing else; the coal is on the far side.
+    // The hollow is the main cavern. Standing stones are cover, and something to circle. The three veins make a seam along the south-west wall,
+    // in reach of the Ravager pack that guards them and of nothing else. Its coal went out to the road with the ridge's (HOM-77): the nearest
+    // seam to the forge must not be one a player on the first quest has to walk past the Brute to reach.
     id: 'hollow', name: 'The Hollow', cave: true, dungeon: 'hollow', zone: 'hale', cell: 0.25,
     footprint: [{ x0: -33, x1: -5, z0: -64, z1: -42 }],
     obstacles: [{ x: -14.5, z: -50, r: 1.4 }, { x: -27, z: -57, r: 1.4 }, { x: -9, z: -55, r: 1.4 }],
     tall: [], trees: [],
     rocks: [
       { type: 'mithril', x: -29.2, z: -45.5, r: 1.2 }, { type: 'mithril', x: -29.2, z: -47.9, r: 1.2 }, { type: 'mithril', x: -29.2, z: -50.3, r: 1.2 },
-      { type: 'coal', x: -8, z: -45.5, r: 1.2 }, { type: 'coal', x: -8.2, z: -49.5, r: 1.2 },
     ],
     landmarks: {},
     connections: [{ to: 'throat', at: { x: -18, z: -44 } }, { to: 'neck', at: { x: -18, z: -62 } }],
@@ -467,24 +468,25 @@ export const REGIONS: Region[] = [
     spawns: worldSpawns(SALTMARROW, STRAND_SPAWNS),
   },
   {
-    // Copper and tin, the bottom of the metal ladder (HOM-56): rocks a level-1 character meets in the open. Three by the forge, in the clearing's
-    // north-east corner (the nearest enemy, the wolf at (14, -15), is ten away and aggroes at eight); three at the ridge's east end, past the coal, clear
-    // of the Cave Brute and the wolves, and out of the pocket the iron and coal are reached through. Listed last so every older node keeps its id and its save. A district of the clearing: it adds no floor of its own.
+    // The bottom of the metal ladder (HOM-56): rocks a level-1 character meets in the open. Two by the forge, in the clearing's north-east corner
+    // (the nearest enemy, the wolf at (14, -15), is ten away and aggroes at eight); one at the ridge's east end, clear of the Cave Brute and the
+    // wolves. Copper only since HOM-77: the tin went out to the road's first wayside, so the first bronze bar is already a walk east.
+    // A district of the clearing: it adds no floor of its own.
     id: 'seams', name: 'The Seams', cave: false, zone: 'hale', cell: 0.25,
     footprint: [{ x0: 22, x1: 30, z0: -20, z1: -8 }, { x0: 3, x1: 11, z0: -29.5, z1: -23 }],
     obstacles: [], tall: [], trees: [],
     rocks: [
-      { type: 'copper', x: 27, z: -13.5, r: 1.2 }, { type: 'copper', x: 24.5, z: -17.5, r: 1.2 }, { type: 'tin', x: 28, z: -9.5, r: 1.2 },
-      { type: 'copper', x: 4.5, z: -26.5, r: 1.2 }, { type: 'tin', x: 8, z: -24.5, r: 1.2 }, { type: 'tin', x: 7.5, z: -28, r: 1.2 },
+      { type: 'copper', x: 27, z: -13.5, r: 1.2 }, { type: 'copper', x: 24.5, z: -17.5, r: 1.2 },
+      { type: 'copper', x: 4.5, z: -26.5, r: 1.2 },
     ],
     landmarks: {},
     connections: [{ to: 'clearing', at: { x: 26, z: -12 } }],
   },
   {
-    // The road's waysides (HOM-57): eight small stands of copper, tin, a little iron and a tree or two, one every hundred units, alternating sides, a
-    // pace or so off the road (the verges start twelve out) and clear of every camp's aggro: a level-1 walker can work the copper and the trees as
-    // they pass, and tin and iron are there for when the pick is ready. Listed last (after the Seams) so every older node keeps its id and its save.
-    // A district of the road: it adds no floor of its own.
+    // The road's waysides (HOM-57): eight small stands of ore and a tree or two, one every hundred units, alternating sides, a pace or so off the
+    // road (the verges start twelve out) and clear of every camp's aggro, so a walker can work them as they pass. Since HOM-77 they carry the whole
+    // ladder above copper: tin and iron from the first stand past Hale's gate, coal from the second, the richest at the Saltmarrow end.
+    // Listed last (after the Seams) so every older node keeps its id and its save. A district of the road: it adds no floor of its own.
     id: 'wayside', name: 'The Waysides', cave: false, zone: 'greywater',
     footprint: [{ x0: GREYWATER.x - 400, x1: GREYWATER.x + 400, z0: GREYWATER.z - 12, z1: GREYWATER.z + 12 }],
     obstacles: [], tall: [],
@@ -613,9 +615,9 @@ export { FORGE_BUILDING };
 export const OBSTACLES: Obstacle[] = REGIONS.flatMap(r => r.obstacles);
 /** Hale's trees: the ones the first quests chop. Other regions' trees (none yet) are in REGIONS. */
 export const TREES: Obstacle[] = surface.filter(r => r.zone === 'hale').flatMap(r => r.trees);
-/** The ridge's ore, outside the cave. Other surface regions' ore (Saltmarrow's adamant) is in their own `rocks`. */
+/** Hale's ore, outside the cave: copper and nothing else (HOM-77). Other surface regions' ore (the road's, Saltmarrow's adamant) is in their own `rocks`. */
 export const ROCKS: RockSpot[] = surface.filter(r => r.zone === 'hale').flatMap(r => r.rocks);
-/** Ore inside the cave. */
+/** Ore inside the cave: the Hollow's three mithril veins. */
 export const CAVE_ROCKS: RockSpot[] = caves.flatMap(r => r.rocks);
 /**
  * Every solid thing in the world, in one list. Nothing should scan it: ask for the ones near a place (collidersAt, collidersIn).

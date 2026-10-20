@@ -56,7 +56,7 @@ section('the regions: sizes, seams and where they stand');
   assert(open(DUNMERE.x - 60, 944) && open(DUNMERE.x + 60, 944), "Dunmere and Thornwick overlap across the whole width: the fen road's end is soft");
   const nodes = createNodes();
   const herbN = (dun.herbs?.length ?? 0) + (thorn.herbs?.length ?? 0);
-  assert(nodes.length === 42 + regionById('wayside').rocks.length + regionById('wayside').trees.length + herbN, 'no node id moved: the herb patches are nodes after every older one, and the thornoaks are not');
+  assert(nodes.length === 33 + regionById('wayside').rocks.length + regionById('wayside').trees.length + herbN, 'the herb patches are nodes after every older one, and the thornoaks are not');
   assert(thorn.trees.length === 0 && thorn.obstacles.filter(o => o.kind === 'thornoak').length >= 40, 'the thornoaks are scenery that stops you: Woodcutting has no rung for them');
   assert(COLLIDERS.filter(o => o.kind === 'thornoak').every(o => inRect(tmain, o)), 'every thornoak stands on Thornwick\'s floor');
 }
