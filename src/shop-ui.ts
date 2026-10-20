@@ -79,10 +79,12 @@ export class ShopUi {
     for (const m of mountsSoldBy(this.vendor.id)) {
       const known = p.mounts.includes(m.id), ready = p.combat.level >= m.level, can = !known && ready && p.gold >= m.price && near;
       const row = el(this.list, `recipe${can ? '' : ' locked'}`);
+      const speed = `Rides at ${m.speed} against ${FOOT_SPEED} on foot.`;
+      row.title = `${speed} Not in combat; any hit or ability throws you off.`;
       const head = el(row, 'rhead');
       el(head, 'rname', m.name);
       el(head, `rreq${known || (ready && p.gold >= m.price) ? '' : ' bad'}`, known ? 'Owned' : ready ? `${m.price} gold` : `combat level ${m.level}`);
-      el(row, 'rstat', `Rides at ${m.speed} against ${FOOT_SPEED} on foot.`);
+      el(row, 'rstat', speed);
       if (known) continue;
       actionButton(el(row, 'rbtns'), 'Buy', can).addEventListener('click', () => this.buyMount(m.id));
     }

@@ -710,6 +710,7 @@ export class Hud {
     const a = s.player.action?.k === 'flight' ? null : s.player.action; // the ride has its own caption (MapUi)
     this.acting = !!a;
     this.castBar.fill.parentElement!.style.display = a ? 'block' : 'none';
+    this.castBar.fill.parentElement!.classList.toggle('ride', a?.k === 'mount');
     if (!a) return;
     let label: string;
     if (a.k === 'mount') {

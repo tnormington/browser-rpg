@@ -30,7 +30,7 @@
   --violet:#b39be0;--heal:#7fe8c8;--spark:#ffd06a;
   /* what a gauge is filled with: each is a whole background, so a bar can also take a flat colour (--fill:var(--blood)) */
   --fill-hp:linear-gradient(#6f8f56,#4a6a3a);--fill-energy:linear-gradient(#b08a3a,#7a5e24);--fill-blood:linear-gradient(#c23a32,#7e1f1c);
-  --fill-xp:linear-gradient(#6b4aa0,#43306a);--fill-skill:linear-gradient(#5a7a96,#3a566e);--fill-cast:linear-gradient(#c0883a,#85591f);
+  --fill-xp:linear-gradient(#6b4aa0,#43306a);--fill-skill:linear-gradient(#5a7a96,#3a566e);--fill-cast:linear-gradient(#c0883a,#85591f);--fill-ride:linear-gradient(#a08a44,#6a5a22);
   --fill-fire:linear-gradient(#e0883a,#a04a14);--fill-steel:linear-gradient(#7d8794,#4c5662);--fill-gold:linear-gradient(#e8c460,#a8802a);--fill-gold-hi:linear-gradient(#f4dc8a,#d0a640);
   --serif:Georgia,'Palatino Linotype',serif;
   --fs-xs:9px;--fs-sm:11px;--fs-md:13px;--fs-lg:15px;--fs-xl:18px;--fs-2xl:22px;--fs-3xl:30px;--fs-4xl:42px;--fs-5xl:56px;
@@ -183,7 +183,7 @@ canvas{display:block}
 /* ---- combat bars ---- */
 .swing{--bar-h:10px;--bar-fs:var(--fs-xs);--fill:var(--fill-steel);position:absolute;left:50%;bottom:96px;width:424px;margin-left:-212px;margin-top:0;opacity:.55}.swing .fill{width:0}.swing .label{letter-spacing:.06em}
 .swing.on{--fill:var(--fill-gold);opacity:1;box-shadow:0 0 0 1px var(--gold),0 0 8px rgba(240,190,80,.45)}.swing.on.ready{--fill:var(--fill-gold-hi)}
-.castbar{--bar-h:18px;--fill:var(--fill-cast);position:absolute;left:50%;bottom:110px;width:240px;margin-left:-120px;margin-top:0;display:none}.castbar .fill{width:0}
+.castbar{--bar-h:18px;--fill:var(--fill-cast);position:absolute;left:50%;bottom:110px;width:240px;margin-left:-120px;margin-top:0;display:none}.castbar .fill{width:0}.castbar.ride{--fill:var(--fill-ride)}
 
 /* ---- message log, quest tracker, dialogue ---- */
 .msglog{position:absolute;left:var(--gutter);bottom:34px;width:300px;max-height:150px;pointer-events:auto;padding:var(--sp-2) var(--sp-3);background:var(--iron-glass);border-radius:var(--r)}
