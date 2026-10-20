@@ -188,19 +188,68 @@ What alchemy feeds is **consumables**, and specifically the boss fights: the bos
 
 #### Leatherworking (Highmoor) — crafting at the tanning rack
 
-Tan hides into leather, then make **gloves and boots**. This is the one profession that needs **two new equipment slots**, `hands` and `feet`; the smith still makes the other four. It uses hides the player has been carrying since level 1 (`boar_hide`, `wolf_pelt` finally have a use), so arriving at Highmoor with a full bag is a moment.
+Tan hides into leather, then make **gloves and boots**. This is the one profession that needs **two new equipment slots**, `hands` and `feet`; the smith still makes the other four. It runs on hides that drop all the way up the road, so arriving at Highmoor with a full bag is a moment. **Built (HOM-96): Hide and Wolfskin. HOM-102 specifies the other three**: until then `boar_hide` and `wolf_pelt` were the only hides in the game and the ninth skill topped out at 11, two towns before the town that teaches it.
 
-| Set | Leatherworking | Materials | Gloves / boots armour | Tier |
+| Set | Leatherworking (gloves / boots) | Hide | Gloves / boots armour | Tier | Equip combat |
+| --- | --- | --- | --- | --- | --- |
+| Hide | 1 / 2 | boar hide | 2 / 3 | 1 | none |
+| Wolfskin | 10 / 11 | wolf pelt | 5 / 7 | 2 | none |
+| Marsh-hide | 18 / 19 | **marsh hide**: the Strand's and the Fens' beasts | 8 / 10 | 3 | 18 |
+| Thornhide | 26 / 27 | **thorn hide**: the Thornwood's and the Barrowdowns' beasts | 11 / 14 | 4 | 24 |
+| Moorhide | 34 / 35 | **moor hide**: the Moor's beasts, and Cairnwaste's in wave 4 | 15 / 18 | 5 | 32 |
+
+**The rule the ladder runs on (HOM-102): the early hides are the experience, the regional hides are the set.** Nothing tans below its own gate, so Leatherworking 1 to 18 can only be climbed on boar hides and wolf pelts: **35 boar hides open the pelts (Leatherworking 10) and 29 pelts more reach 18**, and 93 more pelts would reach 26. No later hide changes that, so a bag carried since level 1 is never worth less for having something better in it: it is the toll every gate is paid in, and the regional hides are what the sets are cut from (five a pair, and each pays more experience a hide than a pelt does). **No shipped hide entry is removed or reduced anywhere**; the three new hides are *added* to the beasts of their two regions, at a fraction of the entry already there, with `nothing` re-solved to keep each table on `0.6 x L + 3`.
+
+**Recipes** (the rule from 2.3: a tan pays `a` x `cost(L)`, a piece `b` x, `L` the recipe's own level; round the tan to 5). Hide and Wolfskin are as built and use 0.25 / 0.35.
+
+| Recipe | Leatherworking | Takes | Time | XP | Value |
+| --- | --- | --- | --- | --- | --- |
+| Tan Marsh Hide | 18 | 1 marsh hide | 3 s | 115 | leather 8 (hide 4) |
+| Marsh-hide Gloves / Boots | 18 / 19 | 2 / 3 marsh leather | 8 s / 9 s | 158 / 174 | 32 / 48 |
+| Tan Thorn Hide | 26 | 1 thorn hide | 3 s | 150 | leather 10 (hide 5) |
+| Thornhide Gloves / Boots | 26 / 27 | 2 / 3 thorn leather | 9 s / 10 s | 208 / 230 | 40 / 60 |
+| Tan Moor Hide | 34 | 1 moor hide | 3 s | 220 | leather 12 (hide 6) |
+| Moorhide Gloves / Boots | 34 / 35 | 2 / 3 moor leather | 10 s / 11 s | 306 / 337 | 48 / 72 |
+
+The two new factors fall (0.15 / 0.21 at Thornhide, 0.10 / 0.14 at Moorhide) because a rung's hides get more plentiful as the bands get longer: the Strand and the Fens are 36 kills on 3.2's table, the Thornwood and the Barrowdowns 73, the Moor and Cairnwaste more, so the experience a hide is worth falls to keep the kills a level costs about level. A tanned hide is worth twice the raw one and a piece twice its leather (Wolfskin's rule), so selling a pair beats selling its hides, as the smith's pieces do.
+
+**Which beasts drop what.** The rule is the road's (3.4): a beast drops its band's hide where it already dropped one, an elite or rare in a lump (qty 2 to 4, 3 to 5), and a caster never does (the sailor, the hag, the witch, the cultist, the wight and the raider drop none, as today). The new entry copies the beast's existing hide entry's `qty` and takes **0.65 of its weight in the Strand and the Fens, 0.5 elsewhere** (the Strand and the Fens are the shortest windows). Hide values are 4, 5 and 6, which is why `nothing` moves by a point or four. Solved to within 0.6 % of `(0.6 L + 3) x role` on the real tables:
+
+| Hide | Beast (table) | New entry (weight, qty) | `nothing` | New hides a kill |
 | --- | --- | --- | --- | --- |
-| Hide | 1 | boar hide | 2 / 3 | 1 |
-| Wolfskin | 10 | wolf pelt | 5 / 7 | 2 |
-| Marsh-hide | 18 | Saltmarrow and Fen hides | 8 / 10 | 3 |
-| Thornhide | 26 | Thornwood and Barrow hides | 11 / 14 | 4 |
-| Moorhide | 34 | Moor and Cairnwaste hides | 15 / 18 | 5 |
+| marsh | `shore_crab` | w 20, 1 to 3 | 31 to 39 | 0.64 |
+| marsh | `barnacle_ogre` (elite) | w 10, 2 to 4 | 52 to 51 | 0.91 |
+| marsh | `gutterhook` (rare) | w 10, 3 to 5 | 45 (same) | 1.33 |
+| marsh | `fen_stalker` | w 26, 1 to 3 | 34 to 38 | 0.75 |
+| marsh | `mire_troll` | w 13, 1 to 3 | 77 to 78 | 0.40 |
+| marsh | `bogfather` (elite) | w 10, 2 to 4 | 43 to 40 | 1.01 |
+| marsh | `mother_mire` (rare) | w 10, 3 to 5 | 40 to 38 | 1.41 |
+| thorn | `thornback` | w 15, 1 to 3 | 31 to 36 | 0.59 |
+| thorn | `blight_stag` | w 15, 1 to 3 | 53 to 57 | 0.48 |
+| thorn | `thorn_warden` (elite) | w 8, 2 to 4 | 38 to 37 | 0.85 |
+| thorn | `elder_thornback` (rare) | w 10, 3 to 5 | 25 to 24 | 1.58 |
+| thorn | `grave_hound` | w 20, 1 to 3 | 24 to 26 | 0.78 |
+| thorn | `cairn_brute` | w 10, 1 to 3 | 60 (same) | 0.36 |
+| thorn | `barrow_lord` (elite) | w 8, 2 to 4 | 27 to 25 | 0.99 |
+| thorn | `hollow_knight` (rare) | w 8, 3 to 5 | 21 to 19 | 1.50 |
+| moor | `moor_ram` | w 15, 1 to 3 | 22 to 25 | 0.66 |
+| moor | `ridge_ogre` | w 10, 1 to 3 | 51 to 52 | 0.39 |
+| moor | `stonehorn` (elite) | w 8, 3 to 5 | 23 (same) | 1.35 |
 
-A pair adds about 15 % to the armour of the set it sits beside. Every enemy table in section 3 is tuned to the four-slot line, so a player in a full six-slot kit is roughly 10 to 20 % ahead of the curve; that is the reward for the extra profession.
+Wave 4 follows the same rule: `dune_hound`, `sand_ogre` and `ashen_colossus` add moor hide at half their pelt entry's weight, and the Spire's beasts drop the next hide, which is not designed here. Past Moorhide the ladder is 3.6's long tail: a new hide every 8 to 10 levels in a farther region, the first at about Leatherworking 42.
 
-**Art obligation (standing rule):** two new slots means two new worn looks per tier, from 3D Artist. Until they exist, `hands` and `feet` do not ship: see wave 3b.
+**What the bag buys.** Tables above, 3.2's kills (Hale and the road are my estimate of about 26 hides, a guess: **nothing here is measured by play**), no hide sold: a player arrives at Highmoor with about **58 boar hides, 110 pelts, 16 marsh, 34 thorn and, by the end of the Moor, 16 moor hide**. Spent in gate order that is **Leatherworking about 36 in one sitting**, roughly ten minutes at the rack (about 230 tans at 3 s, quicker with mastery), and 41 for a player who does 1.4 times the kills. Every gate is crossed; the weak point is not a new hide but the **boar hide**: fewer than 35 and the pelts never open (a player on half the 3.2 kills stalls at Leatherworking 8), and the Thornhide gate is the next closest (a player on 60 % of the kills stalls at 25). Both are a reason to keep hoarding, not to loosen the gates.
+
+**The rungs, ruled.** Five sets is right, and **the gap from 11 to 18 wants nothing in it**. Every gap is seven levels (the pair's second level to the next set's first: 2 to 10 is eight), so 11 to 18 is not the long one; and nobody is ever at the rack with Leatherworking 14 for long, because the rack is at Highmoor and the bag is crossed in one sitting: the gap is 26 pelts and about two minutes, and a rung in it would be made once, worn for no time, and cost 3D Artist another pair of looks. What the real gear line shows instead is that **the sets worth wearing are the top two**. A pair takes damage taken down by (before the cap) Marsh-hide 12 % on stormiron, Thornhide 17 %, Moorhide 21 %, which is the "10 to 20 % ahead of the curve" the enemy tables allow a six-slot player. The bag makes Marsh-hide and Thornhide in the same sitting and Thornhide is the set a player walks out in at combat 27; Hide, Wolfskin and Marsh-hide are stepping stones. (The first draft of this section said a pair adds about 15 % of armour: it is 24 to 33 % of the matched set's armour and 12 to 21 % off damage taken.)
+
+**The armour cap bites at the top, and it is the one number this leaves for wave 4.** The best metal is starmetal at 100 and `MAX_REDUCTION` caps armour at 120 (0.75). Thornhide's 25 on starmetal is 125 and Moorhide's 33 is 133, so **at starmetal both come to exactly the cap and Moorhide is worth nothing over Thornhide**: damage taken is 12.5 % lower for either, where Moorhide uncapped would be 19 % lower. Nothing below starmetal reaches the cap (stormiron plus Moorhide is 119). The fix is one constant when Moorhide and starmetal ship together: `MAX_REDUCTION` 0.75 to 0.80 (armour 160), which puts the full six-slot best kit at 133, 0.77, as the table above promised. It also gives Stoneskin back the room the cap takes from it at stormiron and above. Not changed here: nothing built reaches the cap, and it wants its own check.
+
+**What it changes elsewhere, said plainly.**
+- **The second mount's gate.** 4 priced the total-level gate with Leatherworking at 1. A bag-carrier is about 36 at arrival, so a committed player is 246, not 211, and meets 250 with about 4 levels (2 minutes) of the cheap skills where the gate was priced at 39 levels (20 minutes); a casual is 182 and still short by about 68 (35 minutes, where the board's hour was 50). **I did not move it**: it is the board's number and it ships in code and in `bench/leatherworking.mjs`. If the board wants the gate to cost what it was priced to cost, it is **285**, which is also the number that costs a casual the full 103.
+- **Income.** Hides are about a fifth of what a kill is worth in this band, and a player who hoards them does not sell them: at 3.2's kills that is roughly 780 gold of the climb's 3,400 from kills, partly given back in leather a player sells (a Marsh-hide to Moorhide pair is worth 80 to 120). That is the price of the moment, and it is why the hoard is a choice and not a default. It also makes **a vendor that buys a hide for 2 gold a trap for a player who does not know**: the hides' tooltips should say where they go (see the follow-ups in 8.4).
+- **The pace is the bag's, not the rack's.** The skill has no pace of its own; it spends what the fighting brought, and what the fighting brought arrives at the pace of the kills. The cost is that the ninth skill is the shortest one in the game once you stand at the rack (ten minutes, against Smithing's 92), and the pace knob if it reads too fast in play is the two old rungs' experience: cutting Hide and Wolfskin to 0.15 / 0.21 would make the bag reach about 25 before the new hides are used, with the stall risk above. I would not pull it before a playtest.
+
+**Art obligation (standing rule):** two new slots means two new worn looks per tier, from 3D Artist: Hide and Wolfskin are built; **Marsh-hide, Thornhide and Moorhide are three more pairs**. The first three sets are stepping stones, worn for minutes, and tier fallback is enough for them; **Thornhide (tier 4) and Moorhide (tier 5) are the sets a player is seen in for hours and should be bespoke, not a recolour of the tier below**: say so before they ship rather than let the fallback decide. Each needs a bench screenshot of the pair on the character when built. Equip combat 18, 24 and 32 are set at the band each set belongs to, so a burst of tanning at Highmoor cannot hand a player Moorhide at combat 28: it is made and kept until 32, the way starmetal is.
 
 #### Enchanting (the Spire) — crafting at the rune circle, wave 4
 
@@ -253,7 +302,7 @@ Below the metal ladder, woodcutting keeps its own and the metal ladder is extend
 2. **XP parity, not flat XP.** One new rule: a kill's XP is `base x clamp(1 + 0.05 x (enemy − player), 0.1, 1.25)`, i.e. +5 % per level the enemy is above you (to +25 %), and **−5 % per level below** (to a 10 % floor; the first draft of this line said −15 %, but its own formula and the code say 5). It is one line in `killEnemy`. It is what makes "appropriate content" a real thing: without it the Hollow Warden (900 XP, three kills a level) stays the best farm in the game forever. It also means existing enemies simply pay less to players who have outgrown them; no existing number changes.
 3. **Trash XP at parity is `20 + L`**; an elite is 3x; a boss 10x; a rare spawn 6x. A normal pull is 85 % trash, 12 % elite, 3 % boss, so the mean kill is 1.51x trash.
 4. **Time to kill** on the line gear (3.3), no talents, no food: trash **9.4 s at level 17, rising 0.2 s a level to 12.4 s at 32**; elite ~3x that (32 to 46 s); boss ~8x (95 to 120 s). This replaces the first draft's 11 s at level 12 rising to 14.6 s at 30, which QA measured at 9.3 s on the road (HOM-53) and the board then kept ("leave it", HOM-43). The shipped road and Strand rows measure 6.9 to 11.8 s in the tier-4 set (7.5 to 9.0 on adamant) and stand as they are.
-5. **The fight costs health, by what the enemy is.** A plain melee trash fight costs **25 % of max health** after armour (a big one 28 %, a caster that marks the ground 30 %, a ranged one 15 %): the road's six measured 24.4 % on average, 13 % to 36 %, and that spread is the design (the ranged ones die before most of their bolts land). A pair costs ~47 %, a camp of three ~70 %. Elites cost 65 to 85 % with no heal and 45 to 60 % with one Second Wind; rares 90 to 95 % and 70 to 85 %; a boss more than a bar, and is won with Second Wind on cooldown and a potion for the margin (3.4 has the rows). The first draft said 30 % for trash and 60 % for elites: the elite figure was already right, and trash comes down to what was measured because the board kept that pace.
+5. **The fight costs health, by what the enemy is.** A plain melee trash fight costs **25 % of max health** after armour (a big one 28 %, a caster that marks the ground 30 %, a ranged one 15 %): the road's six measured 24.4 % on average, 13 % to 36 %, and that spread is the design (the ranged ones die before most of their bolts land). A pair costs ~47 %, a camp of three ~70 %. Elites cost 65 to 85 % with no heal and 45 to 60 % with one Second Wind; rares 90 to 95 % and 70 to 85 % (**these are for a player who steps out of every slam and uses Pummel; a player who dodges nothing is dead on the Barnacle Ogre and on every rare, and 3.4a has both columns**); a boss more than a bar, and is won with Second Wind on cooldown and a potion for the margin (3.4 has the rows). The first draft said 30 % for trash and 60 % for elites: the elite figure was already right, and trash comes down to what was measured because the board kept that pace.
 6. **Level 11 to 12 is the Hollow's last step** and is unchanged.
 
 ### 3.2 The curve, and the arithmetic
@@ -429,7 +478,7 @@ How the columns are derived (so the table can be extended rather than argued wit
 
 | id | Name | Lv | Role | Rig | HP | Hit | Swing | Heavy | XP | Tell |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `fen_stalker` | Fen Stalker | 18 | trash | wolf tint | 805 | 32 | 1.8s | - | 38 | plain, quick, **pairs** (alone: 945 / 45) |
+| `fen_stalker` | Fen Stalker | 18 | trash | wolf tint | 805 | 32 | 1.8s | - | 38 | plain, quick, **pairs** (alone: 945 / 45). **Tested as a pair (HOM-102): 15.4 s and 44 % with Cleave, no heal (the model: 16.3 s, 47 %); the row stands.** Every stalker spawns in a pair, so none is ever met alone; one alone with these numbers is 7.7 s and 14 %, which is what QA's lone run saw |
 | `bog_witch` | Bog Witch | 19 | trash | hexer x1.1 | 1045 | 71 | 2.8s | ground 160 | 39 | ranged + Withering Ground |
 | `mire_troll` | Mire Troll | 20 | trash | brute tint | 1145 | 67 | 2.4s | - | 40 | big trash: slam every 10 s (a heavy swing; see the note after the tables) |
 | `bogfather` | The Bogfather | 21 | elite | brute x1.3 | 3770 | 81 | 2.4s | 270 / 115 | 123 | heavy + hazard. 34 s; 73 % no heal, 49 % with Second Wind |
@@ -441,7 +490,7 @@ How the columns are derived (so the table can be extended rather than argued wit
 |---|---|---|---|---|---|---|---|---|---|---|
 | `thornback` | Thornback Boar | 21 | trash | boar x1.4 | 1255 | 51 | 1.9s | - | 41 | hits hard, dies fast |
 | `rotwood_cultist` | Rotwood Cultist | 23 | trash | hexer | 1495 | 78 | 2.6s | - | 43 | ranged + hex |
-| `blight_stag` | Blight Stag | 22 | trash | wolf x1.3 tint | 1370 | 54 | 1.8s | - | 42 | plain, quick |
+| `blight_stag` | Blight Stag | 22 | trash | wolf x1.3 tint | 1370 | 54 | 1.8s | - | 42 | plain, quick. **Decided (HOM-102): left as it is.** 10.4 s and 27 % on the sim, the model's 10.4 s; QA's 11.3 s and 30 % are the bench casting Second Wind on cooldown (a global cooldown on a fight this short, and gross damage a heal never lowers). The plain-melee rows all run 1 to 2.4 points over their 25 %: Thornback 26, Stag 27, Troll 29 against 28 |
 | `thorn_warden` | Thorn Warden | 24 | elite | brute x1.3 | 4865 | 91 | 2.4s | 310 / 135 | 132 | heavy + hazard. 35 s; 76 % no heal, 52 % with Second Wind |
 | `elder_thornback` | Elder Thornback | 23 | rare | boar x2 | 5975 | 80 | 2s | 295 | 258 | rare spawn: heavy gore. 47 s; 83 % with Second Wind, dead without |
 
@@ -468,7 +517,7 @@ How the columns are derived (so the table can be extended rather than argued wit
 | `moor_ram` | Moor Ram | 28 | trash | boar x1.5 | 2205 | 62 | 1.9s | - | 48 | charges |
 | `moor_raider` | Moor Raider | 29 | trash | hexer | 2370 | 85 | 2.4s | - | 49 | ranged |
 | `ridge_ogre` | Ridge Ogre | 30 | trash | brute x1.2 | 2545 | 100 | 2.4s | - | 50 | slam every 9 s (a heavy swing) |
-| `stonehorn` | Stonehorn | 31 | elite | boar x2.2 | 8170 | 106 | 2.2s | 440 / 195 | 153 | heavy Gore + hazard. 40 s; 77 % of health on the bot, to be checked by a person |
+| `stonehorn` | Stonehorn | 31 | elite | boar x2.2 | 8170 | 106 | 2.2s | 440 / 195 | 153 | heavy Gore + hazard. 40 s; 76 % no heal and 62 % with Second Wind for a slam-dodger (3.4a: the old 77 % either way was a probe whose heal had not fired; it fires). Still to be checked by a person |
 
 **Cairn Hold**
 
@@ -517,6 +566,57 @@ Camps and counts per region (suggestions; a builder places them against the actu
 | Old Grey | (330, −45), behind a rock | the rare spawn |
 
 **What rewards beyond XP** is in section 6. Trash drops are tuned so that **the expected sale value of a kill is `0.6 x L + 3` gold**, times the role (elite 3, boss 8): that is 10 gold at level 12 and 21 at level 30 for trash. A headless check (see section 8) asserts each drop table is within 15 % of that.
+
+### 3.4a Elites and rares: what a bracket means, and what the bench must do (HOM-102)
+
+**The ruling: the bot under-plays, the rows are not mistuned, and nothing about them moves.** HOM-94 found Mother Mire, Barnacle Ogre and Elder Thornback dying 10 out of 10 with Second Wind, against brackets of 72, 43 and 83 %, and offered two explanations. The evidence picks one.
+
+1. **The brackets were never a standing-still number.** 8.4 said so in its last sentence and nobody reread it: the scratch bot that produced them "steps out of slams, Pummels, and presses Second Wind". QA's bench Pummels and presses Second Wind, and **never steps out of anything**. Those are different players, and the brackets belong to the first.
+2. **The sim agrees with both of them, which settles it.** A bot of mine on the real sim (not committed; line gear, the bench's rotation, 40 fights a cell, each fight 33 to 52 s) reproduces the bench's deaths with no dodge and the brackets with a slam dodge. Table below. Its gross damage with no dodge is 130, 131 and 131 % on the three rows; QA's was 121 to 131.
+3. **HOM-98's bug was real but did not do this.** The bench pressed `KeyR`, an ability slot, instead of the attack key, and many fights had no swings. With it fixed (`7a62c8a`, 8 fights a row, swings 17 to 19 every fight) the same three rows still die: **Ogre 7 of 8, Mother Mire 8 of 8, Elder Thornback 8 of 8, gross 131, 131 and 129 %** against the headless 130, 131 and 131. Bench and sim agree to two points, so these are no-dodge deaths, not no-swing deaths. (HOM-98's own Bogfather rerun, 0 of 5 dead after the fix, is the table's 0 of 40 with no dodge.)
+
+**What each column is.** Net is gross damage taken minus health healed, as a share of maximum health; deaths are out of 40. *No dodge* is the bench as it was. *Slam dodge* steps out of every slam it has not Pummelled and ignores ground circles: **it is the reference player, and the bracket in each row is its no-heal column** (Ogre 67 against 72 here, Bogfather 73 against 69, Thorn Warden 76 against 70, Barrow Lord 83 against 78, Hollow Knight 92 against 87, Stonehorn 77 against 76). *All dodge* steps out of the ground circles as well.
+
+| Row | Lv | No dodge, Second Wind | No dodge, no heal | Slam dodge, Second Wind | Slam dodge, no heal | All dodge, Second Wind | Dodge a row asks of a person (deaths 10 % or under) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `toll_captain` (elite) | 13 | 82 % (0) | 104 % (39) | 53 % (0) | 77 % (0) | 53 % (0) | none, with the heal |
+| `barnacle_ogre` (elite) | 17 | **103 % (35)** | 120 % (37) | 31 % (0) | 72 % (0) | 31 % (0) | **about 60 %** |
+| `bogfather` (elite) | 21 | 55 % (0) | 81 % (0) | 25 % (0) | 69 % (0) | 24 % (0) | none |
+| `thorn_warden` (elite) | 24 | 57 % (0) | 80 % (0) | 32 % (0) | 70 % (0) | 29 % (0) | none |
+| `barrow_lord` (elite) | 29 | 66 % (0) | 88 % (0) | 42 % (0) | 78 % (0) | 36 % (0) | none |
+| `stonehorn` (elite) | 31 | 67 % (0) | 84 % (0) | 62 % (0) | 76 % (0) | 32 % (0) | none |
+| `old_grey` (rare) | 12 | 115 % (40) | 103 % (40) | 65 % (0) | 103 % (40) | 65 % (0) | about 90 % |
+| `gutterhook` (rare) | 16 | 103 % (40) | 125 % (40) | 59 % (0) | 103 % (40) | 59 % (0) | about 90 % |
+| `mother_mire` (rare) | 20 | **104 % (40)** | 107 % (40) | 49 % (0) | 77 % (0) | 12 % (0) | **about 50 %** |
+| `elder_thornback` (rare) | 23 | **103 % (40)** | 112 % (40) | 76 % (0) | 101 % (28) | 76 % (0) | about 80 % |
+| `hollow_knight` (rare) | 28 | 104 % (40) | 103 % (40) | 61 % (0) | 87 % (0) | 61 % (0) | about 80 % |
+
+The last column is a sweep (a dodge chance per telegraph, Pummel and Second Wind on). Share dead at 0, 20, 40, 60, 80 and 100 % dodge: Barnacle Ogre 83, 40, 20, 5, 0, 0; Mother Mire 100, 40, 15, 3, 0, 0; Elder Thornback 100, 83, 55, 25, 8, 0; Hollow Knight 100, 80, 53, 23, 10, 0; Old Grey and Gutterhook 100, 100, 80, 63, 25, 0. The five forgiving elites are 0 at every step.
+
+**What the table says about the design, and what I decided.**
+- **A landed slam is worth 22 to 30 % of health, about one Second Wind (a ground circle about 10), and dodging the slams is worth 25 to 70 points on most rows: the elite tier is priced almost entirely in dodges.** Pummel and a heal are the floor (they carry five of the eleven rows through with no dodge); with a dodge Pummel matters little, a dodger who never Pummels lands within ten to twenty points of one who does and does better on about half the rows, because a cast that lands on empty ground is time the enemy spent not swinging (N = 20, not in the table). That is a design, not a bug: tab-target on a global cooldown has no other way to make a boss a test. It also means **the single most important thing for the elite tier is whether a person can read a 1.7 second telegraph**, which I cannot judge and the bench cannot measure.
+- **Five of the six elites forgive a player who never dodges, provided they heal; the Barnacle Ogre does not**: it is the first elite whose slam is its only mechanic, on the smallest health pool (340), and it flips from lethal to safe between about 40 and 60 % dodge. I left it, on purpose: it teaches the dodge on one telegraph before the Bogfather asks for two. **If a person cannot clear it, the lever is one constant: `heavy.damage` 250 to 210** (the 24 % the row would carry if it also marked ground). On the sim that takes it from 93 % dead at no dodge to 3 % (and 18 to 0 % at 40 % dodge), and lowers its net a few points at every dodge rate (73 to 68 at 40 %, 48 to 46 at 80 %). Not applied: nobody has been through it by hand.
+- **Mother Mire and Elder Thornback are right as rares**: dead at no dodge, survivable at half to four-fifths, which is the "a death or near it" the row promises. **Old Grey and Gutterhook want about 90 % dodge and slam damage is not the lever**: cutting the slam from 180 to 125 (Old Grey) or from 235 to 160 (Gutterhook) changes nothing measurable, because what costs the health is 44 to 48 seconds of auto-attacks against 265 and 325 health. They are the road's pre-model rows with no bracket. If they read as walls, the lever is their `damage` (40 and 55), which I have not tested.
+- **The with-Second-Wind brackets in the rows were all one heal too few.** They assumed one, and a 33 to 52 second fight on a 20 second cooldown takes two or three: the slam-dodge column above is 15 to 25 points lower (Bogfather 49 to 25, Ogre 43 to 31, Mother Mire 72 to 49). The columns here supersede them; the rows keep their old text so the history reads.
+
+**What the bench must do: dodge, and say what it did.** The fourth bench artifact in five waves would be a dodge that is half-specified, so here it is exactly. Everything below is read from the sim's own rules (`sim/combat.ts`: `updateCast`, `startGroundCast`).
+
+*The telegraphs.* The sim emits `{ t: 'telegraph', id, kind, windup, x?, z?, radius? }` when a cast starts and `{ t: 'slam', id, x, z, radius }` when a `heavy` or `ground` cast lands, hit or miss. The bench already wraps `s.events.push`, so it sees both. Two kinds can be stepped out of:
+- **`heavy` (a slam).** Lands when the wind-up ends (1.6 to 1.8 s) as a circle of `ENEMY_TYPES[type].heavy.radius` (4.5 to 6.5) **centred on the enemy**; hits if the *centre-to-centre* distance between enemy and player is at most the radius on that tick (no body radii). The enemy is rooted for the whole wind-up and swings nothing in it, and its swing timer restarts when it lands.
+- **`ground` (a marked circle).** Fixed at the **player's position when the cast starts**, radius 3 to 3.2, wind-up 1.3 s; hits if the player is within the radius of that point when the wind-up ends. The enemy is rooted for it, too.
+
+*The rule, per telegraph, decided once on the first frame it is seen.*
+1. **If Pummel is available, do not dodge: Pummel it** (the bench's rule: the wind-up is 0.25 s old, Pummel is off cooldown within 0.3 s, energy 10 or more, the enemy within 3.5). A stagger stops the cast.
+2. **Otherwise, a slam:** walk straight away from the enemy, along the line from the enemy through the player, to a point `radius + 0.9` from the enemy, and hold it until the `slam` event for that enemy; then walk back until `dist <= 2.2`. It takes about 0.7 s out (4 units at the foot speed of 6) of a 1.7 s wind-up, so the margin is a full second: a dodge that starts later than 0.9 s after the telegraph is not a dodge, and the bench should say so in its count rather than quietly take the hit.
+3. **Otherwise, a ground circle (only with `--dodge all`):** pick the point on the circle of radius 2.4 round the enemy that is at least `radius + 0.6` from the mark and nearest to the player, so melee goes on from the far side of the enemy; if none exists, straight away from the mark to `radius + 0.6`. Hold it until the `slam` event, then resume.
+4. **Moves are made as a player makes them**: no `p.x = ...`. The browser bot has no world-space stick; it holds `W` with `view.yaw` set to the bearing of the target point (`faceYaw` already does this), and turns back to the enemy afterwards. A netted player (`p.root`) cannot dodge; count it as hit.
+5. Everything else is the existing rotation: auto-attack asserted, Pummel on a wind-up, Second Wind when a full heal is missing, then Crushing Blow, Serrated Throw, Strike. **Second Wind stays on cooldown**: an elite fight is two or three casts, not one.
+
+*What it prints, per row, and never a single number:* `--dodge none|slam|all` (default `slam`, because the brackets are its), and for every cell the share dead, **net** and **gross** damage as a share of maximum health (median and mean, as the ttk table already does), **heals cast and health healed**, **swings** and the zero-swing count (HOM-98's), **telegraphs seen, by kind, and how many it dodged and Pummelled**, slams and circles that landed, and ttk. `hpPct` as it stands is gross and a heal never lowers it; that is why HOM-94's brackets and QA's percentages could not be compared. **A row that reads 0 dodged against a non-zero telegraph count with `--dodge slam` is the bench lying and must say so.**
+
+*How the engineer knows it is right:* on `--gear line`, `--n 20`, the bench should land within 8 points of net and 1.5 s of ttk of the table above on every row, and the three contested rows must come out alive in the slam column and dead in the none column. If they do not, the bench is wrong, not the table.
+
+**What I could not verify.** Whether a person reads a 1.7 s telegraph, and the dodge rate a person actually achieves, is the unknown the whole tier turns on; the bot reacts in one tick and never misjudges the circle. That 40 % of dodges clears the Ogre and 80 % clears every rare is a model of a person, not one. A human pass over the Ogre and Mother Mire by hand (HOM-94's own suggestion) is still the check; it should report how many slams it saw and how many it stepped out of, which is exactly the count the bench now prints.
 
 ### 3.5 Abilities and talents: what unlocks where
 
@@ -631,8 +731,10 @@ The lever is **XP per kill** and nothing else: one constant in `killEnemy`, tabl
 | Woodcutting | about 30 (thornoak 24, elderwood 36) | about 12 (ash) |
 | Fishing, Cooking | about 14 each | about 10 each |
 | Herbalism, Alchemy | about 12 each | about 8 each |
-| Leatherworking | 1 (taught at Highmoor) | 1 |
-| **Total** | **about 211** | **about 147** |
+| Leatherworking | 1 (taught at Highmoor; **about 36 once the carried bag is spent, HOM-102, see 2.2**) | 1 (same) |
+| **Total** | **about 211** (246 with the bag) | **about 147** (182 with it) |
+
+*HOM-102: the totals in the last row and the numbers below were priced with Leatherworking at 1. The bag the leatherworker carries to Highmoor is worth about 35 levels in about ten minutes, which softens a total-level gate of 250 to 4 levels (2 minutes) for a committed player; the gate that costs the committed player what this section priced it at is **285**. Not changed here (it is the board's number and it is in code); 2.2 has the arithmetic.*
 
 Both are over 120 before they have cooked a fish on purpose. A gate that is passed by ordinary play gates nothing, and a literal total of 30 failed the same way (it was met at combat 10). The board's own reading of the gate, "a reward for being a citizen of the world: you have learned something in every town", is worth keeping; the number has to move with the ladder.
 
@@ -806,7 +908,8 @@ Ten, each small, each named so it is not a surprise:
 
 - **Model** (re-derived, HOM-62; 3.4 has the constants): DPS of the GCD-limited Crushing Blow / Strike rotation plus auto-attack with **no efficiency factor**, TTK = HP / DPS − 1.0 s, enemy HP from a target TTK of 9.4 s at level 17 plus 0.2 s a level on a line through the gear ladder, hit from a health-cost target by what the enemy is (25 / 28 / 15 / 30 %). The first draft's model (80 % efficiency, no free first blow, +25 % from unbuilt talents by level 30: 48 DPS at level 12, 194 at 30) had fights 24 to 35 % too long at levels 10 to 12 (and the right length at 16 only because it also assumed a weapon the player does not own).
 - **Compared against**: QA's six road and Strand enemies (HOM-53): the model's mean TTK is 9.6 s against 9.2 measured, within 0.5 s on every one; a headless bot of mine on the real sim reproduces QA's TTK within 0.5 s and health cost within 2.2 points on all six, and the formula is within ±2 % of it at 16 pairs of level and weapon from L10 / 28 to L32 / 80. And the cave: the Hollow's 54 DPS at level 11 with Warden's Edge is 52 here.
-- **Could not verify by play**: everything a person does that a bot does not. A person's DPS (the bot queues perfectly, so the model is the ceiling; a person at 80 % of it makes every TTK here 25 % longer and the trash fights cost 25 % more), the 1.3x person factor behind 44 s a mean kill and every "at a person's pace" hour, elites and bosses in a person's hands (the bot steps out of slams, Pummels, and presses Second Wind below 45 %, and clears every elite and rare here; whether they are *fun* is a playtest's question), the committed / casual split that places the sets in the bands (a third and a half of a session at the forge are my assumption; 3.3 gives the knob), the 0.5 minutes a level that prices the total-level gate, mount speeds 10 and 13, ride length, how the sawtooth after a new set feels, and whether 152 kills is a satisfying number. Stonehorn (the bot ends at 77 % either way, its heal did not fire) and Archmage Vael (a ranged boss, my probe is melee) are not confirmed even by the bot.
+- **Could not verify by play**: everything a person does that a bot does not. A person's DPS (the bot queues perfectly, so the model is the ceiling; a person at 80 % of it makes every TTK here 25 % longer and the trash fights cost 25 % more), the 1.3x person factor behind 44 s a mean kill and every "at a person's pace" hour, elites and bosses in a person's hands (the bot steps out of slams, Pummels, and presses Second Wind below 45 %, and clears every elite and rare here; whether they are *fun* is a playtest's question), the committed / casual split that places the sets in the bands (a third and a half of a session at the forge are my assumption; 3.3 gives the knob), the 0.5 minutes a level that prices the total-level gate, mount speeds 10 and 13, ride length, how the sawtooth after a new set feels, and whether 152 kills is a satisfying number. Archmage Vael (a ranged boss, my probe is melee) is not confirmed even by the bot. **HOM-102: the dodge is that assumption, measured (3.4a).** The bot that wrote the elite brackets stepped out of slams; one that does not is dead on the Barnacle Ogre and every rare; so every elite and rare figure here is a statement about a person who reads a 1.7 s telegraph, and whether a person does is the first thing a playtest of the Ogre, Mother Mire and the Barrowdowns' elites has to answer. (Stonehorn, which this paragraph once said the bot ended at 77 % either way with its heal unfired, is 76 % without a heal and 62 % with one for a slam-dodger: the heal fires.)
 - **Existing balance this changes**: nothing built moves except, if you take the recommendation, the Greywater Wolf's two numbers (3.4). The XP-parity rule reduces the pay of the cave's enemies for anyone above level 11, and the Warden stops being the best farm: intended, and no existing number changes. The doc changes that are not data: Marrow's Edge's Smithing gate 22 to 30, the first mount at Thornwick and the second at total level 250, the parity prose (it said −15 % a level below; the formula and the code say −5 %).
 - **Follow-ups this leaves, named so they are not lost** (all code, all mine or QA's): (1) the wolf camp fix and its assertion; (2) a headless `model` check in the golden path (the DPS formula within 3 % of the sim at six pairs of level and weapon; every built row's TTK within ±15 % of 3.1's target on the ladder and its cost within ±5 points of 3.4's), so the table cannot drift from the sim again; (3) QA's loop mode taking talents and a Second Wind policy, so the loop it times is the one a person plays; (4) a person's pass over the elites (HOM-52's shape) once the Fens and Thornwood are built.
+- **Follow-ups from HOM-102** (code; none is done here): (1) **Game Engineer / QA, the bench:** `--dodge none|slam|all` and the counters in 3.4a, validated against its table. (2) **Me, the three hides:** `marsh_hide`, `thorn_hide`, `moor_hide`, their leathers, six pieces and nine recipes, the 18 table rows, `req: { combat: 18 | 24 | 32 }`, with headless checks that no recipe takes a hide below its gate, that each new hide drops only in its own beasts' tables, that every changed table is within 1 % of `0.6 L + 3`, and that a bot which fights 3.2's kills and sells nothing reaches Leatherworking 26 or more at Highmoor with the tables as given. (3) **Me, the old hides' tooltips:** the boar hide and wolf pelt say where they go ("Highmoor's tanning rack will want this"), because the vendor buys them for 2 and 3 gold and a player who does not know will sell the bag. (4) **Me, with starmetal:** `MAX_REDUCTION` 0.75 to 0.80 (2.2), with a check that the six-slot best kit is under it. (5) **The board:** whether the second mount's gate (250) moves to 285 (2.2 and 4). (6) **3D Artist:** three more `hands` / `feet` pairs; bespoke for Thornhide and Moorhide.
 - **A headless check to add in wave 3**: each enemy's drop table has an expected sale value within 15 % of `(0.6 x L + 3) x role`; XP follows `(20 + L) x role` at parity; kills from 11 to 30 on the model is within 150 to 250.
