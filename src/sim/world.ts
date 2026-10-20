@@ -10,7 +10,7 @@
 export const PLAYER_RADIUS = 0.5;
 
 /** What an obstacle is, for whatever draws it: the sim only ever reads the circle. Absent means a rock (or, in the clearing, whatever it always was). */
-export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'rack' | 'barrow';
+export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'rack' | 'barrow' | 'forge' | 'ruin';
 export interface Obstacle { x: number; z: number; r: number; kind?: PropKind }
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 export interface Pt { x: number; z: number }
@@ -35,7 +35,7 @@ export interface Gate {
   need?: string;
 }
 // Ore rocks (gatherable, see sim/gathering.ts).
-export interface RockSpot extends Obstacle { type: 'copper' | 'tin' | 'iron' | 'coal' | 'adamant' | 'stormiron' }
+export interface RockSpot extends Obstacle { type: 'copper' | 'tin' | 'iron' | 'coal' | 'adamant' | 'stormiron' | 'starmetal' }
 
 /** A gathering spot you stand beside and cannot stand on: a shoal in the water. Unlike a rock it is not a collider. `type` is a NODE_TYPES key. */
 export interface NodeSpot extends Obstacle { type: string }
@@ -116,6 +116,8 @@ export const DUNMERE = { x: 875, z: 524 };   // 140 wide, 848 long (z 100 to 948
 export const THORNWICK = { x: 875, z: 1008 }; // 140 x 140; the town is its north-west, the Thornwood its south and east; the road comes in at the middle of its north edge
 export const BARROWDOWNS = { x: 1400, z: 1008 }; // 900 x 140 (world x 950 to 1850), the road along its z = 0; a 6-unit corridor west through Thornwick's east edge is the gate
 export const HIGHMOOR = { x: 1910, z: 1008 };   // 140 x 140; the town is its west half, the Moor its east; the road comes in at the middle of its west edge
+export const CAIRNWASTE = { x: 1980, z: 485 };  // 140 wide (x 1910 to 2050: east of the Cairn Hold's rock, which ends at 1908), 830 long (z 70 to 900), the road down its x = 0; Highmoor's north corridor (x +27 to +33 of Highmoor) is the gate and meets its south-west corner, the Spire's south edge overlaps its north end
+export const SPIRE = { x: 1980, z: 8 };         // 140 x 140; the town is its south half, the ruins its north; the road comes in at the middle of its south edge (map position (1900, 0), see TOWNS)
 const at =(o: Pt, lx: number, lz: number) => ({ x: o.x + lx, z: o.z + lz });
 const hash = (n: number) => Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1; // deterministic scatter: no rng state touched
 
@@ -417,7 +419,7 @@ const barrowRoad = verge(BARROWDOWNS, barrowSpawns, BARROW_MOUNDS, { axis: 'x', 
 
 /**
  * Highmoor's keepers: the Cairn Hold's door (a level gate: Ysolt lets anyone of combat 29 and over down the stair), and the north gate to the Cairnwaste (a writ: Corvin
- * lets through whoever the Steward has signed for, the bible's Q6, `need: 'writ'`). Nothing is built north of Corvin's line yet but the corridor's last eight units.
+ * lets through whoever the Steward has signed for, the bible's Q6, `need: 'writ'`). Past Corvin's line the corridor runs on into the Cairnwaste (HOM-111).
  */
 const HIGH_GATES: Gate[] = [
   { id: 'cairnhold', axis: 'z', at: HIGHMOOR.z - 76, span: [HIGHMOOR.x - 33, HIGHMOOR.x - 27], from: 1, combat: 29, keeper: 'Cairnwarden Ysolt', post: { x: HIGHMOOR.x - 28.8, z: HIGHMOOR.z - 73 },
@@ -477,6 +479,88 @@ const CHAMBER_STONES: Obstacle[] = [at(HIGHMOOR, -27, -131), at(HIGHMOOR, -11, -
 const grotHerb = (lx: number, lz: number): HerbSpot => ({ kind: 'ghost', type: 'ghostcap', ...at(SALTMARROW, lx, lz) });
 const holdHerb = (lx: number, lz: number): HerbSpot => ({ kind: 'ghost', type: 'ghostcap', ...at(HIGHMOOR, lx, lz) });
 const GROTTO_GHOSTCAP = [grotHerb(-26.2, -108), grotHerb(-44, -91.5), grotHerb(-9.5, -110.5)];
+
+/**
+ * The Cairnwaste (bible 3.4, HOM-111): the road north from Highmoor, levels 32 to 36, 830 long (the towns are 1,000 apart on the map and the two towns' floors take the rest).
+ * Local coordinates: z runs from the Spire (-415) to Highmoor's gate (+415), the road down x = 0; its camps are 30 or more off it, so a walker is never pulled in. The reavers and the first packs of
+ * hounds are at the Highmoor end, the ogres thicken toward the Spire, and the Ashen Colossus holds the last stretch, off the road to the east.
+ */
+const WASTE_SPAWNS = [
+  ['waste_reaver', 36, 385], ['waste_reaver', -40, 336],
+  ['dune_hound', -42, 296], ['dune_hound', -40.4, 297.2], ['dune_hound', -43.6, 297.6],
+  ['waste_reaver', 38, 262], ['sand_ogre', -36, 226],
+  ['dune_hound', 44, 192], ['dune_hound', 45.6, 193.2], ['dune_hound', 42.4, 193.6],
+  ['waste_reaver', -42, 158], ['sand_ogre', 38, 124],
+  ['dune_hound', -46, 92], ['dune_hound', -44.4, 93.2], ['dune_hound', -47.6, 93.6],
+  ['waste_reaver', 40, 58], ['sand_ogre', -36, 24],
+  ['dune_hound', 48, -10], ['dune_hound', 49.6, -8.8], ['dune_hound', 46.4, -8.4],
+  ['waste_reaver', -38, -44], ['sand_ogre', 40, -78],
+  ['dune_hound', -44, -112], ['dune_hound', -42.4, -110.8], ['dune_hound', -45.6, -110.4],
+  ['waste_reaver', 36, -146], ['sand_ogre', -38, -182],
+  ['dune_hound', 46, -216], ['dune_hound', 47.6, -214.8], ['dune_hound', 44.4, -214.4],
+  ['waste_reaver', -40, -252], ['sand_ogre', 38, -288],
+  ['ashen_colossus', 34, -330],
+  ['sand_ogre', -36, -330], ['waste_reaver', 42, -378],
+] as const;
+const wasteSpawns = worldSpawns(CAIRNWASTE, WASTE_SPAWNS);
+/** Starmetal in the wastes: four stands of three veins, a few paces off the road and well clear of every camp (the road itself is the near side: no enemy notices a walker there). */
+const WASTE_STANDS: [number, number][] = [[18, 346], [-18, 150], [18, -56], [-18, -250]];
+const WASTE_ORE: RockSpot[] = WASTE_STANDS.flatMap(([lx, lz]) => [-1, 0, 1].map(i => ({ type: 'starmetal' as const, ...at(CAIRNWASTE, lx + (i === 0 ? Math.sign(lx) * 1.4 : 0), lz + i * 3.6), r: 1.2 })));
+/** The wastes' cairns: tall heaps of black stone with a standing slab in front, one beside each stand and the rest scattered 16 to 60 off the road, none on a camp or a vein. */
+function wasteCairns(): Obstacle[] {
+  const cairn = (c: Pt, r: number): Obstacle => ({ ...c, r, kind: 'ruin' });
+  const out = WASTE_STANDS.map(([lx, lz]) => cairn(at(CAIRNWASTE, lx + Math.sign(lx) * 12, lz + 2), 2.6));
+  for (let k = 0; k < 220 && out.length < 34; k++) {
+    const c = at(CAIRNWASTE, (hash(k * 7 + 2) < 0.5 ? -1 : 1) * (16 + hash(k * 5 + 3) * 44), (hash(k * 3 + 1) - 0.5) * 820), r = 1.6 + hash(k * 11 + 4) * 1.6;
+    if (wasteSpawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 12) || WASTE_ORE.some(o => Math.hypot(o.x - c.x, o.z - c.z) < r + 7) || out.some(o => Math.hypot(o.x - c.x, o.z - c.z) < o.r + r + 8)) continue;
+    out.push(cairn(c, r));
+  }
+  return out;
+}
+const WASTE_CAIRNS = wasteCairns();
+const wasteRoad = verge(CAIRNWASTE, wasteSpawns, WASTE_CAIRNS, { axis: 'z', reach: 410, near: 14, far: 46 });
+
+/** The Sundered Spire (bible 2.1): the town is the south half, a safe circle of 35 about the square; the ruins fill the north. Local coordinates. */
+const SPIRE_SPAWNS = [
+  ['spire_adept', -44, -6], ['spire_adept', 44, -14], ['spire_adept', -14, -46], ['spire_adept', 22, -52],
+  ['void_hound', -50, -34], ['void_hound', -48.4, -32.8], ['void_hound', -51.6, -32.4],
+  ['void_hound', 48, -38], ['void_hound', 49.6, -36.8], ['void_hound', 46.4, -36.4],
+  ['rune_golem', -26, -20], ['rune_golem', 28, -26], ['rune_golem', -2, -32],
+  ['spire_warden', 0, -50],
+] as const;
+const spireSpawns = worldSpawns(SPIRE, SPIRE_SPAWNS);
+const spireLandmarks = {
+  spireSquare: at(SPIRE, 0, 28),
+  /** The flight master, just inside the town from the road in from the south. */
+  flightSpire: { ...at(SPIRE, 8, 56), r: 0.7 },
+  /** The Keeper of the Spire's ledger: the town's one quest giver (the bible's Q7). */
+  spireKeeper: { ...at(SPIRE, -10, 22), r: 0.7 },
+  /** The provisioner: buys the bag, mends the gear. */
+  spireVendor: { ...at(SPIRE, 14, 26), r: 0.7 },
+  /** The forge: the top of the metal ladder is smelted here, a few paces from the road in (the second forge in the world). */
+  forgeSpire: at(SPIRE, -26, 38),
+};
+const SPIRE_FORGE: Obstacle = { ...spireLandmarks.forgeSpire, r: 2.6, kind: 'forge' };
+const SPIRE_HOUSES: Obstacle[] = [[-36, 48], [34, 44], [-30, 4], [30, 6]].map(([lx, lz]) => ({ ...at(SPIRE, lx, lz), r: 3.1, kind: 'house' as const }));
+const graveSpire: Pt = at(SPIRE, -56, 58);
+const SPIRE_HEADSTONES = headstones(graveSpire);
+/** The Vault's door (HOM-112 builds what is behind it): a corridor through the north wall, held by a keeper, shut until the Vault is built. Combat 38 and the Keeper's seal (Q7) are what it will ask. */
+const SPIRE_GATES: Gate[] = [
+  { id: 'vault', axis: 'z', at: SPIRE.z - 76, span: [SPIRE.x - 3, SPIRE.x + 3], from: 1, combat: 38, keeper: 'Wardkeeper Osric Thale', post: { x: SPIRE.x - 1.8, z: SPIRE.z - 73 }, need: 'sealed',
+    refuse: 'The Vault is not for anyone under combat level 38. What is shut in it has waited since the Spire fell: it can wait for you to be ready.',
+    closed: 'The Vault door is sealed, and the seal is mine to keep. The Keeper has read as far as the third ward, and no further. Whatever is behind it has not opened it from within, and nobody is going in until we know why.' },
+];
+/** The ruins: broken columns, stub walls and fallen drums across the north half, outside the town's circle, none on a camp, the Vault's corridor or one another. */
+function spireRuins(): Obstacle[] {
+  const out: Obstacle[] = [], sq = spireLandmarks.spireSquare;
+  for (let k = 0; k < 400 && out.length < 18; k++) {
+    const c = at(SPIRE, (hash(k * 3 + 1) - 0.5) * 128, -8 - hash(k * 5 + 2) * 50), r = 1.1 + hash(k * 7 + 3) * 1.1;
+    if (Math.hypot(c.x - sq.x, c.z - sq.z) < 40 || (Math.abs(c.x - SPIRE.x) < 9 && c.z < SPIRE.z - 36) || spireSpawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 9) || out.some(o => Math.hypot(o.x - c.x, o.z - c.z) < o.r + r + 6)) continue;
+    out.push({ ...c, r, kind: 'ruin' });
+  }
+  return out;
+}
+const SPIRE_RUINS = spireRuins();
 
 /**
  * The world. Order matters: node ids follow region order (each region's rocks, then its trees), so new ground goes last and every
@@ -708,7 +792,7 @@ export const REGIONS: Region[] = [
   },
   {
     // Highmoor and the Moor (HOM-95). The town is safe ground: a flight master, a graveyard, the trainer, the second stablemaster and the tanning rack (HOM-96). The hard gates
-    // are two 6-unit passages through the north wall, each held by a keeper: the Cairn Hold's door (combat 29, HOM-99) and the road to the Cairnwaste (the writ, Q6; nothing is built past it yet).
+    // are two 6-unit passages through the north wall, each held by a keeper: the Cairn Hold's door (combat 29, HOM-99) and the road to the Cairnwaste (the writ, Q6; HOM-111 built what is past it).
     id: 'highmoor', name: 'Highmoor', cave: false, zone: 'highmoor',
     footprint: [
       { x0: HIGHMOOR.x - 70, x1: HIGHMOOR.x + 70, z0: HIGHMOOR.z - 70, z1: HIGHMOOR.z + 70 },
@@ -722,7 +806,7 @@ export const REGIONS: Region[] = [
     tall: [...HIGH_HOUSES, ...MOOR_ROCKS.filter(o => o.r >= 1.8)],
     trees: [], rocks: [],
     landmarks: { ...highLandmarks, gate: { x: HIGHMOOR.x - 65, z: HIGHMOOR.z } },
-    connections: [{ to: 'barrowdowns', at: { x: HIGHMOOR.x - 65, z: HIGHMOOR.z } }, { to: 'stair', at: STAIR_DOOR }],
+    connections: [{ to: 'barrowdowns', at: { x: HIGHMOOR.x - 65, z: HIGHMOOR.z } }, { to: 'stair', at: STAIR_DOOR }, { to: 'cairnwaste', at: { x: HIGHMOOR.x + 30, z: CAIRNWASTE.z + 441 } }],
     safe: [{ ...highLandmarks.highSquare, r: 35 }, { ...graveHigh, r: GRAVE_SAFE_R }],
     spawns: highSpawns,
     gates: HIGH_GATES,
@@ -768,6 +852,40 @@ export const REGIONS: Region[] = [
     connections: [{ to: 'galley', at: GROTTO_GHOSTCAP[0] }],
     herbs: GROTTO_GHOSTCAP,
   },
+  {
+    // The Cairnwaste (HOM-111): the road north from Highmoor to the Spire, 830 x 140 of ash and black stone (bible 3.4), after everything else so no older node or enemy id moves. The way in is Highmoor's
+    // north corridor (Corvin's writ gate, in Highmoor's own footprint), which this floor meets 24 units north of the line; its north end overlaps the Spire across the whole width: soft.
+    id: 'cairnwaste', name: 'The Cairnwaste', cave: false, zone: 'cairnwaste',
+    footprint: [
+      { x0: CAIRNWASTE.x - 70, x1: CAIRNWASTE.x + 70, z0: CAIRNWASTE.z - 415, z1: CAIRNWASTE.z + 415 },
+      { x0: HIGHMOOR.x + 27, x1: HIGHMOOR.x + 33, z0: CAIRNWASTE.z + 407, z1: CAIRNWASTE.z + 443 },
+    ],
+    obstacles: wasteRoad.obstacles, tall: wasteRoad.tall, trees: [], rocks: WASTE_ORE,
+    landmarks: {},
+    connections: [{ to: 'highmoor', at: { x: HIGHMOOR.x + 30, z: CAIRNWASTE.z + 441 } }, { to: 'spire', at: { x: SPIRE.x, z: SPIRE.z + 66 } }],
+    spawns: wasteSpawns,
+    road: { axis: 'z', at: CAIRNWASTE.x },
+  },
+  {
+    // The Sundered Spire (HOM-111). The town is safe ground: a flight master, a forge, a provisioner, the Keeper and a graveyard (enchanting's rune circle is HOM-112's, and so is the Vault: the
+    // door in the north wall is held by its keeper and shut until it is built). The ruins hold the town's enemies, 36 to 40.
+    id: 'spire', name: 'The Sundered Spire', cave: false, zone: 'spire',
+    footprint: [
+      { x0: SPIRE.x - 70, x1: SPIRE.x + 70, z0: SPIRE.z - 70, z1: SPIRE.z + 70 },
+      ...SPIRE_GATES.map(g => ({ x0: g.span[0], x1: g.span[1], z0: g.at - 8, z1: SPIRE.z - 66 })),
+    ],
+    obstacles: [
+      ...SPIRE_HOUSES, SPIRE_FORGE, ...SPIRE_RUINS, ...SPIRE_HEADSTONES, { ...spireLandmarks.flightSpire, kind: 'person' }, { ...spireLandmarks.spireKeeper, kind: 'person' }, { ...spireLandmarks.spireVendor, kind: 'person' },
+      ...SPIRE_GATES.map(g => ({ ...g.post, r: 0.55, kind: 'person' as const })),
+    ],
+    tall: [...SPIRE_HOUSES, SPIRE_FORGE, ...SPIRE_RUINS.filter(o => o.r >= 1.5)],
+    trees: [], rocks: [],
+    landmarks: { ...spireLandmarks, gate: { x: SPIRE.x, z: SPIRE.z + 66 } },
+    connections: [{ to: 'cairnwaste', at: { x: SPIRE.x, z: SPIRE.z + 66 } }],
+    safe: [{ ...spireLandmarks.spireSquare, r: 35 }, { ...graveSpire, r: GRAVE_SAFE_R }],
+    spawns: spireSpawns,
+    gates: SPIRE_GATES,
+  },
 ];
 // the hollow's and hall's standing stones are tall (they break sight lines)
 for (const r of REGIONS) if (r.cave) r.tall.push(...r.obstacles);
@@ -783,6 +901,7 @@ export const TOWNS: { id: string; name: string; wake: Pt; grave: Pt; map: Pt }[]
   { id: 'saltmarrow', name: 'Saltmarrow', wake: at(SALTMARROW, -25, -4), grave: graveSalt, map: { x: 900, z: 0 } },
   { id: 'thornwick', name: 'Thornwick', wake: at(THORNWICK, 2, -30), grave: graveThorn, map: { x: 900, z: 1000 } },
   { id: 'highmoor', name: 'Highmoor', wake: at(HIGHMOOR, -26, -4), grave: graveHigh, map: { x: 1900, z: 1000 } },
+  { id: 'spire', name: 'Spire', wake: at(SPIRE, -4, 36), grave: graveSpire, map: { x: 1900, z: 0 } },
 ];// `map`: the world-map position (design 1.2), used for the map screen and for flight prices only: walking never reads it
 export function nearestTown(x: number, z: number, found: readonly string[] = TOWNS.map(t => t.id)) {
   const open = TOWNS.filter(t => found.includes(t.id));
@@ -795,7 +914,7 @@ export const regionById = (id: string): Region => REGIONS.find(r => r.id === id)
 // --- Flat views of the regions: what the renderer and the sim read. -----------------------------------------------------------
 
 export let WORLD_HALF = 30; // the clearing is a square of side 2*WORLD_HALF
-export const LANDMARKS = { ...clearingLandmarks, ...ridgeLandmarks, ...saltLandmarks, ...thornLandmarks, ...highLandmarks };
+export const LANDMARKS = { ...clearingLandmarks, ...ridgeLandmarks, ...saltLandmarks, ...thornLandmarks, ...highLandmarks, ...spireLandmarks };
 /** Every hard gate in the world (each region's own), and every Withering Ground patch. */
 export const GATES: Gate[] = REGIONS.flatMap(r => r.gates ?? []);
 export const WITHERING: { x: number; z: number; r: number }[] = REGIONS.flatMap(r => r.hazards ?? []);

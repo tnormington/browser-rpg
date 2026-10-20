@@ -159,7 +159,8 @@ section('stormiron: Mining 40, and the smithing it opens');
   const nodes = createNodes(), storm = nodes.filter(n => n.type === 'stormiron');
   const inTwo = (n: { x: number; z: number }) => ['barrowdowns', 'thornwick'].includes(regionAt(n.x, n.z)?.id ?? '');
   assert(storm.length === 15 && storm.every(inTwo) && storm.filter(n => regionAt(n.x, n.z)?.id === 'barrowdowns').length === 12, 'fifteen veins: three in the Thornwood and twelve in the barrows');
-  assert(nodes.slice(nodes.length - 21, nodes.length - 6).every(n => n.type === 'stormiron'), 'they come after every older node (only the six Ghostcap patches of HOM-99 follow), so no older id moved');
+  const star = nodes.filter(n => n.type === 'starmetal').length; // HOM-111: the Cairnwaste's twelve starmetal veins are the very last nodes
+  assert(nodes.slice(nodes.length - star - 21, nodes.length - star - 6).every(n => n.type === 'stormiron'), 'they come after every older node (only the six Ghostcap patches of HOM-99 and the wastes\' starmetal follow), so no older id moved');
   assert(storm.every(n => !COLLIDERS.some(o => o.kind !== undefined && o.kind !== 'rock' && Math.hypot(o.x - n.x, o.z - n.z) < o.r + n.r)), 'and none is inside a tree, a mound or a house');
   const s = quiet(25);
   s.player.skills.mining.level = 39;

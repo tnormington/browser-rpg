@@ -2,7 +2,7 @@
 import type { GameState } from '../sim';
 import { PLAYER_RADIUS, LANDMARKS, OBSTACLES, clampToWorld } from './world';
 import { beginGather, finishGather, nodeById, strikeGather } from './gathering';
-import { finishCraft } from './crafting';
+import { finishCraft, nearestSite, stationSites } from './crafting';
 import { NPCS, npcNear } from './quest';
 import { vendorById, vendorNear } from './shop';
 import { masterById, masterNear } from './flight';
@@ -15,9 +15,10 @@ export type Action =
   | { k: 'flight'; from: string; to: string; t: number; duration: number }; // the ride: flight.ts runs it, and the player is out of everyone's reach until it lands
 
 /** `npc` and `vendor` name who (a click on them knows); without one, the nearest in earshot is meant (the E key). */
-export type Interact = { k: 'node'; id: number } | { k: 'forge' } | { k: 'range' } | { k: 'alembic' } | { k: 'rack' } | { k: 'npc'; id?: string } | { k: 'vendor'; id?: string } | { k: 'flightmaster'; id?: string };
+export type Interact = { k: 'node'; id: number } | { k: 'forge'; site?: number } | { k: 'range' } | { k: 'alembic' } | { k: 'rack' } | { k: 'npc'; id?: string } | { k: 'vendor'; id?: string } | { k: 'flightmaster'; id?: string };
 
-const FORGE_R = OBSTACLES.find(o => o.x === LANDMARKS.forge.x && o.z === LANDMARKS.forge.z)!.r;
+/** Each forge's own radius, in `stationSites('forge')` order: the building is a collider (world.ts). */
+const FORGE_RS = stationSites('forge').map(f => OBSTACLES.find(o => o.x === f.x && o.z === f.z)!.r);
 const RANGE_R = 0.9; // the hearth is a prop, not a collider: this is only how close counts as touching it
 const ALEMBIC_R = 1.3; // the bench is a collider of this radius (world.ts)
 const RACK_R = 1.6; // the tanning rack is a collider of this radius (world.ts)
@@ -28,7 +29,7 @@ function target(s: GameState, it: Interact) {
   if (it.k === 'npc') return NPCS.find(n => n.id === it.id) ?? NPCS.find(n => n.id === npcNear(s)) ?? NPCS[0];
   if (it.k === 'vendor') return vendorById(it.id ?? '') ?? vendorNear(s) ?? vendorById('hale')!;
   if (it.k === 'flightmaster') return masterById(it.id ?? '') ?? masterNear(s) ?? masterById('hale')!;
-  if (it.k === 'forge') return { x: LANDMARKS.forge.x, z: LANDMARKS.forge.z, r: FORGE_R };
+  if (it.k === 'forge') { const i = it.site !== undefined && FORGE_RS[it.site] !== undefined ? it.site : nearestSite(s, 'forge'), f = stationSites('forge')[i]; return { x: f.x, z: f.z, r: FORGE_RS[i] }; }
   if (it.k === 'range') return { x: LANDMARKS.range.x, z: LANDMARKS.range.z, r: RANGE_R };
   if (it.k === 'alembic') return { x: LANDMARKS.alembic.x, z: LANDMARKS.alembic.z, r: ALEMBIC_R };
   if (it.k === 'rack') return { x: LANDMARKS.rack.x, z: LANDMARKS.rack.z, r: RACK_R };

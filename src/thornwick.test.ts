@@ -141,7 +141,7 @@ section('the hard gate south of Saltmarrow: combat 16');
   run(u, 3, { dirX: 0, dirZ: -1 });
   assert(u.player.z < line - 3 && !gateEvent(u), 'the way back is never refused: a level-1 player south of the gate walks north through it');
   // a dead player and a flight over it are not stopped (flights land on the far side whatever the level)
-  assert(GATES.length === 4 && GATES.every(g => g.keeper && g.refuse), 'there are four gates in the world (HOM-95 added Highmoor\'s two), each with a keeper and a line');
+  assert(GATES.length === 5 && GATES.every(g => g.keeper && g.refuse), 'there are five gates in the world (HOM-95 added Highmoor\'s two, HOM-111 the Vault\'s), each with a keeper and a line');
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@ section('Thornwick\'s services: flight master, vendor, quest giver, alembic, saf
   assert(FLIGHT_MASTERS.some(f => f.id === 'thornwick') && TOWNS.every(t => FLIGHT_MASTERS.some(f => f.id === t.id)), 'and every town still has its master');
   assert(flightPrice('saltmarrow', 'thornwick') === 190 && Math.abs(flightSeconds('saltmarrow', 'thornwick') - 19.33) < 0.01 && flightPrice('hale', 'thornwick') === 250, 'Saltmarrow to Thornwick is 190 gold and a 19 second ride; from Hale 250');
   // a death at the south end of the fens wakes you at the nearest graveyard among the masters you have found
-  assert(TOWNS.length === 4 && nearestTown(DUNMERE.x, 880, ['hale', 'saltmarrow']).id === 'saltmarrow' && nearestTown(DUNMERE.x, 880, ['hale', 'saltmarrow', 'thornwick']).id === 'thornwick' && nearestTown(DUNMERE.x, 880).id === 'thornwick',
+  assert(TOWNS.length === 5 && nearestTown(DUNMERE.x, 880, ['hale', 'saltmarrow']).id === 'saltmarrow' && nearestTown(DUNMERE.x, 880, ['hale', 'saltmarrow', 'thornwick']).id === 'thornwick' && nearestTown(DUNMERE.x, 880).id === 'thornwick',
     'a death at the south end of the fens wakes you at Saltmarrow until you have found Thornwick\'s master, at Thornwick after');
 }
 

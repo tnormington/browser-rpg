@@ -28,7 +28,12 @@ export type Quest5Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
 export type Quest6Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
 /** The bible's Q6, The Moor Writ: Highmoor's Steward, once the Rotroot is handed in; it opens Corvin's gate north and pays 1,500 combat XP. */
 export type Quest7Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
-export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage; third: Quest3Stage; fourth: Quest4Stage; fifth: Quest5Stage; sixth: Quest6Stage; seventh: Quest7Stage }
+/**
+ * The bible's Q7, The Sundered Seal: the Spire's Keeper, once the writ is signed (they have walked the Cairnwaste to be here); it is what the Vault's door will ask for (HOM-112) and pays 1,800 combat XP.
+ * The Q2 shape, not the Q3 to Q6 one: the ruins' lesser wards first (`hunt`), then the Warden alone (`warden`: it only counts once the wards are down), then the Keeper.
+ */
+export type Quest8Stage = 'locked' | 'offer' | 'hunt' | 'warden' | 'report' | 'cleared';
+export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage; third: Quest3Stage; fourth: Quest4Stage; fifth: Quest5Stage; sixth: Quest6Stage; seventh: Quest7Stage; eighth: Quest8Stage }
 export const QUEST_STAGES: QuestStage[] = ['offer', 'hunt', 'report1', 'forge', 'brute', 'report2', 'done'];
 export const QUEST2_STAGES: Quest2Stage[] = ['locked', 'offer', 'delve', 'armour', 'warden', 'report', 'cleared'];
 export const QUEST3_STAGES: Quest3Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
@@ -36,11 +41,12 @@ export const QUEST4_STAGES: Quest4Stage[] = ['offer', 'carry', 'report', 'cleare
 export const QUEST5_STAGES: Quest5Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
 export const QUEST6_STAGES: Quest6Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
 export const QUEST7_STAGES: Quest7Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
+export const QUEST8_STAGES: Quest8Stage[] = ['locked', 'offer', 'hunt', 'warden', 'report', 'cleared'];
 
 /** True once the first quest has got as far as `stage`. */
 export const questReached = (s: GameState, stage: QuestStage) => QUEST_STAGES.indexOf(s.quest.stage) >= QUEST_STAGES.indexOf(stage);
 
-export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked', third: 'locked', fourth: 'offer', fifth: 'locked', sixth: 'locked', seventh: 'locked' });
+export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked', third: 'locked', fourth: 'offer', fifth: 'locked', sixth: 'locked', seventh: 'locked', eighth: 'locked' });
 
 export const QUEST_NAME = 'The Brute of the Cave Mouth';
 export const NPC = { name: 'Warden Hale', x: LANDMARKS.npc.x, z: LANDMARKS.npc.z, r: LANDMARKS.npc.r };
@@ -49,14 +55,17 @@ export const HARBOURMASTER = { name: 'Harbourmaster Pell', x: LANDMARKS.harbourm
 export const THORN_REEVE = { name: 'Reeve Maud Alder', x: LANDMARKS.thornReeve.x, z: LANDMARKS.thornReeve.z, r: LANDMARKS.thornReeve.r };
 /** Highmoor's Steward: the town's one quest giver, who gives the writ for the north road once the Rotroot is done. */
 export const HIGH_STEWARD = { name: 'Steward Hild Garrow', x: LANDMARKS.highSteward.x, z: LANDMARKS.highSteward.z, r: LANDMARKS.highSteward.r };
-export type NpcId = 'hale' | 'harbour' | 'thorn' | 'high';
+/** The Spire's Keeper: the town's one quest giver, who gives the seal's chain once the writ is signed. */
+export const SPIRE_KEEPER = { name: 'Keeper Isaura Venn', x: LANDMARKS.spireKeeper.x, z: LANDMARKS.spireKeeper.z, r: LANDMARKS.spireKeeper.r };
+export type NpcId = 'hale' | 'harbour' | 'thorn' | 'high' | 'spire';
 /** Everyone with something to say, by id. Hale's warden is the first: an interaction with no one named falls back to him. */
-export const NPCS: { id: NpcId; name: string; x: number; z: number; r: number }[] = [{ id: 'hale', ...NPC }, { id: 'harbour', ...HARBOURMASTER }, { id: 'thorn', ...THORN_REEVE }, { id: 'high', ...HIGH_STEWARD }];
+export const NPCS: { id: NpcId; name: string; x: number; z: number; r: number }[] = [{ id: 'hale', ...NPC }, { id: 'harbour', ...HARBOURMASTER }, { id: 'thorn', ...THORN_REEVE }, { id: 'high', ...HIGH_STEWARD }, { id: 'spire', ...SPIRE_KEEPER }];
 export const TALK_RANGE = 7;                       // centre to centre: advancing the quest needs this
 export const HUNT_GOALS: Record<string, number> = { boar: 4, wolf: 3 };
 const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves', ravager: 'Cave Ravagers', footpad: 'Footpads', toll_captain: 'Toll Captain', drowned_sailor: 'Drowned Sailors', tide_hag: 'Tide Hags', barnacle_ogre: 'Barnacle Ogre',
   thornback: 'Thornback Boars', rotwood_cultist: 'Rotwood Cultists', thorn_warden: 'Thorn Warden',
-  moor_raider: 'Moor Raiders', moor_ram: 'Moor Rams', ridge_ogre: 'Ridge Ogres', stonehorn: 'Stonehorn' };
+  moor_raider: 'Moor Raiders', moor_ram: 'Moor Rams', ridge_ogre: 'Ridge Ogres', stonehorn: 'Stonehorn',
+  spire_adept: 'Spire Adepts', void_hound: 'Void Hounds', rune_golem: 'Rune Golems', spire_warden: 'Spire Warden' };
 /**
  * What the Forgemaster's Blade costs in raw terms (see RECIPES): three steel bars, each an iron bar (two ore) and two coal, and a log. The plan is
  * padded past that (six iron bars, four steel) so the bars it asks for are also the practice the gates want (Steel Smithing 8, the blade Smithing 9).
@@ -118,6 +127,11 @@ export const QUEST7_NAME = 'The Moor Writ';
 export const MOOR_GOALS: Record<string, number> = { moor_raider: 4, moor_ram: 3, ridge_ogre: 2, stonehorn: 1 };
 export const RECOMMENDED_COMBAT_7 = 29;
 export const REWARD7: { skill: SkillId; xp: number }[] = [{ skill: 'combat', xp: 1500 }];
+export const QUEST8_NAME = 'The Sundered Seal';
+/** The ruins' lesser wards, which the Keeper wants silenced before the Warden is faced: the adepts, the hounds that came out of the broken seal and the golems that still walk its rounds. */
+export const SEAL_GOALS: Record<string, number> = { spire_adept: 4, void_hound: 3, rune_golem: 2 };
+export const RECOMMENDED_COMBAT_8 = 36;
+export const REWARD8: { skill: SkillId; xp: number }[] = [{ skill: 'combat', xp: 1800 }];
 const haveGoods = (s: GameState) => ERRAND_GOODS.every(g => countItem(s.player.inventory, g.item) >= g.n);
 
 /** Inventory plus what is worn: a piece you put on has not stopped being yours. */
@@ -138,8 +152,8 @@ const hasBlade = (s: GameState) =>
 // ---------- transitions ----------
 
 /** Which quest an event belongs to travels with it: both chains share stage 'done', so the HUD cannot work it out from state. */
-const QUEST_NAMES = [QUEST_NAME, QUEST2_NAME, QUEST3_NAME, QUEST4_NAME, QUEST5_NAME, QUEST6_NAME, QUEST7_NAME];
-const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', chain: 1 | 2 | 3 | 4 | 5 | 6 | 7 = 1) =>
+const QUEST_NAMES = [QUEST_NAME, QUEST2_NAME, QUEST3_NAME, QUEST4_NAME, QUEST5_NAME, QUEST6_NAME, QUEST7_NAME, QUEST8_NAME];
+const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', chain: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 = 1) =>
   s.events.push({ t: 'quest', what, name: QUEST_NAMES[chain - 1] });
 
 /** Kill credit. Hunt counts boars/wolves; the Brute only counts once the quest says so. */
@@ -179,6 +193,14 @@ export function questOnKill(s: GameState, type: string) {
     q.kills[type] = (q.kills[type] ?? 0) + 1;
     if (Object.entries(MOOR_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n)) { q.seventh = 'report'; questEvent(s, 'stage', 7); }
     else questEvent(s, 'progress', 7);
+  }
+  if (q.eighth === 'hunt' && SEAL_GOALS[type] && (q.kills[type] ?? 0) < SEAL_GOALS[type]) {
+    q.kills[type] = (q.kills[type] ?? 0) + 1;
+    if (Object.entries(SEAL_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n)) { q.eighth = 'warden'; questEvent(s, 'stage', 8); }
+    else questEvent(s, 'progress', 8);
+  } else if (q.eighth === 'warden' && type === 'spire_warden') { // the Warden only counts once the lesser wards are down, as the Hollow Warden's did once the steel was on
+    q.eighth = 'report';
+    questEvent(s, 'stage', 8);
   }
 }
 
@@ -227,6 +249,15 @@ export function advanceQuest(s: GameState, what: boolean | 'road' = true) {
     }
     return;
   }
+  if (who === 'spire') { // the Spire's Keeper: the seal's chain is the only one they move
+    if (q.eighth === 'offer') { q.eighth = 'hunt'; questEvent(s, 'accept', 8); }
+    else if (q.eighth === 'report') {
+      q.eighth = 'cleared';
+      for (const r of REWARD8) if (grantXp(s, r.skill, r.xp, SPIRE_KEEPER.x, SPIRE_KEEPER.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
+      questEvent(s, 'complete', 8);
+    }
+    return;
+  }
   if (!nearNpc(s)) return;
   if (q.stage === 'offer') { q.stage = 'hunt'; questEvent(s, 'accept'); }
   else if (q.stage === 'report1') { q.stage = 'forge'; questEvent(s, 'stage'); }
@@ -259,6 +290,7 @@ export function updateQuest(s: GameState) {
   if (q.third === 'cleared' && q.fifth === 'locked') q.fifth = 'offer'; // and the Strand's work, once the road is
   if (q.fifth === 'cleared' && q.sixth === 'locked') q.sixth = 'offer'; // and Thornwick's, once the Strand is
   if (q.sixth === 'cleared' && q.seventh === 'locked') q.seventh = 'offer'; // and Highmoor's, once the Thornwood is
+  if (q.seventh === 'cleared' && q.eighth === 'locked') q.eighth = 'offer'; // and the Spire's, once the writ has taken the player up the Cairnwaste
 }
 
 // ---------- dialogue ----------
@@ -425,6 +457,7 @@ export const activeDialogue = (s: GameState): Dialogue =>
 export const dialogueAt = (s: GameState, who: string): Dialogue => {
   if (who === 'thorn') return s.quest.sixth === 'locked' ? THORN_DIALOGUE : DIALOGUE6[s.quest.sixth];
   if (who === 'high') return s.quest.seventh === 'locked' ? HIGH_DIALOGUE : DIALOGUE7[s.quest.seventh];
+  if (who === 'spire') return s.quest.eighth === 'locked' ? SPIRE_DIALOGUE : DIALOGUE8[s.quest.eighth];
   if (who !== 'harbour') { // the Warden's own words, and the errand as one more thing to ask him while it is on offer
     const d = activeDialogue(s);
     return s.quest.fourth === 'offer' ? { ...d, options: [...d.options, ERRAND_OFFER] } : d;
@@ -497,6 +530,46 @@ const DIALOGUE7: Record<Exclude<Quest7Stage, 'locked'>, Dialogue> = {
     options: [{ label: 'Farewell.' }],
   },
 };
+const SPIRE_DIALOGUE: Dialogue = {
+  lines: [
+    'You are a long way from the writ that sent you up the Cairnwaste, and further than most get. The Spire has not had a visitor in some years who was not carrying something to sell.',
+    'I keep the ledger of what is left here, and there is more of it than I can read by myself. Come and find me when you have had a look at the ruins: I will know whether you can be trusted with the rest.',
+  ],
+  options: [{ label: 'Farewell.' }],
+};
+const DIALOGUE8: Record<Exclude<Quest8Stage, 'locked'>, Dialogue> = {
+  offer: {
+    lines: [
+      'Highmoor sent you, with Corvin\'s book signed. Good. Then you have walked the Cairnwaste, and I do not have to tell you what this country does to the careless.',
+      'The Spire was a school before it was a ruin. Archmage Vael taught here, and the night it was sundered he went down into the Vault under the north wall and shut the door behind him. The door is a seal, and a seal is a sentence written in wards. I have been reading it for eleven years.',
+      'I can read no further while the wards walk. Four Spire Adepts, three Void Hounds and two Rune Golems: each one is a line I can read again. Then there is the Warden, who is the seal\'s last word and will not be reasoned with. Do the first, and the seal will show you what is left.',
+    ],
+    options: [
+      { label: "I'll silence them.", advance: true,
+        reply: 'The adepts throw arcs from a distance: close the gap, or break their line of sight. The hounds come in packs of three and wake together: Cleave them, and do not fight with your back in the open. The golems strike harder than anything on the road, and they are slow: rest between them. Take the ruins one pull at a time. The north half of the town is theirs; the square is not.' },
+      { label: 'Not yet.' },
+    ],
+  },
+  hunt: {
+    lines: ['The ruins are north of the square, past the last houses: adepts at the edges, hounds in the broken arches, golems on the old rounds. Four, three and two. When they are down you will know it: the Warden is what is left.'],
+    options: [{ label: 'I am on it.' }],
+  },
+  warden: {
+    lines: [
+      'Nine wards silenced, and the seal is quieter than I have heard it in eleven years.',
+      'What is left is the Warden, at the head of the ruins before the Vault\'s corridor. It slams the ground with a verdict nothing carries off, and it marks the stones under you with a rune that breaks a moment later. Pummel the slam, or step out of the circle, and keep moving when the rune is marked. It will not follow you into the square.',
+    ],
+    options: [{ label: 'The Warden, then.' }],
+  },
+  report: {
+    lines: ['The Warden is down? Then the last word is spoken, and I can read the seal from end to end.', 'Take this: it is what the school paid its keepers, and it is yours now.'],
+    options: [{ label: 'Thank you.', advance: true, reply: 'I have read it, and I will tell you what it says, though you will not like it: it is not a lock, it is a promise. Whatever Vael promised, he is keeping it. Wardkeeper Thale holds the door, and he will not open it until we know what the promise was. Come back when he says it is time.' }],
+  },
+  cleared: {
+    lines: ['The seal is read and the ruins are quiet. The Vault door stays shut for now: Wardkeeper Thale holds it, on the north road out of the ruins, and he will say when.'],
+    options: [{ label: 'Farewell.' }],
+  },
+};
 const harbourDialogue = (s: GameState): Dialogue =>
   s.quest.third === 'locked'
     ? { lines: ['Welcome to Saltmarrow, traveller. Mind the Strand after dark: the sea gives back what it takes, and not kindly.', 'Come and see me once you have dealt with whatever troubles Hale: there is work on the road.'], options: [{ label: 'Farewell.' }] }
@@ -524,13 +597,16 @@ export function harbourMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
 }
 
 /** The mark over a giver whose one chain is at `t`: '!' to offer, '?' to hand in, grey while it is under way. */
-const chainMark = (t: Quest6Stage | Quest7Stage): 'offer' | 'ready' | 'wait' | null => t === 'offer' ? 'offer' : t === 'report' ? 'ready' : t === 'hunt' ? 'wait' : null;
+const chainMark = (t: Quest6Stage | Quest7Stage | Quest8Stage): 'offer' | 'ready' | 'wait' | null => t === 'offer' ? 'offer' : t === 'report' ? 'ready' : t === 'hunt' || t === 'warden' ? 'wait' : null;
 
 /** The mark over Thornwick's reeve, by the same rule as the harbourmaster's. */
 export const reeveMarker = (s: GameState) => chainMark(s.quest.sixth);
 
 /** The mark over Highmoor's Steward. */
 export const stewardMarker = (s: GameState) => chainMark(s.quest.seventh);
+
+/** The mark over the Spire's Keeper. */
+export const keeperMarker = (s: GameState) => chainMark(s.quest.eighth);
 
 /** Which marker floats over the Warden: '!' he has something to offer, '?' he is waiting for you, grey he is not, none for nothing left to say. */
 export function npcMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
@@ -648,6 +724,7 @@ export function activeQuestView(s: GameState): QuestView {
   const q = s.quest;
   if ((q.fourth === 'carry' || q.fourth === 'report') && s.player.x > EAST_OF_HALE) return errandView(s); // out on the road the errand is what you are doing
   if (q.stage !== 'done' || q.second === 'locked') return questView(s);
+  if (q.seventh === 'cleared' && q.eighth !== 'locked') return sealView(s);
   if (q.sixth === 'cleared' && q.seventh !== 'locked') return moorView(s);
   if (q.fifth === 'cleared' && q.sixth !== 'locked') return rotrootView(s);
   if (q.third === 'cleared' && q.fifth !== 'locked') return brineView(s);
@@ -794,6 +871,28 @@ function moorView(s: GameState): QuestView {
     case 'report': return v([{ text: 'The moor is quiet', done: true }, talk(`Return to ${HIGH_STEWARD.name} for your writ`)], target, true);
     case 'cleared': return v([{ text: 'Quest complete. The writ is signed: the north road is open.', done: true }, { text: 'Watchman Corvin keeps the gate (the north wall of Highmoor)', done: false }], { x: corvin.post.x, z: corvin.post.z, label: corvin.keeper });
     default: return v([talk(`Speak to ${HIGH_STEWARD.name} in Highmoor`)], target, true); // offer
+  }
+}
+
+/** The eighth chain's tracker (the bible's Q7): the ruins' lesser wards, then the Warden, then the Keeper, then the Vault's shut door. */
+function sealView(s: GameState): QuestView {
+  const q = s.quest, lvl = s.player.combat.level, stageNo = QUEST8_STAGES.indexOf(q.eighth); // 'offer' is 1: stage 0 is the lock
+  const total = QUEST8_STAGES.indexOf('cleared') - 1;
+  const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
+  const target = { x: SPIRE_KEEPER.x, z: SPIRE_KEEPER.z, label: SPIRE_KEEPER.name }, thale = GATES.find(g => g.id === 'vault')!;
+  const v = (lines: QuestLine[], t: QuestView['target'], ready = false): QuestView =>
+    ({ title: QUEST8_NAME, lines, target: t, ready, stageNo, progress: q.eighth === 'cleared' ? '' : `(${stageNo}/${total})` });
+  const goals = Object.entries(SEAL_GOALS).map(([t, n]) => ({ text: `${PLURAL[t]} slain: ${Math.min(n, q.kills[t] ?? 0)}/${n}`, done: (q.kills[t] ?? 0) >= n }));
+  const advice = lvl < RECOMMENDED_COMBAT_8 ? [{ text: `Recommended Combat ${RECOMMENDED_COMBAT_8} (you are ${lvl})`, done: false }] : [];
+  switch (q.eighth) {
+    case 'hunt': {
+      const open = Object.entries(SEAL_GOALS).find(([t, n]) => (q.kills[t] ?? 0) < n);
+      return v([...goals, ...advice], open ? enemyTarget(s, open[0]) : null);
+    }
+    case 'warden': return v([...goals, { text: 'Slay the Spire Warden (the head of the ruins, south of the Vault corridor)', done: false }, ...advice], enemyTarget(s, 'spire_warden'));
+    case 'report': return v([{ text: 'The Spire Warden is slain', done: true }, talk(`Return to ${SPIRE_KEEPER.name} for your reward`)], target, true);
+    case 'cleared': return v([{ text: 'Quest complete. The seal is read.', done: true }, { text: 'Wardkeeper Thale holds the Vault door (the north wall of the Spire)', done: false }], { x: thale.post.x, z: thale.post.z, label: thale.keeper });
+    default: return v([talk(`Speak to ${SPIRE_KEEPER.name} in the Spire`)], target, true); // offer
   }
 }
 

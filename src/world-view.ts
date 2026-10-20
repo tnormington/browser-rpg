@@ -11,7 +11,7 @@
 // Looks here are stand-ins made of primitives in the clearing's palette: the 3D Artist dresses them (W2.5).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { HIGHMOOR, LANDMARKS, REGIONS, Gate, Obstacle, Rect, Region, SALTMARROW, THORNWICK } from './sim/world';
+import { HIGHMOOR, LANDMARKS, REGIONS, Gate, Obstacle, Rect, Region, SALTMARROW, SPIRE, THORNWICK } from './sim/world';
 import { PROPS, PropId } from './props';
 import { mergeParts } from './creatures';
 
@@ -42,6 +42,12 @@ const MOOR_FLOOR = { heath: 0x5a5840, heathAlt: 0x4b4a38, heather: 0x5e4a5a };
 /** The barrows' mounds (a lighter, drier turf than the ground round them, so a mound is a shape and not a shadow) and the black of a barrow's open mouth. */
 const BARROW = { turf: 0x66744f, dark: 0x07090b, jamb: 0x9aa0a4 };
 const MOOR_PAL: Pal = { wall: 0x7d7a72, roof: 0x3d4650, foot: 0x4a4a48 };
+/** The Cairnwaste's ground (grey ash over black stone, pale drifts of it) and the Spire's (slate with a lilac cast, dark in the ruins), and the Spire's buildings: cold violet-grey stone under near-black slate. */
+const WASTE_FLOOR = { ash: 0x4d4a46, ashAlt: 0x3f3c3a, drift: 0x77726a, char: 0x2a2826 };
+const SPIRE_FLOOR = { slate: 0x464450, slateAlt: 0x3a3844, ruin: 0x2f2d38 };
+const SPIRE_PAL: Pal = { wall: 0x6e6c7c, roof: 0x2c2c3a, foot: 0x45434f };
+/** The cairns' black stone, and the pale marble of the Spire's broken columns: the one light shape in a dark country. */
+const WASTE_STONE = 0x2e2c2e, SPIRE_MARBLE = 0xa6a4b4;
 
 let poolMaterial: THREE.MeshBasicMaterial | undefined;
 const hash = (n: number) => Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1;
@@ -60,11 +66,11 @@ function headstone(o: Obstacle, ry: number, i: number): THREE.BufferGeometry[] {
   return [place(new THREE.BoxGeometry(0.8, 1.2, 0.22).rotateZ(lean), o.x, 0.6, o.z, ry), place(new THREE.CylinderGeometry(0.4, 0.4, 0.22, 8).rotateX(Math.PI / 2).rotateZ(lean), o.x - lean * 0.6, 1.2, o.z, ry)];
 }
 
-type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed' | 'bone' | 'brush' | 'thorn' | 'cloth' | 'turf' | 'dark' | 'jamb' | 'heather', THREE.BufferGeometry[]> & {
+type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed' | 'bone' | 'brush' | 'thorn' | 'cloth' | 'turf' | 'dark' | 'jamb' | 'heather' | 'cairn' | 'marble', THREE.BufferGeometry[]> & {
   /** Placed copies of props.ts props, by `prop:layer`: one draw per layer however many there are. */
   props: Map<string, { color: number; cls: string; geoms: THREE.BufferGeometry[] }>;
 };
-const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], bone: [], brush: [], thorn: [], cloth: [], turf: [], dark: [], jamb: [], heather: [], props: new Map() });
+const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], bone: [], brush: [], thorn: [], cloth: [], turf: [], dark: [], jamb: [], heather: [], cairn: [], marble: [], props: new Map() });
 
 /** A prop's layers as one merged geometry each, built the first time it is wanted and copied (never moved) for every placement. */
 const propSources = new Map<PropId, { name: string; color: number; cls: string; geo: THREE.BufferGeometry }[]>();
@@ -181,6 +187,7 @@ export class WorldView {
       }
       if (region.id === 'thornwick') this.tiles.push(tile('town', { x0: LANDMARKS.thornSquare.x - 40, x1: LANDMARKS.thornSquare.x + 40, z0: LANDMARKS.thornSquare.z - 40, z1: LANDMARKS.thornSquare.z + 40 }));
       if (region.id === 'highmoor') this.tiles.push(tile('town', { x0: LANDMARKS.highSquare.x - 40, x1: LANDMARKS.highSquare.x + 40, z0: LANDMARKS.highSquare.z - 40, z1: LANDMARKS.highSquare.z + 40 }));
+      if (region.id === 'spire') this.tiles.push(tile('town', { x0: LANDMARKS.spireSquare.x - 40, x1: LANDMARKS.spireSquare.x + 40, z0: LANDMARKS.spireSquare.z - 40, z1: LANDMARKS.spireSquare.z + 40 }));
       for (const g of region.gates ?? []) {
         const c = g.axis === 'z' ? { x: (g.span[0] + g.span[1]) / 2, z: g.at } : { x: g.at, z: (g.span[0] + g.span[1]) / 2 };
         this.tiles.push(tile('gate', { x0: c.x - 16, x1: c.x + 16, z0: c.z - 16, z1: c.z + 16 }, g));
@@ -239,9 +246,11 @@ export class WorldView {
     const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color(), a = new THREE.Color(P.grass), b = new THREE.Color(P.grassAlt);
     const dirt = new THREE.Color(P.dirt).multiplyScalar(1.45), dirtAlt = new THREE.Color(P.dirtAlt).multiplyScalar(1.45), // the road reads as a road in the dark: lighter than the clearing's earth
       sand = new THREE.Color(SAND), stone = new THREE.Color(P.stone);
-    const road = r.road ?? null, square = r.safe?.[0], fen = r.id === 'dunmere', wood = r.id === 'thornwick', barrow = r.id === 'barrowdowns', moor = r.id === 'highmoor';
+    const road = r.road ?? null, square = r.safe?.[0], fen = r.id === 'dunmere', wood = r.id === 'thornwick', barrow = r.id === 'barrowdowns', moor = r.id === 'highmoor', waste = r.id === 'cairnwaste', spire = r.id === 'spire';
     if (fen) { a.set(FEN.moss); b.set(FEN.mossAlt); } else if (wood) { a.set(WOOD_FLOOR.litter); b.set(WOOD_FLOOR.litterAlt); }
     else if (barrow) { a.set(BARROW_FLOOR.turf); b.set(BARROW_FLOOR.turfAlt); } else if (moor) { a.set(MOOR_FLOOR.heath); b.set(MOOR_FLOOR.heathAlt); }
+    else if (waste) { a.set(WASTE_FLOOR.ash); b.set(WASTE_FLOOR.ashAlt); } else if (spire) { a.set(SPIRE_FLOOR.slate); b.set(SPIRE_FLOOR.slateAlt); }
+    const drift = new THREE.Color(WASTE_FLOOR.drift), char = new THREE.Color(WASTE_FLOOR.char), ruinGround = new THREE.Color(SPIRE_FLOOR.ruin);
     const peat = new THREE.Color(barrow ? BARROW_FLOOR.peat : FEN.peat), stain = new THREE.Color(FEN.stain), loam = new THREE.Color(WOOD_FLOOR.loam), heather = new THREE.Color(MOOR_FLOOR.heather);
     for (let v = 0; v < pos.count; v++) {
       const x = pos.getX(v), z = pos.getZ(v), j = hash(x * 12.9898 + z * 78.233);
@@ -251,6 +260,10 @@ export class WorldView {
         for (const h of r.hazards ?? []) { const k = THREE.MathUtils.clamp((h.r + 2.2 - Math.hypot(x - h.x, z - h.z)) / 3, 0, 1); if (k > 0) c.lerp(stain, k * 0.85); }
       }
       if (barrow) c.lerp(peat, THREE.MathUtils.clamp((hash(Math.floor(x / 9) * 3.1 + Math.floor(z / 9) * 7.3) - 0.5) * 1.6, 0, 0.5)); // peat in the low ground between the mounds
+      if (waste) { // pale ash in long drifts, and scorched black where the stone shows through
+        c.lerp(drift, THREE.MathUtils.clamp((hash(Math.floor(x / 8) * 2.7 + Math.floor(z / 14) * 6.1) - 0.5) * 1.5, 0, 0.5));
+        c.lerp(char, THREE.MathUtils.clamp((hash(Math.floor(x / 5) * 5.9 + Math.floor(z / 5) * 3.3) - 0.62) * 2.2, 0, 0.6));
+      }
       if (road) {
         const off = road.axis === 'x' ? Math.abs(z - road.at) : Math.abs(x - road.at); // distance from the road's centre line
         const k = THREE.MathUtils.clamp((4.2 - off) / 2.4, 0, 1) + (r.id === 'greywater' && x < 52 ? 0.6 : 0); // the road, and the dirt of Hale's gate yard
@@ -263,6 +276,10 @@ export class WorldView {
         c.lerp(heather, THREE.MathUtils.clamp((hash(Math.floor(x / 6) * 4.3 + Math.floor(z / 6) * 8.1) - 0.45) * 1.4, 0, 0.55)); // heather in drifts across the heath
         if (square) { const k = THREE.MathUtils.clamp((square.r - Math.hypot(x - square.x, z - square.z)) / 8, 0, 1); if (k > 0) c.lerp(stone.clone().lerp(dirtAlt, j * 0.6), k * 0.8); }
         if (Math.abs(z - HIGHMOOR.z) < 3.6 && x < square!.x) c.lerp(dirt, 0.9); // the road in from the west
+      } else if (spire) {
+        c.lerp(ruinGround, THREE.MathUtils.clamp((square!.z - 20 - z) / 30, 0, 0.8)); // the ground goes dark and broken toward the ruins in the north
+        const k = THREE.MathUtils.clamp((square!.r - Math.hypot(x - square!.x, z - square!.z)) / 8, 0, 1); if (k > 0) c.lerp(stone.clone().lerp(dirtAlt, j * 0.6), k * 0.8);
+        if (Math.abs(x - SPIRE.x) < 3.6 && z > square!.z) c.lerp(dirt, 0.9); // the road in from the south
       } else {
         if (x > SALTMARROW.x + 6) c.lerp(sand, THREE.MathUtils.clamp((x - SALTMARROW.x - 6) / 10, 0, 1)); // the beach
         if (square) { const k = THREE.MathUtils.clamp((square.r - Math.hypot(x - square.x, z - square.z)) / 8, 0, 1); if (k > 0) c.lerp(stone.clone().lerp(dirtAlt, j * 0.6), k * 0.8); }
@@ -286,6 +303,10 @@ export class WorldView {
         case 'thornoak': placeProp(bag, 'thornoak', o.x, o.z, ry, 0.9 + hash(i + 11) * 0.3); return;
         case 'alembic': placeProp(bag, 'alembic', o.x, o.z, Math.atan2(LANDMARKS.thornSquare.x - o.x, LANDMARKS.thornSquare.z - o.z) - Math.PI / 2); return; // the bench's front (+z in its own frame) faces the square
         case 'rack': return; // the station's collider: highmoorTown draws the racks
+        case 'forge': return; // the station's collider: render.ts draws the forge
+        case 'ruin': // the wastes' cairns are heaps of black stone, the Spire's ruins broken marble columns
+          if (r.id === 'spire') this.brokenColumn(bag, o, ry, i); else this.blackCairn(bag, o, ry);
+          return;
         case 'tree': { // a dead tree, bent inland by the wind off the sea: a leaning trunk and two bare limbs
           bag.bark.push(place(new THREE.CylinderGeometry(0.14, 0.26, 3.2, 5).rotateZ(0.14).translate(-0.22, 0, 0), o.x, 1.6, o.z),
             place(new THREE.CylinderGeometry(0.05, 0.1, 1.6, 4).rotateZ(0.9), o.x + Math.cos(ry) * 0.5 - 0.35, 2.6, o.z - Math.sin(ry) * 0.5, ry),
@@ -326,7 +347,9 @@ export class WorldView {
     if (r.id === 'thornwick') this.woodDressing(bag, rect, r);
     if (r.id === 'barrowdowns') this.barrowDressing(bag, rect, r);
     if (r.id === 'highmoor') this.moorDressing(bag, rect, r);
-    this.emit(bag, add, r.id === 'thornwick' ? THORN_PAL : r.id === 'highmoor' ? MOOR_PAL : SALT_PAL);
+    if (r.id === 'cairnwaste') this.wasteDressing(bag, rect, r);
+    if (r.id === 'spire') this.spireDressing(bag, rect, r);
+    this.emit(bag, add, r.id === 'thornwick' ? THORN_PAL : r.id === 'highmoor' ? MOOR_PAL : r.id === 'spire' ? SPIRE_PAL : SALT_PAL);
   }
 
   /** A milestone every 80 units down the road, on its verge: a squared post with a board pointing on. How far from home the player is, in a thing they pass. `skip`: nearer than this to the origin Hale's gate has its own. */
@@ -443,6 +466,73 @@ export class WorldView {
     }
   }
 
+  /** A cairn of the wastes: a heap of black stone, wide at the foot and narrowing to a capstone, with a slab standing against it on the side the road is. */
+  private blackCairn(bag: Bag, o: Obstacle, ry: number) {
+    for (let n = 0; n < 6; n++) { const a = n * 1.05 + ry, d = o.r * 0.55; bag.cairn.push(place(new THREE.DodecahedronGeometry(1), o.x + Math.cos(a) * d, 0.55, o.z + Math.sin(a) * d, a, o.r * 0.55, o.r * 0.42, o.r * 0.55)); }
+    for (let n = 0; n < 3; n++) { const a = n * 2.1 + ry; bag.cairn.push(place(new THREE.DodecahedronGeometry(1), o.x + Math.cos(a) * o.r * 0.25, o.r * 0.55 + 0.7, o.z + Math.sin(a) * o.r * 0.25, a, o.r * 0.42, o.r * 0.34, o.r * 0.42)); }
+    bag.cairn.push(place(new THREE.DodecahedronGeometry(1), o.x, o.r * 0.95 + 0.9, o.z, ry, o.r * 0.3, o.r * 0.26, o.r * 0.3));
+    bag.cairn.push(place(new THREE.BoxGeometry(0.9, 2.6 + o.r * 0.4, 0.45).rotateZ(0.08), o.x + Math.cos(ry) * (o.r + 0.5), (2.6 + o.r * 0.4) / 2, o.z + Math.sin(ry) * (o.r + 0.5), ry));
+  }
+
+  /** One of the Spire's broken columns: a plinth, a fluted drum snapped off at a slant, and two drums fallen beside it. Pale marble, the lightest thing in the ruins. */
+  private brokenColumn(bag: Bag, o: Obstacle, ry: number, i: number) {
+    const h = 2.4 + hash(i * 3 + 1) * 2.8, rad = Math.max(0.5, o.r * 0.6);
+    bag.marble.push(place(new THREE.BoxGeometry(rad * 2.8, 0.4, rad * 2.8), o.x, 0.2, o.z, ry));
+    bag.marble.push(place(new THREE.CylinderGeometry(rad * 0.85, rad, h, 8), o.x, 0.4 + h / 2, o.z, ry));
+    bag.marble.push(place(new THREE.CylinderGeometry(rad * 0.85, rad * 0.85, 0.7, 8).rotateZ(0.5), o.x, 0.4 + h + 0.15, o.z, ry)); // the break: a drum left leaning on the top
+    for (let n = 0; n < 2; n++) bag.marble.push(place(new THREE.CylinderGeometry(rad * 0.85, rad * 0.85, 1.1 + n * 0.5, 8).rotateZ(Math.PI / 2), o.x + Math.cos(ry + n * 2.4) * (rad + 1.2), rad * 0.85, o.z + Math.sin(ry + n * 2.4) * (rad + 1.2), ry + n));
+  }
+
+  /** The Cairnwaste's open ground: black standing slabs (one leaning on another), bleached snags and scattered black shards in every 12-unit cell, none on the road, a camp, a cairn or a vein. Low or thin enough that no enemy hides behind it. */
+  private wasteDressing(bag: Bag, rect: Rect, r: Region) {
+    const CELL = 12, road = r.road!.at, camps = r.spawns ?? [];
+    for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
+      const k = hash(i * 6.7 + j * 9.1 + 7), x = (i + 0.15 + 0.7 * hash(i * 2.3 + j * 1.3)) * CELL, z = (j + 0.15 + 0.7 * hash(j * 5.9 + i * 3.1)) * CELL;
+      if (k > 0.5 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || Math.abs(x - road) < 8 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
+      if (camps.some(c => Math.hypot(c.x - x, c.z - z) < 6) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + 2.5) || (r.rocks ?? []).some(o => Math.hypot(o.x - x, o.z - z) < 5)) continue;
+      const ry = k * 40;
+      if (k < 0.16) bag.cairn.push(place(new THREE.BoxGeometry(1.1, 3 + k * 10, 0.6).rotateZ((k - 0.08) * 0.6), x, 1.6, z, ry), place(new THREE.BoxGeometry(0.8, 1.6, 0.5).rotateZ(0.25), x + 1.2, 0.8, z, ry)); // a standing slab, with a shorter one against it
+      else if (k < 0.3) snag(bag, x, z, i * 23 + j);
+      else for (let n = 0; n < 4; n++) { const a = n * 1.9 + ry; bag.cairn.push(place(new THREE.DodecahedronGeometry(1), x + Math.cos(a) * 0.8, 0.16, z + Math.sin(a) * 0.8, a, 0.4 + hash(n + k * 7) * 0.35, 0.22, 0.4)); } // black shards in the ash
+    }
+  }
+
+  /** The ruins north of the Spire's square: low wall stubs, fallen blocks and rubble in every 7-unit cell, none in the town, on a camp, a column or the Vault's corridor. Under a person's waist, so nothing hides behind it. */
+  private spireDressing(bag: Bag, rect: Rect, r: Region) {
+    const CELL = 7, sq = LANDMARKS.spireSquare, camps = r.spawns ?? [];
+    for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
+      const k = hash(i * 5.1 + j * 8.7 + 9), x = (i + 0.15 + 0.7 * hash(i * 3.9 + j * 2.7)) * CELL, z = (j + 0.15 + 0.7 * hash(j * 6.3 + i * 1.9)) * CELL;
+      if (k > 0.55 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
+      if (Math.hypot(x - sq.x, z - sq.z) < 40 || (Math.abs(x - SPIRE.x) < 6 && z < SPIRE.z - 40) || camps.some(c => Math.hypot(c.x - x, c.z - z) < 4) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + 1.5)) continue;
+      const ry = k * 50;
+      if (k < 0.2) bag.marble.push(place(new THREE.BoxGeometry(2.4, 0.7, 0.55), x, 0.35, z, ry), place(new THREE.BoxGeometry(1.5, 0.45, 0.55), x + 2.1, 0.22, z + 0.2, ry + 0.2)); // a wall stub
+      else if (k < 0.34) bag.marble.push(place(new THREE.BoxGeometry(1.3, 0.6, 0.9), x, 0.3, z, ry), place(new THREE.BoxGeometry(0.9, 0.5, 0.7), x + 1.1, 0.25, z + 0.5, ry + 0.6)); // fallen blocks
+      else for (let n = 0; n < 4; n++) bag.rock.push(place(new THREE.DodecahedronGeometry(1), x + n * 0.7, 0.18, z + (n % 2) * 0.5, ry + n, 0.4 + hash(n + k) * 0.3, 0.26, 0.4)); // rubble
+    }
+  }
+
+  /**
+   * The Sundered Spire's square: its flight master by the road in, the Keeper and the provisioner, the stump of the Spire itself in the middle (a drum of pale stone snapped off at the height of a house,
+   * with the fallen top lying beside it), a lamp by every person and one at the forge, and a lamp every 13 units down the road from the south. (The Vault's keeper stands at his gate.)
+   */
+  private spireTown(t: Tile, add: (o: THREE.Object3D) => void) {
+    const sq = LANDMARKS.spireSquare, fm = LANDMARKS.flightSpire, bag = newBag();
+    add(((g: THREE.Group) => { g.traverse(o => { o.userData.id = 'spire'; }); return g; })(flightMasterFigure(this.kit, fm, sq, t.picks.flight)));
+    lampPost(bag, fm.x + 1.4, fm.z - 1.1, 0, 6);
+    const toward = (at: { x: number; z: number }) => Math.atan2(sq.x - at.x, sq.z - at.z + 0.01) + Math.PI;
+    this.person(add, LANDMARKS.spireKeeper, 0x4a3a62, 'cap', toward(LANDMARKS.spireKeeper), t.picks.npc, 'spire', 0x2a2040);
+    this.person(add, LANDMARKS.spireVendor, 0x5a5a38, 'brim', toward(LANDMARKS.spireVendor), t.picks.vendor, 'spire');
+    for (const l of [LANDMARKS.spireKeeper, LANDMARKS.spireVendor]) lampPost(bag, l.x + 1.4, l.z - 1.1, 0, 6);
+    lampPost(bag, LANDMARKS.forgeSpire.x - 2.4, LANDMARKS.forgeSpire.z + 3.2, 0, 5); // the smith works late
+    // the Spire's stump: a plinth, a fluted drum, a jagged break and the fallen top
+    bag.marble.push(place(new THREE.CylinderGeometry(3.6, 3.9, 0.6, 10), sq.x, 0.3, sq.z));
+    bag.marble.push(place(new THREE.CylinderGeometry(2.5, 2.8, 4.4, 10), sq.x, 2.8, sq.z));
+    for (let n = 0; n < 5; n++) { const a = n * 1.26 + 0.3; bag.marble.push(place(new THREE.BoxGeometry(0.9, 1.1 + (n % 2) * 0.8, 0.8), sq.x + Math.cos(a) * 2.1, 5.4 + (n % 2) * 0.4, sq.z + Math.sin(a) * 2.1, -a)); } // the broken rim
+    bag.marble.push(place(new THREE.CylinderGeometry(2.1, 2.3, 3.2, 10).rotateZ(Math.PI / 2 - 0.1), sq.x + 6.5, 1.5, sq.z + 2.6, 0.5)); // the top, fallen on its side
+    for (let n = 0, z = SPIRE.z + 66; z > sq.z + 6; n++, z -= 13) lampPost(bag, SPIRE.x + (n % 2 ? 4.4 : -4.4), z, 0, 5.5);
+    this.emit(bag, add, SPIRE_PAL);
+  }
+
   /** Thornwick's own: a well in the square, a stall at the provisioner's, a notice board at the reeve's, barrels and crates, and lamps down the road from the north. */
   private townDressing(bag: Bag) {
     const sq = LANDMARKS.thornSquare, v = LANDMARKS.thornVendor, rv = LANDMARKS.thornReeve;
@@ -488,6 +578,8 @@ export class WorldView {
     one(bag.dark, BARROW.dark, 'stone', 'none');
     one(bag.jamb, BARROW.jamb, 'stone');
     one(bag.heather, MOOR_FLOOR.heather, 'foliage', 'cast');
+    one(bag.cairn, WASTE_STONE, 'rock');
+    one(bag.marble, SPIRE_MARBLE, 'stone');
     for (const e of bag.props.values()) one(e.geoms, e.color, e.cls, e.cls === 'glow' ? 'none' : 'both');
     if (bag.glow.length) { const m = mesh(mergeGeometries(bag.glow)!, LANTERN, 'glow', 'none'); (m.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.1; add(m); }
     if (bag.pool.length) {
@@ -561,6 +653,7 @@ export class WorldView {
   /** The people of a town square: Saltmarrow's harbourmaster, chandler, trainer and flight master, or Thornwick's reeve, provisioner and flight master. */
   private town(t: Tile, add: (o: THREE.Object3D) => void) {
     if (t.region.id === 'highmoor') return this.highmoorTown(t, add);
+    if (t.region.id === 'spire') return this.spireTown(t, add);
     const thorn = t.region.id === 'thornwick', square = thorn ? LANDMARKS.thornSquare : LANDMARKS.square;
     const toward = (at: { x: number; z: number }) => Math.atan2(square.x - at.x, square.z - at.z + 0.01) + Math.PI; // turned toward the way in
     const tag = (g: THREE.Group, id: string) => { g.traverse(o => { o.userData.id = id; }); return g; };

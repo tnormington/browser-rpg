@@ -123,14 +123,14 @@ section('The three hides (HOM-107): marsh, thorn and moor, their leathers and th
   // 2. each new hide drops only in its own region's beasts' tables, as a copy of the beast's existing hide entry
   const zoneOf = new Map<string, Set<string>>();
   for (const r of REGIONS) for (const sp of r.spawns ?? []) zoneOf.set(sp.type, (zoneOf.get(sp.type) ?? new Set()).add(r.zone));
-  const HOME: Record<string, string[]> = { marsh_hide: ['saltmarrow', 'grotto', 'dunmere'], thorn_hide: ['thornwick', 'rotroot', 'barrowdowns'], moor_hide: ['highmoor', 'cairnhold'] };
+  const HOME: Record<string, string[]> = { marsh_hide: ['saltmarrow', 'grotto', 'dunmere'], thorn_hide: ['thornwick', 'rotroot', 'barrowdowns'], moor_hide: ['highmoor', 'cairnhold', 'cairnwaste'] }; // HOM-111: 2.2 sends moor hide on up the road, to the wastes' three beasts
   const droppers = (hide: string) => Object.entries(DROP_TABLES).filter(([, t]) => t.entries.some(e => e.id === hide)).map(([type]) => type);
   for (const [hide, zones] of Object.entries(HOME)) {
     const types = droppers(hide);
     assert(types.every(t => zoneOf.get(t) && [...zoneOf.get(t)!].every(z => zones.includes(z))), `${hide} drops only from beasts that stand in ${zones.join(' / ')}: ${types.join(', ')}`);
     assert(types.every(t => ENEMY_TYPES[t].respawn < 120 || DROP_TABLES[t].rolls === 3), '...never from a caster or a lone boss');
   }
-  assert(droppers('marsh_hide').length === 7 && droppers('thorn_hide').length === 8 && droppers('moor_hide').length === 3, 'seven beasts drop marsh hide, eight thorn and three moor (the 18 rows)');
+  assert(droppers('marsh_hide').length === 7 && droppers('thorn_hide').length === 8 && droppers('moor_hide').length === 6, 'seven beasts drop marsh hide, eight thorn and six moor, the Moor\'s three and (HOM-111) the Cairnwaste\'s three (the 18 rows, and three more)');
   const newRows = Object.keys(HOME).flatMap(h => droppers(h).map(t => ({ t, h, e: DROP_TABLES[t].entries.find(e => e.id === h)!, old: DROP_TABLES[t].entries.find(e => e.id === 'boar_hide' || e.id === 'wolf_pelt') })));
   assert(newRows.every(({ e, old }) => old && e.qty![0] === old.qty![0] && e.qty![1] === old.qty![1] && e.weight! / old.weight! >= 0.5 && e.weight! / old.weight! <= 0.67), 'each new entry copies the beast\'s existing hide quantity at half to two thirds of its weight: no shipped hide entry is removed or reduced');
   assert(['boar', 'wolf', 'marsh_hog', 'road_wolf', 'toll_captain', 'old_grey', 'rotwood_cultist', 'barrow_wight', 'moor_raider'].every(t => !newRows.some(r => r.t === t)), 'the road, Hale and every caster are left as they were');
@@ -142,7 +142,7 @@ section('The three hides (HOM-107): marsh, thorn and moor, their leathers and th
     return tb.rolls * tb.entries.reduce((a, e, i) => a + (w[i] / tot) * (e.qty ? (e.qty[0] + e.qty[1]) / 2 : 1) * ITEMS[e.id].value, 0);
   };
   const worst = newRows.reduce((m, { t }) => Math.max(m, Math.abs(ev(t) / ((0.6 * ENEMY_TYPES[t].level + 3) * (ENEMY_TYPES[t].respawn === 1800 ? 4 : ENEMY_TYPES[t].respawn === 120 ? 3 : 1)) - 1)), 0);
-  assert(newRows.length === 18 && worst <= 0.01, `all 18 changed tables are worth 0.6 x level + 3 a kill to within 1% (the worst is ${(100 * worst).toFixed(2)}%)`);
+  assert(newRows.length === 21 && worst <= 0.01, `all 21 changed tables (the 18 rows and, HOM-111, the wastes' three) are worth 0.6 x level + 3 a kill to within 1% (the worst is ${(100 * worst).toFixed(2)}%)`);
 
   // 4. the bag, spent: a bot that fights 3.2's kills and sells nothing is at Leatherworking 26 or more by Highmoor.
   // The kills: 3.2's table from combat 11 (152 of them, quests paying the rest), its XP-per-kill formula below it; at each level the beasts within two below and one above, the ones

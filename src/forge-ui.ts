@@ -1,7 +1,7 @@
 // Station panel (DOM, the forge's and the cooking range's): the station's recipe list with inputs, level requirement and output.
 // Reads GameState; crafting goes out as a sim craft request only.
 import type { GameState } from './sim';
-import { RECIPES, STATIONS, STATION_REACH, Recipe, Station, bonusOutput, craftTime, hasInputs, nearStation, stationOf } from './sim/crafting';
+import { RECIPES, STATION_REACH, Recipe, Station, bonusOutput, craftTime, hasInputs, nearStation, stationOf, stationSites } from './sim/crafting';
 import { mastery } from './sim/mastery';
 import { SKILLS } from './sim/skills';
 import { ITEMS, TIER_COLORS, describeStats } from './sim/items';
@@ -86,7 +86,6 @@ export class ForgeUi {
 
   /** The panel stays open a little beyond crafting reach so it doesn't flicker at the edge. */
   private nearWithSlack(s: GameState) {
-    const at = STATIONS[this.station]!.at;
-    return nearStation(s, this.station) || Math.hypot(s.player.x - at.x, s.player.z - at.z) <= STATION_REACH + 1.5;
+    return nearStation(s, this.station) || stationSites(this.station).some(at => Math.hypot(s.player.x - at.x, s.player.z - at.z) <= STATION_REACH + 1.5);
   }
 }

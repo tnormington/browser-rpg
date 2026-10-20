@@ -6,7 +6,8 @@ import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, W
 import { ABILITIES, ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NODE_TYPES } from './sim/gathering';
-import { HARBOURMASTER, HIGH_STEWARD, NPC, THORN_REEVE, harbourMarker as harbourMarkOf, npcMarker as markerOf, reeveMarker as reeveMarkOf, stewardMarker as stewardMarkOf } from './sim/quest';
+import { HARBOURMASTER, HIGH_STEWARD, NPC, SPIRE_KEEPER, THORN_REEVE, harbourMarker as harbourMarkOf, keeperMarker as keeperMarkOf, npcMarker as markerOf, reeveMarker as reeveMarkOf, stewardMarker as stewardMarkOf } from './sim/quest';
+import { nearestSite, stationSites } from './sim/crafting';
 import { VENDOR } from './sim/shop';
 import { Motes, Particles, Rings, Slashes } from './fx';
 import { PostStack, Quality } from './post';
@@ -177,6 +178,9 @@ const openToWorld = (x: number, z: number) => REGIONS.some(r => r.zone !== 'hale
 const ADAMANT = { rock: 0x2c4a40, fleck: 0x5de0b0, glow: 0x0e3a2a };
 /** Stormiron (the barrows' and the Thornwood's ore): a pale slate-lilac rock with lilac-white flecks, the cold opposite of adamant's jade. Matches the metal's look in gear-look.ts. */
 const STORMIRON = { rock: 0x6a6478, fleck: 0xd8d0f0, glow: 0x2a2640 };
+/** Starmetal (the Cairnwaste's ore, HOM-111): near-black indigo rock with star-white flecks, the gear's own palette (gear-look.ts tier 6) and the opposite of stormiron's pale slate. A stand-in look until the Artist's. */
+const STARMETAL = { rock: 0x1c1a2e, fleck: 0xf2f0ff, glow: 0x0c0a1c };
+const ORE_LOOK = { adamant: ADAMANT, stormiron: STORMIRON, starmetal: STARMETAL } as const;
 /** Starter ores: copper is warm orange-brown with verdigris flecks, tin is pale silver, so neither reads as iron (grey, orange flecks) or coal (black). */
 const STARTER_ORE = {
   copper: { rock: 0x9a5a34, fleck: 0x4fc2a0, glow: 0x3a1c0c },
@@ -242,7 +246,8 @@ export class Renderer {
   private drops = new Map<number, DropView>();
   private weapon: THREE.Mesh;
   private nodes = new Map<number, NodeView>();
-  private forgeParts: THREE.Object3D[] = [];
+  /** One list per forge, in `stationSites('forge')` order: the hut, the chimney, the furnace, the anvil, then the dressed model once it loads. */
+  private forgeSites: THREE.Object3D[][] = [];
   private rangeParts: THREE.Object3D[] = [];
   private alembicPick!: THREE.Mesh;
   private rackPick!: THREE.Mesh;
@@ -259,6 +264,7 @@ export class Renderer {
   private harbourMarker!: THREE.Sprite;
   private reeveMarker!: THREE.Sprite;
   private stewardMarker!: THREE.Sprite;
+  private keeperMarker!: THREE.Sprite;
   private world!: WorldView;
   private kit!: Kit;
   private beyond!: THREE.Mesh;
@@ -271,7 +277,7 @@ export class Renderer {
   private rings: Rings;
   private slashes: Slashes;
   private lastDraw = performance.now();
-  private forgeLight!: THREE.PointLight;
+  private forgeLights: THREE.PointLight[] = [];
   private boundary: THREE.Mesh[] = [];
   private caveRocks: THREE.Mesh[] = [];
   private caveFloor!: THREE.Mesh;
@@ -490,15 +496,17 @@ export class Renderer {
   private buildZone() {
     const add = (m: THREE.Object3D, x: number, y: number, z: number) => { m.position.set(x, y, z); this.scene.add(m); return m; };
 
-    // forge: stone hut, chimney, glowing furnace, anvil
-    const f = LANDMARKS.forge;
-    const furnace = mesh(new THREE.BoxGeometry(1.2, 1, 0.1), P.fire, 'glow', 'receive');
-    (furnace.material as Mat).emissiveIntensity = FURNACE_GLOW;
-    this.forgeParts.push(
-      add(mesh(new THREE.BoxGeometry(4, 2.5, 3), P.stone, 'stone'), f.x, 1.25, f.z),
-      add(mesh(new THREE.BoxGeometry(1, 2, 1), P.stoneDark, 'stone'), f.x + 1, 3.4, f.z),
-      add(furnace, f.x - 1, 1, f.z + 1.55),
-      add(mesh(new THREE.BoxGeometry(0.8, 0.6, 0.5), P.anvil, 'metal'), f.x - 3, 0.3, f.z + 2));
+    // forges (Hale's, and the Spire's): stone hut, chimney, glowing furnace, anvil, and the warm light each gives
+    for (const f of stationSites('forge')) {
+      const furnace = mesh(new THREE.BoxGeometry(1.2, 1, 0.1), P.fire, 'glow', 'receive');
+      (furnace.material as Mat).emissiveIntensity = FURNACE_GLOW;
+      this.forgeSites.push([
+        add(mesh(new THREE.BoxGeometry(4, 2.5, 3), P.stone, 'stone'), f.x, 1.25, f.z),
+        add(mesh(new THREE.BoxGeometry(1, 2, 1), P.stoneDark, 'stone'), f.x + 1, 3.4, f.z),
+        add(furnace, f.x - 1, 1, f.z + 1.55),
+        add(mesh(new THREE.BoxGeometry(0.8, 0.6, 0.5), P.anvil, 'metal'), f.x - 3, 0.3, f.z + 2)]);
+      this.forgeLights.push(add(new THREE.PointLight(P.forgeLight, FORGE_LIGHT.intensity, FORGE_LIGHT.distance), f.x - 1, FORGE_LIGHT.y, f.z + 3.6) as THREE.PointLight);
+    }
     // the cooking range, in Saltmarrow's inn: a stone hearth with a bed of coals. No light of its own: the forge keeps the one warm light
     const r = LANDMARKS.range;
     const coals = mesh(new THREE.BoxGeometry(1.1, 0.1, 0.6), P.fire, 'glow', 'receive');
@@ -525,7 +533,6 @@ export class Renderer {
     this.rackPick.position.set(rack.x, 1.4, rack.z);
     this.rackPick.rotation.y = 0.5;
     this.scene.add(this.rackPick);
-    this.forgeLight = add(new THREE.PointLight(P.forgeLight, FORGE_LIGHT.intensity, FORGE_LIGHT.distance), f.x - 1, FORGE_LIGHT.y, f.z + 3.6) as THREE.PointLight;
 
     // cave mouth: the sim's four flank colliders, rock heaped over them and across the top; the way in is the gap between
     for (const o of CAVE_MOUTH) this.caveRocks.push(add(mesh(new THREE.DodecahedronGeometry(o.r * 1.4), P.slate, 'rock'), o.x, o.r * 0.9, o.z) as THREE.Mesh);
@@ -855,6 +862,11 @@ export class Renderer {
     this.stewardMarker.renderOrder = 10;
     this.stewardMarker.visible = false;
     this.scene.add(this.stewardMarker);
+    this.keeperMarker = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.markerTex.offer, depthTest: false }));
+    this.keeperMarker.scale.set(1.1, 1.1, 1);
+    this.keeperMarker.renderOrder = 10;
+    this.keeperMarker.visible = false;
+    this.scene.add(this.keeperMarker);
     this.buildVendor();
   }
 
@@ -889,7 +901,7 @@ export class Renderer {
       fill('warden', p => this.dressNpc(p)),
       ...[...slots].map(t => fill(t, p => { this.prepared.set(t, p); for (const a of this.actors.values()) if (slotOf(a.type) === t) this.dressActor(a, p); })),
       Promise.all([loadSlot('tree'), loadSlot('stump')]).then(([t, st]) => this.dressTrees(t, st)).catch(err => console.warn('model slot "tree" kept as a primitive:', err)),
-      fill('ironRock', p => { for (const t of ['iron', 'copper', 'tin', 'adamant', 'stormiron'] as const) this.dressRocks(t, p); }),
+      fill('ironRock', p => { for (const t of ['iron', 'copper', 'tin', 'adamant', 'stormiron', 'starmetal'] as const) this.dressRocks(t, p); }),
       fill('coalRock', p => this.dressRocks('coal', p)),
       fill('forge', p => this.dressForge(p)),
       fill('anvil', p => this.dressAnvil(p)),
@@ -1037,7 +1049,7 @@ export class Renderer {
     }
   }
 
-  private dressRocks(type: 'iron' | 'coal' | 'copper' | 'tin' | 'adamant' | 'stormiron', p: Prepared) {
+  private dressRocks(type: 'iron' | 'coal' | 'copper' | 'tin' | keyof typeof ORE_LOOK, p: Prepared) {
     for (const v of this.nodes.values()) {
       if (v.type !== type) continue;
       const id = v.group.userData.nodeId as number, inst = spawn(p, true);
@@ -1045,7 +1057,7 @@ export class Renderer {
       inst.root.updateMatrix();
       this.hide(v.group.children[0]);
       v.group.add(inst.root);
-      if (type === 'adamant' || type === 'stormiron') { const look = type === 'adamant' ? ADAMANT : STORMIRON; for (const m of inst.materials) { m.color.setHex(look.rock); m.emissive.setHex(look.glow); } }
+      if (type in ORE_LOOK) { const look = ORE_LOOK[type as keyof typeof ORE_LOOK]; for (const m of inst.materials) { m.color.setHex(look.rock); m.emissive.setHex(look.glow); } }
       if (type === 'copper' || type === 'tin') for (const m of inst.materials) { m.color.setHex(STARTER_ORE[type].rock); m.emissive.setHex(STARTER_ORE[type].glow); }
       v.mats.push(...inst.materials);
       v.base.push(...inst.materials.map(m => m.color.getHex()));
@@ -1053,20 +1065,24 @@ export class Renderer {
   }
 
   private dressForge(p: Prepared) {
-    const f = LANDMARKS.forge, inst = spawn(p);
-    this.hide(this.forgeParts[0], this.forgeParts[1]);
-    inst.root.position.set(f.x, 0, f.z);
-    this.scene.add(inst.root);
-    freeze(inst.root);
-    this.forgeParts.push(inst.root);
+    stationSites('forge').forEach((f, i) => {
+      const parts = this.forgeSites[i], inst = spawn(p);
+      this.hide(parts[0], parts[1]);
+      inst.root.position.set(f.x, 0, f.z);
+      this.scene.add(inst.root);
+      freeze(inst.root);
+      parts.push(inst.root);
+    });
   }
 
   private dressAnvil(p: Prepared) {
-    const f = LANDMARKS.forge, inst = spawn(p);
-    this.hide(this.forgeParts[3]);
-    inst.root.position.set(f.x - 3, 0, f.z + 2);
-    this.scene.add(inst.root);
-    freeze(inst.root);
+    stationSites('forge').forEach((f, i) => {
+      const inst = spawn(p);
+      this.hide(this.forgeSites[i][3]);
+      inst.root.position.set(f.x - 3, 0, f.z + 2);
+      this.scene.add(inst.root);
+      freeze(inst.root);
+    });
   }
 
   /** Mouth rocks sit on the sim's collider circles (scaled so the model's footprint matches), with more heaped over them; the wall rock is rebuilt from the model. */
@@ -1174,7 +1190,7 @@ export class Renderer {
       part(new THREE.CylinderGeometry(0.25, 0.35, 2, 5), P.bark, 'wood', 1);
       crown = part(new THREE.ConeGeometry(1.4, 3.5, 6), P.pine, 'foliage', 3.5);
     } else {
-      const coal = n.type === 'coal', glow = n.type === 'adamant' ? ADAMANT : n.type === 'stormiron' ? STORMIRON : undefined;
+      const coal = n.type === 'coal', glow = n.type in ORE_LOOK ? ORE_LOOK[n.type as keyof typeof ORE_LOOK] : undefined;
       const starter = n.type === 'copper' || n.type === 'tin' ? STARTER_ORE[n.type] : undefined;
       part(new THREE.DodecahedronGeometry(1.3), starter ? starter.rock : coal ? P.coalRock : glow ? glow.rock : P.ironRock, 'rock', 0.9);
       // ore flecks: rust for iron, verdigris for copper, bright silver for tin, glossy black for coal, sea-green for adamant, lilac-white for stormiron
@@ -1365,7 +1381,7 @@ export class Renderer {
         const n = s.nodes.find(x => x.id === ev.id)!;
         this.particles.burst(n.x, 1, n.z, { color: n.type === 'tree' ? [P.pine, P.bark] : P.smoke, count: 24, speed: 3, up: 1, life: 0.8 });
       } else if (ev.t === 'crafted') {
-        const f = LANDMARKS.forge;
+        const f = stationSites('forge')[nearestSite(s, 'forge')];
         this.particles.burst(f.x - 3, 0.9, f.z + 2, { color: [P.ember, P.fire, P.arcaneLight], count: 50, speed: 5, up: 4, life: 0.9 });
         this.rings.pulse(f.x - 3, 0.3, f.z + 2, P.fire, 3, 0.6);
       } else if (ev.t === 'quest') {
@@ -1484,11 +1500,12 @@ export class Renderer {
     }));
   }
 
-  /** True when the click lands on the forge building. */
-  pickForge(clientX: number, clientY: number): boolean {
+  /** The index into `stationSites('forge')` of the forge building under the click, or null when it lands on none. */
+  pickForge(clientX: number, clientY: number): number | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
-    return this.raycaster.intersectObjects(this.forgeParts, false).length > 0;
+    const i = this.forgeSites.findIndex(parts => this.raycaster.intersectObjects(parts, false).length > 0);
+    return i < 0 ? null : i;
   }
 
   /** True when the click lands on the cooking range. */
@@ -1584,6 +1601,12 @@ export class Renderer {
       (this.stewardMarker.material as THREE.SpriteMaterial).map = this.markerTex[sm];
       this.stewardMarker.position.set(HIGH_STEWARD.x, 3.5 + 0.18 * Math.sin(nowMs / 250 + 3), HIGH_STEWARD.z);
     }
+    const km = keeperMarkOf(s); // and the Spire's Keeper
+    this.keeperMarker.visible = !!km && Math.hypot(SPIRE_KEEPER.x - x, SPIRE_KEEPER.z - z) < 150;
+    if (km && this.keeperMarker.visible) {
+      (this.keeperMarker.material as THREE.SpriteMaterial).map = this.markerTex[km];
+      this.keeperMarker.position.set(SPIRE_KEEPER.x, 3.5 + 0.18 * Math.sin(nowMs / 250 + 4), SPIRE_KEEPER.z);
+    }
     const mk = markerOf(s);
     this.npcMarker.visible = !!mk;
     if (mk) {
@@ -1665,7 +1688,7 @@ export class Renderer {
     }
     this.camera.lookAt(x, 1.5 + lift, z);
     if (this.debugCam) { this.camera.position.fromArray(this.debugCam.pos); this.camera.lookAt(...(this.debugCam.at as [number, number, number])); } // dev only: bench/look.mjs close-ups
-    this.forgeLight.intensity = FORGE_LIGHT.intensity * (1 + 0.07 * Math.sin(nowMs / 90) + 0.05 * Math.sin(nowMs / 37));
+    this.forgeLights.forEach((l, i) => { l.intensity = FORGE_LIGHT.intensity * (1 + 0.07 * Math.sin(nowMs / 90 + i * 2.1) + 0.05 * Math.sin(nowMs / 37 + i)); });
     this.weather.update(dtFx);
     this.skyClock += dtFx;
     this.applyCaveLight(caveDepth(x, z), x, z);

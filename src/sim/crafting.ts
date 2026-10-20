@@ -102,6 +102,20 @@ export const RECIPES: Recipe[] = [
     inputs: [{ id: 'stormiron_bar', qty: 3 }], output: { id: 'stormiron_greaves', qty: 1 } },
   { id: 'stormiron_chestplate', name: 'Stormiron Chestplate', skill: 'smithing', level: 41, time: 12, xp: 1525,
     inputs: [{ id: 'stormiron_bar', qty: 4 }], output: { id: 'stormiron_chestplate', qty: 1 } },
+  // starmetal (3.3, HOM-111): one ore and five coal to a bar (Smithing 48), the set at 49 to 53 and the blade at 49, XP by the ladder's rule (bar 0.25 x, piece 0.35 x, blade 0.4 x the cost of its
+  // level, to 5). Crownbreaker, the capstone: Smithing 54, one past the chestplate's 53 as every capstone is, its three bars folded round three Crown shards (the Cairn King's, 35 % a kill).
+  { id: 'starmetal_bar', name: 'Starmetal Bar', skill: 'smithing', level: 48, time: 8, xp: 2175,
+    inputs: [{ id: 'starmetal_ore', qty: 1 }, { id: 'coal', qty: 5 }], output: { id: 'starmetal_bar', qty: 1 } },
+  { id: 'starmetal_helm', name: 'Starmetal Helm', skill: 'smithing', level: 49, time: 10, xp: 3365,
+    inputs: [{ id: 'starmetal_bar', qty: 2 }], output: { id: 'starmetal_helm', qty: 1 } },
+  { id: 'starmetal_blade', name: 'Starmetal Blade', skill: 'smithing', level: 49, time: 15, xp: 3845,
+    inputs: [{ id: 'starmetal_bar', qty: 3 }, { id: 'logs', qty: 1 }], output: { id: 'starmetal_blade', qty: 1 } },
+  { id: 'starmetal_greaves', name: 'Starmetal Greaves', skill: 'smithing', level: 51, time: 11, xp: 4100,
+    inputs: [{ id: 'starmetal_bar', qty: 3 }], output: { id: 'starmetal_greaves', qty: 1 } },
+  { id: 'starmetal_chestplate', name: 'Starmetal Chestplate', skill: 'smithing', level: 53, time: 13, xp: 4995,
+    inputs: [{ id: 'starmetal_bar', qty: 4 }], output: { id: 'starmetal_chestplate', qty: 1 } },
+  { id: 'crownbreaker', name: 'Crownbreaker', skill: 'smithing', level: 54, time: 16, xp: 6305,
+    inputs: [{ id: 'starmetal_bar', qty: 3 }, { id: 'crown_shard', qty: 3 }], output: { id: 'crownbreaker', qty: 1 } },
   // the range: each fish cooked on its own, and a pie (2 fish and a pinch of salt) two levels up that also makes you Well Fed. Craft XP: fish.ts.
   ...FISH.flatMap((f): Recipe[] => [
     { id: cookedId(f), name: `Cooked ${f.name}`, skill: 'cooking', station: 'range', level: f.level, time: f.cookTime, xp: f.cookXp,
@@ -151,9 +165,12 @@ export const FORGE_REACH = 6; // centre-to-centre; the hut is 2.6 radius
 export const STATION_REACH = FORGE_REACH; // the same for every station
 export const MAX_BATCH = 99;
 
-/** Where each built station stands, and what to call it when you are too far from it. */
-export const STATIONS: Partial<Record<Station, { at: Pt; name: string }>> = {
-  forge: { at: LANDMARKS.forge, name: 'forge' },
+/**
+ * Where each built station stands, and what to call it when you are too far from it. `at` is the first, `also` any more of the same (the forge has a second, in the Spire: the top of the
+ * metal ladder is smelted where the ore is, not a ten-minute ride from it).
+ */
+export const STATIONS: Partial<Record<Station, { at: Pt; also?: Pt[]; name: string }>> = {
+  forge: { at: LANDMARKS.forge, also: [LANDMARKS.forgeSpire], name: 'forge' },
   range: { at: LANDMARKS.range, name: 'cooking range' },
   alembic: { at: LANDMARKS.alembic, name: 'alembic' },
   rack: { at: LANDMARKS.rack, name: 'tanning rack' },
@@ -161,11 +178,16 @@ export const STATIONS: Partial<Record<Station, { at: Pt; name: string }>> = {
 export const stationOf = (r: Recipe): Station => r.station ?? 'forge';
 
 export const recipeById = (id: string) => RECIPES.find(r => r.id === id);
-/** Standing within reach of a station. A station that is not built anywhere is never near. */
-export const nearStation = (s: GameState, station: Station) => {
-  const at = STATIONS[station]?.at;
-  return !!at && Math.hypot(s.player.x - at.x, s.player.z - at.z) <= STATION_REACH;
+/** Every place this station stands, in a fixed order (an index into it names one). Empty for a station that is not built. */
+export const stationSites = (station: Station): Pt[] => { const st = STATIONS[station]; return st ? [st.at, ...(st.also ?? [])] : []; };
+/** The index into `stationSites` of the site nearest the player (0 for a station with one site, or none). */
+export const nearestSite = (s: GameState, station: Station) => {
+  const sites = stationSites(station), d = (i: number) => Math.hypot(s.player.x - sites[i].x, s.player.z - sites[i].z);
+  return sites.reduce((best, _, i) => d(i) < d(best) ? i : best, 0);
 };
+/** Standing within reach of a station. A station that is not built anywhere is never near. */
+export const nearStation = (s: GameState, station: Station) =>
+  stationSites(station).some(at => Math.hypot(s.player.x - at.x, s.player.z - at.z) <= STATION_REACH);
 export const hasInputs = (s: GameState, r: Recipe) => r.inputs.every(i => countItem(s.player.inventory, i.id) >= i.qty);
 
 /** One craft at the player's current skill: the base time, cut by whatever they have over the recipe's level. */

@@ -83,6 +83,8 @@ type Body = 'beast' | 'man' | 'big' | 'shell';
 const BODY: Record<string, Body> = {
   brute: 'big', ogre: 'big', warden: 'big', toll_captain: 'big', barnacle_ogre: 'big', gutterhook: 'big', mire_troll: 'big', bogfather: 'big',
   mother_mire: 'big', thorn_warden: 'big', elder_thornback: 'big', cairn_brute: 'big', barrow_lord: 'big', hollow_knight: 'big', ridge_ogre: 'big', stonehorn: 'big',
+  sand_ogre: 'big', ashen_colossus: 'big', rune_golem: 'big', spire_warden: 'big',
+  waste_reaver: 'man', spire_adept: 'man',
   hexer: 'man', ravager: 'man', archer: 'man', seer: 'man', footpad: 'man', drowned_sailor: 'man', tide_hag: 'man', bog_witch: 'man', rotwood_cultist: 'man', barrow_wight: 'man', moor_raider: 'man',
   shore_crab: 'shell',
 };
@@ -97,6 +99,9 @@ const AMBIENCE: Record<string, { file: string; vol: number }> = {
   thornwick: { file: 'forest-ambience', vol: 0.4 },
   barrowdowns: { file: 'barrows-ambience', vol: 0.4 },
   highmoor: { file: 'moor-ambience', vol: 0.35 },
+  // stand-ins (HOM-111): the wastes and the Spire have no bed of their own yet, so they borrow the nearest country's; a card for the Sound Designer
+  cairnwaste: { file: 'barrows-ambience', vol: 0.35 },
+  spire: { file: 'moor-ambience', vol: 0.3 },
   hale: { file: 'hale-ambience', vol: 0.35 },   // a zone key, not a region: ridge, clearing and seams all fall through to it
 };
 /** Every cave room (Hollow, Grotto, Rotroot, Cairn Hold) shares one bed: no cave region has an entry above. */

@@ -158,12 +158,12 @@ addEventListener('mouseup', e => {
     pendingPickup = view.pickDrop(e.clientX, e.clientY);
     if (pendingPickup === null) pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
     if (pendingPickup === null && pendingEnemy === null) {
-      const node = view.pickNode(e.clientX, e.clientY), npc = view.pickNpc(e.clientX, e.clientY), vendor = view.pickVendor(e.clientX, e.clientY), flightMaster = view.pickFlightMaster(e.clientX, e.clientY);
+      const node = view.pickNode(e.clientX, e.clientY), npc = view.pickNpc(e.clientX, e.clientY), vendor = view.pickVendor(e.clientX, e.clientY), flightMaster = view.pickFlightMaster(e.clientX, e.clientY), forge = view.pickForge(e.clientX, e.clientY);
       if (npc !== null) pendingInteract = { k: 'npc', id: npc };
       else if (flightMaster !== null) pendingInteract = { k: 'flightmaster', id: flightMaster };
       else if (node !== null) pendingInteract = { k: 'node', id: node };
       else if (vendor !== null) pendingInteract = { k: 'vendor', id: vendor };
-      else if (view.pickForge(e.clientX, e.clientY)) pendingInteract = { k: 'forge' };
+      else if (forge !== null) pendingInteract = { k: 'forge', site: forge };
       else if (view.pickRange(e.clientX, e.clientY)) pendingInteract = { k: 'range' };
       else if (view.pickAlembic(e.clientX, e.clientY)) pendingInteract = { k: 'alembic' };
       else if (view.pickRack(e.clientX, e.clientY)) pendingInteract = { k: 'rack' };

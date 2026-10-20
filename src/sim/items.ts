@@ -79,6 +79,9 @@ export const ITEMS: Record<string, ItemDef> = {
   adamant_bar: { name: 'Adamant Bar', stack: 50, dropWeight: 0, tier: 0, value: 55, desc: 'Dense and sea-dark. Armour and a blade are smithed from it.' },
   stormiron_ore: { name: 'Stormiron Ore', stack: 50, dropWeight: 0, tier: 0, value: 32, desc: 'Pale, lilac-veined ore from the barrows and the Thornwood. It smelts into stormiron with four parts coal.' },
   stormiron_bar: { name: 'Stormiron Bar', stack: 50, dropWeight: 0, tier: 0, value: 90, desc: 'Cold, light and pale as slate. Armour and a blade are smithed from it.' },
+  starmetal_ore: { name: 'Starmetal Ore', stack: 50, dropWeight: 0, tier: 0, value: 52, desc: 'Black, heavy ore flecked with cold white light, from the stands along the Cairnwaste road. It smelts into starmetal with five parts coal, at the Spire\'s forge.' },
+  starmetal_bar: { name: 'Starmetal Bar', stack: 50, dropWeight: 0, tier: 0, value: 140, desc: 'Indigo-black and very cold. The last metal there is: armour and a blade are smithed from it.' },
+  crown_shard: { name: 'Crown Shard', stack: 50, dropWeight: 0, tier: 0, value: 100, desc: "A splinter of the Cairn King's crown, grey and cold. Folded round starmetal, it makes a blade nothing else at the forge can." },
   [SEA_SALT]: { name: 'Sea Salt', stack: 50, dropWeight: 0, tier: 0, value: 2, desc: 'Coarse grey salt from the Saltmarrow pans. A pie wants a pinch.' },
   ...fishItems(),
   ...herbItems(),
@@ -102,6 +105,10 @@ export const ITEMS: Record<string, ItemDef> = {
   stormiron_blade: { name: 'Stormiron Blade', slot: 'weapon', stats: { damage: 58, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 480, req: { combat: 23 }, desc: 'Three bars of barrow stormiron and a log for the hilt. Narrow, pale and very sharp.' },
   // the Rotroot's capstone (3.3): damage 72, Smithing 42, equip combat 26 (one under the Mother's level; the committed player arrives at 27)
   rotroot_edge: { name: 'Rotroot Edge', slot: 'weapon', stats: { damage: 72, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 760, req: { combat: 26 }, desc: "Stormiron folded round three shards of the Rotroot Mother's heartwood. The best blade a smith in Thornwick can make." },
+  // the starmetal set (3.3, HOM-111): tier 6, the end of the ladder. A blade of 80 against the Rotroot Edge's 72; equip combat 32, which is the Cairnwaste's first level and the committed player's step
+  // (they arrive at 30: the requirement binds, as the bible says it should). Crownbreaker is the capstone: 100, three bars folded round three Crown shards, the Cairn King's.
+  starmetal_blade: { name: 'Starmetal Blade', slot: 'weapon', stats: { damage: 80, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 6, value: 700, req: { combat: 32 }, desc: 'Three bars of Cairnwaste starmetal and a log for the hilt. A long, black edge with a seam of white light along it.' },
+  crownbreaker: { name: 'Crownbreaker', slot: 'weapon', stats: { damage: 100, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 6, value: 1100, req: { combat: 32 }, desc: "Starmetal folded round three shards of the Cairn King's crown. The best blade a smith in the Spire can make, and the last." },
   // leatherworking (bible 3.2, HOM-96): hides tanned at Highmoor's rack, then gloves and boots. Nothing sells a hide: they are only ever dropped
   tanned_hide: { name: 'Tanned Hide', stack: 50, dropWeight: 0, tier: 0, value: 4, desc: 'A boar hide, cured at a tanning rack in Highmoor. Gloves and boots are made from it.' },
   wolf_leather: { name: 'Wolf Leather', stack: 50, dropWeight: 0, tier: 0, value: 6, desc: 'A wolf pelt, cured at a tanning rack in Highmoor. Thicker than boar leather.' },
@@ -144,6 +151,9 @@ export const ITEMS: Record<string, ItemDef> = {
   stormiron_helm: { name: 'Stormiron Helm', slot: 'head', stats: { armor: 20 }, stack: 1, dropWeight: 0, tier: 5, value: 230, req: { combat: 23 }, desc: 'Smithed from barrow stormiron. Swept-back spikes, and light for its worth.' },
   stormiron_chestplate: { name: 'Stormiron Chestplate', slot: 'chest', stats: { armor: 38 }, stack: 1, dropWeight: 0, tier: 5, value: 470, req: { combat: 23 }, desc: 'Smithed from barrow stormiron. Pale plate, and the best chest a smith in Thornwick can make.' },
   stormiron_greaves: { name: 'Stormiron Greaves', slot: 'legs', stats: { armor: 28 }, stack: 1, dropWeight: 0, tier: 5, value: 340, req: { combat: 23 }, desc: 'Smithed from barrow stormiron.' },
+  starmetal_helm: { name: 'Starmetal Helm', slot: 'head', stats: { armor: 24 }, stack: 1, dropWeight: 0, tier: 6, value: 350, req: { combat: 32 }, desc: 'Smithed from Cairnwaste starmetal. A four-point star stands over the brow.' },
+  starmetal_chestplate: { name: 'Starmetal Chestplate', slot: 'chest', stats: { armor: 44 }, stack: 1, dropWeight: 0, tier: 6, value: 690, req: { combat: 32 }, desc: 'Smithed from Cairnwaste starmetal. Black plate with a star on the back, and the best chest a smith in the Spire can make.' },
+  starmetal_greaves: { name: 'Starmetal Greaves', slot: 'legs', stats: { armor: 32 }, stack: 1, dropWeight: 0, tier: 6, value: 510, req: { combat: 32 }, desc: 'Smithed from Cairnwaste starmetal. A seam of cold light runs down each shin.' },
   // the Cairn King's named piece (6.2): armour 24 as written, against the stormiron helm's 20. Tier 5, not the bible's 6: the ladder ends at 5 (TIER_COLORS, TIER_LOOKS), and a sixth rung is the
   // artist's, as is a bespoke look (it wears the tier-5 fallback). Sells for 4x the helm (6.1). Equip combat 30: the first level of the Hold's band, two under the King.
   kings_crown: { name: "The King's Crown", slot: 'head', stats: { armor: 24 }, stack: 1, dropWeight: 0, tier: 5, value: 920, req: { combat: 30 }, desc: "A circlet of grey iron, cold as the barrow it was buried in. The Cairn King wore it into the dark, and it still keeps the shape of his head." },
@@ -163,6 +173,9 @@ export const ADAMANT_SET = ['adamant_helm', 'adamant_greaves', 'adamant_chestpla
 
 /** The stormiron set, in smithing order. */
 export const STORMIRON_SET = ['stormiron_helm', 'stormiron_greaves', 'stormiron_chestplate'] as const;
+
+/** The starmetal set, in smithing order. */
+export const STARMETAL_SET = ['starmetal_helm', 'starmetal_greaves', 'starmetal_chestplate'] as const;
 
 /** The leatherworker's sets, gloves then boots: Hide at Leatherworking 1, Wolfskin at 10, Marsh-hide at 18, Thornhide at 26, Moorhide at 34. */
 export const HIDE_SET = ['hide_gloves', 'hide_boots'] as const;
@@ -298,12 +311,39 @@ export const DROP_TABLES: Record<string, DropTable> = {
   stonehorn: { rolls: 3, nothing: 23, entries: [
     { id: 'boar_hide', qty: [3, 5], weight: 15 }, { id: 'moor_hide', qty: [3, 5], weight: 8 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 7 },
   ] },
+  // the Cairnwaste and the Spire's ruins, the same rule (HOM-111): `nothing` solved to land within 1 % of 0.6 x level + 3 (an elite 3x). The wastes' beasts add moor hide at half the weight of their pelt
+  // entry (2.2); the Spire's beasts would drop the next hide, which is not designed yet, so they drop what the Moor's did. Still nothing above steel is dropped.
+  waste_reaver: { rolls: 2, nothing: 41, entries: [
+    { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 4 }, { id: 'iron_greaves', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
+  ] },
+  dune_hound: { rolls: 2, nothing: 8, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 40 }, { id: 'moor_hide', qty: [1, 3], weight: 20 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
+  ] },
+  sand_ogre: { rolls: 2, nothing: 39, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 20 }, { id: 'moor_hide', qty: [1, 3], weight: 10 }, { id: 'iron_helm', weight: 5 }, { id: 'iron_greaves', weight: 5 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 4 }, { id: 'steel_sword', weight: 3 },
+  ] },
+  ashen_colossus: { rolls: 3, nothing: 13, entries: [
+    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'moor_hide', qty: [2, 4], weight: 8 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 7 },
+  ] },
+  spire_adept: { rolls: 2, nothing: 35, entries: [
+    { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_helm', weight: 4 }, { id: 'iron_greaves', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
+  ] },
+  void_hound: { rolls: 2, nothing: 3, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 40 }, { id: 'hide_jerkin', weight: 8 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 3 }, { id: 'steel_sword', weight: 2 },
+  ] },
+  rune_golem: { rolls: 2, nothing: 34, entries: [
+    { id: 'wolf_pelt', qty: [1, 3], weight: 20 }, { id: 'iron_helm', weight: 5 }, { id: 'iron_greaves', weight: 5 }, { id: 'iron_sword', weight: 4 }, { id: 'iron_chestplate', weight: 4 }, { id: 'steel_sword', weight: 3 },
+  ] },
+  spire_warden: { rolls: 3, nothing: 12, entries: [
+    { id: 'wolf_pelt', qty: [2, 4], weight: 15 }, { id: 'iron_helm', weight: 6 }, { id: 'iron_chestplate', weight: 6 }, { id: 'iron_greaves', weight: 6 }, { id: 'steel_sword', weight: 7 },
+  ] },
   // the Grotto's boss shard (6.1): 35 % a kill, one shard, three to a blade: about nine kills on a ten-minute respawn. The one roll, so nothing else competes with it.
   captain_marrow: { rolls: 1, nothing: 65, entries: [{ id: 'marrow_shard', weight: 35 }] },
   // the Rotroot's: the same 35 % roll (6.1), for the blade that stormiron bars now smith.
   rotroot_mother: { rolls: 1, nothing: 65, entries: [{ id: 'heartwood_shard', weight: 35 }] },
-  // the Cairn King's named piece (6.1: a boss's is 1 in 10 a kill, the one roll). There is no pity counter yet (the bible's 30-kill guarantee is its own card).
-  cairn_king: { rolls: 1, nothing: 90, entries: [{ id: 'kings_crown', weight: 10 }] },
+  // the Cairn King's named piece (6.1: a boss's is 1 in 10 a kill, the one roll) and, since HOM-111, the Crown shard Crownbreaker is folded round: 35 % a kill like every other boss's shard, on the same roll.
+  // There is no pity counter yet (the bible's 30-kill guarantee is its own card).
+  cairn_king: { rolls: 1, nothing: 55, entries: [{ id: 'kings_crown', weight: 10 }, { id: 'crown_shard', weight: 35 }] },
 };
 
 export interface DerivedStats {

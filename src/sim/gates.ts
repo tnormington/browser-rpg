@@ -12,6 +12,7 @@ const toldAt = new WeakMap<GameState, Map<string, number>>();
 /** What each gate's `need` asks for besides the level. A key with no entry here never opens: a typo fails shut, not open. */
 const GATE_NEEDS: Record<string, (s: GameState) => boolean> = {
   writ: s => s.quest.seventh === 'cleared', // Corvin's: the Steward has signed it (the bible's Q6)
+  sealed: s => s.quest.eighth === 'cleared', // the Vault's: the Keeper has read the seal (the bible's Q7)
 };
 
 /** Does this player pass this gate? Under the level, or with the way shut, or without what it asks for, no. */
