@@ -3,7 +3,7 @@
 import type { GameState } from './sim';
 import { TOWNS } from './sim/world';
 import { FLIGHT_REACH, destinationsFrom, masterById } from './sim/flight';
-import { el } from './dom';
+import { actionButton, el, titleRow } from './dom';
 
 const secs = (n: number) => `${Math.round(n)} s`;
 
@@ -19,8 +19,7 @@ export class FlightUi {
 
   constructor(root: HTMLElement, private fly: (to: string) => void) {
     this.panel = el(root, 'panel shoppanel');
-    this.titleEl = el(this.panel, 'ptitle');
-    el(this.titleEl, 'pclose', '✕').addEventListener('click', () => this.setOpen(false));
+    this.titleEl = titleRow(this.panel, '', () => this.setOpen(false));
     this.goldEl = el(this.panel, 'shopgold');
     el(this.panel, 'shophint', 'You can only fly to a town you have walked to.');
     this.list = el(this.panel, 'recipes');
@@ -58,7 +57,7 @@ export class FlightUi {
       if (!d) { el(row, 'rstat', 'Not found yet: walk there and its flight master joins the network.'); continue; }
       el(head, `rreq${poor ? ' bad' : ''}`, `${d.price} gold`);
       el(row, 'rstat', `A ${secs(d.seconds)} ride${p.inCombat ? ' (not in combat)' : ''}`);
-      el(el(row, 'rbtns'), `rbtn${can ? '' : ' off'}`, 'Fly').addEventListener('click', () => this.fly(t.id));
+      actionButton(el(row, 'rbtns'), 'Fly', can).addEventListener('click', () => this.fly(t.id));
     }
   }
 }
@@ -90,8 +89,8 @@ export class MapUi {
 
     this.ride = el(root, 'ridelayer');
     this.rideTitle = el(this.ride, 'ridetitle');
-    const bar = el(this.ride, 'ridebar');
-    this.rideFill = el(bar, 'ridefill');
+    const bar = el(this.ride, 'bar thin ridebar');
+    this.rideFill = el(bar, 'fill ridefill');
     this.ride.style.display = 'none';
   }
 

@@ -3,7 +3,7 @@
 import type { GameState } from './sim';
 import { ABILITIES } from './sim/data';
 import { abilityOpen } from './sim/combat';
-import { HudWindow, el, panelWindow } from './dom';
+import { HudWindow, el, panelWindow, titleRow } from './dom';
 
 export class SpellbookUi implements HudWindow {
   private panel: HTMLElement;
@@ -14,8 +14,7 @@ export class SpellbookUi implements HudWindow {
   /** `bar` is the live layout (ability index per bar slot) and `keyOf` labels it; `clear` takes an ability off the bar. */
   constructor(root: HTMLElement, private bar: () => (number | null)[], private keyOf: (ability: number) => string | null, private clear: (ability: number) => void) {
     this.panel = el(root, 'panel bookpanel');
-    const title = el(this.panel, 'ptitle', 'Spell Book  (P)');
-    el(title, 'pclose', '✕').addEventListener('click', () => this.setOpen(false));
+    titleRow(this.panel, 'Spell Book  (P)', () => this.setOpen(false));
     el(this.panel, 'shophint', 'Drag a spell onto the action bar to assign it. Right-click a bar slot (or ✕ here) to clear it.');
     this.list = el(this.panel, 'recipes');
     this.win = panelWindow(this.panel);
@@ -48,7 +47,7 @@ export class SpellbookUi implements HudWindow {
       if (!known) continue;
       row.draggable = true;
       row.addEventListener('dragstart', e => e.dataTransfer?.setData('text/plain', `spell:${i}`));
-      if (key) el(el(row, 'rbtns'), 'rbtn', `✕ Remove from ${key}`).addEventListener('click', () => this.clear(i));
+      if (key) el(el(row, 'rbtns'), 'btn rbtn', `✕ Remove from ${key}`).addEventListener('click', () => this.clear(i));
     }
   }
 }

@@ -43,15 +43,15 @@ export class MenuUi {
     const grid = el(this.overlay, 'helpgrid');
     for (const [k, v] of CONTROLS) { el(grid, 'hkey', k); el(grid, 'hdesc', v); }
     el(this.overlay, 'helpnote', 'Progress saves automatically. Use the buttons at the bottom right to save now or start over.');
-    const ok = el(this.overlay, 'dopt helpok', '▸ Got it (click, Esc or H)');
+    const ok = el(this.overlay, 'btn block dopt helpok', '▸ Got it (click, Esc or H)');
     ok.addEventListener('click', () => this.setOpen(false));
     this.overlay.style.display = 'none';
 
     const bar = el(root, 'menubar');
     for (const [label, fn] of [['? Help (H)', () => this.toggle()], ['Save', actions.save], ['New Game', actions.newGame]] as const) {
-      el(bar, 'mbtn', label).addEventListener('click', fn);
+      el(bar, 'btn mbtn', label).addEventListener('click', fn);
     }
-    const quality = el(bar, 'mbtn', '');
+    const quality = el(bar, 'btn mbtn', '');
     quality.title = 'Graphics quality: High has bloom, ambient occlusion and a colour grade; Low renders straight to the screen';
     const showQuality = (toggle: boolean) => { quality.textContent = `Graphics: ${actions.quality(toggle) === 'high' ? 'High' : 'Low'}`; };
     quality.addEventListener('click', () => showQuality(true));

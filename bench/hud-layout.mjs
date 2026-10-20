@@ -1,8 +1,11 @@
 // HOM-60 / HOM-82: the HUD panels must not print over each other, and must not run off the window, at any size the game is played at.
 // 1. Opens the Warden's dialogue with a long quest tracker up and checks the two never meet (a short or narrow
 //    window used to put the dialogue right on top of the tracker).
-// 2. Opens every panel in turn (the forge's recipe list, the bag, the character sheet, skills, talents, spellbook, help) and
-//    checks each one sits inside the window; the forge's must also stay clear of the minimap, the unit frame and the action bar.
+// 2. Opens every panel in turn (the forge's recipe list, the bag, the character sheet, skills, talents, spellbook, help, the shop) and
+//    checks each one sits inside the window; the forge's, the spell book's and the shop's must also stay clear of the minimap, the unit
+//    frame, the quest tracker and the action bar.
+// 3. With a target held, checks the HUD that is always on (quest tracker, minimap, both unit frames, action bar, swing bar, XP bar, menu bar)
+//    is clear of itself and sits inside the window.
 // Run `npm run build` first.
 //   node bench/hud-layout.mjs        exits non-zero on any overlap or any panel past the window's edge
 import { preview } from 'vite';
@@ -56,15 +59,19 @@ for (const [width, height] of SIZES) {
     const hit = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
     // the forge is already open from the click; the rest are opened by the keys that toggle them
     const scenes = [['forge', () => {}], ['bag', () => key('KeyI')], ['bag+sheet', () => { key('KeyI'); key('KeyC'); }],
-      ['skills', () => key('KeyK')], ['talents', () => key('KeyN')], ['spellbook', () => key('KeyP')], ['help', () => key('KeyH')]];
+      ['skills', () => key('KeyK')], ['talents', () => key('KeyN')], ['spellbook', () => key('KeyP')], ['help', () => key('KeyH')],
+      ['shop', async () => { const p = d.sim.player; p.hp = p.maxHp = 99999; p.x = -7; p.z = 3; d.step(); d.sim.interact = { k: 'vendor' }; await wait(500); }]];
+    // the panels that sit in the open middle of the screen and so must stay clear of what is always on. The talent tree (570 wide) and the
+    // skills list do not yet at 800 wide: that is a layout call for the CEO (HOM-83 report), not something a restyle moves.
+    const CLEAR = new Set(['forge', 'spellbook', 'shop']);
     for (const [name, open] of scenes) {
-      open(); await wait(350);
+      await open(); await wait(350);
       const panels = shown('.panel');
       if (!panels.length) fails.push(name + ': no panel opened');
       for (const e of panels) {
         const b = box(e), who = name + ' (' + e.className.replace('panel ', '') + ')';
         if (b.b > H || b.r > W || b.t < 0 || b.l < 0) fails.push(who + ' runs off the window: ' + JSON.stringify(b) + ' in ' + W + 'x' + H);
-        if (name === 'forge') {
+        if (CLEAR.has(name)) {
           for (const [what, sel] of [['minimap', '.minimap'], ['action bar', '.actionbar'], ['player frame', '.frame.player'], ['quest tracker', '.tracker']]) {
             const o = shown(sel)[0];
             if (o && hit(b, box(o))) fails.push(who + ' prints over the ' + what + ': ' + JSON.stringify(b) + ' vs ' + JSON.stringify(box(o)));
@@ -76,7 +83,33 @@ for (const [width, height] of SIZES) {
     }
     return fails;
   });
+  // the HUD that is always on, with a target held so both unit frames are up; the world is made safe so nothing it does changes the layout
+  const restFails = await page.evaluate(async () => {
+    const d = window.__debug, s = d.sim, p = s.player, W = innerWidth, H = innerHeight, fails = [];
+    p.hp = p.maxHp = 99999;
+    const e = s.enemies.find(o => o.state !== 'dead');
+    for (const o of s.enemies) if (o !== e) { o.state = 'dead'; o.respawnIn = 1e9; o.deadFor = 99; o.cast = null; }
+    p.dead = false; p.x = e.x + 4; p.z = e.z; s.targetId = e.id; p.autoAttack = true;
+    d.step(); d.step();
+    await new Promise(r => setTimeout(r, 400));
+    const parts = [['quest tracker', '.tracker'], ['minimap', '.minimap'], ['player frame', '.frame.player'], ['target frame', '.frame.target'],
+      ['action bar', '.actionbar'], ['swing bar', '.swing'], ['XP bar', '.xp'], ['menu bar', '.menubar']];
+    const boxes = [];
+    for (const [name, sel] of parts) {
+      const x = document.querySelector(sel);
+      if (!x || x.offsetParent === null) { fails.push(name + ' is not showing'); continue; }
+      const b = x.getBoundingClientRect(), r = { name, l: Math.round(b.left), t: Math.round(b.top), r: Math.round(b.right), b: Math.round(b.bottom) };
+      if (r.b > H || r.r > W || r.t < 0 || r.l < 0) fails.push(name + ' runs off the window: ' + JSON.stringify(r) + ' in ' + W + 'x' + H);
+      boxes.push(r);
+    }
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i], b = boxes[j];
+      if (a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b) fails.push(a.name + ' prints over the ' + b.name + ': ' + JSON.stringify(a) + ' vs ' + JSON.stringify(b));
+    }
+    return fails;
+  });
   await page.close();
+  for (const m of restFails) { console.error(`FAIL ${width}x${height}: ${m}`); failed++; }
   for (const m of panelFails) { console.error(`FAIL ${width}x${height}: ${m}`); failed++; }
   const bad = [['tracker', 'dialogue'], ['dialogue', 'frame'], ['dialogue', 'bar']].filter(([a, b]) => overlaps(rects[a], rects[b]));
   if (!rects.tracker || !rects.dialogue) { console.error(`FAIL ${width}x${height}: tracker or dialogue missing`); failed++; continue; }

@@ -24,7 +24,7 @@ export class QuestUi {
   private replyCloses = false; // the reply followed an accepted quest step: Okay ends the conversation
 
   constructor(root: HTMLElement, private advance: (what: boolean | 'road') => void) {
-    this.tracker = el(root, 'tracker');
+    this.tracker = el(root, 'chrome tracker');
     this.title = el(this.tracker, 'qtitle');
     this.lines = el(this.tracker, 'qlines');
     this.nav = el(this.tracker, 'qnav');
@@ -91,14 +91,14 @@ export class QuestUi {
     this.opts.textContent = '';
     if (this.reply) {
       el(this.text, 'dline', this.reply);
-      el(this.opts, 'dopt', '▸ Okay').addEventListener('click', () => {
+      el(this.opts, 'btn block dopt', '▸ Okay').addEventListener('click', () => {
         if (this.replyCloses) this.setOpen(false); else { this.reply = null; this.sig = ''; }
       });
       return;
     }
     for (const line of d.lines) el(this.text, 'dline', line);
     d.options.forEach(o => {
-      const b = el(this.opts, 'dopt', `▸ ${o.label}`);
+      const b = el(this.opts, 'btn block dopt', `▸ ${o.label}`);
       b.addEventListener('click', () => {
         if (o.advance) this.advance(o.advance);
         if (o.reply) { this.reply = o.reply; this.replyCloses = !!o.advance; this.sig = ''; } else this.setOpen(false);

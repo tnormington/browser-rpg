@@ -38,7 +38,7 @@ export class TalentsUi {
         this.cells.set(def.id, { root: cell, rank });
       }
     }
-    el(this.panel, 'dopt treset', '↺ Unlearn everything').addEventListener('click', () => this.actions.reset());
+    el(this.panel, 'btn block dopt treset', '↺ Unlearn everything').addEventListener('click', () => this.actions.reset());
     this.panel.style.display = 'none';
   }
 

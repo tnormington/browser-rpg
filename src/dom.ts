@@ -19,3 +19,13 @@ export function el(parent: HTMLElement, cls: string, text = ''): HTMLDivElement 
   parent.appendChild(d);
   return d;
 }
+
+/** A panel's title row with the ✕ that shuts it. Returns the row, so a panel can add to it or retitle it. */
+export function titleRow(panel: HTMLElement, text: string, close?: () => void): HTMLDivElement {
+  const head = el(panel, 'ptitle', text);
+  if (close) el(head, 'pclose', '✕').addEventListener('click', close);
+  return head;
+}
+
+/** The button a list row offers (Make, Buy, Learn, Fly, Repair): `.btn.pri`, greyed out by `.off` when it cannot be used now. `.rbtn` is the hook the benches select on. */
+export const actionButton = (parent: HTMLElement, label: string, can = true) => el(parent, `btn pri rbtn${can ? '' : ' off'}`, label);

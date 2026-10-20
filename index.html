@@ -4,156 +4,217 @@
 <meta charset="utf-8" />
 <title>Browser RPG</title>
 <style>
+/* HUD STYLE NOTE. One family: iron panels, parchment ink, one muted gold accent. Saturation is rationed so a status that matters can
+   still shout: red is hurt, gold is what you want, arcane blue is the quest, ember is a threat, green is health and "good".
+   A new panel takes its look from the tokens and shared classes below and writes no hex, px size or shadow of its own.
+     TOKENS  surface --iron (panel) --iron-lift (rows, cells) --iron-hover --iron-sunk (bar wells) --iron-veil (tips, menus) --iron-glass (over the world)
+             edge    --edge (resting) --edge-dim (quiet inner lines) --edge-hi (floating, hovered, focused)
+             ink     --ink --ink-dim --ink-bright     accent --gold --gold-hi --gold-dim --gold-wash     state --bad --blood --moss --arcane --ember --violet --heal
+             type    --fs-xs 9 (micro) --fs-sm 11 (meta, hints) --fs-md 13 (body) --fs-lg 15 (names, titles) --fs-xl 18 --fs-2xl 22 --fs-3xl 30 --fs-4xl 42 --fs-5xl 56 (banners)
+             space   --sp-1..6 = 2 4 6 8 12 16, --gutter = the margin to the window edge     shape --r (3px) --r-sm (2px)     depth --lift-1 (small) --lift-2 (panel)
+     CLASSES .panel     a window that opens over the world: iron chrome, bounded by the window, scrolls inside itself, its .ptitle row stays put.
+                        Set --ptop / --pbottom for where it starts and what it leaves clear; --chrome-edge to tint its border (station, vendor).
+             .ptitle    the title row; titleRow() in dom.ts builds it with its .pclose.     .rgroup  a small caps group heading inside a panel
+             .recipe    a list row (forge, shop, flights, spell book): .rhead (.rname + .rreq), .rstat lines, .rbtns.  .locked dims it; .bad marks what you lack
+             .btn       every button. + .pri (the action you came for: Make, Buy, Learn)  + .sm  + .block (full width, left)  + .off (cannot be used now)
+             .chrome    iron chrome for a fixed surface (unit frame, tracker).  .pop  the same for a floating layer (tooltip, context menu, help)
+             .bar       a gauge: set --bar-h and --fill (a token below); .fill moves, .label sits on it; .thin is the slim world-space gauge
+     The legacy hook names (.rbtn .mbtn .psort .dopt) stay on the markup for the benches; they carry no style of their own.
+     Game-meaning colours stay literal where they carry meaning: the bar fills (--fill-*), floater and log colours, banner and hurt glows, tier colours (from the sim). */
 :root{
-  /* HUD palette: iron panels, parchment ink, one muted gold accent. Saturation is kept for blood, fire and arcane light. */
-  --iron:rgba(15,16,19,.86);--iron-solid:#0f1013;--iron-lift:rgba(36,38,43,.92);--edge:#3b3d42;--edge-hi:#6a6455;
-  --ink:#d6cdb4;--ink-dim:#8d8672;--gold:#c0a55e;--blood:#c23a32;--blood-dark:#6e1f1c;--arcane:#6ad8ff;--moss:#93b58c;--ember:#ff8a3a;
+  --iron:rgba(15,16,19,.86);--iron-solid:#0f1013;--iron-lift:rgba(36,38,43,.92);--iron-hover:#34312a;--iron-sunk:#08090b;--iron-veil:rgba(8,8,10,.96);--iron-glass:rgba(10,11,14,.6);
+  --edge:#3b3d42;--edge-dim:#2e3034;--edge-hi:#6a6455;
+  --ink:#d6cdb4;--ink-dim:#8d8672;--ink-bright:#ece6d2;
+  --gold:#c0a55e;--gold-hi:#e8d9a0;--gold-dim:#6a5a22;--gold-wash:#3f351a;--gold-wash-hi:#54471f;
+  --blood:#c23a32;--blood-dark:#6e1f1c;--bad:#e8523f;--moss:#93b58c;--arcane:#6ad8ff;--arcane-dim:#2f3b5a;--ember:#ff8a3a;--ember-dim:#5a3a22;--flare:#ff7a5a;
+  --violet:#b39be0;--heal:#7fe8c8;--spark:#ffd06a;
+  /* what a gauge is filled with: each is a whole background, so a bar can also take a flat colour (--fill:var(--blood)) */
+  --fill-hp:linear-gradient(#6f8f56,#4a6a3a);--fill-energy:linear-gradient(#b08a3a,#7a5e24);--fill-blood:linear-gradient(#c23a32,#7e1f1c);
+  --fill-xp:linear-gradient(#6b4aa0,#43306a);--fill-skill:linear-gradient(#5a7a96,#3a566e);--fill-cast:linear-gradient(#c0883a,#85591f);
+  --fill-fire:linear-gradient(#e0883a,#a04a14);--fill-steel:linear-gradient(#7d8794,#4c5662);--fill-gold:linear-gradient(#e8c460,#a8802a);--fill-gold-hi:linear-gradient(#f4dc8a,#d0a640);
+  --serif:Georgia,'Palatino Linotype',serif;
+  --fs-xs:9px;--fs-sm:11px;--fs-md:13px;--fs-lg:15px;--fs-xl:18px;--fs-2xl:22px;--fs-3xl:30px;--fs-4xl:42px;--fs-5xl:56px;
+  --sp-1:2px;--sp-2:4px;--sp-3:6px;--sp-4:8px;--sp-5:12px;--sp-6:16px;--gutter:12px;
+  --r:3px;--r-sm:2px;
+  --lift-1:inset 0 0 0 1px #000,0 2px 6px rgba(0,0,0,.6);--lift-2:inset 0 0 0 1px #000,0 4px 14px rgba(0,0,0,.7);
 }
 html,body{margin:0;height:100%;overflow:hidden;background:#000}
 canvas{display:block}
-.hud{position:fixed;inset:0;pointer-events:none;font:13px/1.25 Georgia,'Palatino Linotype',serif;color:var(--ink);user-select:none;text-shadow:0 1px 2px #000}
+.hud{position:fixed;inset:0;pointer-events:none;font:var(--fs-md)/1.25 var(--serif);color:var(--ink);user-select:none;text-shadow:0 1px 2px #000}
+
+/* ---- shared shapes ---- */
+.chrome,.panel,.pop{background:var(--iron);border:1px solid var(--chrome-edge,var(--edge));border-radius:var(--r);box-shadow:var(--lift-1);padding:var(--sp-4)}
+.pop,.panel{box-shadow:var(--lift-2)}
+.pop{background:var(--iron-veil);border-color:var(--edge-hi);padding:var(--sp-3) var(--sp-4)}
+.scroll,.panel,.msglog{overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--edge-hi) transparent}
+.btn{display:inline-block;box-sizing:border-box;padding:var(--sp-2) var(--sp-5);background:var(--iron-lift);border:1px solid var(--edge);border-radius:var(--r);font-size:var(--fs-md);color:var(--ink);text-align:center;cursor:pointer}
+.btn:hover{background:var(--iron-hover);border-color:var(--edge-hi);color:var(--gold)}
+.btn:active{background:var(--iron-sunk)}
+.btn.pri{background:var(--gold-wash);border-color:var(--gold-dim);color:var(--gold-hi)}
+.btn.pri:hover{background:var(--gold-wash-hi);border-color:var(--gold);color:var(--ink-bright)}
+.btn.sm{padding:var(--sp-1) var(--sp-4);font-size:var(--fs-sm)}
+.btn.block{display:block;margin-top:var(--sp-2);padding:var(--sp-3) var(--sp-4);text-align:left}
+.btn.off{opacity:.5;cursor:default;background:var(--iron-lift);border-color:var(--edge);color:var(--ink)}
+.btn.off:active{background:var(--iron-lift)}
+.btn.pri.off{background:var(--iron-lift);border-color:var(--edge);color:var(--ink)}
+.bar{--bar-h:16px;--bar-fs:var(--fs-sm);position:relative;height:var(--bar-h);background:var(--iron-sunk);border:1px solid #000;box-shadow:0 0 0 1px var(--edge);border-radius:var(--r-sm);overflow:hidden;margin-top:var(--sp-2)}
+.bar .fill{height:100%;width:100%;background:var(--fill,var(--fill-steel))}
+.bar .label{position:absolute;inset:0;text-align:center;font-size:var(--bar-fs);line-height:var(--bar-h);color:var(--ink-bright)}
+.bar.thin{--bar-h:5px;margin-top:var(--sp-1);border-radius:0}
+
+/* ---- unit frames, minimap ---- */
 /* the unit frames sit above the action bar, centred on it: you, then what you are hitting. Both are anchored to the screen's
    middle (not laid out as a pair) so the player's frame does not slide when the target's comes and goes. */
-.frame{position:absolute;bottom:134px;width:230px;background:var(--iron);border:1px solid var(--edge);box-shadow:inset 0 0 0 1px #000,0 2px 6px rgba(0,0,0,.6);border-radius:2px;padding:6px}
-.frame.player{right:50%;margin-right:8px}.frame.target{left:50%;margin-left:8px;display:none;border-color:var(--blood-dark)}
-.minimap{position:absolute;top:12px;right:12px;width:140px;height:140px;border-radius:50%;background:var(--iron-solid);border:2px solid var(--edge);box-shadow:inset 0 0 0 1px #000,0 2px 8px rgba(0,0,0,.6);overflow:hidden}
+.frame{position:absolute;bottom:134px;width:230px;box-sizing:content-box}
+.frame.player{right:50%;margin-right:var(--sp-4)}.frame.target{left:50%;margin-left:var(--sp-4);display:none;--chrome-edge:var(--blood-dark)}
+.minimap{position:absolute;top:var(--gutter);right:var(--gutter);width:140px;height:140px;border-radius:50%;background:var(--iron-solid);border:2px solid var(--edge);box-shadow:var(--lift-1);overflow:hidden}
 .minimap canvas{display:block;width:140px;height:140px}
-.mmzone{position:absolute;left:0;right:0;bottom:5px;text-align:center;font-size:11px;color:var(--gold);letter-spacing:.04em}
-.name{font-weight:bold;margin-bottom:4px;letter-spacing:.03em}.name.hard{color:var(--blood)}
-.bar{position:relative;height:16px;background:#08090b;border:1px solid #000;box-shadow:0 0 0 1px var(--edge);border-radius:1px;overflow:hidden;margin-top:3px}
-.bar .fill{height:100%;width:100%}
-.bar .label{position:absolute;inset:0;text-align:center;font-size:11px;line-height:16px;color:#ece6d2}
-.hp .fill{background:linear-gradient(#6f8f56,#4a6a3a)}.energy .fill{background:linear-gradient(#b08a3a,#7a5e24)}.enemyhp .fill{background:linear-gradient(#c23a32,#7e1f1c)}
-.xp{position:absolute;left:12%;right:12%;bottom:6px;height:12px}.xp .fill{background:linear-gradient(#6b4aa0,#43306a)}.xp .label{line-height:12px;font-size:10px}
-.xp.skill .fill{background:linear-gradient(#5a7a96,#3a566e)} /* the bar is following a gathering/crafting skill, not combat */
+.mmzone{position:absolute;left:0;right:0;bottom:5px;text-align:center;font-size:var(--fs-sm);color:var(--gold);letter-spacing:.04em}
+.name{font-size:var(--fs-lg);font-weight:bold;margin-bottom:var(--sp-2);letter-spacing:.03em}.name.hard{color:var(--bad)}
+.frame .gold{color:var(--gold);margin-top:var(--sp-1)}.frame .status{color:var(--moss);font-size:var(--fs-sm);margin-top:var(--sp-1);min-height:13px}
+.hp{--fill:var(--fill-hp)}.energy{--fill:var(--fill-energy)}.enemyhp{--fill:var(--fill-blood)}
+.xp{--bar-h:12px;position:absolute;left:12%;right:max(12%,350px);bottom:6px;margin-top:0;--fill:var(--fill-xp)}
+.xp.skill{--fill:var(--fill-skill)} /* the bar is following a gathering/crafting skill, not combat */
 /* buffs and debuffs under a unit frame: icon, seconds left, and a bar that empties over the effect's run */
-.buffs{display:flex;gap:4px;margin-top:5px}.buffs:empty{display:none}
-.buff{position:relative;width:28px;height:32px;background:var(--iron-lift);border:1px solid var(--edge);border-radius:2px;text-align:center;overflow:hidden}
+.buffs{display:flex;gap:var(--sp-2);margin-top:var(--sp-3)}.buffs:empty{display:none}
+.buff{position:relative;width:28px;height:32px;background:var(--iron-lift);border:1px solid var(--edge);border-radius:var(--r);text-align:center;overflow:hidden}
 .buff.bad{border-color:var(--blood-dark)}
-.buff .bicon{font-size:15px;line-height:19px}.buff .bclock{font-size:9px;line-height:9px;color:var(--ink)}
+.buff .bicon{font-size:var(--fs-lg);line-height:19px}.buff .bclock{font-size:var(--fs-xs);line-height:9px;color:var(--ink)}
 .buff .bfill{position:absolute;left:0;bottom:0;height:3px;background:var(--moss)}.buff.bad .bfill{background:var(--blood)}
 .buff.soon{animation:buffsoon 1s ease-in-out infinite}
 @keyframes buffsoon{50%{border-color:var(--gold)}}
-.actionbar{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:min(96vw,820px);pointer-events:auto}
-.slot{position:relative;width:64px;height:64px;background:var(--iron);border:2px solid var(--edge);box-shadow:inset 0 0 0 1px #000,0 2px 6px rgba(0,0,0,.6);border-radius:3px;overflow:hidden;text-align:center;cursor:grab}
-.slot.empty{background:rgba(15,16,19,.45);border-style:dashed;border-color:#2e3034;cursor:default}
-.slot .icon{font-size:28px;line-height:46px}.slot .key{position:absolute;top:2px;left:5px;font-weight:bold;font-size:12px;color:var(--gold)}
-.slot .aname{position:absolute;bottom:2px;width:100%;font-size:9px}
-.slot .sweep{position:absolute;inset:0}.slot .cdtext{position:absolute;inset:0;font-size:20px;font-weight:bold;line-height:64px}
-.slot.locked .icon,.slot.locked .aname,.slot.locked .key{opacity:.28}.slot.locked{border-color:#26282c;box-shadow:inset 0 0 0 1px #000}
+
+/* ---- action bar ---- */
+.actionbar{position:absolute;left:50%;bottom:28px;width:max-content;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-4);max-width:min(96vw,820px);pointer-events:auto}
+.slot{position:relative;width:64px;height:64px;background:var(--iron);border:2px solid var(--edge);box-shadow:var(--lift-1);border-radius:var(--r);overflow:hidden;text-align:center;cursor:grab}
+.slot.empty{background:var(--iron-glass);border-style:dashed;border-color:var(--edge-dim);cursor:default}
+.slot .icon{font-size:var(--fs-3xl);line-height:46px}.slot .key{position:absolute;top:var(--sp-1);left:5px;font-weight:bold;font-size:var(--fs-md);color:var(--gold)}
+.slot .aname{position:absolute;bottom:var(--sp-1);width:100%;font-size:var(--fs-xs)}
+.slot .sweep{position:absolute;inset:0}.slot .cdtext{position:absolute;inset:0;font-size:var(--fs-2xl);font-weight:bold;line-height:64px}
+.slot.locked .icon,.slot.locked .aname,.slot.locked .key{opacity:.28}.slot.locked{border-color:var(--edge-dim);box-shadow:inset 0 0 0 1px #000}
 .slot .lock{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(6,6,8,.62);color:var(--gold)}
-.slot .lockicon{font-size:15px;line-height:17px}.slot .locklvl{font-size:12px;font-weight:bold;letter-spacing:.04em}
+.slot .lockicon{font-size:var(--fs-lg);line-height:17px}.slot .locklvl{font-size:var(--fs-md);font-weight:bold;letter-spacing:.04em}
 .slot.fresh{border-color:var(--gold);animation:freshslot .8s ease-in-out infinite}
 @keyframes freshslot{50%{box-shadow:inset 0 0 14px 2px rgba(240,200,90,.8),0 0 16px 3px rgba(240,170,60,.9)}}
-.slot.noenergy{border-color:#2f3b5a;filter:saturate(.3) brightness(.7)}.slot.outrange{border-color:var(--blood)}.slot.queued{border-color:var(--gold)}
-.msg{position:absolute;left:0;right:0;top:62%;text-align:center;font-size:20px;font-weight:bold;color:#e0896a;opacity:0}
-.banner{position:absolute;left:0;right:0;top:28%;text-align:center;font-size:56px;font-weight:bold;color:var(--gold);opacity:0;letter-spacing:.08em;text-shadow:0 0 18px #b8601a,0 3px 4px #000}
+.slot.noenergy{border-color:var(--arcane-dim);filter:saturate(.3) brightness(.7)}.slot.outrange{border-color:var(--blood)}.slot.queued{border-color:var(--gold)}
+
+/* ---- banners, floaters, plates (the screen's loud voices: these keep their own colours) ---- */
+.msg{position:absolute;left:0;right:0;top:62%;text-align:center;font-size:var(--fs-2xl);font-weight:bold;color:var(--flare);opacity:0}
+.banner{position:absolute;left:0;right:0;top:28%;text-align:center;font-size:var(--fs-5xl);font-weight:bold;color:var(--gold);opacity:0;letter-spacing:.08em;text-shadow:0 0 18px #b8601a,0 3px 4px #000}
 .banner.show{animation:lvl 2.4s ease-out}
-.unlockbanner{top:36%;font-size:42px;color:#f4d98a;text-shadow:0 0 20px #d08a1a,0 3px 4px #000}.unlockbanner.show{animation:lvl 3.4s ease-out}
-.unlockbanner::after{content:attr(data-sub);display:block;font-size:17px;letter-spacing:.03em;font-weight:normal;color:var(--ink);margin-top:6px}
-.warn{position:absolute;left:0;right:0;top:13%;box-sizing:border-box;padding:0 270px;text-align:center;font-size:26px;font-weight:bold;letter-spacing:.06em;color:#ff7a5a;opacity:0;text-shadow:0 0 14px #a01010,0 2px 3px #000}
+.unlockbanner{top:36%;font-size:var(--fs-4xl);color:var(--gold-hi);text-shadow:0 0 20px #d08a1a,0 3px 4px #000}.unlockbanner.show{animation:lvl 3.4s ease-out}
+.unlockbanner::after{content:attr(data-sub);display:block;font-size:var(--fs-xl);letter-spacing:.03em;font-weight:normal;color:var(--ink);margin-top:var(--sp-3)}
+.warn{position:absolute;left:0;right:0;top:13%;box-sizing:border-box;padding:0 270px;text-align:center;font-size:var(--fs-3xl);font-weight:bold;letter-spacing:.06em;color:var(--flare);opacity:0;text-shadow:0 0 14px #a01010,0 2px 3px #000}
 .warn.show{animation:warnfade 2s linear 1 forwards}
 @keyframes warnfade{0%,85%{opacity:1}100%{opacity:0}}
-.floater.interrupt{color:#ffd870;font-size:20px;font-weight:bold}
-.bar.enemycast{display:none;height:12px}.bar.enemycast .fill{background:linear-gradient(#e0883a,#a04a14);width:0}.bar.enemycast .label{font-size:10px;line-height:12px}
-.plate .pcast{display:none;width:60px;height:4px;background:#08090b;border:1px solid #000;box-shadow:0 0 0 1px #8a4a1a;margin:2px auto 0}.plate .pcast .fill{height:100%;background:#ffa040}
+.floater.interrupt{color:var(--spark);font-weight:bold}
+.bar.enemycast{--bar-h:12px;--fill:var(--fill-fire);display:none}.bar.enemycast .fill{width:0}
+.plate .pcast{--bar-h:4px;--fill:var(--ember);display:none;width:60px;box-shadow:0 0 0 1px var(--ember-dim);margin:var(--sp-1) auto 0}
 @keyframes lvl{0%{opacity:0;transform:scale(.4)}12%{opacity:1;transform:scale(1.25)}25%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:translateY(-30px)}}
-.death{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:28px;background:rgba(60,0,0,.55)}
-.floater{position:absolute;left:0;top:0;font-weight:bold;font-size:22px;white-space:nowrap;text-shadow:0 0 3px #000,0 2px 3px #000,0 0 8px #000}
-.dmg-out{color:#f0eadb}.dmg-crit{color:#ffc84a;font-size:32px}.dmg-dot{color:#b98ae8;font-size:18px}.dmg-in{color:#e8523f}.heal{color:#7fe8c8}.xpgain{color:#a995d6;font-size:16px}
-.plate{position:absolute;left:0;top:0;display:none;text-align:center;font-size:11px;white-space:nowrap;text-shadow:0 0 3px #000,0 1px 2px #000}
-.plate .pbar{width:60px;height:5px;background:#08090b;border:1px solid #000;box-shadow:0 0 0 1px var(--edge);margin:2px auto 0}.plate .fill{height:100%;background:var(--blood)}
-.plate.sel .pname{color:#e8523f;font-weight:bold}
-.floater.loot{color:var(--moss);font-size:18px}.floater.dropname{color:#e8d9a0;font-size:13px}
+.death{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:var(--fs-3xl);background:rgba(60,0,0,.55)}
+.floater{position:absolute;left:0;top:0;font-weight:bold;font-size:var(--fs-2xl);white-space:nowrap;text-shadow:0 0 3px #000,0 2px 3px #000,0 0 8px #000}
+.dmg-out{color:var(--ink-bright)}.dmg-crit{color:var(--spark);font-size:var(--fs-3xl)}.dmg-dot{color:var(--violet);font-size:var(--fs-xl)}.dmg-in{color:var(--bad)}.heal{color:var(--heal)}.xpgain{color:var(--violet);font-size:var(--fs-xl)}
+.plate{position:absolute;left:0;top:0;display:none;text-align:center;font-size:var(--fs-sm);white-space:nowrap;text-shadow:0 0 3px #000,0 1px 2px #000}
+.plate .pbar{--fill:var(--blood);width:60px;margin:var(--sp-1) auto 0}
+.plate.sel .pname{color:var(--bad);font-weight:bold}
+.floater.loot{color:var(--moss);font-size:var(--fs-xl)}.floater.dropname{color:var(--gold-hi);font-size:var(--fs-md)}
+.nodeplate .psub{font-size:var(--fs-sm);color:var(--moss)}
+
+/* ---- panels ---- */
 /* Every panel is bounded by the window and scrolls inside itself: --ptop is where it starts, --pbottom what it leaves clear below
    (the action bar, or for a centred panel the unit frames above it too). Its title stays put while the body scrolls. */
-.panel{--ptop:90px;--pbottom:108px;position:absolute;top:var(--ptop);max-height:calc(100vh - var(--ptop) - var(--pbottom) - 18px);overflow-y:auto;scrollbar-width:thin;background:var(--iron);border:1px solid var(--edge);box-shadow:inset 0 0 0 1px #000,0 4px 14px rgba(0,0,0,.7);border-radius:2px;padding:8px;pointer-events:auto;text-shadow:none}
-.invpanel{right:12px;width:268px}.charpanel{right:292px;width:210px}
-.invgold{color:var(--gold);font-size:12px;margin:-3px 0 6px}
-.psort{float:right;margin-top:-1px;padding:1px 8px;background:var(--iron-lift);border:1px solid var(--edge);border-radius:2px;font-size:11px;font-weight:normal;color:var(--ink);letter-spacing:0;cursor:pointer}.psort:hover{background:#3a362c;color:var(--gold)}
+.panel{--ptop:90px;--pbottom:108px;--pad:var(--sp-4);position:absolute;top:var(--ptop);max-height:calc(100vh - var(--ptop) - var(--pbottom) - 18px);padding:var(--pad);pointer-events:auto;text-shadow:none}
+.ptitle{display:flow-root;font-size:var(--fs-lg);font-weight:bold;margin-bottom:var(--sp-3);color:var(--gold);letter-spacing:.05em}
+.panel>.ptitle{position:sticky;top:calc(-1*var(--pad));z-index:1;margin:calc(-1*var(--pad)) calc(-1*var(--pad)) var(--sp-3);padding:var(--pad) var(--pad) var(--sp-2);background:var(--iron-solid);border-bottom:1px solid var(--edge-dim)}
+.pclose{float:right;cursor:pointer;color:var(--ink-dim);font-weight:normal}.pclose:hover{color:var(--gold)}
+.psort{float:right;margin-top:-1px;font-weight:normal;letter-spacing:0}
+.tpoints{float:right;font-size:var(--fs-md);font-weight:normal;color:var(--ink-dim);letter-spacing:0}.tpoints.ready{color:var(--gold)}
+.dhint{float:right;font-size:var(--fs-sm);font-weight:normal;color:var(--ink-dim)}
+.rgroup{margin:var(--sp-4) 0 var(--sp-2);padding-bottom:var(--sp-1);border-bottom:1px solid var(--edge);font-size:var(--fs-sm);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim)}.rgroup:first-child{margin-top:0}
+.invpanel{right:var(--gutter);width:268px}.charpanel{right:calc(268px + 2*var(--gutter));width:210px}
 .invpanel,.charpanel{--ptop:170px} /* clear of the minimap above */
-.panel>.ptitle{position:sticky;top:-8px;z-index:1;margin:-8px -8px 6px;padding:8px 8px 4px;background:var(--iron-solid)}
-.ptitle{font-weight:bold;margin-bottom:6px;color:var(--gold);letter-spacing:.05em}
-.grid{display:grid;grid-template-columns:repeat(4,60px);gap:4px}
-.cell{position:relative;width:60px;height:60px;box-sizing:border-box;background:var(--iron-lift);border:2px solid #2e3034;border-radius:2px;text-align:center;overflow:hidden;cursor:pointer}
-.cell .icon{font-size:24px;line-height:36px}.cell .icon.ghost{opacity:.25;color:var(--ink)}
-.cell .iname{position:absolute;bottom:1px;left:0;right:0;font-size:8px;line-height:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cell .qty{position:absolute;top:1px;left:3px;font-size:11px;font-weight:bold;color:var(--gold)}
-.equip{display:grid;grid-template-columns:repeat(2,60px);gap:6px 10px;justify-content:center;margin-bottom:8px}
-.eqcell .eqlabel{position:absolute;top:1px;left:0;right:0;font-size:8px;opacity:.7}.eqcell .icon{line-height:56px}
-.srow{display:flex;justify-content:space-between;margin-top:3px;font-size:12px}.sv{color:var(--gold)}
-.tip{position:fixed;display:none;z-index:10;max-width:220px;background:rgba(8,8,10,.96);border:1px solid var(--edge-hi);border-radius:2px;padding:6px 8px;font-size:12px;pointer-events:none}
-.tname{font-weight:bold;font-size:14px}.tslot{opacity:.6;font-size:11px}.tstat{color:var(--moss);margin-top:2px}.tdesc{opacity:.7;margin-top:4px;font-style:italic}.tcmp{margin-top:4px}.thint{margin-top:4px;opacity:.5;font-size:10px}
-.ctxmenu{position:fixed;display:none;z-index:11;background:rgba(8,8,10,.96);border:1px solid var(--edge-hi);border-radius:2px;pointer-events:auto}
-.mrow{padding:4px 14px;font-size:12px;cursor:pointer}.mrow:hover{background:#2c2a24}.mrow.bad{color:#e0604f}
-.mhead{padding:5px 14px;font-size:11px;color:var(--ink-dim);border-bottom:1px solid var(--edge)}
-.skillspanel{--ptop:330px;left:12px;width:220px}
-.skillrow{margin-bottom:7px}.skillhead{display:flex;justify-content:space-between;font-size:13px}.skilllvl{color:var(--gold);font-weight:bold}
-.skillbar{height:12px}.skillbar .fill{background:linear-gradient(#5a7a96,#3a566e)}.skillbar .label{line-height:12px;font-size:9px}
-.talentpanel{--pbottom:250px;left:50%;transform:translateX(-50%);width:570px;border-color:var(--edge-hi)}
-.tpoints{float:right;font-size:12px;font-weight:normal;color:var(--ink-dim);letter-spacing:0}.tpoints.ready{color:var(--gold)}
-.ttrees{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.ttree{background:rgba(8,9,11,.5);border:1px solid #2e3034;border-radius:2px;padding:6px}
-.tthead{display:flex;justify-content:space-between;font-size:13px;font-weight:bold}.ttspent{color:var(--gold)}
-.ttblurb{font-size:11px;opacity:.6;margin:2px 0 6px;min-height:26px}
-.talent{position:relative;background:var(--iron-lift);border:2px solid #2e3034;border-radius:2px;padding:4px 6px;margin-bottom:5px;cursor:pointer}
+.invgold{color:var(--gold);margin:-3px 0 var(--sp-3)}
+.grid{display:grid;grid-template-columns:repeat(4,60px);gap:var(--sp-2)}
+.cell{position:relative;width:60px;height:60px;box-sizing:border-box;background:var(--iron-lift);border:2px solid var(--edge-dim);border-radius:var(--r);text-align:center;overflow:hidden;cursor:pointer}
+.cell:hover{filter:brightness(1.3)}
+.cell .icon{font-size:var(--fs-2xl);line-height:36px}.cell .icon.ghost{opacity:.25;color:var(--ink)}
+.cell .iname{position:absolute;bottom:1px;left:0;right:0;font-size:var(--fs-xs);line-height:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell .qty{position:absolute;top:1px;left:3px;font-size:var(--fs-sm);font-weight:bold;color:var(--gold)}
+.equip{display:grid;grid-template-columns:repeat(2,60px);gap:var(--sp-3) 10px;justify-content:center;margin-bottom:var(--sp-4)}
+.eqcell .eqlabel{position:absolute;top:1px;left:0;right:0;font-size:var(--fs-xs);opacity:.7}.eqcell .icon{line-height:56px}
+.srow{display:flex;justify-content:space-between;margin-top:var(--sp-2)}.sv{color:var(--gold)}
+.tip{position:fixed;display:none;z-index:10;max-width:220px;pointer-events:none}
+.tname{font-weight:bold;font-size:var(--fs-lg)}.tslot{opacity:.6;font-size:var(--fs-sm)}.tstat{color:var(--moss);margin-top:var(--sp-1)}.tdesc{opacity:.7;margin-top:var(--sp-2);font-style:italic}.tcmp{margin-top:var(--sp-2)}.tcmp.bad{color:var(--bad)}.tcmp.good{color:var(--moss)}.thint{margin-top:var(--sp-2);opacity:.5;font-size:var(--fs-sm)}
+.tval{margin-top:var(--sp-2);color:var(--gold);font-size:var(--fs-sm)}
+.ctxmenu{position:fixed;display:none;z-index:11;padding:0;pointer-events:auto}
+.mrow{padding:var(--sp-2) 14px;cursor:pointer}.mrow:hover{background:var(--iron-hover)}.mrow.bad{color:var(--bad)}
+.mhead{padding:var(--sp-3) 14px;font-size:var(--fs-sm);color:var(--ink-dim);border-bottom:1px solid var(--edge)}
+.skillspanel{--ptop:330px;left:var(--gutter);width:220px}
+.skillrow{margin-bottom:7px}.skillhead{display:flex;justify-content:space-between}.skilllvl{color:var(--gold);font-weight:bold}
+.skillbar{--bar-h:12px;--fill:var(--fill-skill)}
+.talentpanel{--pbottom:250px;left:50%;transform:translateX(-50%);width:570px}
+.ttrees{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-4)}
+.ttree{background:var(--iron-glass);border:1px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-3)}
+.tthead{display:flex;justify-content:space-between;font-weight:bold}.ttspent{color:var(--gold)}
+.ttblurb{font-size:var(--fs-sm);opacity:.6;margin:var(--sp-1) 0 var(--sp-3);min-height:26px}
+.talent{position:relative;background:var(--iron-lift);border:2px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-2) var(--sp-3);margin-bottom:5px;cursor:pointer}
 .talent:hover{border-color:var(--edge-hi)}
 .talent.taken{border-color:var(--gold)}
-.talent.shut{opacity:.45;cursor:default}.talent.shut:hover{border-color:#2e3034}
+.talent.shut{opacity:.45;cursor:default}.talent.shut:hover{border-color:var(--edge-dim)}
 .talent.taken.shut{opacity:.8}
-.tlname{font-size:12px;font-weight:bold}.tlrank{position:absolute;top:4px;right:6px;font-size:11px;color:var(--gold)}
-.treset{text-align:center;margin-top:8px}
-.shoppanel{--ptop:100px;left:262px;width:290px;border-color:#6a5a22}.shopgold{color:var(--gold);margin-bottom:2px}.shophint{font-size:11px;opacity:.6;margin-bottom:6px}
-.tval{margin-top:4px;color:var(--gold);font-size:11px}.frame .gold{color:var(--gold);font-size:12px;margin-top:3px}.frame .status{color:#93b58c;font-size:11px;margin-top:3px;min-height:13px}
+.tlname{font-weight:bold}.tlrank{position:absolute;top:var(--sp-2);right:var(--sp-3);font-size:var(--fs-sm);color:var(--gold)}
+.treset{text-align:center;margin-top:var(--sp-4)}
+.shoppanel{--ptop:100px;--pbottom:250px;--chrome-edge:var(--gold-dim);left:286px;width:290px}.shopgold{color:var(--gold);margin-bottom:var(--sp-1)}.shophint{font-size:var(--fs-sm);opacity:.6;margin-bottom:var(--sp-3)}
 /* centred, but never left of the quest tracker's column (as the dialogue is) */
-.forgepanel{--pbottom:250px;left:max(286px,calc(50% - 175px));width:330px;border-color:#5a3a22}
-.bookpanel{left:262px;width:300px;border-color:var(--edge-hi)}
+.forgepanel{--pbottom:250px;--chrome-edge:var(--ember-dim);left:max(286px,calc(50% - 175px));width:330px}
+.bookpanel{--pbottom:250px;left:286px;width:300px}
 .bookpanel .recipe[draggable="true"]{cursor:grab}
-.pclose{float:right;cursor:pointer;color:var(--ink);opacity:.6}.pclose:hover{opacity:1}
-.rgroup{margin:8px 0 4px;padding-bottom:2px;border-bottom:1px solid var(--edge);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim)}.rgroup:first-child{margin-top:0}
-.recipe{background:var(--iron-lift);border:1px solid #34363a;border-radius:2px;padding:6px 8px;margin-bottom:6px}.recipe.locked{opacity:.8}
-.rhead{display:flex;justify-content:space-between}.rname{font-weight:bold}.rreq{font-size:12px;color:var(--moss)}.rreq.bad,.rin.bad,.psub.bad{color:#e0604f}
-.rstat{color:var(--moss);font-size:12px}.rinputs{margin-top:3px;font-size:12px}.rin{display:inline-block;margin-right:10px;color:var(--moss)}
-.rmeta{font-size:11px;opacity:.6;margin-top:2px}.rbtns{margin-top:5px;display:flex;gap:6px}
-.rbtn{padding:3px 10px;background:#5a3a1c;border:1px solid #000;box-shadow:0 0 0 1px #7a5426;border-radius:2px;font-size:12px;cursor:pointer}.rbtn:hover{background:#7a5026}.rbtn.off{background:#34363a;box-shadow:0 0 0 1px #3b3d42;opacity:.6}
-.swing{position:absolute;left:50%;bottom:96px;width:424px;margin-left:-212px;height:10px;opacity:.55}.swing .fill{background:linear-gradient(#7d8794,#4c5662);width:0}.swing .label{font-size:9px;line-height:10px;letter-spacing:.06em}
-.swing.on{opacity:1;box-shadow:0 0 0 1px #c9a24a,0 0 8px rgba(240,190,80,.45)}.swing.on .fill{background:linear-gradient(#e8c460,#a8802a)}.swing.on.ready .fill{background:linear-gradient(#f4dc8a,#d0a640)}
-.castbar{position:absolute;left:50%;bottom:110px;width:240px;margin-left:-120px;display:none;height:18px}.castbar .fill{background:linear-gradient(#c0883a,#85591f);width:0}.castbar .label{line-height:18px}
-.nodeplate .psub{font-size:10px;color:var(--moss)}
-.msglog{position:absolute;left:12px;bottom:34px;width:300px;max-height:150px;overflow-y:auto;pointer-events:auto;font-size:12px;padding:4px 6px;background:rgba(10,11,14,.6);border-radius:2px;scrollbar-width:thin}
+.recipe{background:var(--iron-lift);border:1px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-3)}.recipe.locked{opacity:.8}
+.rhead{display:flex;justify-content:space-between}.rname{font-weight:bold}.rreq{color:var(--moss)}.rreq.bad,.rin.bad,.psub.bad{color:var(--bad)}
+.rstat{color:var(--moss)}.rinputs{margin-top:var(--sp-2)}.rin{display:inline-block;margin-right:10px;color:var(--moss)}
+.rmeta{font-size:var(--fs-sm);opacity:.6;margin-top:var(--sp-1)}.rbtns{margin-top:5px;display:flex;gap:var(--sp-3)}
+
+/* ---- combat bars ---- */
+.swing{--bar-h:10px;--bar-fs:var(--fs-xs);--fill:var(--fill-steel);position:absolute;left:50%;bottom:96px;width:424px;margin-left:-212px;margin-top:0;opacity:.55}.swing .fill{width:0}.swing .label{letter-spacing:.06em}
+.swing.on{--fill:var(--fill-gold);opacity:1;box-shadow:0 0 0 1px var(--gold),0 0 8px rgba(240,190,80,.45)}.swing.on.ready{--fill:var(--fill-gold-hi)}
+.castbar{--bar-h:18px;--fill:var(--fill-cast);position:absolute;left:50%;bottom:110px;width:240px;margin-left:-120px;margin-top:0;display:none}.castbar .fill{width:0}
+
+/* ---- message log, quest tracker, dialogue ---- */
+.msglog{position:absolute;left:var(--gutter);bottom:34px;width:300px;max-height:150px;pointer-events:auto;padding:var(--sp-2) var(--sp-3);background:var(--iron-glass);border-radius:var(--r)}
 .msglog:empty{display:none}
-.logline{margin-top:2px;color:#c4bca6}.log-xp{color:#a995d6}.log-loot{color:var(--moss)}.log-drop{color:#e8d9a0}.log-kill{color:#a09a8a}.log-lvl{color:var(--gold);font-weight:bold}.log-quest{color:var(--arcane);font-weight:bold}.log-bad{color:#e0604f}
-.tracker{position:absolute;top:12px;left:12px;width:238px;background:var(--iron);border:1px solid var(--edge);border-left:3px solid var(--arcane);box-shadow:inset 0 0 0 1px #000,0 2px 6px rgba(0,0,0,.6);border-radius:2px;padding:8px 10px}
+.logline{margin-top:var(--sp-1);color:var(--ink)}.log-xp{color:var(--violet)}.log-loot{color:var(--moss)}.log-drop{color:var(--gold-hi)}.log-kill{color:var(--ink-dim)}.log-lvl{color:var(--gold);font-weight:bold}.log-quest{color:var(--arcane);font-weight:bold}.log-bad{color:var(--bad)}
+.tracker{position:absolute;top:var(--gutter);left:var(--gutter);width:238px;padding:var(--sp-4) 10px;border-left:3px solid var(--arcane)}
 .tracker.ready{border-left-color:var(--gold);animation:readypulse 1.4s ease-in-out infinite}
 @keyframes readypulse{50%{box-shadow:inset 0 0 0 1px #000,0 0 12px #b8601a}}
-.qtitle{font-weight:bold;color:var(--gold);margin-bottom:5px}.qline{font-size:13px;margin-top:3px}.qline.done{color:var(--moss);opacity:.8}
-.qnav{display:none;align-items:center;gap:8px;margin-top:8px;padding-top:6px;border-top:1px solid var(--edge);font-size:12px;color:var(--arcane)}
-.qarrow{display:inline-block;font-size:20px;color:var(--gold);transition:transform .1s}
+.qtitle{font-weight:bold;color:var(--gold);margin-bottom:5px}.qline{margin-top:var(--sp-2)}.qline.done{color:var(--moss);opacity:.8}
+.qnav{display:none;align-items:center;gap:var(--sp-4);margin-top:var(--sp-4);padding-top:var(--sp-3);border-top:1px solid var(--edge);color:var(--arcane)}
+.qarrow{display:inline-block;font-size:var(--fs-xl);color:var(--gold);transition:transform .1s}
 /* Above the unit frames, centred on the screen -- but never left of the quest tracker's column: in a short window the panel
    rides up level with the tracker, and in a narrow one its centred left edge would otherwise run under it. */
-.panel.dialogue{box-sizing:border-box;left:max(286px,calc(50% - 269px));top:auto;bottom:250px;transform:none;width:538px;max-width:calc(100vw - 298px);border-color:var(--edge-hi)}
-.dhint{float:right;font-size:11px;font-weight:normal;color:var(--ink-dim)}
-.dline{margin-bottom:8px;font-size:14px;line-height:1.4}
-.dopt{margin-top:5px;padding:5px 8px;border-radius:2px;background:var(--iron-lift);border:1px solid #34363a;cursor:pointer;font-size:13px;color:#e8d9a0}.dopt:hover{background:#3a362c}
-.helpoverlay{max-height:calc(100vh - 24px - 34px);left:50%;top:50%;transform:translate(-50%,-50%);width:560px;padding:16px 20px;border:1px solid var(--edge-hi);z-index:20}
-.helptitle{font-size:22px;font-weight:bold;color:var(--gold);margin-bottom:6px;letter-spacing:.06em}.helpgoal{font-size:14px;margin-bottom:10px;line-height:1.4}
-.helpgrid{display:grid;grid-template-columns:150px 1fr;gap:4px 12px;font-size:13px}.hkey{color:var(--gold);font-weight:bold}
-.helpnote{margin-top:10px;font-size:12px;opacity:.7}.helpok{text-align:center}
-.menubar{position:absolute;right:12px;bottom:10px;display:flex;gap:6px;pointer-events:auto}
-.mbtn{padding:4px 10px;background:var(--iron);border:1px solid var(--edge);border-radius:2px;font-size:12px;cursor:pointer}.mbtn:hover{background:#2c2a24}
+.panel.dialogue{box-sizing:border-box;left:max(286px,calc(50% - 269px));top:auto;bottom:250px;transform:none;width:538px;max-width:calc(100vw - 298px)}
+.dline{margin-bottom:var(--sp-4);font-size:var(--fs-lg);line-height:1.4}
+.dopt{color:var(--gold-hi)}.dopt.treset,.dopt.helpok{text-align:center}
+
+/* ---- help overlay, menu bar ---- */
+.helpoverlay{background:var(--iron-veil);max-height:calc(100vh - 2*var(--gutter) - 34px);left:50%;top:50%;transform:translate(-50%,-50%);width:560px;padding:var(--sp-6) 20px;border-color:var(--edge-hi);z-index:20}
+.helptitle{font-size:var(--fs-2xl);font-weight:bold;color:var(--gold);margin-bottom:var(--sp-3);letter-spacing:.06em}.helpgoal{font-size:var(--fs-lg);margin-bottom:10px;line-height:1.4}
+.helpgrid{display:grid;grid-template-columns:150px 1fr;gap:var(--sp-2) var(--sp-5)}.hkey{color:var(--gold);font-weight:bold}
+.helpnote{margin-top:10px;opacity:.7}
+.menubar{position:absolute;right:var(--gutter);bottom:var(--sp-2);display:flex;gap:var(--sp-3);pointer-events:auto}
+.mbtn{padding:var(--sp-1) var(--sp-4);background:var(--iron)}
 .hurt{position:absolute;inset:0;opacity:0;box-shadow:inset 0 0 120px 30px rgba(170,15,15,.7)}
 .hurt.show{animation:hurt .45s ease-out}.hurt.heavy.show{animation:hurt 1.2s ease-out}
 @keyframes hurt{0%{opacity:1}100%{opacity:0}}
-.questbanner{top:20%;color:var(--arcane);font-size:64px;text-shadow:0 0 22px #1a8fc0,0 3px 4px #000}.questbanner.show{animation:lvl 3.2s ease-out}
-/* the world map screen and the flight ride (flight-ui.ts): the map scene is drawn in place of the game, so the game's own overlays step aside */
+.questbanner{top:20%;color:var(--arcane);text-shadow:0 0 22px #1a8fc0,0 3px 4px #000}.questbanner.show{animation:lvl 3.2s ease-out}
+
+/* ---- the world map screen and the flight ride (flight-ui.ts): the map scene is drawn in place of the game, so the game's own overlays step aside ---- */
 .hud.mapmode .tracker,.hud.mapmode .actionbar,.hud.mapmode .swing,.hud.mapmode .frame.target,.hud.mapmode .msglog,.hud.mapmode .panel,.hud.mapmode .menubar,.hud.mapmode .xp,.hud.mapmode .minimap{display:none!important}
-.maplayer{position:absolute;inset:0;pointer-events:none}
-.maptitle{position:absolute;top:22px;left:0;right:0;text-align:center;font-size:30px;letter-spacing:.2em;color:var(--gold);text-shadow:0 0 14px #000,0 2px 3px #000}
-.maphint{position:absolute;bottom:22px;left:0;right:0;text-align:center;font-size:13px;color:var(--ink-dim)}
-.maptown{position:absolute;left:0;top:0;white-space:nowrap;font-size:17px;font-weight:bold;color:#ffd870;text-shadow:0 0 4px #000,0 2px 4px #000,0 0 10px #000}.maptown.lost{color:var(--ink-dim);font-weight:normal}.maptown.mapyou{color:var(--arcane);font-size:14px}
-.ridelayer{position:absolute;inset:0;pointer-events:none}
-.ridetitle{position:absolute;top:40px;left:0;right:0;text-align:center;font-size:28px;letter-spacing:.12em;color:var(--gold);text-shadow:0 0 14px #000,0 2px 3px #000}
-.ridebar{position:absolute;top:86px;left:50%;width:280px;height:6px;margin-left:-140px;background:rgba(8,9,11,.7);border:1px solid #000;box-shadow:0 0 0 1px var(--edge)}.ridefill{height:100%;width:0;background:var(--gold)}
+.maplayer,.ridelayer{position:absolute;inset:0;pointer-events:none}
+.maptitle,.ridetitle{position:absolute;left:0;right:0;text-align:center;font-size:var(--fs-3xl);color:var(--gold);text-shadow:0 0 14px #000,0 2px 3px #000}
+.maptitle{top:22px;letter-spacing:.2em}.ridetitle{top:40px;letter-spacing:.12em}
+.maphint{position:absolute;bottom:22px;left:0;right:0;text-align:center;color:var(--ink-dim)}
+.maptown{position:absolute;left:0;top:0;white-space:nowrap;font-size:var(--fs-xl);font-weight:bold;color:var(--spark);text-shadow:0 0 4px #000,0 2px 4px #000,0 0 10px #000}.maptown.lost{color:var(--ink-dim);font-weight:normal}.maptown.mapyou{color:var(--arcane);font-size:var(--fs-lg)}
+.ridebar{--fill:var(--gold);position:absolute;top:86px;left:50%;width:280px;margin-left:-140px}.ridebar .ridefill{width:0}
 </style>
 </head>
 <body>

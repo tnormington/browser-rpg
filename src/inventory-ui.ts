@@ -7,21 +7,13 @@ import { INVENTORY_SIZE, InvAction, ItemStack } from './sim/inventory';
 import { EQUIP_SLOTS, EquipSlot, ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { reductionOf, swingInterval } from './sim/combat';
 import { nearVendor } from './sim/shop';
-import { HudWindow, panelWindow } from './dom';
+import { HudWindow, el, panelWindow } from './dom';
 
 const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖' };
 const SLOT_LABEL: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs' };
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 
 type MenuRow = [label: string, run: (() => void) | null, cls?: string];
-
-function div(parent: HTMLElement, cls: string, text = ''): HTMLDivElement {
-  const d = document.createElement('div');
-  d.className = cls;
-  if (text) d.textContent = text;
-  parent.appendChild(d);
-  return d;
-}
 
 export class InventoryUi {
   private invPanel: HTMLElement;
@@ -37,17 +29,17 @@ export class InventoryUi {
   readonly panels: Record<'inv' | 'char', HudWindow>;
 
   constructor(root: HTMLElement, private send: (a: InvAction) => void, private sell: (slot: number, qty: number) => void) {
-    this.invPanel = div(root, 'panel invpanel');
-    const title = div(this.invPanel, 'ptitle', 'Inventory  (I)');
-    div(title, 'psort', 'Sort').addEventListener('click', () => this.send({ k: 'sort' }));
-    this.gold = div(this.invPanel, 'invgold');
-    this.grid = div(this.invPanel, 'grid');
-    this.charPanel = div(root, 'panel charpanel');
-    div(this.charPanel, 'ptitle', 'Character  (C)');
-    this.eqEl = div(this.charPanel, 'equip');
-    this.statsEl = div(this.charPanel, 'stats');
-    this.tip = div(root, 'tip');
-    this.menu = div(root, 'ctxmenu');
+    this.invPanel = el(root, 'panel invpanel');
+    const title = el(this.invPanel, 'ptitle', 'Inventory  (I)');
+    el(title, 'btn sm psort', 'Sort').addEventListener('click', () => this.send({ k: 'sort' }));
+    this.gold = el(this.invPanel, 'invgold');
+    this.grid = el(this.invPanel, 'grid');
+    this.charPanel = el(root, 'panel charpanel');
+    el(this.charPanel, 'ptitle', 'Character  (C)');
+    this.eqEl = el(this.charPanel, 'equip');
+    this.statsEl = el(this.charPanel, 'stats');
+    this.tip = el(root, 'pop tip');
+    this.menu = el(root, 'pop ctxmenu');
     addEventListener('mousedown', e => { if (!this.menu.contains(e.target as Node)) this.menu.style.display = 'none'; });
     this.invPanel.style.display = this.charPanel.style.display = 'none';
     this.panels = { inv: panelWindow(this.invPanel), char: panelWindow(this.charPanel) };
@@ -79,7 +71,7 @@ export class InventoryUi {
   private renderGrid(s: GameState) {
     this.grid.textContent = '';
     for (let i = 0; i < INVENTORY_SIZE; i++) {
-      const cell = div(this.grid, 'cell');
+      const cell = el(this.grid, 'cell');
       cell.dataset.slot = String(i);
       const st = s.player.inventory[i];
       cell.addEventListener('dragover', e => e.preventDefault());
@@ -109,10 +101,10 @@ export class InventoryUi {
   private renderEquip(s: GameState) {
     this.eqEl.textContent = '';
     for (const slot of EQUIP_SLOTS) {
-      const cell = div(this.eqEl, 'cell eqcell');
-      div(cell, 'eqlabel', SLOT_LABEL[slot]);
+      const cell = el(this.eqEl, 'cell eqcell');
+      el(cell, 'eqlabel', SLOT_LABEL[slot]);
       const id = s.player.equipment[slot];
-      if (!id) { div(cell, 'icon ghost', SLOT_ICON[slot]); continue; }
+      if (!id) { el(cell, 'icon ghost', SLOT_ICON[slot]); continue; }
       this.fillCell(cell, id, 1);
       if (isBroken(s.player, id)) cell.style.opacity = '0.45'; // worn but giving nothing
       cell.addEventListener('click', () => this.send({ k: 'unequip', slot }));
@@ -133,15 +125,15 @@ export class InventoryUi {
       ['Damage reduction', `${Math.round(reductionOf(p) * 100)}%`],
     ];
     this.statsEl.textContent = '';
-    for (const [k, v] of lines) { const r = div(this.statsEl, 'srow'); div(r, 'sk', k); div(r, 'sv', v); }
+    for (const [k, v] of lines) { const r = el(this.statsEl, 'srow'); el(r, 'sk', k); el(r, 'sv', v); }
   }
 
   private fillCell(cell: HTMLElement, id: string, qty: number) {
     const def = ITEMS[id];
     cell.style.borderColor = hex(TIER_COLORS[def.tier]);
-    div(cell, 'icon', def.slot ? SLOT_ICON[def.slot] : def.use ? '🍖' : '◆').style.color = hex(TIER_COLORS[def.tier]);
-    div(cell, 'iname', def.name);
-    if (qty > 1) div(cell, 'qty', String(qty));
+    el(cell, 'icon', def.slot ? SLOT_ICON[def.slot] : def.use ? '🍖' : '◆').style.color = hex(TIER_COLORS[def.tier]);
+    el(cell, 'iname', def.name);
+    if (qty > 1) el(cell, 'qty', String(qty));
   }
 
   private hover(cell: HTMLElement, id: string, s: GameState, worn = false) {
@@ -153,29 +145,28 @@ export class InventoryUi {
   private showTip(id: string, s: GameState, worn: boolean, e: MouseEvent) {
     const def = ITEMS[id];
     this.tip.textContent = '';
-    div(this.tip, 'tname', def.name).style.color = hex(TIER_COLORS[def.tier]);
-    if (def.slot) div(this.tip, 'tslot', SLOT_LABEL[def.slot]);
-    for (const line of describeStats(def)) div(this.tip, 'tstat', line);
+    el(this.tip, 'tname', def.name).style.color = hex(TIER_COLORS[def.tier]);
+    if (def.slot) el(this.tip, 'tslot', SLOT_LABEL[def.slot]);
+    for (const line of describeStats(def)) el(this.tip, 'tstat', line);
     if (def.slot && durabilityOf(s.player, id) < MAX_DURABILITY) {
       const left = durabilityOf(s.player, id);
-      div(this.tip, 'tcmp', left > 0 ? `Worn down: ${left}% durability` : 'Broken: gives nothing until a merchant repairs it').style.color = '#e0604f';
+      el(this.tip, 'tcmp bad', left > 0 ? `Worn down: ${left}% durability` : 'Broken: gives nothing until a merchant repairs it');
     }
-    div(this.tip, 'tdesc', def.desc);
-    div(this.tip, 'tval', `Sells for ${def.value} gold`);
+    el(this.tip, 'tdesc', def.desc);
+    el(this.tip, 'tval', `Sells for ${def.value} gold`);
     if (def.slot && !worn) {
       const cur = s.player.equipment[def.slot];
       const dd = (def.stats?.damage ?? 0) - (cur ? ITEMS[cur].stats?.damage ?? 0 : 0);
       const da = (def.stats?.armor ?? 0) - (cur ? ITEMS[cur].stats?.armor ?? 0 : 0);
       const diff = [dd && `${dd > 0 ? '+' : ''}${dd} damage`, da && `${da > 0 ? '+' : ''}${da} armour`].filter(Boolean);
       if (diff.length) {
-        const line = div(this.tip, 'tcmp', `If equipped: ${diff.join(', ')}`);
-        line.style.color = (dd >= 0 && da >= 0) ? '#93b58c' : '#e0604f';
+        el(this.tip, `tcmp ${dd >= 0 && da >= 0 ? 'good' : 'bad'}`, `If equipped: ${diff.join(', ')}`);
       }
-      div(this.tip, 'thint', 'Click to equip  ·  Right-click to drop or destroy');
-    } else if (worn) div(this.tip, 'thint', 'Click to unequip');
-    else if (def.use) div(this.tip, 'thint', 'Click to eat (G eats the best food)  ·  Right-click to drop or destroy');
-    else div(this.tip, 'thint', 'Right-click to drop or destroy');
-    if (!worn && nearVendor(s)) div(this.tip, 'thint', `Shift-click to sell the stack (${def.value} gold each)`);
+      el(this.tip, 'thint', 'Click to equip  ·  Right-click to drop or destroy');
+    } else if (worn) el(this.tip, 'thint', 'Click to unequip');
+    else if (def.use) el(this.tip, 'thint', 'Click to eat (G eats the best food)  ·  Right-click to drop or destroy');
+    else el(this.tip, 'thint', 'Right-click to drop or destroy');
+    if (!worn && nearVendor(s)) el(this.tip, 'thint', `Shift-click to sell the stack (${def.value} gold each)`);
     this.tip.style.display = 'block';
     this.moveTip(e);
   }
@@ -213,9 +204,9 @@ export class InventoryUi {
   private openMenu(x: number, y: number, rows: MenuRow[], head = '') {
     this.hideTip();
     this.menu.textContent = '';
-    if (head) div(this.menu, 'mhead', head);
+    if (head) el(this.menu, 'mhead', head);
     for (const [label, run, cls] of rows) {
-      const row = div(this.menu, `mrow${cls ? ` ${cls}` : ''}`, label);
+      const row = el(this.menu, `mrow${cls ? ` ${cls}` : ''}`, label);
       row.addEventListener('click', () => { this.menu.style.display = 'none'; run?.(); });
     }
     this.menu.style.left = `${x}px`;

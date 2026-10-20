@@ -8,7 +8,7 @@
     "dev:ensure": "node scripts/dev-server.mjs ensure",
     "dev:status": "node scripts/dev-server.mjs status",
     "dev:restart": "node scripts/dev-server.mjs restart",
-    "verify": "tsx src/golden-path.test.ts && tsx src/sim/nav.test.ts && tsx src/consumables.test.ts && tsx src/flight.test.ts && tsx src/hud-ui.test.ts && tsx src/weather.test.ts && tsx src/events.test.ts && tsx src/thornwick.test.ts && tsx src/herbalism.test.ts && tsx src/rotroot.test.ts",
+    "verify": "tsx src/golden-path.test.ts && tsx src/sim/nav.test.ts && tsx src/consumables.test.ts && tsx src/flight.test.ts && tsx src/hud-ui.test.ts && tsx src/weather.test.ts && tsx src/events.test.ts && tsx src/thornwick.test.ts && tsx src/herbalism.test.ts && tsx src/rotroot.test.ts && node bench/hud-style.mjs",
     "build": "tsc --noEmit && vite build",
     "bench": "node bench/run.mjs",
     "shot": "node bench/run.mjs --shot-only --levels 1"

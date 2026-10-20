@@ -6,7 +6,7 @@ import { ABILITIES } from './sim/data';
 import { ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { hasRoom } from './sim/inventory';
 import { damagedGear, durabilityOf, repairCost } from './sim/durability';
-import { el } from './dom';
+import { actionButton, el, titleRow } from './dom';
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 
@@ -22,9 +22,7 @@ export class ShopUi {
 
   constructor(root: HTMLElement, private buy: (item: string, qty: number) => void, private learn: (slot: number) => void, private repair: () => void) {
     this.panel = el(root, 'panel shoppanel');
-    const title = this.titleEl = el(this.panel, 'ptitle');
-    const close = el(title, 'pclose', '✕');
-    close.addEventListener('click', () => this.setOpen(false));
+    this.titleEl = titleRow(this.panel, '', () => this.setOpen(false));
     this.goldEl = el(this.panel, 'shopgold');
     this.hint = el(this.panel, 'shophint');
     this.list = el(this.panel, 'recipes');
@@ -51,7 +49,7 @@ export class ShopUi {
     el(head, 'rname', 'Repair gear');
     el(head, `rreq${!damaged.length || p.gold >= cost ? '' : ' bad'}`, damaged.length ? `${cost} gold` : 'nothing to mend');
     for (const id of damaged) el(row, 'rstat', `${ITEMS[id].name}: ${durabilityOf(p, id) > 0 ? `${durabilityOf(p, id)}%` : 'broken'}, ${repairCost(p, id)} gold`);
-    if (damaged.length) el(el(row, 'rbtns'), `rbtn${can ? '' : ' off'}`, 'Repair').addEventListener('click', () => this.repair());
+    if (damaged.length) actionButton(el(row, 'rbtns'), 'Repair', can).addEventListener('click', () => this.repair());
   }
 
   update(s: GameState) {
@@ -75,7 +73,7 @@ export class ShopUi {
       el(head, `rreq${known || (ready && p.gold >= price) ? '' : ' bad'}`, known ? 'Learned' : ready ? `${price} gold` : `combat level ${a.unlockLevel}`);
       el(row, 'rstat', a.desc);
       if (known) continue;
-      el(el(row, 'rbtns'), `rbtn${can ? '' : ' off'}`, 'Learn').addEventListener('click', () => this.learn(slot));
+      actionButton(el(row, 'rbtns'), 'Learn', can).addEventListener('click', () => this.learn(slot));
     }
     if (this.vendor.stock.length) this.repairRow(p, near);
     for (const id of this.vendor.stock) {
@@ -87,7 +85,7 @@ export class ShopUi {
       el(head, 'rname', def.name).style.color = hex(TIER_COLORS[def.tier]);
       el(head, `rreq${p.gold >= price ? '' : ' bad'}`, `${price} gold`);
       for (const line of describeStats(def)) el(row, 'rstat', line);
-      const b = el(el(row, 'rbtns'), `rbtn${can ? '' : ' off'}`, 'Buy');
+      const b = actionButton(el(row, 'rbtns'), 'Buy', can);
       b.addEventListener('click', () => this.buy(id, 1));
     }
   }

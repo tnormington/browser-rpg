@@ -24,7 +24,7 @@ import { QuestUi } from './quest-ui';
 import { MenuUi } from './menu-ui';
 import { SpellbookUi } from './spellbook-ui';
 import { Minimap } from './minimap';
-import { HudWindow } from './dom';
+import { HudWindow, el } from './dom';
 import { loadBar, saveBar } from './storage';
 
 const PUMMEL = ABILITIES.findIndex(a => a.kind === 'interrupt');
@@ -85,14 +85,6 @@ const FAIL_TEXT = {
 } as const;
 /** How long a freshly unlocked slot keeps glowing, and the gap between banners when one level hands over several abilities. */
 const UNLOCK_GLOW_MS = 4000, UNLOCK_BANNER_GAP_MS = 1900;
-
-function el(parent: HTMLElement, cls: string, text = ''): HTMLDivElement {
-  const d = document.createElement('div');
-  d.className = cls;
-  if (text) d.textContent = text;
-  parent.appendChild(d);
-  return d;
-}
 
 function bar(parent: HTMLElement, cls: string) {
   const outer = el(parent, `bar ${cls}`);
@@ -200,7 +192,7 @@ export class Hud {
   private nodePlates = new Map<number, { root: HTMLElement; sub: HTMLElement }>();
 
   constructor(private project: Project, private yaw: () => number, actions: HudActions) {
-    const pf = el(this.root, 'frame player');
+    const pf = el(this.root, 'chrome frame player');
     this.playerLvl = el(pf, 'name');
     this.goldEl = el(pf, 'gold');
     this.statusEl = el(pf, 'status');
@@ -208,7 +200,7 @@ export class Hud {
     this.energy = bar(pf, 'energy');
     this.playerStatus = new StatusRow(el(pf, 'buffs'));
 
-    this.targetFrame = el(this.root, 'frame target');
+    this.targetFrame = el(this.root, 'chrome frame target');
     this.targetName = el(this.targetFrame, 'name');
     this.targetHp = bar(this.targetFrame, 'enemyhp');
     this.targetCast = bar(this.targetFrame, 'enemycast');
@@ -653,8 +645,8 @@ export class Hud {
         const root = el(this.root, 'plate');
         const def = ENEMY_TYPES[e.type];
         el(root, 'pname', `${def.name} ${def.level}`);
-        const cast = el(root, 'pcast');
-        plate = { root, fill: el(el(root, 'pbar'), 'fill'), cast, castFill: el(cast, 'fill') };
+        const cast = el(root, 'bar thin pcast');
+        plate = { root, fill: el(el(root, 'bar thin pbar'), 'fill'), cast, castFill: el(cast, 'fill') };
         this.plates.set(e.id, plate);
       }
       plate.root.style.display = 'block';
