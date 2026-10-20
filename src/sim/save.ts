@@ -9,7 +9,7 @@ import { EQUIP_SLOTS, ITEMS } from './items';
 import { refreshPlayerStats } from './combat';
 import { BUFFS } from './consumables';
 import { ABILITIES, MAX_DURABILITY, PLAYER_SPAWN } from './data';
-import { QUEST2_STAGES, QUEST3_STAGES, QUEST4_STAGES, QUEST5_STAGES, QUEST_STAGES, Quest2Stage, Quest3Stage, Quest4Stage, Quest5Stage, QuestStage } from './quest';
+import { QUEST2_STAGES, QUEST3_STAGES, QUEST4_STAGES, QUEST5_STAGES, QUEST6_STAGES, QUEST_STAGES, Quest2Stage, Quest3Stage, Quest4Stage, Quest5Stage, Quest6Stage, QuestStage } from './quest';
 import { legalTalents, refreshTalents, talentById } from './talents';
 import { nearestTown, resolveCollisions } from './world';
 import { MAX_GOLD } from './shop';
@@ -39,7 +39,7 @@ interface SaveFile {
     buffs?: { id: string; left: number }[]; // absent in saves from before cooking: nobody was Well Fed
   };
   found?: string[]; // flight masters found, by town id: absent in saves from before flights (only home is found)
-  quest: { stage: QuestStage; kills: Record<string, number>; second?: Quest2Stage; third?: Quest3Stage; fourth?: Quest4Stage; fifth?: Quest5Stage }; // `second` is absent in saves from before the cave, `third` in saves from before the road
+  quest: { stage: QuestStage; kills: Record<string, number>; second?: Quest2Stage; third?: Quest3Stage; fourth?: Quest4Stage; fifth?: Quest5Stage; sixth?: Quest6Stage }; // `second` is absent in saves from before the cave, `third` in saves from before the road
   enemies: { id: number; type: string; deadIn: number }[]; // deadIn > 0: still respawning
   nodes: { id: number; type: string; charges: number; respawnIn: number }[];
   drops: { id: number; item: string; qty: number; x: number; z: number; age: number }[];
@@ -68,7 +68,7 @@ export function serialize(s: GameState): string {
       learned: [...p.learned],
     },
     found: [...s.found],
-    quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second, third: s.quest.third, fourth: s.quest.fourth, fifth: s.quest.fifth },
+    quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second, third: s.quest.third, fourth: s.quest.fourth, fifth: s.quest.fifth, sixth: s.quest.sixth },
     enemies: s.enemies.map(e => ({ id: e.id, type: e.type, deadIn: e.state === 'dead' ? Math.max(0, e.respawnIn) : 0 })),
     nodes: s.nodes.map(n => ({ id: n.id, type: n.type, charges: n.charges, respawnIn: n.respawnIn })),
     drops: s.drops.map(d => ({ id: d.id, item: d.item, qty: d.qty, x: d.x, z: d.z, age: d.age })),
@@ -183,6 +183,10 @@ export function deserialize(raw: string): GameState | null {
     if (fq.fifth !== undefined && !QUEST5_STAGES.includes(fq.fifth)) return null;
     s.quest.fifth = fq.fifth ?? (s.quest.third === 'cleared' ? 'offer' : 'locked');
     if (s.quest.fifth !== 'locked' && s.quest.third !== 'cleared') return null; // the Strand's work comes after the road's, never before
+    // likewise the Rotroot's (the bible's Q5): on offer if the Strand was cleared, locked otherwise, and never open before it
+    if (fq.sixth !== undefined && !QUEST6_STAGES.includes(fq.sixth)) return null;
+    s.quest.sixth = fq.sixth ?? (s.quest.fifth === 'cleared' ? 'offer' : 'locked');
+    if (s.quest.sixth !== 'locked' && s.quest.fifth !== 'cleared') return null;
     for (const [type, n] of Object.entries(fq.kills)) s.quest.kills[type] = num(n, 0, 1000, 'kills');
 
     // enemies / nodes: matched by id and type, so a changed spawn table is ignored rather than mis-applied

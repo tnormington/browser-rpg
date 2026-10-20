@@ -62,7 +62,7 @@ function actionFailText(ev: Extract<GameEvent, { t: 'actionfail' }>): string {
 
 type Project = (x: number, y: number, z: number) => { x: number; y: number } | null;
 
-const ICONS = ['⚔', '🔨', '🗡', '❤', '🌀', '✊', '🌪'];
+const ICONS = ['⚔', '🔨', '🗡', '❤', '🌀', '✊', '🌪', '🛡'];
 /** The key for each bar slot, in order: a longer bar is more entries here, and the bar lays itself out. */
 export const BAR_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'KeyQ', 'KeyE', 'KeyR', 'KeyF'];
 export const keyLabel = (barSlot: number) => BAR_KEYS[barSlot].replace(/^(Digit|Key)/, '');
@@ -344,7 +344,7 @@ export class Hud {
         if (ev.reason === 'gcd') continue; // too noisy while mashing; the sweep already shows it
         this.say(ev.reason === 'locked'
           ? (s.player.combat.level >= ABILITIES[ev.slot].unlockLevel
-            ? `${ABILITIES[ev.slot].name} is taught in Saltmarrow: ${ABILITIES[ev.slot].trainer!.price} gold`
+            ? `${ABILITIES[ev.slot].name} is taught by ${VENDORS.find(v => v.id === ABILITIES[ev.slot].trainer!.vendor)!.name}: ${ABILITIES[ev.slot].trainer!.price} gold`
             : `${ABILITIES[ev.slot].name} unlocks at combat level ${ABILITIES[ev.slot].unlockLevel} (you are level ${s.player.combat.level})`)
           : FAIL_TEXT[ev.reason]);
       } else if (ev.t === 'loot') {
@@ -389,7 +389,7 @@ export class Hud {
         this.say('Your meal is spoiled: you were hit');
         this.note('You were hit and spat out your meal.', 'log-bad');
       } else if (ev.t === 'buff') {
-        this.note(ev.on ? `${BUFFS[ev.id].name}: +${Math.round((BUFFS[ev.id].maxHp ?? 0) * 100)}% max health.` : `${BUFFS[ev.id].name} has worn off.`, 'log-info');
+        this.note(ev.on ? `${BUFFS[ev.id].name}: ${BUFFS[ev.id].desc}` : `${BUFFS[ev.id].name} has worn off.`, 'log-info');
       } else if (ev.t === 'gate') {
         this.say(`${ev.keeper}: "${ev.text}"`);
         this.note(`${ev.keeper}: "${ev.text}" (combat ${ev.need} needed, you are ${s.player.combat.level})`, 'log-quest');
@@ -563,8 +563,9 @@ export class Hud {
       }
       const a = ABILITIES[i];
       const cd = p.cd[i];
-      const remaining = Math.max(cd, p.gcd);
-      const total = cd > p.gcd ? cooldownOf(p, i) : GCD;
+      const gcd = a.offGcd ? 0 : p.gcd; // an off-GCD button does not dim while the GCD runs: it is the one you can press
+      const remaining = Math.max(cd, gcd);
+      const total = cd > gcd ? cooldownOf(p, i) : GCD;
       const frac = remaining > 0 ? remaining / total : 0;
       slot.sweep.style.background = frac > 0
         ? `conic-gradient(rgba(0,0,0,0.65) ${frac * 360}deg, transparent 0)` : 'none';
@@ -577,7 +578,7 @@ export class Hud {
       const outOfRange = !locked && !!t && a.range > 0 && Math.hypot(t.x - p.x, t.z - p.z) > a.range;
       slot.root.classList.toggle('noenergy', noEnergy);
       slot.root.classList.toggle('outrange', outOfRange);
-      slot.root.classList.toggle('queued', p.queued === i);
+      slot.root.classList.toggle('queued', p.queued === i || p.queuedOff === i);
     }
 
     // nameplates

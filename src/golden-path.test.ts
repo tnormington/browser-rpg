@@ -3141,7 +3141,7 @@ section('HOM-46 adamant: Mining 28 (HOM-56), a smithed set, and gear that asks f
 {
   const sets = ['adamant_helm', 'adamant_chestplate', 'adamant_greaves', 'adamant_blade'];
   assert(sets.every(id => ITEMS[id].req?.combat === 14 && ITEMS[id].tier === 5), 'every adamant piece is tier 5 and needs combat 14');
-  assert(Object.entries(ITEMS).filter(([id]) => !sets.includes(id) && id !== 'marrows_edge').every(([, d]) => d.req === undefined), 'nothing older has a requirement (Marrow\'s Edge, HOM-64, is newer and asks for combat 18): no old save is touched');
+  assert(Object.entries(ITEMS).filter(([id]) => !sets.includes(id) && id !== 'marrows_edge' && id !== 'rotroot_edge').every(([, d]) => d.req === undefined), 'nothing older has a requirement (Marrow\'s Edge, HOM-64, and the Rotroot Edge, HOM-66, are newer and ask for combat 18 and 26): no old save is touched');
   assert(deriveStats({ ...emptyEquipment(), head: 'adamant_helm', chest: 'adamant_chestplate', legs: 'adamant_greaves' }).armor === 68 && ITEMS.adamant_blade.stats!.damage === 40, 'the set is 16 + 30 + 22 = 68 armour, the blade 40: the bible\'s numbers');
   assert(deriveStats({ ...emptyEquipment(), weapon: 'adamant_blade' }).weaponDamage > deriveStats({ ...emptyEquipment(), weapon: 'warden_edge' }).weaponDamage, 'the Adamant Blade beats the Warden\'s Edge');
   assert(describeStatsHas('adamant_helm', 'Requires Combat 14'), 'and the tooltip says so');
@@ -3586,7 +3586,7 @@ section('HOM-64 dungeons as data: the Hollow is the first, the Drowned Grotto th
   assert(isOpen(q) && activeQuestView(q).target !== null, 'and the door is open, with the Captain as the tracker\'s next mark');
   const rt = deserialize(serialize(q))!;
   assert((rt.quest.fifth as string) === 'cleared' && rt.quest.kills.drowned_sailor === 4, 'the chain survives a save and load');
-  const oldSave = JSON.parse(serialize(q)); delete oldSave.quest.fifth;
+  const oldSave = JSON.parse(serialize(q)); delete oldSave.quest.fifth; delete oldSave.quest.sixth; // (a save from before HOM-64 has neither the Strand's chain nor the Rotroot's)
   assert(deserialize(JSON.stringify(oldSave))!.quest.fifth === 'offer', 'a save from before it, with the road cleared, finds it on offer');
   const badSave = JSON.parse(serialize(quietState(6403))); badSave.quest.fifth = 'hunt';
   assert(deserialize(JSON.stringify(badSave)) === null, 'a save with it open before the road is cleared is refused');
@@ -3646,7 +3646,7 @@ section('HOM-75 the Rotroot: the third dungeon, in Thornwick\'s frame');
   const spawnsIn = REGIONS.filter(r => r.dungeon === 'rotroot').flatMap(r => r.spawns ?? []);
   assert(spawnsIn.map(sp => sp.type).sort().join() === 'rotroot_mother,rotwood_cultist,rotwood_cultist,rotwood_cultist,thorn_warden' && spawnsIn.every(sp => dungeonAt(sp.x, sp.z) === rr), 'a sentry, a warden and two cultists, and the Mother: every one on the Rotroot\'s floor');
 
-  // the door: combat 22
+  // the door: combat 22 and Q5
   const s = quietState(7501);
   const door = { x: dx, z: dz + 62 };
   assert(!dungeonOpen(s, rr), 'a new game has it shut');
@@ -3654,10 +3654,12 @@ section('HOM-75 the Rotroot: the third dungeon, in Thornwick\'s frame');
   for (let n = 0; n < 120; n++) tick(s, { dirZ: 1 });
   assert(dungeonAt(s.player.x, s.player.z) === null && s.player.z < dz + 70, 'shut: walking south into the roots stops at the door');
   atLevel(s, 22);
+  assert(!dungeonOpen(s, rr), 'combat 22 alone does not open it: the reeve\'s chain (Q5, HOM-66) is the other half');
+  s.quest.sixth = 'cleared';
   s.player.x = door.x; s.player.z = door.z;
   const mother = s.enemies.find(e => e.type === 'rotroot_mother')!;
   assert(dungeonOpen(s, rr) && walkTo(s, mother.x, mother.z - 10, 2, 90) && dungeonAt(s.player.x, s.player.z) === rr, 'at combat 22 a walk from the mouth to the heart is one click, through three rooms');
-  const s21 = quietState(7502); atLevel(s21, 21);
+  const s21 = quietState(7502); atLevel(s21, 21); s21.quest.sixth = 'cleared';
   assert(!dungeonOpen(s21, rr), 'and at 21 it stays shut');
 
   // the Mother

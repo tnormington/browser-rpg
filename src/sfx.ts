@@ -2,6 +2,7 @@
 // synth blips kept on purpose (enemy telegraph, Second Wind). Reads sim events; silent until the first user gesture,
 // and M mutes. Samples are fetched and decoded lazily after the context exists; until decoded a sound is skipped.
 import type { GameEvent } from './sim';
+import { ABILITIES } from './sim/data';
 
 // ---- tuning table: change numbers here, by ear ----
 /** minGap ms between plays of a group, maxVoices simultaneously sounding in it. */
@@ -274,6 +275,7 @@ export function playEvents(events: GameEvent[]) {
         else if (ev.slot === 2) play('swing', [SOUNDS.cast2]);
         else if (ev.slot === 4) play('swing', [SOUNDS.cast4]);
         else if (ev.slot === 3) arpeggio([392, 494, 587], 0.06, 'sine', 0.06);   // Second Wind
+        else if (ABILITIES[ev.slot].kind === 'guard') arpeggio([262, 330], 0.05, 'triangle', 0.07); // Guard goes up: two low notes
         break;
       case 'slam': play('slam', [{ ...SOUNDS.slam, vol: slamVol(ev.radius) }], { exempt: true }); break;
       case 'interrupt': play('interrupt', [SOUNDS.interrupt], { exempt: true }); break;

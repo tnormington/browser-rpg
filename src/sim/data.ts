@@ -51,7 +51,7 @@ export const powerForLevel = (level: number) => 1 + 0.07 * (level - 1); // scale
 export interface AbilityDef {
   name: string;
   desc: string;
-  kind: 'strike' | 'dot' | 'heal' | 'cleave' | 'interrupt';
+  kind: 'strike' | 'dot' | 'heal' | 'cleave' | 'interrupt' | 'guard';
   unlockLevel: number; // combat level that hands the ability over; locked slots do nothing and say why
   damage: number;     // direct damage (strike/dot/cleave) or heal amount (heal), at power 1; 0 for interrupt
   dotDamage?: number; // per tick
@@ -60,7 +60,9 @@ export interface AbilityDef {
   cooldown: number;   // seconds, on top of the GCD
   range: number;      // world units, center to center; 0 = self
   arc?: number;       // cleave: full width in degrees of the cone, centred on the line to the target
-  offGcd?: boolean;   // interrupt: usable mid-GCD, so it can answer a wind-up the instant it starts
+  offGcd?: boolean;   // interrupt, guard: usable mid-GCD, so it can answer a wind-up the instant it starts
+  /** guard: the buff it puts on the player (see BUFFS), which is what actually takes the damage down. */
+  buff?: string;
   /** What a talent calls this ability by. `kind` already names the other five; only the two strikes need telling apart. */
   tag?: 'crush';
   /** Share of the weapon's damage the ability carries (default 1). Without it a bigger `damage` is just Strike, the weapon being most of a hit by level 12. */
@@ -84,6 +86,8 @@ export const ABILITIES: AbilityDef[] = [
     kind: 'interrupt', unlockLevel: 4, damage: 0, cost: 10, cooldown: 10, range: 3.5, offGcd: true },
   { name: 'Whirlwind', desc: 'Spin and hit everything around you, whichever way it stands. Learned from the Saltmarrow trainer.',
     kind: 'cleave', unlockLevel: 12, damage: 8, weaponMult: 0.6, cost: 35, cooldown: 10, range: 4, arc: 360, trainer: { vendor: 'trainer', price: 120 } },
+  { name: 'Guard', desc: 'Off the global cooldown. Halves all damage you take for 4 seconds. Learned from the Thornwick trainer.',
+    kind: 'guard', unlockLevel: 20, damage: 0, cost: 20, cooldown: 30, range: 0, offGcd: true, buff: 'guard', trainer: { vendor: 'thorn_trainer', price: 350 } },
 ];
 
 /** How long an interrupted enemy is stunned, and what share of its heavy-attack cooldown it keeps (so it cannot slam again at once). */

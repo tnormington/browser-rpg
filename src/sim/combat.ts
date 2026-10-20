@@ -3,7 +3,7 @@ import type { GameState, Enemy, EnemyState, Player } from '../sim';
 import { MAX_REDUCTION } from './items';
 import { EXECUTE_BONUS } from './talents';
 import { grantXp } from './skills';
-import { breakFood, clearBuffs, maxHpOf } from './consumables';
+import { applyBuff, breakFood, buffedDamage, clearBuffs, maxHpOf } from './consumables';
 import { ITEMS, EQUIP_SLOTS } from './items';
 import { wearWornGear } from './durability';
 import { refreshGearStats } from './inventory';
@@ -231,7 +231,11 @@ function fail(s: GameState, reason: Fail, slot: number) {
   s.events.push({ t: 'fail', reason, slot });
 }
 
-/** Press an ability slot. Honors GCD, cooldown, energy and range; queues presses just before the ability is ready. */
+/**
+ * Press an ability slot. Honors GCD, cooldown, energy and range; queues presses just before the ability is ready.
+ * An off-GCD ability (Pummel, Guard) neither waits for the GCD nor takes it, and its queue is its own: pressing one while a GCD ability is held
+ * must never replace that ability, and it must not be replaced by it, or the defensive would eat the next action (or the next action the defensive).
+ */
 export function pressAbility(s: GameState, slot: number) {
   const p = s.player;
   if (p.dead || !ABILITIES[slot]) return;
@@ -241,7 +245,7 @@ export function pressAbility(s: GameState, slot: number) {
   const gcdWait = a.offGcd ? 0 : p.gcd;
   if (p.cd[slot] > QUEUE_WINDOW) return fail(s, 'cooldown', slot);
   if (gcdWait > QUEUE_WINDOW) return fail(s, 'gcd', slot);
-  if (gcdWait > 0 || p.cd[slot] > 0) { p.queued = slot; return; }
+  if (gcdWait > 0 || p.cd[slot] > 0) { if (a.offGcd) p.queuedOff = slot; else p.queued = slot; return; }
   tryUse(s, slot);
 }
 
@@ -249,7 +253,7 @@ function tryUse(s: GameState, slot: number) {
   const p = s.player, a = ABILITIES[slot], fx = p.talentFx, cost = costOf(p, slot);
   if (p.cd[slot] > 0) return fail(s, 'cooldown', slot);
   let target: Enemy | undefined;
-  if (a.kind !== 'heal') {
+  if (a.kind !== 'heal' && a.kind !== 'guard') {
     target = enemyById(s, s.targetId);
     if (!target || !targetable(target)) return fail(s, 'target', slot);
     if (dist(p, target) > a.range) return fail(s, 'range', slot);
@@ -258,7 +262,7 @@ function tryUse(s: GameState, slot: number) {
   if (p.energy < cost) return fail(s, 'energy', slot);
 
   p.energy -= cost;
-  p.action = null; // fighting interrupts gathering/crafting
+  if (a.kind !== 'guard') p.action = null; // fighting interrupts gathering/crafting; a raised guard is not fighting, and a hit will break the work anyway
   if (!a.offGcd) p.gcd = GCD;
   p.cd[slot] = cooldownOf(p, slot);
   p.cast = 0.12;
@@ -268,7 +272,9 @@ function tryUse(s: GameState, slot: number) {
   if (target) p.facing = Math.atan2(target.x - p.x, target.z - p.z);
   if (target && (a.kind === 'strike' || a.kind === 'cleave')) setAutoAttack(s, true); // a melee ability on a target starts the swings, as in WoW
 
-  if (a.kind === 'heal') {
+  if (a.kind === 'guard') {
+    applyBuff(s, a.buff!);
+  } else if (a.kind === 'heal') {
     const amount = Math.min(p.maxHp - p.hp, Math.round(a.damage * power * fx.healBonus));
     p.hp += amount;
     s.events.push({ t: 'heal', x: p.x, z: p.z, amount });
@@ -317,7 +323,12 @@ export function updatePlayerCombat(s: GameState, dt: number) {
   for (let i = 0; i < p.cd.length; i++) p.cd[i] = Math.max(0, p.cd[i] - dt);
   p.gcd = Math.max(0, p.gcd - dt);
   announceUnlocks(s);
-  if (p.queued !== null && (ABILITIES[p.queued].offGcd || p.gcd === 0) && p.cd[p.queued] === 0) {
+  if (p.queuedOff !== null && p.cd[p.queuedOff] === 0) { // the off-GCD press goes first: it is the one that cannot wait on the GCD, and it takes none
+    const slot = p.queuedOff;
+    p.queuedOff = null;
+    tryUse(s, slot);
+  }
+  if (p.queued !== null && p.gcd === 0 && p.cd[p.queued] === 0) {
     const slot = p.queued;
     p.queued = null;
     tryUse(s, slot);
@@ -360,6 +371,7 @@ function killPlayer(s: GameState) {
   s.interact = null;
   p.respawnIn = RESPAWN_DELAY;
   p.queued = null;
+  p.queuedOff = null;
   s.targetId = null;
   s.moveTarget = null;
   // the ground is a killer too (hazards.ts): its recap source is no enemy type, so the killer is just what it did
@@ -408,6 +420,7 @@ function aggro(s: GameState, e: Enemy) {
 export function harmPlayer(s: GameState, src: string, srcId: number | undefined, amount: number, what: string, heavy = false) {
   const p = s.player;
   if (isFlying(p)) return; // on a flight nothing can touch you
+  amount = buffedDamage(p, amount); // Guard: what lands, and what the recap and the floating number say, is the halved hit
   p.hp = Math.max(0, p.hp - amount);
   p.outOfCombat = 0;
   p.action = null; // getting hit breaks concentration

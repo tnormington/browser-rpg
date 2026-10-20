@@ -3,10 +3,10 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
 import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, dungeonAt, inCave, regionAt } from './sim/world';
-import { ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
+import { ABILITIES, ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NODE_TYPES } from './sim/gathering';
-import { HARBOURMASTER, NPC, harbourMarker as harbourMarkOf, npcMarker as markerOf } from './sim/quest';
+import { HARBOURMASTER, NPC, THORN_REEVE, harbourMarker as harbourMarkOf, npcMarker as markerOf, reeveMarker as reeveMarkOf } from './sim/quest';
 import { VENDOR } from './sim/shop';
 import { Motes, Particles, Rings, Slashes } from './fx';
 import { PostStack, Quality } from './post';
@@ -228,6 +228,7 @@ export class Renderer {
   get showingMap() { return this.inMap; }
   private npcMarker!: THREE.Sprite;
   private harbourMarker!: THREE.Sprite;
+  private reeveMarker!: THREE.Sprite;
   private world!: WorldView;
   private kit!: Kit;
   private beyond!: THREE.Mesh;
@@ -763,6 +764,11 @@ export class Renderer {
     this.harbourMarker.renderOrder = 10;
     this.harbourMarker.visible = false;
     this.scene.add(this.harbourMarker);
+    this.reeveMarker = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.markerTex.offer, depthTest: false }));
+    this.reeveMarker.scale.set(1.1, 1.1, 1);
+    this.reeveMarker.renderOrder = 10;
+    this.reeveMarker.visible = false;
+    this.scene.add(this.reeveMarker);
     this.buildVendor();
   }
 
@@ -1177,7 +1183,11 @@ export class Renderer {
         }
       } else if (ev.t === 'cast') {
         this.castPunch = 0.12;
-        if (ev.slot !== 3 && this.playerAnim) { // slot 3 is the heal: no swing; the cleave takes the heavy swing
+        if (ABILITIES[ev.slot].kind === 'guard') { // a raised guard is a ring of light round the player, not a swing
+          const p = s.player;
+          this.rings.pulse(p.x, 0.3, p.z, P.arcaneLight, 2.4, 0.4, 0.8);
+          this.particles.burst(p.x, 1.0, p.z, { color: [P.arcaneLight, P.gold], count: 14, speed: 2, up: 1.5, life: 0.5 });
+        } else if (ev.slot !== 3 && this.playerAnim) { // slot 3 is the heal: no swing; the cleave takes the heavy swing
           this.playerAnim.attack(ev.slot === 1 || ev.slot === 4);
           this.slashes.swipe(s.player.x, s.player.z, s.player.facing, ev.slot === 1 || ev.slot === 4);
         }
@@ -1275,7 +1285,8 @@ export class Renderer {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
     if (this.raycaster.intersectObjects(this.vendorParts, false).length > 0) return 'hale';
-    if (this.raycaster.intersectObjects(this.world.trainerPicks(), false).length > 0) return 'trainer';
+    const trainer = this.raycaster.intersectObjects(this.world.trainerPicks(), false)[0]; // Saltmarrow's or Thornwick's, by the id the figure was tagged with
+    if (trainer) return trainer.object.userData.id;
     return this.raycaster.intersectObjects(this.world.vendorPicks(), false)[0]?.object.userData.id ?? null; // Saltmarrow's chandler or Thornwick's provisioner
   }
 
@@ -1412,6 +1423,12 @@ export class Renderer {
     if (hm && this.harbourMarker.visible) {
       (this.harbourMarker.material as THREE.SpriteMaterial).map = this.markerTex[hm];
       this.harbourMarker.position.set(HARBOURMASTER.x, 3.5 + 0.18 * Math.sin(nowMs / 250 + 1), HARBOURMASTER.z);
+    }
+    const rm = reeveMarkOf(s); // Thornwick's reeve: only worth drawing when the town is the one on screen
+    this.reeveMarker.visible = !!rm && Math.hypot(THORN_REEVE.x - x, THORN_REEVE.z - z) < 150;
+    if (rm && this.reeveMarker.visible) {
+      (this.reeveMarker.material as THREE.SpriteMaterial).map = this.markerTex[rm];
+      this.reeveMarker.position.set(THORN_REEVE.x, 3.5 + 0.18 * Math.sin(nowMs / 250 + 2), THORN_REEVE.z);
     }
     const mk = markerOf(s);
     this.npcMarker.visible = !!mk;

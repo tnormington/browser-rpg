@@ -7,12 +7,18 @@ import { maxHpForLevel } from './data';
 export const FOOD_TIME = 5;       // seconds a meal takes to heal in full
 export const FOOD_COOLDOWN = 20;  // one shared clock for every food, from the moment you start eating
 
-export interface BuffDef { name: string; duration: number; maxHp?: number }
+/** `damageTaken` multiplies every hit that lands on the player while the buff is on (Guard halves it). `desc` is the line the log says when it goes on. */
+export interface BuffDef { name: string; desc: string; duration: number; maxHp?: number; damageTaken?: number }
 export interface Buff { id: string; left: number }
 
 export const BUFFS: Record<string, BuffDef> = {
-  well_fed: { name: 'Well Fed', duration: 20 * 60, maxHp: 0.10 },
+  well_fed: { name: 'Well Fed', desc: '+10% max health.', duration: 20 * 60, maxHp: 0.10 },
+  guard: { name: 'Guard', desc: 'damage taken halved.', duration: 4, damageTaken: 0.5 },
 };
+
+/** What a hit that has already been through armour is worth once every buff has had its say. */
+export const buffedDamage = (p: Player, amount: number) =>
+  Math.max(1, Math.round(p.buffs.reduce((n, b) => n * (BUFFS[b.id]?.damageTaken ?? 1), amount)));
 
 /** Max health at the player's level with every buff on it: the one place that is worked out (combat's stat refresh reads it too). */
 export const maxHpOf = (p: Player) =>

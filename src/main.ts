@@ -77,7 +77,9 @@ function eatBest() {
   saveDirty = true;
 }
 const keys = new Set<string>();
-let pendingTab = false, pendingClear = false, pendingAttack = false, pendingJump = false, pendingAbility: number | null = null;
+let pendingTab = false, pendingClear = false, pendingAttack = false, pendingJump = false;
+/** Ability presses in the order they were made, one handed to each tick: two keys inside one tick (Guard, then Strike) are both cast, not the last of them. */
+const pendingAbilities: number[] = [];
 /** Keys typed into a form control belong to it. */
 const typing = (e: Event) => e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
 addEventListener('keydown', e => {
@@ -88,7 +90,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Space' && !hud.modalOpen) { e.preventDefault(); if (!e.repeat) pendingJump = true; return; } // latched here so a tap shorter than a tick still jumps; never scrolls or presses a focused button
   if (e.repeat) return;
   // the ability bar (1 2 3 4 Q E R F) comes first: it owns those keys, and what each one casts is the player's own layout
-  if (BAR_KEYS.includes(e.code)) { pendingAbility = hud.abilityAt(BAR_KEYS.indexOf(e.code)); return; }
+  if (BAR_KEYS.includes(e.code)) { const ability = hud.abilityAt(BAR_KEYS.indexOf(e.code)); if (ability !== null) pendingAbilities.push(ability); return; }
   if (e.code === 'Tab') { e.preventDefault(); pendingTab = true; }
   else if (e.code === 'Escape') { if (!hud.closeAll()) pendingClear = true; }
   else if (e.code === 'KeyX') pendingAttack = true;
@@ -172,7 +174,7 @@ function readInput(): Input {
     attack: pendingAttack,
     jump: (pendingJump || keys.has('Space')) && !hud.modalOpen,
     clearTarget: pendingClear,
-    ability: pendingAbility,
+    ability: pendingAbilities.shift() ?? null,
     pickup: pendingPickup,
     inv: pendingInv.splice(0),
     shop: pendingShop.splice(0),
@@ -185,7 +187,7 @@ function readInput(): Input {
   };
   pendingFlight = null;
   pendingInteract = null; pendingCraft = null; pendingAdvance = false; pendingTalent = null; pendingTalentReset = false;
-  pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingAttack = false; pendingJump = false; pendingClear = false; pendingAbility = null;
+  pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingAttack = false; pendingJump = false; pendingClear = false;
   return input;
 }
 

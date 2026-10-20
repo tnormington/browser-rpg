@@ -99,7 +99,8 @@ section('where the enemies stand');
 {
   const count = (t: string) => SPAWNS.filter(sp => sp.type === t && dungeonAt(sp.x, sp.z) === null).length; // the Rotroot (HOM-75) reuses the Thornwood's cultists and a Warden behind its door: they are not the wood's
   assert(count('fen_stalker') === 10 && count('bog_witch') === 6 && count('mire_troll') === 4 && count('bogfather') === 1 && count('mother_mire') === 1, 'the fens hold 5 stalker pairs, 6 witches, 4 trolls, the Bogfather and Mother Mire');
-  assert(count('thornback') === 3 && count('blight_stag') === 3 && count('rotwood_cultist') === 4 && count('thorn_warden') === 1 && count('elder_thornback') === 1, 'the Thornwood holds 3 boars, 3 stags, 4 cultists, the Warden and the Elder');
+  const wood = (t: string) => SPAWNS.filter(sp => sp.type === t && regionAt(sp.x, sp.z)?.id === 'thornwick').length; // the Rotroot (HOM-66) keeps cultists and a Warden of its own below the wood
+  assert(wood('thornback') === 3 && wood('blight_stag') === 3 && wood('rotwood_cultist') === 4 && wood('thorn_warden') === 1 && wood('elder_thornback') === 1, 'the Thornwood holds 3 boars, 3 stags, 4 cultists, the Warden and the Elder');
   const dunSpawns = SPAWNS.filter(sp => ENEMY_TYPES[sp.type].level >= 18 && ENEMY_TYPES[sp.type].level <= 21 && sp.z > 100 && sp.z < 940);
   assert(regionById('dunmere').spawns!.every(sp => regionAt(sp.x, sp.z)?.id === 'dunmere') && regionById('thornwick').spawns!.every(sp => regionAt(sp.x, sp.z)?.id === 'thornwick'), 'every new enemy stands in the region that owns it');
   assert(dunSpawns.length === regionById('dunmere').spawns!.length && regionById('dunmere').spawns!.every(sp => Math.abs(sp.x - DUNMERE.x) >= 22), 'every camp in the fens is 22 or more off the road: a walker is never pulled in');

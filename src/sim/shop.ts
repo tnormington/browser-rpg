@@ -13,6 +13,7 @@ export const VENDOR = { name: 'Brannoch the Peddler', x: LANDMARKS.vendor.x, z: 
 export const HARBOUR_VENDOR = { name: 'Tam Brine, Chandler', x: LANDMARKS.harbourVendor.x, z: LANDMARKS.harbourVendor.z, r: LANDMARKS.harbourVendor.r };
 export const THORN_VENDOR = { name: 'Edda Bracken, Provisioner', x: LANDMARKS.thornVendor.x, z: LANDMARKS.thornVendor.z, r: LANDMARKS.thornVendor.r };
 export const TRAINER ={ name: 'Orla Saltblade, Trainer', x: LANDMARKS.trainer.x, z: LANDMARKS.trainer.z, r: LANDMARKS.trainer.r };
+export const THORN_TRAINER = { name: 'Brannock Vane, Trainer', x: LANDMARKS.thornTrainer.x, z: LANDMARKS.thornTrainer.z, r: LANDMARKS.thornTrainer.r };
 export const SHOP_REACH = 6; // centre to centre, like the forge
 export const BUY_MARKUP = 4; // the shop charges this many times an item's value: far above what it pays, so a round trip always loses gold
 export const MAX_GOLD = 1e9;
@@ -28,7 +29,7 @@ export const THORN_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_
 
 export interface Vendor { id: string; name: string; x: number; z: number; r: number; stock: readonly string[] }
 /** Merchants buy and sell; the trainer has no stock and teaches whatever ABILITIES names her in `trainer.vendor`. */
-export const VENDORS: Vendor[] = [{ id: 'hale', ...VENDOR, stock: SHOP_STOCK }, { id: 'harbour', ...HARBOUR_VENDOR, stock: HARBOUR_STOCK }, { id: 'trainer', ...TRAINER, stock: [] }, { id: 'thorn', ...THORN_VENDOR, stock: THORN_STOCK }];
+export const VENDORS: Vendor[] = [{ id: 'hale', ...VENDOR, stock: SHOP_STOCK }, { id: 'harbour', ...HARBOUR_VENDOR, stock: HARBOUR_STOCK }, { id: 'trainer', ...TRAINER, stock: [] }, { id: 'thorn', ...THORN_VENDOR, stock: THORN_STOCK }, { id: 'thorn_trainer', ...THORN_TRAINER, stock: [] }];
 /** The slots a trainer teaches. */
 export const taughtBy = (vendor: string) => ABILITIES.flatMap((a, slot) => a.trainer?.vendor === vendor ? [slot] : []);
 export const vendorById = (id: string) => VENDORS.find(v => v.id === id);

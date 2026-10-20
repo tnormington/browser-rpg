@@ -24,29 +24,33 @@ export type Quest4Stage = 'offer' | 'carry' | 'report' | 'cleared';
  * road is open, and the one that opens the Drowned Grotto's door. `locked` until the Salt Road is handed in.
  */
 export type Quest5Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
-export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage; third: Quest3Stage; fourth: Quest4Stage; fifth: Quest5Stage }
+/** The bible's Q5, The Rotroot: Thornwick's reeve, once Brine and Bone is handed in; it opens the Rotroot's mouth and pays 1,200 combat XP. */
+export type Quest6Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
+export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage; third: Quest3Stage; fourth: Quest4Stage; fifth: Quest5Stage; sixth: Quest6Stage }
 export const QUEST_STAGES: QuestStage[] = ['offer', 'hunt', 'report1', 'forge', 'brute', 'report2', 'done'];
 export const QUEST2_STAGES: Quest2Stage[] = ['locked', 'offer', 'delve', 'armour', 'warden', 'report', 'cleared'];
 export const QUEST3_STAGES: Quest3Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
 export const QUEST4_STAGES: Quest4Stage[] = ['offer', 'carry', 'report', 'cleared'];
 export const QUEST5_STAGES: Quest5Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
+export const QUEST6_STAGES: Quest6Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
 
 /** True once the first quest has got as far as `stage`. */
 export const questReached = (s: GameState, stage: QuestStage) => QUEST_STAGES.indexOf(s.quest.stage) >= QUEST_STAGES.indexOf(stage);
 
-export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked', third: 'locked', fourth: 'offer', fifth: 'locked' });
+export const newQuest = (): QuestState => ({ stage: 'offer', kills: {}, second: 'locked', third: 'locked', fourth: 'offer', fifth: 'locked', sixth: 'locked' });
 
 export const QUEST_NAME = 'The Brute of the Cave Mouth';
 export const NPC = { name: 'Warden Hale', x: LANDMARKS.npc.x, z: LANDMARKS.npc.z, r: LANDMARKS.npc.r };
 export const HARBOURMASTER = { name: 'Harbourmaster Pell', x: LANDMARKS.harbourmaster.x, z: LANDMARKS.harbourmaster.z, r: LANDMARKS.harbourmaster.r };
-/** Thornwick's reeve: the town's one quest giver, with no quest to give yet (the Rotroot's chain is a later card). */
+/** Thornwick's reeve: the town's one quest giver, who gives the Rotroot's chain once Brine and Bone is done. */
 export const THORN_REEVE = { name: 'Reeve Maud Alder', x: LANDMARKS.thornReeve.x, z: LANDMARKS.thornReeve.z, r: LANDMARKS.thornReeve.r };
 export type NpcId = 'hale' | 'harbour' | 'thorn';
 /** Everyone with something to say, by id. Hale's warden is the first: an interaction with no one named falls back to him. */
 export const NPCS: { id: NpcId; name: string; x: number; z: number; r: number }[] = [{ id: 'hale', ...NPC }, { id: 'harbour', ...HARBOURMASTER }, { id: 'thorn', ...THORN_REEVE }];
 export const TALK_RANGE = 7;                       // centre to centre: advancing the quest needs this
 export const HUNT_GOALS: Record<string, number> = { boar: 4, wolf: 3 };
-const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves', ravager: 'Cave Ravagers', footpad: 'Footpads', toll_captain: 'Toll Captain', drowned_sailor: 'Drowned Sailors', tide_hag: 'Tide Hags', barnacle_ogre: 'Barnacle Ogre' };
+const PLURAL: Record<string, string> = { boar: 'Wild Boars', wolf: 'Dire Wolves', ravager: 'Cave Ravagers', footpad: 'Footpads', toll_captain: 'Toll Captain', drowned_sailor: 'Drowned Sailors', tide_hag: 'Tide Hags', barnacle_ogre: 'Barnacle Ogre',
+  thornback: 'Thornback Boars', rotwood_cultist: 'Rotwood Cultists', thorn_warden: 'Thorn Warden' };
 /**
  * What the Forgemaster's Blade costs in raw terms (see RECIPES): three steel bars, each an iron bar (two ore) and two coal, and a log. The plan is
  * padded past that (six iron bars, four steel) so the bars it asks for are also the practice the gates want (Steel Smithing 8, the blade Smithing 9).
@@ -96,6 +100,11 @@ export const QUEST5_NAME = 'Brine and Bone';
 export const BRINE_GOALS: Record<string, number> = { drowned_sailor: 4, tide_hag: 2, barnacle_ogre: 1 };
 export const RECOMMENDED_COMBAT_5 = 16;
 export const REWARD5: { skill: SkillId; xp: number }[] = [{ skill: 'combat', xp: 900 }];
+export const QUEST6_NAME = 'The Rotroot';
+/** The cult's work in the Thornwood, which the reeve wants thinned before anyone is shown the way in: the cultists, the boars they ride out on and the Warden that keeps the road. */
+export const ROT_GOALS: Record<string, number> = { rotwood_cultist: 4, thornback: 3, thorn_warden: 1 };
+export const RECOMMENDED_COMBAT_6 = 22;
+export const REWARD6: { skill: SkillId; xp: number }[] = [{ skill: 'combat', xp: 1200 }];
 const haveGoods = (s: GameState) => ERRAND_GOODS.every(g => countItem(s.player.inventory, g.item) >= g.n);
 
 /** Inventory plus what is worn: a piece you put on has not stopped being yours. */
@@ -114,8 +123,8 @@ const hasBlade = (s: GameState) =>
 // ---------- transitions ----------
 
 /** Which quest an event belongs to travels with it: both chains share stage 'done', so the HUD cannot work it out from state. */
-const QUEST_NAMES = [QUEST_NAME, QUEST2_NAME, QUEST3_NAME, QUEST4_NAME, QUEST5_NAME];
-const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', chain: 1 | 2 | 3 | 4 | 5 = 1) =>
+const QUEST_NAMES = [QUEST_NAME, QUEST2_NAME, QUEST3_NAME, QUEST4_NAME, QUEST5_NAME, QUEST6_NAME];
+const questEvent = (s: GameState, what: 'accept' | 'progress' | 'stage' | 'complete', chain: 1 | 2 | 3 | 4 | 5 | 6 = 1) =>
   s.events.push({ t: 'quest', what, name: QUEST_NAMES[chain - 1] });
 
 /** Kill credit. Hunt counts boars/wolves; the Brute only counts once the quest says so. */
@@ -146,6 +155,11 @@ export function questOnKill(s: GameState, type: string) {
     if (Object.entries(BRINE_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n)) { q.fifth = 'report'; questEvent(s, 'stage', 5); }
     else questEvent(s, 'progress', 5);
   }
+  if (q.sixth === 'hunt' && ROT_GOALS[type] && (q.kills[type] ?? 0) < ROT_GOALS[type]) {
+    q.kills[type] = (q.kills[type] ?? 0) + 1;
+    if (Object.entries(ROT_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n)) { q.sixth = 'report'; questEvent(s, 'stage', 6); }
+    else questEvent(s, 'progress', 6);
+  }
 }
 
 /** The player picked the "advance" dialogue option. Only meaningful at the NPC stages of either chain, and only in earshot. */
@@ -172,6 +186,15 @@ export function advanceQuest(s: GameState, what: boolean | 'road' = true) {
       q.fifth = 'cleared';
       for (const r of REWARD5) if (grantXp(s, r.skill, r.xp, HARBOURMASTER.x, HARBOURMASTER.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
       questEvent(s, 'complete', 5);
+    }
+    return;
+  }
+  if (who === 'thorn') { // Thornwick's reeve: the Rotroot's chain is the only one she moves
+    if (q.sixth === 'offer') { q.sixth = 'hunt'; questEvent(s, 'accept', 6); }
+    else if (q.sixth === 'report') {
+      q.sixth = 'cleared';
+      for (const r of REWARD6) if (grantXp(s, r.skill, r.xp, THORN_REEVE.x, THORN_REEVE.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
+      questEvent(s, 'complete', 6);
     }
     return;
   }
@@ -205,6 +228,7 @@ export function updateQuest(s: GameState) {
   else if (q.fourth === 'report' && !haveGoods(s)) q.fourth = 'carry';
   if (q.second === 'cleared' && q.third === 'locked') q.third = 'offer'; // the road east opens once the Hollow is quiet: nothing is announced, the harbourmaster's mark is the news
   if (q.third === 'cleared' && q.fifth === 'locked') q.fifth = 'offer'; // and the Strand's work, once the road is
+  if (q.fifth === 'cleared' && q.sixth === 'locked') q.sixth = 'offer'; // and Thornwick's, once the Strand is
 }
 
 // ---------- dialogue ----------
@@ -369,7 +393,7 @@ export const activeDialogue = (s: GameState): Dialogue =>
 
 /** What a given giver has to say: the Warden's two chains, or the harbourmaster's one (a plain greeting before the road opens). */
 export const dialogueAt = (s: GameState, who: string): Dialogue => {
-  if (who === 'thorn') return THORN_DIALOGUE;
+  if (who === 'thorn') return s.quest.sixth === 'locked' ? THORN_DIALOGUE : DIALOGUE6[s.quest.sixth];
   if (who !== 'harbour') { // the Warden's own words, and the errand as one more thing to ask him while it is on offer
     const d = activeDialogue(s);
     return s.quest.fourth === 'offer' ? { ...d, options: [...d.options, ERRAND_OFFER] } : d;
@@ -382,6 +406,32 @@ const THORN_DIALOGUE: Dialogue = {
     'The Thornwood past the square is boar and cult country. There is work for someone who can clear it, but I have no errand to give you yet. Come back when the roads are quieter.',
   ],
   options: [{ label: 'Farewell.' }],
+};
+const DIALOGUE6: Record<Exclude<Quest6Stage, 'locked'>, Dialogue> = {
+  offer: {
+    lines: [
+      'You have the look of someone the Strand did not manage to drown. Good. Thornwick has a wound of its own.',
+      'South of the town the Thornwood folds into the ground: a mouth in the roots, and a cult feeding something down there. The Rotroot Mother. I can show you the way in, but not while the wood is crawling with them.',
+      'Four Rotwood Cultists, three Thornback Boars and the Thorn Warden that keeps their road. Do that, and I will tell you how the mouth is opened.',
+    ],
+    options: [
+      { label: "I'll clear the wood.", advance: true,
+        reply: 'The cultists hex from a distance: close the gap, or break their line of sight. The Warden slams the ground and marks it with briars: Pummel the slam, or step out of the circle, and keep moving when the briars are marked. Rest between pulls.' },
+      { label: 'Not yet.' },
+    ],
+  },
+  hunt: {
+    lines: ['The cult keeps to the south and east of the square. Four cultists, three boars and the Warden: the mouth can wait until they are down.'],
+    options: [{ label: 'I am on it.' }],
+  },
+  report: {
+    lines: ['The wood is quiet. I did not think I would hear that this year.', 'Take this. And take the way in: the mouth in the roots is not sealed against you any more, if you are combat level 22 or better.'],
+    options: [{ label: 'Thank you.', advance: true, reply: 'The Mother holds the last chamber. She slams the floor, clouds the air with spores, and throws hexes at anyone who stands off from her. Guard against the slam, Pummel what you can, and bring her heartwood back: a smith can fold three shards round good metal into a blade.' }],
+  },
+  cleared: {
+    lines: ['The mouth in the roots is open, thanks to you. The Mother comes back as the seasons do, and her heartwood shards are the best thing this town will ever see made into a blade.'],
+    options: [{ label: 'Farewell.' }],
+  },
 };
 const harbourDialogue = (s: GameState): Dialogue =>
   s.quest.third === 'locked'
@@ -406,6 +456,12 @@ export function harbourMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
   if (s.quest.fourth === 'report') return 'ready';
   const f = s.quest.fifth; // the Strand's work follows the road's: once the road is cleared it is the one that speaks
   if (t === 'cleared') return f === 'offer' ? 'offer' : f === 'report' ? 'ready' : f === 'hunt' ? 'wait' : null;
+  return t === 'offer' ? 'offer' : t === 'report' ? 'ready' : t === 'hunt' ? 'wait' : null;
+}
+
+/** The mark over Thornwick's reeve, by the same rule as the harbourmaster's. */
+export function reeveMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
+  const t = s.quest.sixth;
   return t === 'offer' ? 'offer' : t === 'report' ? 'ready' : t === 'hunt' ? 'wait' : null;
 }
 
@@ -523,6 +579,7 @@ export function activeQuestView(s: GameState): QuestView {
   const q = s.quest;
   if ((q.fourth === 'carry' || q.fourth === 'report') && s.player.x > EAST_OF_HALE) return errandView(s); // out on the road the errand is what you are doing
   if (q.stage !== 'done' || q.second === 'locked') return questView(s);
+  if (q.fifth === 'cleared' && q.sixth !== 'locked') return rotrootView(s);
   if (q.third === 'cleared' && q.fifth !== 'locked') return brineView(s);
   if (q.second === 'cleared' && q.third !== 'locked') return saltRoadView(s);
   const have = (id: string) => countItem(s.player.inventory, id);
@@ -619,6 +676,29 @@ function brineView(s: GameState): QuestView {
     case 'report': return v([{ text: 'The Strand is quiet', done: true }, talk(`Return to ${HARBOURMASTER.name} for your reward`)], target, true);
     case 'cleared': return v([{ text: 'Quest complete. The door in the cliff stands open.', done: true }, { text: 'Captain Marrow holds the Drowned Grotto (north cliff of Saltmarrow)', done: false }], enemyTarget(s, 'captain_marrow'));
     default: return v([talk(`Speak to ${HARBOURMASTER.name} on the quay`)], target, true); // offer
+  }
+}
+
+/** The sixth chain's tracker (the bible's Q5): the cult's wood, then the reeve, then the open mouth and the Mother behind it. */
+function rotrootView(s: GameState): QuestView {
+  const q = s.quest, lvl = s.player.combat.level, stageNo = QUEST6_STAGES.indexOf(q.sixth); // 'offer' is 1: stage 0 is the lock
+  const total = QUEST6_STAGES.indexOf('cleared') - 1;
+  const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
+  const target = { x: THORN_REEVE.x, z: THORN_REEVE.z, label: THORN_REEVE.name };
+  const v = (lines: QuestLine[], t: QuestView['target'], ready = false): QuestView =>
+    ({ title: QUEST6_NAME, lines, target: t, ready, stageNo, progress: q.sixth === 'cleared' ? '' : `(${stageNo}/${total})` });
+  switch (q.sixth) {
+    case 'hunt': {
+      const open = Object.entries(ROT_GOALS).find(([t, n]) => (q.kills[t] ?? 0) < n);
+      const lines: QuestLine[] = [
+        ...Object.entries(ROT_GOALS).map(([t, n]) => ({ text: `${PLURAL[t]} slain: ${Math.min(n, q.kills[t] ?? 0)}/${n}`, done: (q.kills[t] ?? 0) >= n })),
+        ...(lvl < RECOMMENDED_COMBAT_6 ? [{ text: `Recommended Combat ${RECOMMENDED_COMBAT_6} (you are ${lvl})`, done: false }] : []),
+      ];
+      return v(lines, open ? enemyTarget(s, open[0]) : null);
+    }
+    case 'report': return v([{ text: 'The Thornwood is quiet', done: true }, talk(`Return to ${THORN_REEVE.name} for your reward`)], target, true);
+    case 'cleared': return v([{ text: 'Quest complete. The mouth in the roots is open.', done: true }, { text: 'The Rotroot Mother holds the last chamber (south edge of the Thornwood)', done: false }], enemyTarget(s, 'rotroot_mother'));
+    default: return v([talk(`Speak to ${THORN_REEVE.name} in Thornwick`)], target, true); // offer
   }
 }
 

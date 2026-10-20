@@ -80,6 +80,7 @@ export interface Player {
   learned: string[];       // names of the trainer abilities bought so far (see AbilityDef.trainer)
   unlocked: number;        // combat level up to which ability unlocks have been announced (so each fires exactly once)
   queued: number | null;   // ability pressed just before the GCD ended
+  queuedOff: number | null; // an off-GCD ability pressed just before its own cooldown ended: held apart from `queued`, so neither can replace the other
   cast: number;            // short attack-animation timer
   dead: boolean;
   respawnIn: number;
@@ -210,7 +211,7 @@ export function createState(seed = 1): GameState {
       x: PLAYER_SPAWN.x, z: PLAYER_SPAWN.z, facing: Math.PI, moving: false,
       y: 0, vy: 0, stride: STRIDE_DIST / 2, airborne: false, autoAttack: false, swing: 0, inCombat: false, recap: [],
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
-      gcd: 0, cd: ABILITIES.map(() => 0), learned: [], unlocked: 1, queued: null, cast: 0,
+      gcd: 0, cd: ABILITIES.map(() => 0), learned: [], unlocked: 1, queued: null, queuedOff: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
       skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), durability: {}, stats: deriveStats(emptyEquipment()),
       talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [],
