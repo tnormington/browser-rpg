@@ -38,7 +38,7 @@ async function botInPage(cfg) {
   const frame = () => new Promise(r => requestAnimationFrame(r));
   const cum = [0, 0]; for (let l = 1, pt = 0; l < 99; l++) { pt += Math.floor(l + 300 * Math.pow(2, l / 7)); cum[l + 1] = Math.floor(pt / 4); } // sim/xp.ts's curve: xp must match the level or the first kill resets it
   const GEAR = {
-    base: { weapon: 'warden_edge', head: 'mithril_helm', chest: 'mithril_chestplate', legs: 'mithril_greaves' },
+    base: { weapon: 'warden_edge', head: 'steel_helm', chest: 'steel_chestplate', legs: 'steel_greaves' },
     adamant: { weapon: 'adamant_blade', head: 'adamant_helm', chest: 'adamant_chestplate', legs: 'adamant_greaves' },
     marrow: { weapon: 'marrows_edge', head: 'adamant_helm', chest: 'adamant_chestplate', legs: 'adamant_greaves' },
   };

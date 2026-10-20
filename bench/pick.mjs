@@ -102,7 +102,7 @@ for (const [type, dist, pitch] of CASES) {
 }
 
 // the same for gatherables: type, how far the player stands from it, pitch
-const NODES = [['tree', 6, 0.5], ['tree', 12, 0.5], ['iron', 5, 0.5], ['iron', 12, 0.5], ['coal', 5, 0.5], ['mithril', 5, 0.5], ['adamant', 5, 0.5], ['silverfin', 6, 0.5]];
+const NODES = [['tree', 6, 0.5], ['tree', 12, 0.5], ['iron', 5, 0.5], ['iron', 12, 0.5], ['coal', 5, 0.5], ['tin', 5, 0.5], ['adamant', 5, 0.5], ['silverfin', 6, 0.5]];
 for (const [type, dist, pitch] of NODES) {
   const id = await page.evaluate(([t, d, p]) => window.setupNode(t, d, p), [type, dist, pitch]);
   if (id === null) { console.log(`${type}: no such node in this world`); continue; }

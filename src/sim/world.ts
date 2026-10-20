@@ -33,7 +33,7 @@ export interface Gate {
   closed?: string;
 }
 // Ore rocks (gatherable, see sim/gathering.ts).
-export interface RockSpot extends Obstacle { type: 'copper' | 'tin' | 'iron' | 'coal' | 'mithril' | 'adamant' }
+export interface RockSpot extends Obstacle { type: 'copper' | 'tin' | 'iron' | 'coal' | 'adamant' }
 
 /** A gathering spot you stand beside and cannot stand on: a shoal in the water. Unlike a rock it is not a collider. `type` is a NODE_TYPES key. */
 export interface NodeSpot extends Obstacle { type: string }
@@ -414,12 +414,14 @@ export const REGIONS: Region[] = [
     // The hollow is the main cavern. Standing stones are cover, and something to circle. The three veins make a seam along the south-west wall,
     // in reach of the Ravager pack that guards them and of nothing else. Its coal went out to the road with the ridge's (HOM-77): the nearest
     // seam to the forge must not be one a player on the first quest has to walk past the Brute to reach.
+    // The seam is tin (HOM-81), not the mithril it was: the starting zone's deepest metal is now the other half of bronze, so a character who
+    // beats the Brute can smelt bronze without leaving Hale. The road's tin is still the one worth walking to, three rocks being three rocks.
     id: 'hollow', name: 'The Hollow', cave: true, dungeon: 'hollow', zone: 'hale', cell: 0.25,
     footprint: [{ x0: -33, x1: -5, z0: -64, z1: -42 }],
     obstacles: [{ x: -14.5, z: -50, r: 1.4 }, { x: -27, z: -57, r: 1.4 }, { x: -9, z: -55, r: 1.4 }],
     tall: [], trees: [],
     rocks: [
-      { type: 'mithril', x: -29.2, z: -45.5, r: 1.2 }, { type: 'mithril', x: -29.2, z: -47.9, r: 1.2 }, { type: 'mithril', x: -29.2, z: -50.3, r: 1.2 },
+      { type: 'tin', x: -29.2, z: -45.5, r: 1.2 }, { type: 'tin', x: -29.2, z: -47.9, r: 1.2 }, { type: 'tin', x: -29.2, z: -50.3, r: 1.2 },
     ],
     landmarks: {},
     connections: [{ to: 'throat', at: { x: -18, z: -44 } }, { to: 'neck', at: { x: -18, z: -62 } }],
@@ -619,7 +621,7 @@ export const OBSTACLES: Obstacle[] = REGIONS.flatMap(r => r.obstacles);
 export const TREES: Obstacle[] = surface.filter(r => r.zone === 'hale').flatMap(r => r.trees);
 /** Hale's ore, outside the cave: copper and nothing else (HOM-77). Other surface regions' ore (the road's, Saltmarrow's adamant) is in their own `rocks`. */
 export const ROCKS: RockSpot[] = surface.filter(r => r.zone === 'hale').flatMap(r => r.rocks);
-/** Ore inside the cave: the Hollow's three mithril veins. */
+/** Ore inside the cave: the Hollow's three tin veins (HOM-81; they were mithril). */
 export const CAVE_ROCKS: RockSpot[] = caves.flatMap(r => r.rocks);
 /**
  * Every solid thing in the world, in one list. Nothing should scan it: ask for the ones near a place (collidersAt, collidersIn).

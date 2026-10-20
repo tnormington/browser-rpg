@@ -216,7 +216,7 @@ section('HOM-58 death costs something: wake at a graveyard, run back, gear worn 
 {
   assert(DEATH_WEAR === 25 && MAX_DURABILITY === 100 && REPAIR_FRAC === 0.25, 'the cost of dying is three constants: 25 points a death, of 100, mended at a quarter of the piece\'s value');
   const a = quiet(4841);
-  a.player.equipment.weapon = 'warden_edge'; a.player.equipment.head = 'mithril_helm'; a.player.equipment.chest = 'mithril_chestplate'; a.player.equipment.legs = 'mithril_greaves';
+  a.player.equipment.weapon = 'warden_edge'; a.player.equipment.head = 'steel_helm'; a.player.equipment.chest = 'steel_chestplate'; a.player.equipment.legs = 'steel_greaves';
   refreshGearStats(a);
   const whole = { ...a.player.stats };
   assert(wearWornGear(a.player).length === 4 && EQUIP_SLOTS.every(sl => a.player.durability[a.player.equipment[sl]!] === 75), 'a death takes 25 points off every worn piece');
@@ -225,13 +225,13 @@ section('HOM-58 death costs something: wake at a graveyard, run back, gear worn 
   assert(a.player.stats.weaponDamage === 0 && a.player.stats.armor === whole.armor && a.player.equipment.weapon === 'warden_edge', 'a broken piece stays on and gives nothing: not its damage, and not its swing speed');
   assert(a.player.stats.swingInterval === BARE_SWING, 'a broken weapon swings like bare hands');
   assert(wearWornGear(a.player).find(w => w.item === 'warden_edge')!.now === 0, 'durability never goes below zero');
-  assert(repairCost(a.player, 'warden_edge') === 100 && repairCost(a.player, 'mithril_helm') === Math.ceil(90 * 0.25 * 0.5), 'mending a broken Warden\'s Edge costs a quarter of its 400; half-worn mithril helm half of that');
+  assert(repairCost(a.player, 'warden_edge') === 100 && repairCost(a.player, 'steel_helm') === Math.ceil(90 * 0.25 * 0.5), 'mending a broken Warden\'s Edge costs a quarter of its 400; half-worn steel helm half of that');
   a.player.x = LANDMARKS.vendor.x; a.player.z = LANDMARKS.vendor.z + 1; a.player.gold = 0;
   tick(a, { shop: [{ k: 'repair' }] });
   assert(failOf(a)?.reason === 'gold' && a.player.durability.warden_edge === 0, 'with no gold nothing is mended');
   a.player.gold = 105;
   tick(a, { shop: [{ k: 'repair' }] });
-  assert(a.player.durability.warden_edge === undefined && a.player.gold === 5 && !!a.player.durability.mithril_helm, 'with 105 gold the worn pieces are mended in order while the gold lasts: the blade, then the helm is too dear');
+  assert(a.player.durability.warden_edge === undefined && a.player.gold === 5 && !!a.player.durability.steel_helm, 'with 105 gold the worn pieces are mended in order while the gold lasts: the blade, then the helm is too dear');
   a.player.gold = 1000;
   tick(a, { shop: [{ k: 'repair' }] });
   assert(Object.keys(a.player.durability).length === 0 && a.player.stats.weaponDamage === whole.weaponDamage && sawEvent(a, 'repair'), 'and the rest on a full purse: everything whole, stats back');
@@ -257,7 +257,7 @@ section('HOM-58 death costs something: wake at a graveyard, run back, gear worn 
     return { s, died };
   };
   const dress = (s: GameState) => {
-    s.player.equipment.weapon = 'warden_edge'; s.player.equipment.chest = 'mithril_chestplate'; s.player.gold = 200;
+    s.player.equipment.weapon = 'warden_edge'; s.player.equipment.chest = 'steel_chestplate'; s.player.gold = 200;
     addItem(s.player.inventory, 'iron_ore', 7);
     s.found.push('saltmarrow'); // walked there already (HOM-49): a death wakes you in the nearest town whose flight master you have found
     s.player.buffs.push({ id: 'well_fed', left: 900 }); s.player.maxHp = Math.round(s.player.maxHp * 1.1); s.player.hp = s.player.maxHp;
@@ -266,11 +266,11 @@ section('HOM-58 death costs something: wake at a graveyard, run back, gear worn 
   const strand = dieNear(4842, 'shore_crab', dress);
   assert(strand.died !== undefined, 'a crab on the Strand can kill a player on one hit point');
   const { s } = strand;
-  assert(strand.died!.wear.length === 2 && strand.died!.wear.every(w => w.was === 100 && w.now === 75) && s.player.durability.warden_edge === 75 && s.player.durability.mithril_chestplate === 75, 'the event and the player both say the two worn pieces went from 100 to 75');
+  assert(strand.died!.wear.length === 2 && strand.died!.wear.every(w => w.was === 100 && w.now === 75) && s.player.durability.warden_edge === 75 && s.player.durability.steel_chestplate === 75, 'the event and the player both say the two worn pieces went from 100 to 75');
   assert(s.player.gold === 200, 'and no gold is taken: the toll is retired');
   assert(strand.died!.grave === 'Saltmarrow' && strand.died!.run > 30 && Math.abs(strand.died!.run - Math.hypot(s.player.x - TOWNS[1].grave.x, s.player.z - TOWNS[1].grave.z)) < 1e-6,'it names the graveyard and how far the run back is');
   assert(s.player.buffs.length === 0 && s.player.food === null && sawEvent(s, 'buff'), 'Well Fed is lost on death');
-  assert(s.player.equipment.weapon === 'warden_edge' && s.player.equipment.chest === 'mithril_chestplate' && countItem(s.player.inventory, 'iron_ore') === 7, 'and not one item');
+  assert(s.player.equipment.weapon === 'warden_edge' && s.player.equipment.chest === 'steel_chestplate' && countItem(s.player.inventory, 'iron_ore') === 7, 'and not one item');
   const fell = { x: s.player.x, z: s.player.z };
   run(s, RESPAWN_DELAY + 0.5);
   const wake = TOWNS.find(t => t.id === 'saltmarrow')!.grave;

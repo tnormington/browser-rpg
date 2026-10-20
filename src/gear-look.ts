@@ -34,10 +34,11 @@ export const TIER_LOOKS: Appearance[] = [
   // Metalness stays moderate on purpose: metal is lit only by the sky gradient here, and a high value turns any tint into pale sky.
   // Tier 3: blued steel, darker than the iron under it: the lift comes from silhouette and a faint cold seam, not from paleness.
   { tint: 0x7c8ca4, trim: 0x44526c, metal: 0.45, rough: 0.4, glow: 0x5a8cb8, glowI: 0.35, rung: 3, scale: 1.15, motes: 0x8fb4d4 },
-  // Tier 4: dark mithril. Near-black blue plate with a hard cool sheen, lit by inlays (thin veins, visor slit) rather than by the surface.
+  // Tier 4: hardened steel, the set you smith for yourself (HOM-81). Near-black blue plate with a hard cool sheen, lit by inlays (thin seams,
+  // visor slit) rather than by the surface: the same metal as tier 3's drops, worked twice as far, which is the whole point of the rung.
   { tint: 0x90a4c6, trim: 0x4a5a7e, metal: 0.4, rough: 0.38, glow: 0x7ab0ff, glowI: 0.6, rung: 4, scale: 1.3, motes: 0xa0c0ff },
   // Tier 5: the generic fallback only. Spectral jade, the one cold hue the ladder has not used (blue is 2 and 4, orange is 3, purple is the beam colour of 4).
-  // An item with no entry of its own gets this and the rung-4 frame, which is visibly better than mithril but is a recolour: every tier-5 SET has an entry below.
+  // An item with no entry of its own gets this and the rung-4 frame, which is visibly better than the steel set but is a recolour: every tier-5 SET has an entry below.
   { tint: 0x5e8a82, trim: 0x2c4a46, metal: 0.45, rough: 0.35, glow: 0x3ee0c0, glowI: 0.7, rung: 5, scale: 1.35, motes: 0x6ef0d4 },
 ];
 
@@ -56,7 +57,7 @@ export const ITEM_LOOKS: Record<string, Partial<Appearance>> = {
   rusty_blade: { tint: 0x8c6446, rough: 1, metal: 0.15, scale: 0.85 }, // pitted rust, dull
   // smelted by the player: still carries the forge's heat in the edge, the one warm cue on the ladder
   forged_blade: { tint: 0xc8bcb0, scale: 1.3, glow: 0xb0602a, glowI: 0.15, motes: 0xff9a3c },
-  // mithril folded round a Warden shard: brighter than the plate it goes with, so the blade is the first thing the eye lands on
+  // steel folded round a Warden shard: brighter than the plate it goes with, so the blade is the first thing the eye lands on
   warden_edge: { tint: 0x9db4d8, rough: 0.18 },
 
   // Smithed copper, the bottom rung: warm red metal, plain silhouette, so hide, copper and bronze are three readable steps.

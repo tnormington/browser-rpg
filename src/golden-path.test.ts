@@ -2,7 +2,7 @@
 // Exits non-zero on the first failed assertion. Extended every milestone.
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState, Enemy } from './sim';
 import { addItem, countItem, removeItem, INVENTORY_SIZE } from './sim/inventory';
-import { ITEMS, DROP_TABLES, BRONZE_SET, COPPER_SET, MITHRIL_SET, TIER_COLORS, deriveStats, describeStats, emptyEquipment } from './sim/items';
+import { ITEMS, DROP_TABLES, BRONZE_SET, COPPER_SET, STEEL_SET, TIER_COLORS, deriveStats, describeStats, emptyEquipment } from './sim/items';
 import {
   ABILITIES, ENEMY_TYPES, SPAWNS, aggroRadius, castName, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
   FALL_GRAVITY, GRAVITY, JUMP_AIRTIME, JUMP_HEIGHT, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW, powerForLevel, xpParity,
@@ -23,7 +23,7 @@ import { refreshGearStats } from './sim/inventory';
 import { damagedGear, repairCost } from './sim/durability';
 import { refreshPlayerStats } from './sim/combat';
 import {
-  BLADE_PLAN, DELVE_GOALS, DIALOGUE, DIALOGUE2, HUNT_GOALS, MITHRIL_PLAN, NPC, QUEST2_NAME, QUEST2_STAGES, QUEST_STAGES,
+  BLADE_PLAN, DELVE_GOALS, DIALOGUE, DIALOGUE2, HUNT_GOALS, STEEL_PLAN, NPC, QUEST2_NAME, QUEST2_STAGES, QUEST_STAGES,
   QUEST_NAME, RECOMMENDED_COMBAT, RECOMMENDED_COMBAT_2, REWARD, REWARD2, TALK_RANGE, activeDialogue, activeQuestView, npcMarker, questOnKill, questView,
   HARBOURMASTER, QUEST3_NAME, REWARD3, dialogueAt, harbourMarker, ERRAND_GOODS, QUEST4_NAME, REWARD4,
   BRINE_GOALS, QUEST5_NAME, REWARD5,
@@ -494,8 +494,15 @@ const busy = (s: GameState) => s.interact !== null || s.player.action !== null;
 function untilIdle(s: GameState, maxTicks = 4000) { let n = 0; while (busy(s) && n++ < maxTicks) tick(s); }
 const countOf = (s: GameState, id: string) => countItem(s.player.inventory, id);
 const nodesOf = (s: GameState, type: string) => s.nodes.filter(n => n.type === type);
-const nearestNode = (s: GameState, type: string) =>
-  nodesOf(s, type).filter(n => n.charges > 0).sort((a, b) => dist2(a, s.player) - dist2(b, s.player))[0];
+/**
+ * The nearest live node of a type, on the bot's own side of the cave mouth where there is one: the Hollow's seam is tin since HOM-81, so a
+ * bot on the ridge that simply took the closest tin rock would walk itself past the Cave Brute. It is the rule the tracker follows (nodeTarget).
+ */
+const nearestNode = (s: GameState, type: string) => {
+  const live = nodesOf(s, type).filter(n => n.charges > 0).sort((a, b) => dist2(a, s.player) - dist2(b, s.player));
+  const here = inCave(s.player.x, s.player.z);
+  return live.find(n => inCave(n.x, n.z) === here) ?? live[0];
+};
 /** Gather from nodes of `type` until the bag holds `want` of the node's item. Waits for respawns when all are depleted. */
 function gatherUntil(s: GameState, type: string, want: number) {
   const item = NODE_TYPES[type].item;
@@ -1760,7 +1767,7 @@ section('HOM-16 combat state, queueing into cooldowns, and the death recap');
 }
 
 // ---------------------------------------------------------------------------
-// HOM-15: the cave, the mithril ladder, the second quest.
+// HOM-15: the cave, the steel ladder (mithril's until HOM-81), the second quest.
 const walkableFor = (x: number, z: number, r: number) => { const p = { x, z }; resolveCollisions(p, r); return Math.hypot(p.x - x, p.z - z) < 1e-6; };
 /** Flood fill over the floor at half-unit steps for a body of radius r. */
 function floodFill(r: number, from: { x: number; z: number }, blocked: (x: number, z: number) => boolean = () => false) {
@@ -1838,13 +1845,13 @@ section('HOM-15 the cave stays out of the first quest');
   const original = ['boar', 'boar', 'boar', 'wolf', 'wolf', 'wolf', 'brute', 'pup', 'pup', 'pup', 'hexer'];
   assert(SPAWNS.slice(0, original.length).map(x => x.type).join() === original.join(), 'the original eleven enemies keep their ids and places: the first 20 minutes are the same world');
   const RIDGE = ROCKS.slice(0, 3); // the ridge's own rocks are the first nodes; the Seams' three were added after everything (HOM-56)
-  assert(NODE_TYPES.mithril && ROCKS.every(r => r.type === 'copper') && ROCKS.length === 6 && RIDGE.every(r => r.z < -22), 'the surface is copper only (HOM-77): three on the ridge, three in the Seams, no mithril outside');
+  assert(ROCKS.every(r => r.type === 'copper') && ROCKS.length === 6 && RIDGE.every(r => r.z < -22), 'the surface is copper only (HOM-77): three on the ridge, three in the Seams, and the cave\'s own seam below');
   const s = createState(902);
   const way = REGIONS.find(r => r.id === 'wayside')!, W = way.rocks.length + way.trees.length; // HOM-57: the road's waysides come after everything, the Seams included
   const herbN = REGIONS.reduce((n, r) => n + (r.herbs?.length ?? 0), 0); // HOM-65: the herb patches of the Fens and the Thornwood come after the waysides
   assert(W >= 24 && s.nodes.slice(-W - herbN, -herbN).every(n => n.x > GREYWATER.x - 400 && n.x < GREYWATER.x + 400), 'the road\'s waysides are the last nodes of all but the herb patches');
   const kinds = s.nodes.map(n => n.type).slice(0, -W - herbN);
-  assert(kinds.slice(0, RIDGE.length + TREES.length).join() === [...RIDGE.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(RIDGE.length + TREES.length).every(t => t === 'mithril' || t === 'adamant' || t === 'copper' || NODE_TYPES[t].skill === 'fishing') && kinds.slice(-3).every(t => t === 'copper'), // HOM-46: Saltmarrow's adamant is added after the cave's, so it too leaves every older id alone; HOM-48: and its fishing spots after that; HOM-56: and the Seams' copper last of all
+  assert(kinds.slice(0, RIDGE.length + TREES.length).join() === [...RIDGE.map(r => r.type), ...TREES.map(() => 'tree')].join() && kinds.slice(RIDGE.length + TREES.length).every(t => t === 'tin' || t === 'adamant' || t === 'copper' || NODE_TYPES[t].skill === 'fishing') && kinds.slice(-3).every(t => t === 'copper'), // HOM-46: Saltmarrow's adamant is added after the cave's, so it too leaves every older id alone; HOM-48: and its fishing spots after that; HOM-56: and the Seams' copper last of all
     'cave nodes are added after every existing node, so node ids follow region order');
   const caveFolk = SPAWNS.filter(sp => inCave(sp.x, sp.z));
   const ridge = [...ROCKS, ...TREES, LANDMARKS.npc];
@@ -1941,58 +1948,56 @@ section('HOM-15 enemy mechanic: the ground mark punishes standing still');
 }
 
 // ---------------------------------------------------------------------------
-section('HOM-15 mithril: a Mining gate above coal, a Smithing ladder, and gear at the top rung');
+section('HOM-81 the steel rung: smithed rather than mined, a Smithing ladder, and gear at the top rung');
 {
-  assert(NODE_TYPES.mithril.level > NODE_TYPES.coal.level && NODE_TYPES.mithril.skill === 'mining' && NODE_TYPES.mithril.item === 'mithril_ore', `mithril is Mining ${NODE_TYPES.mithril.level}, above coal (${NODE_TYPES.coal.level})`);
-  const veins = CAVE_ROCKS.filter(r => r.type === 'mithril').length;
-  assert(veins * NODE_TYPES.mithril.charges >= MITHRIL_PLAN.ore, `${veins} veins of ${NODE_TYPES.mithril.charges} give ${veins * NODE_TYPES.mithril.charges} ore without waiting on a respawn: the plan wants ${MITHRIL_PLAN.ore}`);
-  assert(CAVE_ROCKS.every(r => r.type === 'mithril'), 'the Hollow is veins and nothing else: its coal went out to the road with the ridge\'s (HOM-77)');
+  assert(!NODE_TYPES.mithril && !ITEMS.mithril_ore && !ITEMS.mithril_bar && !ITEMS.mithril_helm,
+    'mithril is out of the early game altogether: no vein, no ore, no bar, no set (HOM-81)');
+  assert(CAVE_ROCKS.length === 3 && CAVE_ROCKS.every(r => r.type === 'tin'), 'the Hollow\'s seam is tin: the starting zone\'s deepest metal is the other half of bronze');
+  assert(NODE_TYPES.tin.level < NODE_TYPES.iron.level, `the cave's own ore is Mining ${NODE_TYPES.tin.level}, under iron's ${NODE_TYPES.iron.level}: it is not what the set is made of`);
+  assert(Math.max(...Object.values(NODE_TYPES).filter(d => d.skill === 'mining' && d.level < NODE_TYPES.adamant.level).map(d => d.level)) === NODE_TYPES.coal.level,
+    `coal (Mining ${NODE_TYPES.coal.level}) is the last mining gate before adamant: the rung above it is smithed, not dug`);
 
-  // the gate: a miner one level short is turned away, one at the level is not
-  const g = quietState(911);
-  const vein = g.nodes.find(n => n.type === 'mithril')!;
-  g.player.skills.mining.xp = xpForLevel(NODE_TYPES.mithril.level - 1); g.player.skills.mining.level = NODE_TYPES.mithril.level - 1;
-  g.player.x = vein.x + 2; g.player.z = vein.z;
-  tick(g, { interact: { k: 'node', id: vein.id } });
-  assert(hasEvent(g, e => e.t === 'actionfail' && e.reason === 'level' && e.need === NODE_TYPES.mithril.level), `Mining ${NODE_TYPES.mithril.level - 1} is refused (needs ${NODE_TYPES.mithril.level}) and told so`);
-  g.player.skills.mining.xp = xpForLevel(NODE_TYPES.mithril.level); g.player.skills.mining.level = NODE_TYPES.mithril.level;
-  tick(g, { interact: { k: 'node', id: vein.id } });
-  untilIdle(g);
-  assert(countOf(g, 'mithril_ore') >= 1 && g.player.skills.mining.xp > xpForLevel(NODE_TYPES.mithril.level), `Mining ${NODE_TYPES.mithril.level} gets ore and XP`);
-
-  // the ladder
+  // the ladder: every gate above the steel bar, which the first quest's blade already taught
   const rec = (id: string) => RECIPES.find(r => r.id === id)!;
-  const ladder = ['mithril_bar', 'mithril_helm', 'mithril_greaves', 'mithril_chestplate', 'warden_edge'].map(rec);
-  assert(ladder.every((r, k) => r.skill === 'smithing' && (k === 0 || r.level > ladder[k - 1].level)) && ladder[0].level > rec('steel_bar').level, `Smithing gates climb above steel: ${ladder.map(r => r.level).join(' < ')}`);
-  const barsNeeded = MITHRIL_SET.reduce((n, id) => n + rec(id).inputs.find(i => i.id === 'mithril_bar')!.qty, 0);
-  const bar = rec('mithril_bar');
-  assert(barsNeeded === MITHRIL_PLAN.bars && bar.inputs.find(i => i.id === 'mithril_ore')!.qty * barsNeeded === MITHRIL_PLAN.ore && bar.inputs.find(i => i.id === 'coal')!.qty * barsNeeded === MITHRIL_PLAN.coal,
-    `the quest plan is the recipes: ${barsNeeded} bars = ${MITHRIL_PLAN.ore} ore + ${MITHRIL_PLAN.coal} coal`);
-  assert(ladder.slice(1).every(r => ITEMS[r.output.id].slot) && MITHRIL_SET.every(id => ITEMS[id].slot && rec(id)), 'the set is made at the forge');
-  const slots = MITHRIL_SET.map(id => ITEMS[id].slot).sort().join();
+  const bar = rec('steel_bar'), ironBar = rec('iron_bar'), helm = rec('steel_helm');
+  const ladder = ['steel_helm', 'steel_greaves', 'steel_chestplate', 'warden_edge'].map(rec);
+  assert(ladder.every((r, k) => r.skill === 'smithing' && (k === 0 || r.level > ladder[k - 1].level)) && ladder[0].level > rec('forged_blade').level,
+    `Smithing gates climb above the blade (${rec('forged_blade').level}): ${ladder.map(r => r.level).join(' < ')}`);
+  const barsNeeded = STEEL_SET.reduce((n, id) => n + rec(id).inputs.find(i => i.id === 'steel_bar')!.qty, 0);
+  assert(barsNeeded === STEEL_PLAN.bars && barsNeeded === STEEL_PLAN.iron
+    && bar.inputs.find(i => i.id === 'coal')!.qty * barsNeeded === STEEL_PLAN.coal
+    && ironBar.inputs.find(i => i.id === 'iron_ore')!.qty * barsNeeded === STEEL_PLAN.ore,
+    `the quest plan is the recipes: ${barsNeeded} steel bars = ${STEEL_PLAN.iron} iron bars + ${STEEL_PLAN.coal} coal = ${STEEL_PLAN.ore} ore`);
+  assert(ladder.every(r => ITEMS[r.output.id].slot) && STEEL_SET.every(id => ITEMS[id].slot && rec(id)), 'the set is made at the forge');
+  const slots = STEEL_SET.map(id => ITEMS[id].slot).sort().join();
   assert(slots === 'chest,head,legs', 'one piece for each armour slot');
+  // what the rung costs at the forge is what it cost when it was mithril: a steel bar and the iron bar under it pay 85 Smithing XP where a
+  // mithril bar paid 90, so the climb from the blade's gate to the chestplate's is the same thirty-odd bars it always was.
+  const perBar = ironBar.xp + bar.xp, climb = xpForLevel(rec('steel_chestplate').level) - xpForLevel(rec('forged_blade').level);
+  assert(perBar >= 85 && Math.ceil(climb / perBar) <= 32, `${Math.ceil(climb / perBar)} bars carry a smith from the blade's gate to the chestplate's, and nine of them are the set's own`);
 
-  // smithing it
+  // smithing it: the gate is the plate, never the bar
   const f = quietState(912);
   f.player.x = LANDMARKS.forge.x - 4; f.player.z = LANDMARKS.forge.z + 2;
-  addItem(f.player.inventory, 'mithril_ore', 9); addItem(f.player.inventory, 'coal', 18);
-  f.player.skills.smithing.xp = xpForLevel(bar.level - 1); f.player.skills.smithing.level = bar.level - 1;
-  tick(f, { craft: { recipe: 'mithril_bar', count: 1 } });
-  assert(hasEvent(f, e => e.t === 'actionfail' && e.reason === 'level' && e.need === bar.level) && countOf(f, 'mithril_bar') === 0, `Smithing ${bar.level - 1} cannot smelt a bar (needs ${bar.level})`);
-  grantXp(f, 'smithing', xpForLevel(bar.level) - f.player.skills.smithing.xp, 0, 0);
-  const ore0 = countOf(f, 'mithril_ore'), coal0 = countOf(f, 'coal');
-  craft(f, 'mithril_bar', 9);
-  const bars = countOf(f, 'mithril_bar');
-  assert(bars >= 9 && ore0 - countOf(f, 'mithril_ore') <= 9 && coal0 - countOf(f, 'coal') <= 18,
-    `nine bars take no more than nine ore and eighteen coal (${bars} bars from ${ore0 - countOf(f, 'mithril_ore')} ore)`);
-  assert(f.player.skills.smithing.level >= rec('mithril_helm').level, `the bars carry Smithing to ${f.player.skills.smithing.level}: the helm is open, and each piece's own XP opens the next, so only getting to the bar is a grind`);
-  for (const id of MITHRIL_SET) craft(f, id, 1);
-  assert(MITHRIL_SET.every(id => countOf(f, id) === 1) && bars - countOf(f, 'mithril_bar') === MITHRIL_PLAN.bars, 'helm, greaves and chestplate smithed from the nine bars');
+  addItem(f.player.inventory, 'iron_ore', STEEL_PLAN.ore); addItem(f.player.inventory, 'coal', STEEL_PLAN.coal);
+  f.player.skills.smithing.xp = xpForLevel(bar.level); f.player.skills.smithing.level = bar.level;
+  const ore0 = countOf(f, 'iron_ore'), coal0 = countOf(f, 'coal');
+  craft(f, 'iron_bar', STEEL_PLAN.iron);
+  craft(f, 'steel_bar', STEEL_PLAN.bars);
+  const bars = countOf(f, 'steel_bar');
+  assert(bars >= STEEL_PLAN.bars && ore0 - countOf(f, 'iron_ore') <= STEEL_PLAN.ore && coal0 - countOf(f, 'coal') <= STEEL_PLAN.coal,
+    `nine steel bars take no more than ${STEEL_PLAN.ore} ore and ${STEEL_PLAN.coal} coal (${bars} bars from ${ore0 - countOf(f, 'iron_ore')} ore)`);
+  f.player.skills.smithing.xp = xpForLevel(helm.level - 1); f.player.skills.smithing.level = helm.level - 1;
+  tick(f, { craft: { recipe: 'steel_helm', count: 1 } });
+  assert(hasEvent(f, e => e.t === 'actionfail' && e.reason === 'level' && e.need === helm.level) && countOf(f, 'steel_helm') === 0, `Smithing ${helm.level - 1} cannot smith the helm (needs ${helm.level}): bars are cheap, plate is the climb`);
+  grantXp(f, 'smithing', xpForLevel(rec('steel_chestplate').level) - f.player.skills.smithing.xp, 0, 0);
+  for (const id of STEEL_SET) craft(f, id, 1);
+  assert(STEEL_SET.every(id => countOf(f, id) === 1) && bars - countOf(f, 'steel_bar') === STEEL_PLAN.bars, 'helm, greaves and chestplate smithed from the nine bars');
 
   // gear at the top of the ladder
   const iron = deriveStats({ ...emptyEquipment(), head: 'iron_helm', chest: 'iron_chestplate', legs: 'iron_greaves' });
-  const mith = deriveStats({ ...emptyEquipment(), head: 'mithril_helm', chest: 'mithril_chestplate', legs: 'mithril_greaves' });
-  assert(mith.armor >= iron.armor * 2 && mith.reduction > iron.reduction + 0.15, `the set is ${mith.armor} armour (${(100 * mith.reduction).toFixed(0)}% off) against iron's ${iron.armor} (${(100 * iron.reduction).toFixed(0)}%)`);
+  const mith = deriveStats({ ...emptyEquipment(), head: 'steel_helm', chest: 'steel_chestplate', legs: 'steel_greaves' });
+  assert(mith.armor >= iron.armor * 2 && mith.reduction > iron.reduction + 0.15, `the set is ${mith.armor} armour (${(100 * mith.reduction).toFixed(0)}% off) against the iron the dead drop: ${iron.armor} (${(100 * iron.reduction).toFixed(0)}%)`);
   const top = TIER_LOOKS.length - 1;
   const warm = (hex: number) => ((hex >> 16) & 255) > ((hex & 255)) + 8;
   assert(top === 5 && TIER_COLORS.length === top + 1 && TIER_COLORS[5] === TIER5_COLOR, 'the worn-look ladder runs to tier 5 and every tier has a colour');
@@ -2003,7 +2008,7 @@ section('HOM-15 mithril: a Mining gate above coal, a Smithing ladder, and gear a
   assert(Math.abs(hueOf(ad.tint) - hueOf(st.tint)) > 60 && Math.abs(hueOf(ad.glow) - hueOf(st.glow)) > 40 && !warm(ad.glow) && !warm(st.glow), 'and different hues of metal and of glow, neither warm');
   assert(ad.glow !== TIER_LOOKS[4].glow && TIER_LOOKS[5].glow !== TIER_LOOKS[4].glow && !warm(TIER_LOOKS[5].glow), 'tier 5 has a glow of its own: not epic blue, not rare orange');
   for (const id of ['greywolf_hauberk', 'gutterhooks_cap']) assert(ITEM_LOOKS[id].form !== undefined && ITEM_LOOKS[id].rung === 5, `${id} has its own form`);
-  for (const id of [...MITHRIL_SET, 'warden_edge']) {
+  for (const id of [...STEEL_SET, 'warden_edge']) {
     const look = appearanceOf(id);
     assert(ITEMS[id].tier === 4 && look.rung === TIER_LOOKS[4].rung && look.glow > 0 && look.motes !== 0 && look.scale >= TIER_LOOKS[3].scale, `${ITEMS[id].name} is tier 4 and gets the epic look: rung ${look.rung}, glow, motes`);
   }
@@ -2022,23 +2027,23 @@ section('HOM-15 mithril: a Mining gate above coal, a Smithing ladder, and gear a
 
   // what is made is not dropped, and what is made is best
   const dropped = new Set(Object.values(DROP_TABLES).flatMap(t => t.entries.map(e => e.id)));
-  assert(![...MITHRIL_SET, 'warden_edge', 'mithril_bar', 'forged_blade'].some(id => dropped.has(id)), 'no enemy drops the mithril set, the Warden Edge or the Forgemaster Blade: they are made');
+  assert(![...STEEL_SET, 'warden_edge', 'steel_bar', 'forged_blade'].some(id => dropped.has(id)), 'no enemy drops the steel set, the Warden Edge or the Forgemaster Blade: they are made');
   const bestDropped = Math.max(...[...dropped].filter(id => ITEMS[id].slot === 'weapon').map(id => ITEMS[id].stats!.damage!));
   assert(ITEMS.warden_edge.stats!.damage! > ITEMS.forged_blade.stats!.damage! && ITEMS.forged_blade.stats!.damage! >= bestDropped + 4, `crafted beats dropped all the way up: Edge +${ITEMS.warden_edge.stats!.damage} > Blade +${ITEMS.forged_blade.stats!.damage} > best drop +${bestDropped}`);
   assert(DROP_TABLES.warden.entries.some(e => e.id === 'warden_shard') && rec('warden_edge').inputs.some(i => i.id === 'warden_shard' && i.qty >= 2), 'the Warden drops the shards the Edge is made from: the reason to keep killing it');
-  assert(DROP_TABLES.ogre.entries.some(e => e.id === 'mithril_ore') && Object.keys(ENEMY_TYPES).filter(k => ENEMY_TYPES[k].level > ENEMY_TYPES.brute.level).every(k => DROP_TABLES[k]), 'cave enemies drop things, and ogres drop ore: killing the cave feeds the forge');
+  assert(DROP_TABLES.ogre.entries.some(e => e.id === 'iron_ore') && DROP_TABLES.warden.entries.some(e => e.id === 'iron_bar') && Object.keys(ENEMY_TYPES).filter(k => ENEMY_TYPES[k].level > ENEMY_TYPES.brute.level).every(k => DROP_TABLES[k]), 'cave enemies drop things, and what the ogres dig up is the iron the set is made of: killing the cave feeds the forge');
 }
 
 // ---------------------------------------------------------------------------
 // The contract the Brute and the blade already keep, one tier up: the cave is unfair without the new armour and fair with it.
-section('HOM-15 the contract: the cave is unfair without the mithril set and fair with it');
+section('HOM-15 the contract: the cave is unfair without the steel set and fair with it');
 {
   const KITS: Record<string, Partial<GameState['player']['equipment']>> = {
     blade: { weapon: 'forged_blade' },
     hide: { weapon: 'forged_blade', head: 'leather_cap', chest: 'hide_jerkin', legs: 'hide_leggings' },
     iron: { weapon: 'forged_blade', head: 'iron_helm', chest: 'iron_chestplate', legs: 'iron_greaves' },
-    mithril: { weapon: 'forged_blade', head: 'mithril_helm', chest: 'mithril_chestplate', legs: 'mithril_greaves' },
-    edge: { weapon: 'warden_edge', head: 'mithril_helm', chest: 'mithril_chestplate', legs: 'mithril_greaves' },
+    steel: { weapon: 'forged_blade', head: 'steel_helm', chest: 'steel_chestplate', legs: 'steel_greaves' },
+    edge: { weapon: 'warden_edge', head: 'steel_helm', chest: 'steel_chestplate', legs: 'steel_greaves' },
   };
   /**
    * The test bot against some of the cave's own enemies, at a combat level in a kit, where they actually stand. The bot walks
@@ -2066,28 +2071,28 @@ section('HOM-15 the contract: the cave is unfair without the mithril set and fai
   type Scene = { name: string; level: number; groups: [string, number][]; start: { x: number; z: number } };
   const WARDEN: Scene = { name: 'Hollow Warden', level: 10, groups: [['warden', 1]], start: { x: -18, z: -72 } };
   const OGRE: Scene = { name: 'Hollow Ogre', level: 9, groups: [['ogre', 1]], start: { x: -14, z: -50 } };
-  const PACK: Scene = { name: 'Ravager pack', level: 10, groups: [['ravager', 3]], start: { x: -24, z: -44 } }; // the same approach to the pack, which now posts two units west on the seam it guards
+  const PACK: Scene = { name: 'Ravager pack', level: 10, groups: [['ravager', 3]], start: { x: -24, z: -44 } }; // the same approach to the pack, which posts two units west on the seam along the wall
   const ROOM: Scene = { name: 'ogre+archer+seer', level: 10, groups: [['ogre', 1], ['archer', 1], ['seer', 1]], start: { x: -18, z: -45 } };
   const wins = (sc: Scene, kit: string, smart = true) => SEEDS.filter(n => caveFight(sc.level, kit, sc.groups, sc.start, 940 + n, smart).won).length;
   // start with a clear line to both: the old spot sat in the shadow of the standing stone at (-14.5,-50), where the Archer never saw the player at all
   const PAIR: Scene = { name: 'archer+seer', level: 10, groups: [['archer', 1], ['seer', 1]], start: { x: -12, z: -54 } };
   const BRUISER: Scene = { name: 'ogre+archer', level: 10, groups: [['ogre', 1], ['archer', 1]], start: { x: -11, z: -52 } };
   for (const sc of [WARDEN, OGRE, PACK, PAIR, BRUISER, ROOM]) console.log(`  L${sc.level} ${sc.name.padEnd(17)} ${Object.keys(KITS).map(k => `${k} ${wins(sc, k)}/6`).join('   ')}`);
-  assert(wins(WARDEN, 'mithril') === 6 && wins(WARDEN, 'iron') <= 1 && wins(WARDEN, 'blade') === 0, 'the Warden: with the set and the blade every run wins; in iron almost none; with no armour none');
-  assert(wins(WARDEN, 'mithril', false) === 0, 'the Warden: a player who ignores the tells (stands in the slam and the marks, never Pummels) loses even in the set');
+  assert(wins(WARDEN, 'steel') === 6 && wins(WARDEN, 'iron') <= 1 && wins(WARDEN, 'blade') === 0, 'the Warden: with the set and the blade every run wins; in iron almost none; with no armour none');
+  assert(wins(WARDEN, 'steel', false) === 0, 'the Warden: a player who ignores the tells (stands in the slam and the marks, never Pummels) loses even in the set');
   /** Mean health left across the seeds, counting a death as nothing: a smoother read than wins when a fight is a cliff. */
   const health = (sc: Scene, kit: string) => SEEDS.reduce((m, n) => { const r = caveFight(sc.level, kit, sc.groups, sc.start, 940 + n); return m + (r.won ? r.left : 0); }, 0) / SEEDS.length;
-  assert(wins(OGRE, 'mithril') === 6 && wins(OGRE, 'blade') <= 1, 'the Ogre: the set walks it; with no armour it almost never wins');
-  assert(wins(PACK, 'hide') >= 4 && wins(PACK, 'iron') >= 5 && wins(PACK, 'mithril') === 6 && wins(PACK, 'blade') <= 3,
-    'the Ravagers guard the veins and the first trip is made before the set exists: winnable in the hide and iron the drops give you, a coin-flip bare, a walk in mithril');
-  assert(wins(PAIR, 'blade') === 0 && wins(PAIR, 'mithril') >= 5, 'an archer and a seer together: out of reach bare, taken in the set');
-  console.log(`  ogre+archer mean health left: iron ${health(BRUISER, 'iron').toFixed(2)}, mithril ${health(BRUISER, 'mithril').toFixed(2)}, edge ${health(BRUISER, 'edge').toFixed(2)}`);
-  assert(health(BRUISER, 'mithril') >= health(BRUISER, 'iron') && wins(BRUISER, 'blade') === 0, 'an ogre with an archer behind it: the set is what changes the odds');
-  assert(wins(ROOM, 'mithril') <= 3 && wins(ROOM, 'blade') === 0, 'pulling the whole room at Combat 10 is beyond any kit: it has to be taken in pieces, which is the pillars and the corridor for');
+  assert(wins(OGRE, 'steel') === 6 && wins(OGRE, 'blade') <= 1, 'the Ogre: the set walks it; with no armour it almost never wins');
+  assert(wins(PACK, 'hide') >= 4 && wins(PACK, 'iron') >= 5 && wins(PACK, 'steel') === 6 && wins(PACK, 'blade') <= 3,
+    'the Ravagers hold the hollow and the first trip is made before the set exists: winnable in the hide and iron the drops give you, a coin-flip bare, a walk in steel');
+  assert(wins(PAIR, 'blade') === 0 && wins(PAIR, 'steel') >= 5, 'an archer and a seer together: out of reach bare, taken in the set');
+  console.log(`  ogre+archer mean health left: iron ${health(BRUISER, 'iron').toFixed(2)}, steel ${health(BRUISER, 'steel').toFixed(2)}, edge ${health(BRUISER, 'edge').toFixed(2)}`);
+  assert(health(BRUISER, 'steel') >= health(BRUISER, 'iron') && wins(BRUISER, 'blade') === 0, 'an ogre with an archer behind it: the set is what changes the odds');
+  assert(wins(ROOM, 'steel') <= 3 && wins(ROOM, 'blade') === 0, 'pulling the whole room at Combat 10 is beyond any kit: it has to be taken in pieces, which is the pillars and the corridor for');
   const margin = (kit: string) => SEEDS.map(n => caveFight(WARDEN.level, kit, WARDEN.groups, WARDEN.start, 940 + n)).filter(r => r.won).reduce((m, r) => m + r.left, 0) / 6;
-  console.log(`  Warden lowest health: mithril ${margin('mithril').toFixed(2)}, edge ${margin('edge').toFixed(2)}`);
-  assert(margin('edge') > margin('mithril') + 0.05, 'the Warden Edge makes the same fight easier: the second chase is felt');
-  const q = caveFight(WARDEN.level, 'mithril', WARDEN.groups, WARDEN.start, 941);
+  console.log(`  Warden lowest health: steel ${margin('steel').toFixed(2)}, edge ${margin('edge').toFixed(2)}`);
+  assert(margin('edge') > margin('steel') + 0.05, 'the Warden Edge makes the same fight easier: the second chase is felt');
+  const q = caveFight(WARDEN.level, 'steel', WARDEN.groups, WARDEN.start, 941);
   assert(q.won && q.left > 0.05 && q.left < 0.7, `a won Warden fight at Combat 10 dips to ${(100 * q.left).toFixed(0)}% health at its worst: tense, not trivial`);
 }
 
@@ -2125,37 +2130,39 @@ section('HOM-15 second quest: it starts where the first ends, on the same machin
   tick(s);
   assert(secondStage(s) === 'delve' && activeQuestView(s).lines.some(l => /Cave Ravagers slain: 3\/3/.test(l.text) && l.done), 'kills alone do not end the delve: it wants the ore too');
   let v = activeQuestView(s);
-  assert(v.lines[0].text.startsWith(`Mine Mithril Ore: 0/${MITHRIL_PLAN.ore} (needs Mining ${NODE_TYPES.mithril.level})`) && v.target?.label === 'Copper Rock', 'with Mining below the gate the tracker says so and sends a character with no rock open to copper');
+  assert(v.lines[0].text.startsWith(`Mine Iron Ore: 0/${STEEL_PLAN.ore} (needs Mining ${NODE_TYPES.iron.level}`) && v.target?.label === 'Copper Rock', 'with Mining below the gate the tracker says so and sends a character with no rock open to copper');
+  s.player.skills.mining.xp = xpForLevel(NODE_TYPES.tin.level); s.player.skills.mining.level = NODE_TYPES.tin.level;
+  addItem(s.player.inventory, 'copper_ore', 1); // practice evens the two starter ores out, so with copper in the bag it asks for tin
+  const tinTarget = activeQuestView(s).target!;
+  assert(tinTarget.label === 'Tin Rock' && !inCave(tinTarget.x, tinTarget.z),
+    'with tin open, practice is tin, and it is the road\'s: the tracker never walks a character standing in Hale into the Hollow for the cave\'s seam (HOM-81)');
   s.player.skills.mining.xp = xpForLevel(NODE_TYPES.iron.level); s.player.skills.mining.level = NODE_TYPES.iron.level;
-  assert(activeQuestView(s).target?.label === 'Iron Rock', 'with iron open, practice is iron');
-  s.player.skills.mining.xp = xpForLevel(NODE_TYPES.coal.level); s.player.skills.mining.level = NODE_TYPES.coal.level;
-  assert(activeQuestView(s).target?.label === 'Coal Seam', 'with coal open, practice is coal: the veins are the next step up');
-  s.player.skills.mining.xp = xpForLevel(NODE_TYPES.mithril.level); s.player.skills.mining.level = NODE_TYPES.mithril.level;
   v = activeQuestView(s);
-  assert(v.target?.label === 'Mithril Vein' && !v.lines[0].text.includes('needs'), `at Mining ${NODE_TYPES.mithril.level} it points at the veins`);
-  addItem(s.player.inventory, 'mithril_ore', 4); addItem(s.player.inventory, 'mithril_bar', 5);
+  assert(v.target?.label === 'Iron Rock' && !v.lines[0].text.includes('needs'), `at Mining ${NODE_TYPES.iron.level} it points at the road's iron`);
+  addItem(s.player.inventory, 'iron_ore', 8); addItem(s.player.inventory, 'steel_bar', 5);
   tick(s);
-  assert(secondStage(s) === 'armour' && sawQuest(s, 'stage'), 'three kills and nine ore (ore already smelted counts) hands the quest on to the forge');
+  assert(secondStage(s) === 'armour' && sawQuest(s, 'stage'), 'three kills and eighteen ore\'s worth (ore already smelted and hardened counts) hands the quest on to the forge');
 
   // armour stage: progress never goes backwards at the forge
   v = activeQuestView(s);
-  assert(v.lines[0].text === `Mine Coal: ${Math.min(MITHRIL_PLAN.coal, 10)}/${MITHRIL_PLAN.coal}` && v.lines[1].text.startsWith(`Smelt Mithril Bars at the forge: 5/${MITHRIL_PLAN.bars}`), 'bars already made count as coal and ore spent: 5 bars read as 10 coal and 5 bars');
+  assert(v.lines[0].text === `Mine Coal: ${Math.min(STEEL_PLAN.coal, 10)}/${STEEL_PLAN.coal}` && v.lines[1].text.startsWith(`Smelt Iron Bars at the forge: 5/${STEEL_PLAN.iron}`) && v.lines[2].text.startsWith(`Harden Steel Bars: 5/${STEEL_PLAN.bars}`),
+    'bars already hardened count as coal, ore and iron spent: 5 steel bars read as 10 coal, 5 iron bars and 5 steel');
   s.player.inventory.forEach((_, i) => { s.player.inventory[i] = null; });
-  addItem(s.player.inventory, 'mithril_helm', 1);
-  assert(activeQuestView(s).lines[1].text.startsWith(`Smelt Mithril Bars at the forge: 2/`) && activeQuestView(s).lines[2].done && !activeQuestView(s).lines[3].done, 'a smithed piece counts for its bars and ticks its own line');
-  const helmLevel = recipeById('mithril_helm')!.level;
+  addItem(s.player.inventory, 'steel_helm', 1);
+  assert(activeQuestView(s).lines[2].text.startsWith(`Harden Steel Bars: 2/`) && activeQuestView(s).lines[3].done && !activeQuestView(s).lines[4].done, 'a smithed piece counts for its bars and ticks its own line');
+  const helmLevel = recipeById('steel_helm')!.level;
   s.player.skills.smithing.xp = xpForLevel(helmLevel); s.player.skills.smithing.level = helmLevel;
-  assert(activeQuestView(s).lines[3].text.endsWith(`Greaves (needs Smithing ${recipeById('mithril_greaves')!.level})`) && activeQuestView(s).lines[4].text.endsWith(`Chestplate (needs Smithing ${recipeById('mithril_chestplate')!.level})`), 'pieces above your Smithing say what they need');
-  addItem(s.player.inventory, 'mithril_greaves', 1);
+  assert(activeQuestView(s).lines[4].text.endsWith(`Greaves (needs Smithing ${recipeById('steel_greaves')!.level})`) && activeQuestView(s).lines[5].text.endsWith(`Chestplate (needs Smithing ${recipeById('steel_chestplate')!.level})`), 'pieces above your Smithing say what they need');
+  addItem(s.player.inventory, 'steel_greaves', 1);
   tick(s);
   assert(secondStage(s) === 'armour', 'two pieces of three is not the set');
-  s.player.equipment.chest = 'mithril_chestplate'; refreshGearStats(s);
+  s.player.equipment.chest = 'steel_chestplate'; refreshGearStats(s);
   tick(s);
   assert(secondStage(s) === 'warden', 'a piece you are already wearing counts as made: the third completes the set');
   v = activeQuestView(s);
-  assert(v.lines[1].text === `Wear the mithril set (press I): 1/3` && v.target?.label === ENEMY_TYPES.warden.name, 'the tracker counts what is worn and points at the Warden');
+  assert(v.lines[1].text === `Wear the steel set (press I): 1/3` && v.target?.label === ENEMY_TYPES.warden.name, 'the tracker counts what is worn and points at the Warden');
   s.player.inventory.forEach((_, i) => { s.player.inventory[i] = null; });
-  s.player.equipment.head = 'mithril_helm'; s.player.equipment.legs = 'mithril_greaves'; refreshGearStats(s);
+  s.player.equipment.head = 'steel_helm'; s.player.equipment.legs = 'steel_greaves'; refreshGearStats(s);
   assert(activeQuestView(s).lines[1].done && activeQuestView(s).lines.some(l => /Recommended Combat/.test(l.text)) === (s.player.combat.level < RECOMMENDED_COMBAT_2 + 1), 'all three worn; the level advice shows only while you are under it');
 
   // the Warden, and the hand-in
@@ -2222,7 +2229,7 @@ function walkVia(s: GameState, pts: [number, number][]) {
 }
 /**
  * Wait out a death the way a player does (HOM-58): wake at the graveyard, and if the gear is worn down walk to the merchant and mend it, so a bot that
- * dies twenty times is not fighting in broken mithril. The bot never sells drops, so the gold is handed over: it is what a player would have earned.
+ * dies twenty times is not fighting in broken plate. The bot never sells drops, so the gold is handed over: it is what a player would have earned.
  */
 function wake(s: GameState) {
   run(s, RESPAWN_DELAY + 0.5);
@@ -2266,7 +2273,7 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
   assert(npcMarker(s) === 'offer', 'the ! is back over his head');
   tick(s, { questAdvance: true });
   assert(secondStage(s) === 'delve' && activeQuestView(s).title === QUEST2_NAME, 'quest two accepted');
-  assert(activeQuestView(s).lines.some(l => l.text.includes('Mithril')) && activeQuestView(s).target !== null, 'the tracker names the ore and has somewhere to point');
+  assert(activeQuestView(s).lines.some(l => l.text.includes('Iron Ore')) && activeQuestView(s).target !== null, 'the tracker names the ore and has somewhere to point');
 
   // 3. the way in: walk it, do not teleport, and watch the light change
   const lightAt = [] as number[];
@@ -2276,46 +2283,53 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
   assert(lightAt[0] === 0 && lightAt[lightAt.length - 1] === 1 && lightAt.some(d => d > 0 && d < 1), `the light changes on the way: ${lightAt.map(d => d.toFixed(2)).join(' > ')}`);
   milestone('inside the cave');
 
-  // 4. the gate: a ridge miner has not earned the veins yet; practise on coal first, as the tracker says
-  let guard = 0;
-  while (s.player.skills.mining.level < NODE_TYPES.mithril.level && guard++ < 150) { gatherUntil(s, 'coal', countOf(s, 'coal') + 3); }
-  assert(s.player.skills.mining.level >= NODE_TYPES.mithril.level, `Mining ${s.player.skills.mining.level} from coal: the veins are open`);
+  // 4. the gate: the second quest opens no new rock (HOM-81). Iron and coal are the first quest's own gates, and the Hollow's tin is under both
+  assert(s.player.skills.mining.level >= NODE_TYPES.coal.level,
+    `Mining ${s.player.skills.mining.level} out of the first quest: iron and coal are open already, and the Hollow's own seam is tin (Mining ${NODE_TYPES.tin.level})`);
   milestone(`Mining ${s.player.skills.mining.level}`);
 
-  // 5. the delve: the pack guards the veins, so the ore and the kills come together
+  // 5. the delve: the pack holds the hollow the passage opens into, and the iron the set is made of is out on the road
   walkVia(s, mouthWalk.slice(1));
   dressAndTidy(s);
-  const ore = () => countOf(s, 'mithril_ore') + countOf(s, 'mithril_bar');
-  for (let g = 0; secondStage(s) === 'delve' && g < 40; g++) {
+  for (let g = 0; (s.quest.kills.ravager ?? 0) < DELVE_GOALS.ravager && g < 40; g++) {
     if (s.player.dead) { wake(s); walkVia(s, mouthWalk); continue; }
-    if ((s.quest.kills.ravager ?? 0) < DELVE_GOALS.ravager && s.enemies.some(e => e.type === 'ravager' && st(e) !== 'dead')) huntOne(s, 'ravager');
-    else gatherUntil(s, 'mithril', ore() + 3);
+    if (!s.enemies.some(e => e.type === 'ravager' && st(e) !== 'dead')) { run(s, 10); continue; }
+    huntOne(s, 'ravager');
     sweepDrops(s); dressAndTidy(s);
   }
-  assert(secondStage(s) === 'armour', `the delve ends on its own: ${s.quest.kills.ravager} ravagers down, ${countOf(s, 'mithril_ore')} ore in the bag`);
-  assert(countOf(s, 'mithril_ore') >= MITHRIL_PLAN.ore, 'nine mithril ore, mined from the cave veins');
+  assert(secondStage(s) === 'delve', `${s.quest.kills.ravager} ravagers down, and the delve waits on the ore: the cave holds none of it`);
+  gatherUntil(s, 'iron', STEEL_PLAN.ore);
+  tick(s);
+  assert(secondStage(s) === 'armour', `the delve ends on its own: ${s.quest.kills.ravager} ravagers down, ${countOf(s, 'iron_ore')} iron ore in the bag`);
+  assert(countOf(s, 'iron_ore') >= STEEL_PLAN.ore, 'eighteen iron ore off the Greywater Road\'s waysides');
   milestone(`delve done (${deathTally} death${deathTally === 1 ? '' : 's'} so far)`);
 
   // 6. coal, the forge, the ladder
-  gatherUntil(s, 'coal', MITHRIL_PLAN.coal);
-  assert(countOf(s, 'coal') >= MITHRIL_PLAN.coal, `${countOf(s, 'coal')} coal in hand`);
+  gatherUntil(s, 'coal', STEEL_PLAN.coal);
+  assert(countOf(s, 'coal') >= STEEL_PLAN.coal, `${countOf(s, 'coal')} coal in hand`);
   assert(atForge(s), 'out of the cave and back at the forge');
-  const smBefore = s.player.skills.smithing.level;
-  practiseSmithing(s, recipeById('mithril_bar')!.level, MITHRIL_PLAN.coal);
-  assert(s.player.skills.smithing.level >= recipeById('mithril_bar')!.level, `Smithing ${smBefore} was under the bar gate (${recipeById('mithril_bar')!.level}): steel bars of practice first, now ${s.player.skills.smithing.level}`);
   const saved = deserialize(serialize(s))!;
-  assert(saved.quest.second === 'armour' && countOf(saved, 'mithril_ore') === countOf(s, 'mithril_ore'), 'saved at the forge door and reloaded');
-  craft(s, 'mithril_bar', MITHRIL_PLAN.bars);
-  assert(countOf(s, 'mithril_bar') >= MITHRIL_PLAN.bars, 'nine mithril bars');
-  for (const id of MITHRIL_SET) craft(s, id, 1);
-  assert(MITHRIL_SET.every(id => countOf(s, id) === 1) && secondStage(s) === 'warden', 'the set is smithed and the quest moves on to the Warden without any more talking');
-  milestone(`mithril set smithed, Smithing ${s.player.skills.smithing.level}`);
+  assert(saved.quest.second === 'armour' && countOf(saved, 'iron_ore') === countOf(s, 'iron_ore'), 'saved at the forge door and reloaded');
+  const smBefore = s.player.skills.smithing.level, helmGate = recipeById('steel_helm')!.level;
+  practiseSmithing(s, helmGate, 0);
+  assert(s.player.skills.smithing.level >= helmGate, `Smithing ${smBefore} was under the helm's gate (${helmGate}): iron and steel bars of practice first, now ${s.player.skills.smithing.level}`);
+  const short = STEEL_PLAN.bars - countOf(s, 'steel_bar');
+  if (short > 0) { gatherUntil(s, 'iron', 2 * short); gatherUntil(s, 'coal', 2 * short); atForge(s); craft(s, 'iron_bar', short); craft(s, 'steel_bar', short); }
+  assert(countOf(s, 'steel_bar') >= STEEL_PLAN.bars, `${countOf(s, 'steel_bar')} steel bars: the practice that opened the helm is the same metal the set is made of`);
+  // each piece asks one Smithing more than the last and pays less than a level: a few more bars between them, which is what the tracker says
+  for (const id of STEEL_SET) {
+    const need = recipeById(id)!.level;
+    if (s.player.skills.smithing.level < need) practiseSmithing(s, need, 0);
+    craft(s, id, 1);
+  }
+  assert(STEEL_SET.every(id => countOf(s, id) === 1) && secondStage(s) === 'warden', 'the set is smithed and the quest moves on to the Warden without any more talking');
+  milestone(`steel set smithed, Smithing ${s.player.skills.smithing.level}`);
 
   // 7. wear it
   dressAndTidy(s);
-  assert(MITHRIL_SET.every(id => Object.values(s.player.equipment).includes(id)) && s.player.stats.armor >= 50, `the whole set on: ${s.player.stats.armor} armour, ${(100 * s.player.stats.reduction).toFixed(0)}% off`);
+  assert(STEEL_SET.every(id => Object.values(s.player.equipment).includes(id)) && s.player.stats.armor >= 50, `the whole set on: ${s.player.stats.armor} armour, ${(100 * s.player.stats.reduction).toFixed(0)}% off`);
   assert(activeQuestView(s).lines.some(l => l.text.includes('3/3') && l.done), 'tracker: set worn');
-  const hasLook = MITHRIL_SET.every(id => appearanceOf(id).rung === 4);
+  const hasLook = STEEL_SET.every(id => appearanceOf(id).rung === 4);
   assert(hasLook, 'every piece worn resolves to the epic rung of the look ladder');
 
   // 8. through the hollow to the Warden: what stands in the way is fought, in the set
@@ -2348,7 +2362,7 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
 
   // 10. the hand-in, across the whole map
   const reload = deserialize(serialize(s))!;
-  assert(reload.quest.second === 'report' && MITHRIL_SET.every(id => Object.values(reload.player.equipment).includes(id)), 'saved after the boss, reloaded: still at the hand-in, still in the set');
+  assert(reload.quest.second === 'report' && STEEL_SET.every(id => Object.values(reload.player.equipment).includes(id)), 'saved after the boss, reloaded: still at the hand-in, still in the set');
   assert(talkToNpc(s), 'a long walk back to Warden Hale');
   const c0 = s.player.combat.xp, m0 = s.player.skills.mining.xp, sm0 = s.player.skills.smithing.xp;
   tick(s, { questAdvance: true });
@@ -2373,12 +2387,15 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
   assert(countOf(s, 'warden_shard') >= SHARDS, `${countOf(s, 'warden_shard')} Warden shards after ${kills2 + 1} kills of the Warden: a chase worth ${SHARDS} drops, not one`);
   assert(kills2 + 1 <= 8, `...and it took ${kills2 + 1} kills, so it is a farm and not a wall`);
   milestone(`${countOf(s, 'warden_shard')} shards`);
-  // three more bars (from the veins and the Warden's own ore), then the forge
-  gatherUntil(s, 'mithril', Math.max(0, 3 - countOf(s, 'mithril_bar')) + countOf(s, 'mithril_ore'));
-  gatherUntil(s, 'coal', 6 + countOf(s, 'coal'));
-  assert(s.player.skills.smithing.level >= recipeById('warden_edge')!.level, `Smithing ${s.player.skills.smithing.level} is already past the Edge's gate (${recipeById('warden_edge')!.level}) from the set alone`);
+  // the Edge's gate is two past the chestplate's, so a few more bars first; then three of them for the blade itself
+  const edgeGate = recipeById('warden_edge')!.level;
+  if (s.player.skills.smithing.level < edgeGate) practiseSmithing(s, edgeGate, 0);
+  assert(s.player.skills.smithing.level >= edgeGate, `Smithing ${s.player.skills.smithing.level}: the set and a few bars after it reach the Edge's gate (${edgeGate})`);
+  const shortBars = Math.max(0, 3 - countOf(s, 'steel_bar'));
+  gatherUntil(s, 'iron', 2 * shortBars + countOf(s, 'iron_ore'));
+  gatherUntil(s, 'coal', 2 * shortBars + countOf(s, 'coal'));
   assert(atForge(s), 'at the forge again');
-  craft(s, 'mithril_bar', 3);
+  craft(s, 'iron_bar', shortBars); craft(s, 'steel_bar', shortBars);
   craft(s, 'warden_edge', 1);
   assert(countOf(s, 'warden_edge') === 1, "the Warden's Edge is smithed");
   dressAndTidy(s);
@@ -2392,7 +2409,7 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
   run(s, 30);
   assert(!s.player.dead, 'the world stays quiet after the second quest');
   const end = deserialize(serialize(s))!;
-  assert(end.quest.second === 'cleared' && end.player.equipment.weapon === 'warden_edge' && end.player.equipment.head === 'mithril_helm', 'a finished game loads as finished, still in the full set');
+  assert(end.quest.second === 'cleared' && end.player.equipment.weapon === 'warden_edge' && end.player.equipment.head === 'steel_helm', 'a finished game loads as finished, still in the full set');
 }
 
 // ---------------------------------------------------------------------------
@@ -2489,14 +2506,16 @@ section('HOM-31 the delve: the first trip into the hollow is made before the set
 {
   /**
    * The whole delve as one life, with every cave enemy live where it stands: in through the throat, whatever wakes is fought,
-   * rest to full between fights (as a player would), then the three veins until nine ore is in the bag. The sentry archer at
-   * (-13,-47) wakes in the throat and backs off from melee; the Ogre and the Seer sleep 9-11u beyond it.
+   * rest to full between fights (as a player would), working the seam along the south-west wall, which is what walks the player
+   * into the pack posted on it. The trip is over when the three Ravagers are down: since HOM-81 the stage's ore is out on the
+   * road, so what the cave half of it costs is the fight. The sentry archer at (-13,-47) wakes in the throat and backs off from
+   * melee; the Ogre and the Seer sleep 9-11u beyond it.
    */
   function delve(level: number, kit: string, seed: number) {
     const s = quietState(seed);
     for (const e of s.enemies) if (inCave(e.spawnX, e.spawnZ)) { e.state = 'idle'; e.respawnIn = 0; e.hp = e.maxHp; e.attackCd = 0; }
     atLevel(s, level);
-    s.player.skills.mining.xp = xpForLevel(NODE_TYPES.mithril.level); s.player.skills.mining.level = NODE_TYPES.mithril.level;
+    s.player.skills.mining.xp = xpForLevel(NODE_TYPES.tin.level); s.player.skills.mining.level = NODE_TYPES.tin.level;
     const armour = kit === 'hide' ? { head: 'leather_cap', chest: 'hide_jerkin', legs: 'hide_leggings' } : { head: 'iron_helm', chest: 'iron_chestplate', legs: 'iron_greaves' };
     Object.assign(s.player.equipment, { weapon: 'forged_blade', ...armour });
     refreshGearStats(s);
@@ -2505,29 +2524,30 @@ section('HOM-31 the delve: the first trip into the hollow is made before the set
     const sleepers = s.enemies.filter(e => ['ogre', 'seer'].includes(e.type) || (e.type === 'archer' && e.spawnZ < -60));
     let woken = 0, low = 1;
     const maxHp = s.player.maxHp;
-    for (let step = 0; step < 600 && !s.player.dead && secondStage(s) === 'delve'; step++) {
+    for (let step = 0; step < 600 && !s.player.dead && (s.quest.kills.ravager ?? 0) < DELVE_GOALS.ravager; step++) {
       woken += sleepers.filter(e => st(e) !== 'idle').length;
       const chaser = s.enemies.filter(e => st(e) === 'chase').sort((a, b) => dist2(a, s.player) - dist2(b, s.player))[0];
       if (chaser) { fight(s, chaser, 60); low = Math.min(low, minHpSeen / maxHp); continue; }
       if (s.player.hp < s.player.maxHp * 0.97) { run(s, 1); continue; }
-      const vein = nearestNode(s, 'mithril');
+      const vein = nearestNode(s, 'tin');
       if (!vein) { run(s, 1); continue; }
       tick(s, { interact: { k: 'node', id: vein.id } });
       for (let n = 0; busy(s) && n < 4000 && !s.enemies.some(e => st(e) === 'chase'); n++) tick(s);
     }
-    return { lived: !s.player.dead, stage: secondStage(s), ore: countOf(s, 'mithril_ore'), kills: s.quest.kills.ravager ?? 0, woken, low };
+    return { lived: !s.player.dead, ore: countOf(s, 'tin_ore'), kills: s.quest.kills.ravager ?? 0, woken, low };
   }
   const trips = (level: number, kit: string) => [1, 2, 3, 4, 5, 6].map(n => delve(level, kit, 3100 + n));
-  const summary = (rs: ReturnType<typeof trips>) => `${rs.filter(r => r.lived && r.stage === 'armour').length}/6 done, worst trough ${Math.min(...rs.map(r => r.low)).toFixed(2)}, ${rs.reduce((m, r) => m + r.woken, 0)} sleeper-ticks awake`;
+  const done = (r: { lived: boolean; kills: number }) => r.lived && r.kills === DELVE_GOALS.ravager;
+  const summary = (rs: ReturnType<typeof trips>) => `${rs.filter(done).length}/6 done, worst trough ${Math.min(...rs.map(r => r.low)).toFixed(2)}, ${rs.reduce((m, r) => m + r.woken, 0)} sleeper-ticks awake`;
   const hide = trips(RECOMMENDED_COMBAT_2, 'hide'), iron = trips(RECOMMENDED_COMBAT_2, 'iron');
   console.log(`  Combat ${RECOMMENDED_COMBAT_2}, hide: ${summary(hide)}; iron: ${summary(iron)}`);
-  assert(hide.every(r => r.lived && r.stage === 'armour' && r.ore >= MITHRIL_PLAN.ore && r.kills === DELVE_GOALS.ravager),
-    `at the recommended Combat ${RECOMMENDED_COMBAT_2} in the hide set every delve takes nine ore and three Ravagers on the first life, with every enemy of the hollow live`);
-  assert(iron.every(r => r.lived && r.stage === 'armour'), '...and in iron too');
+  assert(hide.every(done),
+    `at the recommended Combat ${RECOMMENDED_COMBAT_2} in the hide set every delve takes the three Ravagers on the first life, with every enemy of the hollow live`);
+  assert(iron.every(done), '...and in iron too');
   assert(hide.concat(iron).every(r => r.woken === 0), 'chasing the sentry never wakes the Ogres, the Seer or the far archer: the room is taken in pieces, not all at once');
   assert(hide.every(r => r.low > 0.05), `and it is not a coin-flip: the worst moment is above 5% health (${Math.min(...hide.map(r => r.low)).toFixed(2)})`);
   const high = trips(11, 'hide');
-  assert(high.every(r => r.lived && r.stage === 'armour' && r.low > 0.15), `Combat 11 in hide, the level the first quest can hand over, is comfortable (worst trough ${Math.min(...high.map(r => r.low)).toFixed(2)})`);
+  assert(high.every(r => done(r) && r.low > 0.15), `Combat 11 in hide, the level the first quest can hand over, is comfortable (worst trough ${Math.min(...high.map(r => r.low)).toFixed(2)})`);
   assert(ENEMY_TYPES.archer.leash * 0.8 < 6, 'the archers hold their post: they back off 5u at most, which is what keeps the sentry fight where it started');
 }
 
@@ -3195,9 +3215,9 @@ section('HOM-41 mastery: levels make the actions you have outgrown quicker and r
   const g = quietState(43);
   g.player.x = LANDMARKS.forge.x - 4; g.player.z = LANDMARKS.forge.z + 3;
   g.player.skills.smithing.xp = xpForLevel(40); g.player.skills.smithing.level = 40;
-  addItem(g.player.inventory, 'mithril_bar', 2);
-  craft(g, 'mithril_helm', 1);
-  assert(countOf(g, 'mithril_helm') === 1 && countOf(g, 'mithril_bar') === 0, 'an unstackable piece of gear is never doubled, however good the smith');
+  addItem(g.player.inventory, 'steel_bar', 2);
+  craft(g, 'steel_helm', 1);
+  assert(countOf(g, 'steel_helm') === 1 && countOf(g, 'steel_bar') === 0, 'an unstackable piece of gear is never doubled, however good the smith');
 
   // the extra never outruns the bag: what does not fit is not mined, and the player is told what they got
   const full = quietState(44);
@@ -3627,13 +3647,13 @@ section('HOM-46 the road and the Strand: the bible\'s tables, as data');
 }
 
 // ---------------------------------------------------------------------------
-section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each with distance between the rungs');
+section('HOM-56 the metal ladder: copper, bronze, iron and steel, adamant, each with distance between the rungs');
 {
-  const MINING = ['copper', 'tin', 'iron', 'coal', 'mithril', 'adamant'];
+  const MINING = ['copper', 'tin', 'iron', 'coal', 'adamant']; // HOM-81: the mithril vein that sat between coal and adamant is gone, and steel is smithed from the two below it
   const lv = (t: string) => NODE_TYPES[t].level, rec = (id: string) => recipeById(id)!;
   assert(MINING.every(t => NODE_TYPES[t].skill === 'mining') && lv('copper') === 1, 'the ladder starts at copper, Mining 1');
   assert(MINING.every((t, k) => k === 0 || lv(t) > lv(MINING[k - 1])), `and climbs: ${MINING.map(t => `${t} ${lv(t)}`).join(' < ')}`);
-  assert(MINING.every((t, k) => k < 2 || lv(t) - lv(MINING[k - 1]) >= 3), 'iron, coal, mithril and adamant are each at least three levels past the last');
+  assert(MINING.every((t, k) => k < 2 || lv(t) - lv(MINING[k - 1]) >= 3), 'iron, coal and adamant are each at least three levels past the last');
   const cost = (L: number) => xpForLevel(L + 1) - xpForLevel(L);
   assert(MINING.every(t => Math.abs(NODE_TYPES[t].xp - 0.12 * cost(lv(t))) <= 2), `a swing pays 0.12 x the XP from its own level to the next: ${MINING.map(t => `${t} ${NODE_TYPES[t].xp}`).join(', ')}`);
 
@@ -3647,17 +3667,18 @@ section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each w
   const OLD: Rock[] = [{ level: 1, xp: 35 }, { level: 4, xp: 50 }, { level: 9, xp: 80 }, { level: 17, xp: 170 }];
   const NEW: Rock[] = MINING.map(t => ({ level: lv(t), xp: NODE_TYPES[t].xp }));
   const was = swingsTo(17, OLD), now = swingsTo(lv('adamant'), NEW);
-  console.log(`  Mining to the adamant veins: ${was} swings on the first ladder (Mining 17), ${now} now (Mining ${lv('adamant')}); to mithril ${swingsTo(9, OLD)} then, ${swingsTo(lv('mithril'), NEW)} now`);
+  console.log(`  Mining to the adamant veins: ${was} swings on the first ladder (Mining 17), ${now} now (Mining ${lv('adamant')}); to the last gate before it ${swingsTo(9, OLD)} then, ${swingsTo(lv('coal'), NEW)} now`);
   assert(now >= 5 * was, `climbing to adamant is at least five times the swings it was (${now} against ${was})`);
-  assert(swingsTo(lv('mithril'), NEW) >= 4 * swingsTo(9, OLD), 'and to mithril at least four times');
+  assert(swingsTo(lv('coal'), NEW) >= 3 * swingsTo(9, OLD), 'and to coal, the last gate under it, at least three times');
 
-  // smithing: bronze first, then iron and steel, then mithril, then adamant, every gate above the last, and a set that is a stretch in itself
-  const SM = ['bronze_bar', 'bronze_sword', 'bronze_helm', 'bronze_greaves', 'bronze_chestplate', 'iron_bar', 'steel_bar', 'forged_blade', 'mithril_bar', 'mithril_helm', 'mithril_greaves', 'mithril_chestplate', 'warden_edge', 'adamant_bar', 'adamant_helm', 'adamant_blade', 'adamant_greaves', 'adamant_chestplate'];
+  // smithing: bronze first, then the long iron-and-steel stretch that carries the second quest's set, then adamant, every gate above the last
+  const SM = ['bronze_bar', 'bronze_sword', 'bronze_helm', 'bronze_greaves', 'bronze_chestplate', 'iron_bar', 'steel_bar', 'forged_blade', 'steel_helm', 'steel_greaves', 'steel_chestplate', 'warden_edge', 'adamant_bar', 'adamant_helm', 'adamant_blade', 'adamant_greaves', 'adamant_chestplate'];
   assert(rec('copper_bar').level === 1 && rec('bronze_bar').level === 1 && SM.every((id, k) => k === 0 || rec(id).level > rec(SM[k - 1]).level), `Smithing opens with copper and bronze at 1 and every gate is above the last: ${SM.map(id => rec(id).level).join(' < ')}`);
-  const tiers = [['bronze', 'bronze_bar'], ['iron and steel', 'iron_bar'], ['mithril', 'mithril_bar'], ['adamant', 'adamant_bar']] as const;
+  const tiers = [['bronze', 'bronze_bar'], ['iron and steel', 'iron_bar'], ['adamant', 'adamant_bar']] as const;
   const spans = tiers.map(([, id], k) => (k + 1 < tiers.length ? rec(tiers[k + 1][1]).level : rec('adamant_chestplate').level + 1) - rec(id).level);
-  console.log(`  Smithing levels in each tier: ${tiers.map(([n], k) => `${n} ${spans[k]}`).join(', ')} (the first ladder: iron and steel 6, mithril 7, adamant 6: the levels in a tier are about what they were, it is the XP each level costs, and so the swings, that went up)`);
+  console.log(`  Smithing levels in each tier: ${tiers.map(([n], k) => `${n} ${spans[k]}`).join(', ')} (HOM-81 folded what was mithril's seven levels into iron and steel, which is one metal across the bar, the blade and the set)`);
   assert(spans.every(n => n >= 5) && spans[0] >= 6 && spans[1] >= 8, 'every tier is worn across at least five Smithing levels, bronze six and iron eight');
+  assert(rec('steel_helm').level - rec('steel_bar').level >= 6, `the steel set is ${rec('steel_helm').level - rec('steel_bar').level} levels above its own bar: the bar is the blade's, the plate is the climb`);
   assert(rec('bronze_chestplate').level < rec('iron_bar').level && lv('tin') < lv('iron'), 'the whole bronze set is open before the iron bar is');
   assert(rec('bronze_bar').inputs.length === 2 && rec('bronze_bar').inputs.some(i => i.id === 'copper_ore') && rec('bronze_bar').inputs.some(i => i.id === 'tin_ore'), 'a bronze bar is one copper ore and one tin ore');
   // the quest plan is the recipes, with the practice the gates want on top
@@ -3684,7 +3705,11 @@ section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each w
   assert(nodesOf(s, 'copper').length >= 3 && dist2(nearest('copper'), start) <= 40, `copper is in Hale's clearing and on the ridge, ${dist2(nearest('copper'), start).toFixed(0)} units from where a new game starts`);
   assert(nodesOf(s, 'copper').some(n => dist2(n, LANDMARKS.forge) < 15) && nodesOf(s, 'copper').some(n => n.z < -20 && n.x < 15), 'both by the forge and on the ridge');
   // HOM-77: the second rung is the first reason to leave. Tin is out through the east gate, on the road, but the first stand is a short walk
-  assert(nodesOf(s, 'tin').length >= 3 && nodesOf(s, 'tin').every(n => regionAt(n.x, n.z)?.id === 'greywater') && dist2(nearest('tin'), start) < 120, `tin is on the Greywater Road, the nearest stand ${dist2(nearest('tin'), start).toFixed(0)} units out`);
+  const openTin = nodesOf(s, 'tin').filter(n => !inCave(n.x, n.z));
+  const nearestOpenTin = openTin.reduce((a, b) => dist2(a, start) < dist2(b, start) ? a : b);
+  assert(openTin.length >= 3 && openTin.every(n => regionAt(n.x, n.z)?.id === 'greywater') && dist2(nearestOpenTin, start) < 120, `tin out in the open is on the Greywater Road, the nearest stand ${dist2(nearestOpenTin, start).toFixed(0)} units out`);
+  // HOM-81: the Hollow's seam is the only other tin, and it is three rooms past the Cave Brute: ore for a character who has already taken the door, never the second rung a level-1 one is sent to
+  assert(nodesOf(s, 'tin').filter(n => inCave(n.x, n.z)).length === 3 && CAVE_ROCKS.every(r => r.type === 'tin'), 'and the Hollow\'s three veins are the only other tin in the world');
   const wake = (n: { x: number; z: number }) => SPAWNS.slice(0, 11).every(sp => dist2(sp, n) > aggroRadius(ENEMY_TYPES[sp.type], 1) + 1);
   assert(nodesOf(s, 'copper').every(wake), 'no copper rock is inside the aggro radius of any of the clearing\'s enemies, a level-1 character\'s included');
 
@@ -3703,11 +3728,13 @@ section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each w
   for (const id of BRONZE_SET) tick(g, { inv: [{ k: 'equip', slot: g.player.inventory.findIndex(x => x?.id === id) }] });
   assert(BRONZE_SET.every(id => Object.values(g.player.equipment).includes(id)) && g.player.stats.armor === bronzeArmor && g.player.stats.weaponDamage === stats('bronze_sword').damage, `and wore it at combat 1: ${g.player.stats.armor} armour, +${g.player.stats.weaponDamage} damage`);
 
-  // saves: nothing is renamed or removed, XP is what is stored, and the new nodes arrive full
+  // saves: XP is what is stored, the new nodes arrive full, and the one id that was renamed (HOM-81) loads as what it became
   const old = createState(5603);
   for (const e of old.enemies) { e.state = 'dead'; e.respawnIn = 1e9; }
   grantXp(old, 'mining', xpForLevel(17), 0, 0); grantXp(old, 'smithing', xpForLevel(19), 0, 0);
-  old.player.equipment.chest = 'mithril_chestplate'; old.player.equipment.weapon = 'warden_edge';
+  old.player.equipment.chest = 'mithril_chestplate'; old.player.equipment.weapon = 'warden_edge'; // the ids a save from before HOM-81 carries
+  addItem(old.player.inventory, 'iron_ore', 4);
+  old.player.inventory.find(st => st?.id === 'iron_ore')!.id = 'mithril_ore'; // and the ore it was carrying, which has no steel of its own
   old.nodes[0].charges = 1; old.nodes[0].respawnIn = 0;
   const file = JSON.parse(serialize(old));
   const beforeSeams = 30; // a save from before the Seams: the world ended at Saltmarrow's fishing spots
@@ -3715,7 +3742,9 @@ section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each w
   const back = deserialize(JSON.stringify(file));
   const herbN = REGIONS.reduce((n, r) => n + (r.herbs?.length ?? 0), 0);
   assert(back !== null && back.nodes.length === 33 + REGIONS.find(r => r.id === 'wayside')!.rocks.length + REGIONS.find(r => r.id === 'wayside')!.trees.length + herbN && back.nodes[0].charges === 1 && back.nodes.slice(beforeSeams).every(n => n.charges === NODE_TYPES[n.type].charges), 'an old save still loads: the nodes it names keep their state, and every later one stands full');
-  assert(back !== null && back.player.skills.mining.level === 17 && back.player.skills.smithing.level === 19 && back.player.equipment.chest === 'mithril_chestplate' && back.player.equipment.weapon === 'warden_edge', 'a Mining 17, Smithing 19 character keeps both levels and the gear they wear: only the gates moved above them');
+  assert(back !== null && back.player.skills.mining.level === 17 && back.player.skills.smithing.level === 19 && back.player.equipment.weapon === 'warden_edge', 'a Mining 17, Smithing 19 character keeps both levels and the blade they carry: only the gates moved above them');
+  assert(back !== null && back.player.equipment.chest === 'steel_chestplate' && countOf(back, 'mithril_ore') === 0 && countOf(back, 'iron_ore') === 4,
+    'and the mithril they were wearing loads as the steel it became, their ore as the iron it would have been smelted from: HOM-81 renames a save, it does not refuse one');
 }
 
 // ---------------------------------------------------------------------------

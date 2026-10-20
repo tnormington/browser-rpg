@@ -22,6 +22,16 @@ export const SAVE_VERSION = 1;
 const WORLD_LIMIT = 10000;
 /** Skills added after the first save format: a save without them starts them at 0 xp. */
 const LATE_SKILLS: SkillId[] = ['fishing', 'cooking', 'herbalism', 'alchemy'];
+/**
+ * Items that were renamed rather than retired, by their old id. The mithril rung became steel in HOM-81 at the same stats and the same
+ * recipe shape, so a character who was wearing it keeps wearing it instead of having their save refused. Ore and bars have no steel
+ * counterpart of the same worth: they load as the iron they would have been smelted from. Anything not listed is still a bad item.
+ */
+const RENAMED_ITEMS: Record<string, string> = {
+  mithril_helm: 'steel_helm', mithril_greaves: 'steel_greaves', mithril_chestplate: 'steel_chestplate',
+  mithril_bar: 'steel_bar', mithril_ore: 'iron_ore',
+};
+const itemId = (id: string) => RENAMED_ITEMS[id] ?? id;
 
 interface SaveFile {
   version: number;
@@ -112,19 +122,22 @@ export function deserialize(raw: string): GameState | null {
     if (!Array.isArray(fp.inventory) || fp.inventory.length !== INVENTORY_SIZE) return null;
     fp.inventory.forEach((st, i) => {
       if (st === null) return;
-      const def = isObj(st) && typeof st.id === 'string' ? ITEMS[st.id] : undefined;
+      const id = isObj(st) && typeof st.id === 'string' ? itemId(st.id) : '';
+      const def = ITEMS[id];
       if (!def) throw new Error('bad item');
-      p.inventory[i] = { id: st.id as string, qty: num(st.qty, 1, def.stack, 'qty') };
+      p.inventory[i] = { id, qty: num(st.qty, 1, def.stack, 'qty') };
     });
     for (const slot of EQUIP_SLOTS) {
-      const id = (fp.equipment as Record<string, unknown>)[slot];
-      if (id === null || id === undefined) continue;
-      if (typeof id !== 'string' || ITEMS[id]?.slot !== slot) throw new Error('bad equipment');
+      const raw = (fp.equipment as Record<string, unknown>)[slot];
+      if (raw === null || raw === undefined) continue;
+      const id = typeof raw === 'string' ? itemId(raw) : '';
+      if (ITEMS[id]?.slot !== slot) throw new Error('bad equipment');
       p.equipment[slot] = id;
     }
     if (fp.durability !== undefined) {
       if (!isObj(fp.durability)) return null;
-      for (const [id, n] of Object.entries(fp.durability)) {
+      for (const [raw, n] of Object.entries(fp.durability)) {
+        const id = itemId(raw);
         if (!ITEMS[id]?.slot) throw new Error('bad durability');
         p.durability[id] = num(n, 0, MAX_DURABILITY, `durability.${id}`);
       }
@@ -217,8 +230,9 @@ export function deserialize(raw: string): GameState | null {
       n.respawnIn = num(fn.respawnIn, 0, 1e6, 'respawnIn');
     }
     for (const fd of f.drops) {
-      if (!ITEMS[fd?.item]) continue;
-      s.drops.push({ id: num(fd.id, 1, 1e9, 'drop id'), item: fd.item, qty: num(fd.qty, 1, 1e4, 'drop qty'),
+      const item = typeof fd?.item === 'string' ? itemId(fd.item) : '';
+      if (!ITEMS[item]) continue;
+      s.drops.push({ id: num(fd.id, 1, 1e9, 'drop id'), item, qty: num(fd.qty, 1, 1e4, 'drop qty'),
         x: num(fd.x, -WORLD_LIMIT, WORLD_LIMIT, 'drop x'), z: num(fd.z, -WORLD_LIMIT, WORLD_LIMIT, 'drop z'), age: num(fd.age, 0, 1e6, 'drop age'), blocked: true });
     }
     s.events.length = 0;

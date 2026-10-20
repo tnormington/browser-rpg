@@ -67,11 +67,9 @@ export const ITEMS: Record<string, ItemDef> = {
   logs: { name: 'Logs', stack: 50, dropWeight: 0, tier: 0, value: 2, desc: 'Seasoned wood. Makes a good hilt.' },
   iron_bar: { name: 'Iron Bar', stack: 50, dropWeight: 0, tier: 0, value: 8, desc: 'Smelted at the forge.' },
   steel_bar: { name: 'Steel Bar', stack: 50, dropWeight: 0, tier: 0, value: 22, desc: 'Iron hardened with coal.' },
-  mithril_ore: { name: 'Mithril Ore', stack: 50, dropWeight: 0, tier: 0, value: 10, desc: 'Blue-veined ore from deep in the cave. Smelts into mithril at the forge.' },
-  warden_shard: { name: 'Warden Shard', stack: 50, dropWeight: 0, tier: 0, value: 40, desc: 'A splinter of the Hollow Warden. Forged with mithril, it makes a blade nothing else can.' },
+  warden_shard: { name: 'Warden Shard', stack: 50, dropWeight: 0, tier: 0, value: 40, desc: 'A splinter of the Hollow Warden. Forged with steel, it makes a blade nothing else can.' },
   marrow_shard: { name: 'Marrow Shard', stack: 50, dropWeight: 0, tier: 0, value: 60, desc: "A barnacled splinter of Captain Marrow's anchor. Forged with adamant, it makes a blade nothing at the forge can." },
   heartwood_shard: { name: 'Heartwood Shard', stack: 50, dropWeight: 0, tier: 0, value: 80, desc: "A hard, red splinter of the Rotroot Mother's heartwood. Forged with adamant, it makes a blade nothing at the forge can." },
-  mithril_bar: { name: 'Mithril Bar', stack: 50, dropWeight: 0, tier: 0, value: 30, desc: 'Light, cold and harder than steel. Armour is smithed from it.' },
   adamant_ore: { name: 'Adamant Ore', stack: 50, dropWeight: 0, tier: 0, value: 19, desc: 'Green-black ore from the cliffs above the Strand. Smelts into adamant at the forge.' },
   adamant_bar: { name: 'Adamant Bar', stack: 50, dropWeight: 0, tier: 0, value: 55, desc: 'Dense and sea-dark. Armour and a blade are smithed from it.' },
   [SEA_SALT]: { name: 'Sea Salt', stack: 50, dropWeight: 0, tier: 0, value: 2, desc: 'Coarse grey salt from the Saltmarrow pans. A pie wants a pinch.' },
@@ -88,7 +86,7 @@ export const ITEMS: Record<string, ItemDef> = {
   steel_sword: { name: 'Steel Sword', slot: 'weapon', stats: { damage: 9, speed: 2.2 }, stack: 1, dropWeight: 3, tier: 3, value: 90, desc: 'Keen, balanced, rare.' },
   forged_blade: { name: "Forgemaster's Blade", slot: 'weapon', stats: { damage: 18, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 3, value: 120, desc: 'Steel you smelted and shaped yourself. Better than anything the enemies carry.' },
   // smithed from Warden shards (the Warden's rare drop), so it is something the player made: the crafted weapon stays the best one
-  warden_edge: { name: "Warden's Edge", slot: 'weapon', stats: { damage: 28, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 4, value: 400, desc: 'Mithril folded around a shard of the Hollow Warden. Nothing else you can carry cuts like it.' },
+  warden_edge: { name: "Warden's Edge", slot: 'weapon', stats: { damage: 28, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 4, value: 400, desc: 'Steel folded around a shard of the Hollow Warden. Nothing else you can carry cuts like it.' },
   // the adamant set (docs/world-design.md 3.3): tier 5, and the first gear that asks for a combat level
   adamant_blade: { name: 'Adamant Blade', slot: 'weapon', stats: { damage: 40, speed: 2.0 }, stack: 1, dropWeight: 0, tier: 5, value: 320, req: { combat: 14 }, desc: "Three bars of adamant, a log for the hilt. A step above the Warden's Edge." },
   // the adamant capstone (3.3): three adamant bars folded round three Marrow shards. Damage 50 against the Adamant Blade's 40; it asks for combat 18, two under the player who is on schedule
@@ -108,10 +106,11 @@ export const ITEMS: Record<string, ItemDef> = {
   iron_helm: { name: 'Iron Helm', slot: 'head', stats: { armor: 5 }, stack: 1, dropWeight: 5, tier: 2, value: 25, desc: 'Dented but solid.' },
   iron_chestplate: { name: 'Iron Chestplate', slot: 'chest', stats: { armor: 9 }, stack: 1, dropWeight: 4, tier: 2, value: 45, desc: 'Heavy and protective.' },
   iron_greaves: { name: 'Iron Greaves', slot: 'legs', stats: { armor: 6 }, stack: 1, dropWeight: 5, tier: 2, value: 30, desc: 'Heavy and protective.' },
-  // the smithable set: the cave's enemies are tuned against it, and it is the top rung of the worn-gear ladder (tier 4)
-  mithril_helm: { name: 'Mithril Helm', slot: 'head', stats: { armor: 12 }, stack: 1, dropWeight: 0, tier: 4, value: 90, desc: "Smithed from cave mithril. The Hollow's arrows turn on it." },
-  mithril_chestplate: { name: 'Mithril Chestplate', slot: 'chest', stats: { armor: 22 }, stack: 1, dropWeight: 0, tier: 4, value: 190, desc: 'Smithed from cave mithril. Light enough to dodge in.' },
-  mithril_greaves: { name: 'Mithril Greaves', slot: 'legs', stats: { armor: 16 }, stack: 1, dropWeight: 0, tier: 4, value: 140, desc: 'Smithed from cave mithril.' },
+  // the smithable set (HOM-81): the cave's enemies are tuned against it, and it is the top rung of the worn-gear ladder (tier 4). The iron above is
+  // what the dead were wearing; this is the same metal the Forgemaster's Blade is, hardened and beaten into plate, which is why it is worth so much more.
+  steel_helm: { name: 'Steel Helm', slot: 'head', stats: { armor: 12 }, stack: 1, dropWeight: 0, tier: 4, value: 90, desc: "Hardened at your own forge. The Hollow's arrows turn on it." },
+  steel_chestplate: { name: 'Steel Chestplate', slot: 'chest', stats: { armor: 22 }, stack: 1, dropWeight: 0, tier: 4, value: 190, desc: 'Hardened at your own forge. Plate where the dead gave you scrap.' },
+  steel_greaves: { name: 'Steel Greaves', slot: 'legs', stats: { armor: 16 }, stack: 1, dropWeight: 0, tier: 4, value: 140, desc: 'Hardened at your own forge.' },
   adamant_helm: { name: 'Adamant Helm', slot: 'head', stats: { armor: 16 }, stack: 1, dropWeight: 0, tier: 5, value: 170, req: { combat: 14 }, desc: 'Smithed from Strand adamant.' },
   adamant_chestplate: { name: 'Adamant Chestplate', slot: 'chest', stats: { armor: 30 }, stack: 1, dropWeight: 0, tier: 5, value: 350, req: { combat: 14 }, desc: 'Smithed from Strand adamant. Heavy, and worth the weight.' },
   adamant_greaves: { name: 'Adamant Greaves', slot: 'legs', stats: { armor: 22 }, stack: 1, dropWeight: 0, tier: 5, value: 260, req: { combat: 14 }, desc: 'Smithed from Strand adamant.' },
@@ -124,7 +123,7 @@ export const COPPER_SET = ['copper_sword', 'copper_helm', 'copper_greaves', 'cop
 export const BRONZE_SET = ['bronze_sword', 'bronze_helm', 'bronze_greaves', 'bronze_chestplate'] as const;
 
 /** The smithable set, in smithing order. Quests and verify read it from here. */
-export const MITHRIL_SET = ['mithril_helm', 'mithril_greaves', 'mithril_chestplate'] as const;
+export const STEEL_SET = ['steel_helm', 'steel_greaves', 'steel_chestplate'] as const;
 
 /** The adamant set, in smithing order. */
 export const ADAMANT_SET = ['adamant_helm', 'adamant_greaves', 'adamant_chestplate'] as const;
@@ -151,17 +150,18 @@ export const DROP_TABLES: Record<string, DropTable> = {
     { id: 'iron_sword' }, { id: 'steel_sword' }, { id: 'iron_helm' }, { id: 'iron_chestplate' }, { id: 'iron_greaves' },
     { id: 'wolf_pelt', qty: [2, 4] },
   ] },
-  // the cave: iron-grade gear and ore only. The mithril set is smithed, never dropped; the Warden's shards (smithed into a blade) are the one rare chase.
+  // the cave: iron-grade gear and the metal for the next rung. The steel set is smithed, never dropped; the Warden's shards (smithed into a blade) are the one rare chase.
+  // What the ogres dig up and the Warden carries is iron, not the Hollow's own tin: it is the old workings' leavings, and it is what the set is made of (HOM-81).
   ravager: { rolls: 1, nothing: 40, entries: [
     { id: 'wolf_pelt', qty: [1, 3] }, { id: 'iron_helm' }, { id: 'iron_greaves' }, { id: 'steel_sword', weight: 2 },
   ] },
   archer: { rolls: 1, nothing: 35, entries: [{ id: 'iron_helm' }, { id: 'iron_greaves' }, { id: 'iron_sword' }] },
   seer: { rolls: 1, nothing: 35, entries: [{ id: 'iron_chestplate' }, { id: 'iron_helm' }, { id: 'steel_sword', weight: 2 }] },
   ogre: { rolls: 2, nothing: 30, entries: [
-    { id: 'mithril_ore', qty: [1, 2], weight: 20 }, { id: 'iron_chestplate' }, { id: 'steel_sword', weight: 3 },
+    { id: 'iron_ore', qty: [3, 6], weight: 20 }, { id: 'iron_chestplate' }, { id: 'steel_sword', weight: 3 },
   ] },
   warden: { rolls: 2, nothing: 48, entries: [
-    { id: 'mithril_ore', qty: [2, 4], weight: 30 }, { id: 'warden_shard', qty: [1, 2], weight: 50 }, { id: 'iron_chestplate', weight: 10 },
+    { id: 'iron_bar', qty: [3, 5], weight: 30 }, { id: 'warden_shard', qty: [1, 2], weight: 50 }, { id: 'iron_chestplate', weight: 10 },
   ] },
   // the road and the Strand: hides and dropped iron-grade gear, nothing a recipe eats. The bible's rule (3.4) is an expected sale value of
   // 0.6 x level + 3 gold a kill (an elite 3x, a rare 4x); `nothing` is solved so each table lands on it, which is why so many rolls come up empty.

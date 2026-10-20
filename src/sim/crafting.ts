@@ -59,19 +59,19 @@ export const RECIPES: Recipe[] = [
     inputs: [{ id: 'iron_bar', qty: 1 }, { id: 'coal', qty: 2 }], output: { id: 'steel_bar', qty: 1 } },
   { id: 'forged_blade', name: "Forgemaster's Blade", skill: 'smithing', level: 9, time: 6, xp: 75,
     inputs: [{ id: 'steel_bar', qty: 3 }, { id: 'logs', qty: 1 }], output: { id: 'forged_blade', qty: 1 } },
-  // The cave's ladder: mithril ore (Mining 18) smelted with coal, then the set. Each piece asks for one more Smithing than the last, and the nine
-  // bars and the pieces before it carry a smith to the chestplate's gate exactly: the set is never the grind, getting to the bar is.
-  { id: 'mithril_bar', name: 'Mithril Bar', skill: 'smithing', level: 15, time: 5, xp: 90,
-    inputs: [{ id: 'mithril_ore', qty: 1 }, { id: 'coal', qty: 2 }], output: { id: 'mithril_bar', qty: 1 } },
-  { id: 'mithril_helm', name: 'Mithril Helm', skill: 'smithing', level: 16, time: 7, xp: 145,
-    inputs: [{ id: 'mithril_bar', qty: 2 }], output: { id: 'mithril_helm', qty: 1 } },
-  { id: 'mithril_greaves', name: 'Mithril Greaves', skill: 'smithing', level: 17, time: 8, xp: 160,
-    inputs: [{ id: 'mithril_bar', qty: 3 }], output: { id: 'mithril_greaves', qty: 1 } },
-  { id: 'mithril_chestplate', name: 'Mithril Chestplate', skill: 'smithing', level: 18, time: 10, xp: 155,
-    inputs: [{ id: 'mithril_bar', qty: 4 }], output: { id: 'mithril_chestplate', qty: 1 } },
+  // The second quest's rung (HOM-81): the same steel the blade is, beaten into plate. The bar is Smithing 8 and the blade already taught it, so what
+  // gates this set is the plate itself: each piece asks for one more Smithing than the last, and a piece pays well under a level at these levels, so
+  // a smith smelts a few more bars between them. That is the shape of the grind now. Mithril held this rung until the Hollow became tin, and it worked
+  // the other way round: the bar was the gate (Smithing 15) and nine of them overshot the whole set. The total is about the same thirty bars either way.
+  { id: 'steel_helm', name: 'Steel Helm', skill: 'smithing', level: 16, time: 7, xp: 145,
+    inputs: [{ id: 'steel_bar', qty: 2 }], output: { id: 'steel_helm', qty: 1 } },
+  { id: 'steel_greaves', name: 'Steel Greaves', skill: 'smithing', level: 17, time: 8, xp: 160,
+    inputs: [{ id: 'steel_bar', qty: 3 }], output: { id: 'steel_greaves', qty: 1 } },
+  { id: 'steel_chestplate', name: 'Steel Chestplate', skill: 'smithing', level: 18, time: 10, xp: 155,
+    inputs: [{ id: 'steel_bar', qty: 4 }], output: { id: 'steel_chestplate', qty: 1 } },
   // the reason to keep killing the Warden after the quest: shards drop at random, three make the best weapon in the game
   { id: 'warden_edge', name: "Warden's Edge", skill: 'smithing', level: 20, time: 12, xp: 220,
-    inputs: [{ id: 'mithril_bar', qty: 3 }, { id: 'warden_shard', qty: 3 }], output: { id: 'warden_edge', qty: 1 } },
+    inputs: [{ id: 'steel_bar', qty: 3 }, { id: 'warden_shard', qty: 3 }], output: { id: 'warden_edge', qty: 1 } },
   // The Strand's ladder (docs/world-design.md 3.3): adamant ore (Mining 28) and three coal to a bar, then the set and the blade. The blade takes
   // plain logs: the bible's ash is a tree that does not exist yet (W2.2).
   { id: 'adamant_bar', name: 'Adamant Bar', skill: 'smithing', level: 24, time: 6, xp: 205,

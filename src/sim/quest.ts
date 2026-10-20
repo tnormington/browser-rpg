@@ -1,13 +1,13 @@
 // The quest chain that stitches the golden path together, the NPC's dialogue, and the tracker view. Pure sim.
 import type { GameState } from '../sim';
-import { LANDMARKS } from './world';
+import { LANDMARKS, inCave } from './world';
 import { ENEMY_TYPES } from './data';
 import { SkillId, grantXp } from './skills';
 import { NODE_TYPES } from './gathering';
 import { recipeById } from './crafting';
 import { countItem, removeItem } from './inventory';
 import { refreshPlayerStats } from './combat';
-import { EQUIP_SLOTS, ITEMS, MITHRIL_SET } from './items';
+import { EQUIP_SLOTS, ITEMS, STEEL_SET } from './items';
 
 export type QuestStage = 'offer' | 'hunt' | 'report1' | 'forge' | 'brute' | 'report2' | 'done';
 /**
@@ -65,13 +65,14 @@ export const REWARD: { skill: SkillId; xp: number }[] = [
 ];
 
 export const QUEST2_NAME = 'The Hollow Below';
-/** The cave's Ravager pack guards the first veins: mining them out means clearing them. */
+/** The cave's Ravager pack holds the hollow the passage opens into: going on past it means clearing it. */
 export const DELVE_GOALS: Record<string, number> = { ravager: 3 };
 /**
- * What the mithril set costs in raw terms (see RECIPES): nine bars (2 + 3 + 4 across helm, greaves and chestplate), each one ore
- * and two coal. Nine ore is exactly three veins' worth; the coal is the same road's waysides as the first quest (HOM-77).
+ * What the steel set costs in raw terms (see RECIPES): nine steel bars (2 + 3 + 4 across helm, greaves and chestplate), each an iron
+ * bar (two ore) and two coal. The cave holds none of it since its seam became tin (HOM-81): iron and coal are both the Greywater
+ * Road's waysides, the same ground the first quest's blade came off, which is why the trip out is twice the first one's and not new.
  */
-export const MITHRIL_PLAN = { ore: 9, coal: 18, bars: 9 };
+export const STEEL_PLAN = { ore: 18, coal: 18, iron: 9, bars: 9 };
 export const RECOMMENDED_COMBAT_2 = 9;
 export const REWARD2: { skill: SkillId; xp: number }[] = [
   { skill: 'combat', xp: 1000 }, { skill: 'mining', xp: 500 }, { skill: 'smithing', xp: 700 },
@@ -112,11 +113,13 @@ const haveGoods = (s: GameState) => ERRAND_GOODS.every(g => countItem(s.player.i
 const owned = (s: GameState, id: string) =>
   countItem(s.player.inventory, id) + EQUIP_SLOTS.filter(slot => s.player.equipment[slot] === id).length;
 /** Bars already spent on pieces you own count toward the plan, so tracker progress never goes backwards at the forge. */
-const BARS_IN: Record<string, number> = { mithril_helm: 2, mithril_greaves: 3, mithril_chestplate: 4 };
-const mithrilBars = (s: GameState) => owned(s, 'mithril_bar') + MITHRIL_SET.reduce((n, id) => n + owned(s, id) * BARS_IN[id], 0);
-const mithrilOre = (s: GameState) => countItem(s.player.inventory, 'mithril_ore') + mithrilBars(s);
-const pieces = (s: GameState) => MITHRIL_SET.filter(id => owned(s, id) > 0).length;
-const worn = (s: GameState) => MITHRIL_SET.filter(id => Object.values(s.player.equipment).includes(id)).length;
+const BARS_IN: Record<string, number> = { steel_helm: 2, steel_greaves: 3, steel_chestplate: 4 };
+const steelBars = (s: GameState) => owned(s, 'steel_bar') + STEEL_SET.reduce((n, id) => n + owned(s, id) * BARS_IN[id], 0);
+/** Iron bars still in the bag plus the ones already hardened into steel: the same trick one rung down the recipe. */
+const ironBars = (s: GameState) => countItem(s.player.inventory, 'iron_bar') + steelBars(s);
+const ironOre = (s: GameState) => countItem(s.player.inventory, 'iron_ore') + 2 * ironBars(s);
+const pieces = (s: GameState) => STEEL_SET.filter(id => owned(s, id) > 0).length;
+const worn = (s: GameState) => STEEL_SET.filter(id => Object.values(s.player.equipment).includes(id)).length;
 
 const hasBlade = (s: GameState) =>
   countItem(s.player.inventory, 'forged_blade') > 0 || Object.values(s.player.equipment).includes('forged_blade');
@@ -219,11 +222,11 @@ export function advanceQuest(s: GameState, what: boolean | 'road' = true) {
 export function updateQuest(s: GameState) {
   const q = s.quest;
   if (q.stage === 'forge' && hasBlade(s)) { q.stage = 'brute'; questEvent(s, 'stage'); }
-  // the delve ends when the Ravagers are down and nine ore's worth is in hand (or already smelted); the smithing ends when the set exists
-  if (q.second === 'delve' && Object.entries(DELVE_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n) && mithrilOre(s) >= MITHRIL_PLAN.ore) {
+  // the delve ends when the Ravagers are down and eighteen ore's worth is in hand (or already smelted); the smithing ends when the set exists
+  if (q.second === 'delve' && Object.entries(DELVE_GOALS).every(([t, n]) => (q.kills[t] ?? 0) >= n) && ironOre(s) >= STEEL_PLAN.ore) {
     q.second = 'armour'; questEvent(s, 'stage', 2);
   }
-  if (q.second === 'armour' && pieces(s) === MITHRIL_SET.length) { q.second = 'warden'; questEvent(s, 'stage', 2); }
+  if (q.second === 'armour' && pieces(s) === STEEL_SET.length) { q.second = 'warden'; questEvent(s, 'stage', 2); }
   // the errand is ready the moment the goods are in the bag, and not ready again if they leave it
   if (q.fourth === 'carry' && haveGoods(s)) { q.fourth = 'report'; questEvent(s, 'stage', 4); }
   else if (q.fourth === 'report' && !haveGoods(s)) q.fourth = 'carry';
@@ -294,25 +297,25 @@ export const DIALOGUE2: Record<Exclude<Quest2Stage, 'locked'>, Dialogue> = {
   offer: {
     lines: [
       'You did it. The Brute is dead, and that frightens me more than it comforts me.',
-      'It was a sentry. Something has been driving creatures up out of the cave for weeks, and the miners swear the walls down there run blue with mithril. A Warden keeps the deep hall.',
-      'Plain iron will not hold against what lives down there. Go in. Take the ore from the veins, smith yourself armour at the forge, and put that Warden down.',
+      'It was a sentry. Something has been driving creatures up out of the cave for weeks, and a Warden keeps the deep hall at the end of it.',
+      'You carry steel and you wear a dead man\'s iron. That is backwards. Plate yourself in the metal you smelted yourself, then go down and put that Warden down.',
     ],
     options: [
       { label: "I'll go below.", advance: true,
-        reply: `The cave mouth is north-west, and the passage runs on into the dark. Mithril needs Mining ${NODE_TYPES.mithril.level}, and the coal seams are the way up to it; the Ravagers that guard the veins will not let you work in peace. Smelt bars at the forge (Smithing ${recipeById('mithril_bar')!.level}), then smith the helm, greaves and chestplate, and wear them.` },
+        reply: `The cave mouth is north-west, and the passage runs on into the dark. There is nothing in the Hollow worth smithing: its seam is tin. The iron and the coal are east on the Greywater Road, Mining ${NODE_TYPES.iron.level} and ${NODE_TYPES.coal.level}. Harden the bars at the forge, smith the helm, greaves and chestplate (Smithing ${recipeById('steel_helm')!.level} and up), and wear them.` },
       CLOSE('Not yet.'),
     ],
   },
   delve: {
-    lines: ['Three Ravagers and nine ore, that is all I ask of the first trip. The veins are in the hollow, south-west of the passage.',
-      'A Gloom Archer stands sentry where the passage opens out: take it alone from the throat and rest before you go near the pack. Then Cleave the Ravagers, do not fight them one by one. Bring coal too, and there is none of that down there: the Greywater Road\'s waysides are where the seams are.'],
+    lines: ['Three Ravagers and eighteen iron, that is all I ask of the first trip. The pack holds the hollow the passage opens into, and nothing goes deeper until it is down.',
+      'A Gloom Archer stands sentry where the passage opens out: take it alone from the throat and rest before you go near the pack. Then Cleave the Ravagers, do not fight them one by one. The ore is the other errand: east out of the gate, along the road.'],
     options: [
-      { label: 'Where do I find mithril?', reply: `Past the cave mouth, up the passage and into the big cavern: the blue-veined rocks in the south-west corner. Mining ${NODE_TYPES.mithril.level} to work them: if you are short, the coal seams out along the road are the practice.` },
+      { label: 'Where do I find iron?', reply: `The Greywater Road's waysides, out the east gate: iron from the first stand on, coal from the second. Mining ${NODE_TYPES.iron.level} for the iron and ${NODE_TYPES.coal.level} for the coal; copper and tin are the practice if you are short of either.` },
       CLOSE('Back to it.'),
     ],
   },
   armour: {
-    lines: ['Smelt the ore with coal at the forge, then smith the helm, greaves and chestplate. Each wants more Smithing than the last, but the bars will carry you there.',
+    lines: ['Smelt the iron, harden it with coal, then smith the helm, greaves and chestplate. Each wants more Smithing than the last, but the bars will carry you there.',
       "The Hollow's archers and its seer are tuned to iron. You will want every plate of this before you go deeper."],
     options: [
       { label: 'How much coal?', reply: 'Two coal to every bar, nine bars in all: eighteen. The seams are out on the Greywater Road, a stand every hundred paces from the second one on.' },
@@ -493,16 +496,18 @@ const enemyTarget = (s: GameState, type: string) => {
   const e = nearest(s, all.filter(x => x.state !== 'dead')) ?? nearest(s, all.map(x => ({ x: x.spawnX, z: x.spawnZ })));
   return e ? { x: e.x, z: e.z, label: ENEMY_TYPES[type].name } : null;
 };
+/**
+ * The nearest node of a type the tracker can honestly point at: one on the player's own side of the cave mouth first. Since the Hollow's seam
+ * became tin (HOM-81) the nearest tin rock to the ridge is three rooms into a dungeon, and a tracker that says "practise on tin" must not be
+ * the thing that walks a Mining 3 character past the Cave Brute. Only if there is none out here does it fall back to the whole list.
+ */
 const nodeTarget = (s: GameState, type: string) => {
   const all = s.nodes.filter(n => n.type === type);
-  const n = nearest(s, all.filter(x => x.charges > 0)) ?? nearest(s, all);
+  const here = inCave(s.player.x, s.player.z);
+  const near = all.filter(n => inCave(n.x, n.z) === here);
+  const pick = (ns: typeof all) => nearest(s, ns.filter(x => x.charges > 0)) ?? nearest(s, ns);
+  const n = pick(near.length ? near : all);
   return n ? { x: n.x, z: n.z, label: NODE_TYPES[type].name } : null;
-};
-
-/** The best rock a player can already work, for practising Mining towards a gate that is still out of reach: coal, else iron, else copper and tin. */
-const practiceRock = (s: GameState) => {
-  const level = s.player.skills.mining.level;
-  return level >= NODE_TYPES.coal.level ? nodeTarget(s, 'coal') : level >= NODE_TYPES.iron.level ? nodeTarget(s, 'iron') : practiceTarget(s);
 };
 
 /** Where to practise Mining before iron opens: the rock whose ore the bag has fewer of, so the copper and the tin come out even for the bars. */
@@ -595,25 +600,27 @@ export function activeQuestView(s: GameState): QuestView {
   switch (q.second) {
     case 'offer': return v([{ text: `${QUEST_NAME} complete`, done: true }, { text: `${NPC.name} has one more task (click or press V)`, done: false }], npcTarget, true);
     case 'delve': {
-      const P = MITHRIL_PLAN, ore = Math.min(P.ore, mithrilOre(s)), locked = s.player.skills.mining.level < NODE_TYPES.mithril.level;
+      const P = STEEL_PLAN, ore = Math.min(P.ore, ironOre(s)), locked = s.player.skills.mining.level < NODE_TYPES.iron.level;
       const open = Object.entries(DELVE_GOALS).find(([t, n]) => (q.kills[t] ?? 0) < n);
       const lines: QuestLine[] = [
-        { text: `Mine Mithril Ore: ${ore}/${P.ore}${ore < P.ore && locked ? ` (needs Mining ${NODE_TYPES.mithril.level})` : ''}`, done: ore >= P.ore },
+        { text: `Mine Iron Ore: ${ore}/${P.ore}${ore < P.ore && locked ? ` (needs Mining ${NODE_TYPES.iron.level}: practise on copper and tin)` : ''}`, done: ore >= P.ore },
         ...Object.entries(DELVE_GOALS).map(([t, n]) => ({ text: `${PLURAL[t]} slain: ${Math.min(n, q.kills[t] ?? 0)}/${n}`, done: (q.kills[t] ?? 0) >= n })),
         ...advice(RECOMMENDED_COMBAT_2),
       ];
-      // practise on coal until the veins open; then the veins; then the pack
-      const target = ore < P.ore ? locked ? practiceRock(s) : nodeTarget(s, 'mithril') : open ? enemyTarget(s, open[0]) : null;
+      // practise on copper and tin until iron opens; then the road's iron; then the pack that holds the hollow
+      const target = ore < P.ore ? locked ? practiceTarget(s) : nodeTarget(s, 'iron') : open ? enemyTarget(s, open[0]) : null;
       return v(lines, target);
     }
     case 'armour': {
-      const P = MITHRIL_PLAN, bars = mithrilBars(s);
-      const coal = Math.min(P.coal, have('coal') + 2 * bars), barLevel = recipeById('mithril_bar')!.level;
+      const P = STEEL_PLAN, bars = steelBars(s), iron = ironBars(s);
+      const coal = Math.min(P.coal, have('coal') + 2 * bars);
+      const ironLevel = recipeById('iron_bar')!.level, barLevel = recipeById('steel_bar')!.level;
       const smithing = s.player.skills.smithing.level;
       const lines: QuestLine[] = [
         { text: `Mine Coal: ${coal}/${P.coal}`, done: coal >= P.coal },
-        { text: `Smelt Mithril Bars at the forge: ${Math.min(P.bars, bars)}/${P.bars}${bars < P.bars && smithing < barLevel ? ` (needs Smithing ${barLevel}: smelt Steel Bars to practise)` : ''}`, done: bars >= P.bars },
-        ...MITHRIL_SET.map(id => {
+        { text: `Smelt Iron Bars at the forge: ${Math.min(P.iron, iron)}/${P.iron}${iron < P.iron && smithing < ironLevel ? ` (needs Smithing ${ironLevel})` : ''}`, done: iron >= P.iron },
+        { text: `Harden Steel Bars: ${Math.min(P.bars, bars)}/${P.bars}${bars < P.bars && smithing < barLevel ? ` (needs Smithing ${barLevel})` : ''}`, done: bars >= P.bars },
+        ...STEEL_SET.map(id => {
           const need = recipeById(id)!.level, has = owned(s, id) > 0;
           return { text: `Smith the ${ITEMS[id].name}${!has && smithing < need ? ` (needs Smithing ${need})` : ''}`, done: has };
         }),
@@ -623,8 +630,8 @@ export function activeQuestView(s: GameState): QuestView {
     }
     case 'warden':
       return v([
-        { text: 'Mithril set forged', done: true },
-        { text: `Wear the mithril set (press I): ${worn(s)}/${MITHRIL_SET.length}`, done: worn(s) === MITHRIL_SET.length },
+        { text: 'Steel set forged', done: true },
+        { text: `Wear the steel set (press I): ${worn(s)}/${STEEL_SET.length}`, done: worn(s) === STEEL_SET.length },
         { text: 'Slay the Hollow Warden (the deep hall, far end of the cave)', done: false },
         ...advice(RECOMMENDED_COMBAT_2 + 1),
       ], enemyTarget(s, 'warden'));

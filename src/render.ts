@@ -36,7 +36,7 @@ const PALETTE = {
   stone: 0x5d6169, stoneDark: 0x3d4046, anvil: 0x1b1c20,
   bark: 0x4a3b2e, pine: 0x35493a,
   // ore: the flecks are the one warm, light accent on a rock so a node reads at distance
-  ironRock: 0x6a7078, coalRock: 0x2f3036, ironFleck: 0xd9803c, coalFleck: 0x5a5d70, spent: 0x2e2f33, mithrilRock: 0x3b5878, mithrilGlow: 0x103a6a,
+  ironRock: 0x6a7078, coalRock: 0x2f3036, ironFleck: 0xd9803c, coalFleck: 0x5a5d70, spent: 0x2e2f33,
   // actors
   player: 0x7a8794, skin: 0xc4a584, bone: 0xd9ceb2, steel: 0xb8bcc4,
   boar: 0x78553f, wolf: 0x9a9a92, brute: 0x7a3030,
@@ -104,7 +104,7 @@ const FORGE_LIGHT = { intensity: 100, distance: 28, y: 1.2 };
 
 /**
  * Lighting at full cave depth (caveDepth = 1). Sun, hemisphere, sky-ambient and sky all drop to a trace and the fog closes in and goes
- * black; a cold lantern the player carries and the glow of what is in the cave (veins, braziers) are what is left.
+ * black; a cold lantern the player carries and the braziers that burn down there are what is left.
  */
 const CAVE_LIGHT = {
   sun: 0.03, rim: 0.05, hemi: 0.6, env: 0.2, sky: 0,
@@ -113,11 +113,14 @@ const CAVE_LIGHT = {
 };
 /** Daylight values the cave lighting fades from (what the constructor sets up). */
 const DAY = { sun: 4.4, rim: 1.5, hemi: 0.4, env: 0.4, sky: 1 };
-const MITHRIL_LIGHT = { x: -27.8, y: 2.2, z: -48, intensity: 38, distance: 11 };
 /** Held above the flame (the 1.7x brazier's flame tops out near y 3.4): a light inside or beside a prop bloomed the prop to white. See glow.ts minLightDistance. */
 const BRAZIER_LIGHT = { intensity: 260, distance: 24, y: 5.8 };
-/** Braziers that burn in the cave: the hall's big one carries a real light, the others are lit geometry only (the frame budget has room for few lights). */
-const BRAZIERS = [{ x: -16.4, z: -38, s: 0.8 }, { x: -30.8, z: -60, s: 1 }, { x: -7.2, z: -63, s: 1 }, { x: -18, z: -76.5, s: 1.7, light: true }];
+/**
+ * Braziers that burn in the cave: the hall's big one and the hollow's carry a real light, the others are lit geometry only (the frame budget has
+ * room for few lights). The hollow's was geometry until HOM-81 took the mithril seam out of the wall: the cold light that lit that room was the
+ * veins' own, and with tin in their place the brazier that was already standing there is what the Ravager fight is read by.
+ */
+const BRAZIERS = [{ x: -16.4, z: -38, s: 0.8 }, { x: -30.8, z: -60, s: 1, light: true }, { x: -7.2, z: -63, s: 1 }, { x: -18, z: -76.5, s: 1.7, light: true }];
 
 /**
  * The Drowned Grotto (bible 1.2): a wrecked ship's belly in a sea-cave, flooded. Wet teal-slate floor under standing water, barnacle-pale walls, the
@@ -262,12 +265,9 @@ export class Renderer {
   private hemi!: THREE.HemisphereLight;
   private rim!: THREE.DirectionalLight;
   private lantern!: THREE.PointLight;
-  private mithrilLight!: THREE.PointLight;
-  private hallLight?: THREE.PointLight;
+  private brazierLights: THREE.PointLight[] = [];
   private caveFogColor = new THREE.Color(CAVE_LIGHT.fog.color);
   private caveFogHollow = new THREE.Color(CAVE_LIGHT.fog.color);
-  /** 0..1: how much of the mithril seam is still standing, so the cold light goes out with the last vein. */
-  private veinGlow = 1;
   private npcGroup!: THREE.Group;
   private npcAnim?: Animator;
   private playerAnim?: Animator;
@@ -569,17 +569,16 @@ export class Renderer {
       this.scene.add(g);
       this.caveFlames.push({ m: flame, phase: i * 2.3 });
       if (b.light) {
-        this.hallLight = new THREE.PointLight(P.arcane, BRAZIER_LIGHT.intensity, BRAZIER_LIGHT.distance);
-        this.hallLight.position.set(b.x, BRAZIER_LIGHT.y, b.z);
-        this.scene.add(this.hallLight);
+        const light = new THREE.PointLight(P.arcane, BRAZIER_LIGHT.intensity, BRAZIER_LIGHT.distance);
+        light.position.set(b.x, BRAZIER_LIGHT.y, b.z);
+        this.brazierLights.push(light);
+        this.scene.add(light);
       }
     }
 
-    // lights that follow the lantern (player, scaled by caveDepth) and the veins; both at zero outdoors, never added or removed (that would recompile every material)
+    // the light that follows the lantern (player, scaled by caveDepth): at zero outdoors, never added or removed (that would recompile every material)
     this.lantern = new THREE.PointLight(CAVE_LIGHT.lantern.color, 0, CAVE_LIGHT.lantern.distance);
-    this.mithrilLight = new THREE.PointLight(P.arcane, 0, MITHRIL_LIGHT.distance);
-    this.mithrilLight.position.set(MITHRIL_LIGHT.x, MITHRIL_LIGHT.y, MITHRIL_LIGHT.z);
-    this.scene.add(this.lantern, this.mithrilLight);
+    this.scene.add(this.lantern);
     this.buildGrotto();
     this.buildRotroot();
   }
@@ -733,7 +732,6 @@ export class Renderer {
     this.rain.update(this.skyClock, w.rain * (1 - THREE.MathUtils.clamp(depth * 5, 0, 1)), this.camera.position);
     this.lantern.intensity = CAVE_LIGHT.lantern.intensity * depth;
     this.lantern.position.set(x, CAVE_LIGHT.lantern.y, z);
-    this.mithrilLight.intensity = MITHRIL_LIGHT.intensity * depth * this.veinGlow;
   }
 
   /** Quest giver: robed figure with a hood and staff, and a bobbing ! / ? marker above. */
@@ -819,7 +817,7 @@ export class Renderer {
       fill('warden', p => this.dressNpc(p)),
       ...[...slots].map(t => fill(t, p => { this.prepared.set(t, p); for (const a of this.actors.values()) if (slotOf(a.type) === t) this.dressActor(a, p); })),
       Promise.all([loadSlot('tree'), loadSlot('stump')]).then(([t, st]) => this.dressTrees(t, st)).catch(err => console.warn('model slot "tree" kept as a primitive:', err)),
-      fill('ironRock', p => { for (const t of ['iron', 'copper', 'tin', 'mithril', 'adamant'] as const) this.dressRocks(t, p); }),
+      fill('ironRock', p => { for (const t of ['iron', 'copper', 'tin', 'adamant'] as const) this.dressRocks(t, p); }),
       fill('coalRock', p => this.dressRocks('coal', p)),
       fill('forge', p => this.dressForge(p)),
       fill('anvil', p => this.dressAnvil(p)),
@@ -964,7 +962,7 @@ export class Renderer {
     }
   }
 
-  private dressRocks(type: 'iron' | 'coal' | 'copper' | 'tin' | 'mithril' | 'adamant', p: Prepared) {
+  private dressRocks(type: 'iron' | 'coal' | 'copper' | 'tin' | 'adamant', p: Prepared) {
     for (const v of this.nodes.values()) {
       if (v.type !== type) continue;
       const id = v.group.userData.nodeId as number, inst = spawn(p, true);
@@ -972,7 +970,6 @@ export class Renderer {
       inst.root.updateMatrix();
       this.hide(v.group.children[0]);
       v.group.add(inst.root);
-      if (type === 'mithril') for (const m of inst.materials) { m.color.setHex(P.mithrilRock); m.emissive.setHex(P.mithrilGlow); }
       if (type === 'adamant') for (const m of inst.materials) { m.color.setHex(ADAMANT.rock); m.emissive.setHex(ADAMANT.glow); }
       if (type === 'copper' || type === 'tin') for (const m of inst.materials) { m.color.setHex(STARTER_ORE[type].rock); m.emissive.setHex(STARTER_ORE[type].glow); }
       v.mats.push(...inst.materials);
@@ -1102,13 +1099,13 @@ export class Renderer {
       part(new THREE.CylinderGeometry(0.25, 0.35, 2, 5), P.bark, 'wood', 1);
       crown = part(new THREE.ConeGeometry(1.4, 3.5, 6), P.pine, 'foliage', 3.5);
     } else {
-      const coal = n.type === 'coal', mithril = n.type === 'mithril', adamant = n.type === 'adamant';
+      const coal = n.type === 'coal', adamant = n.type === 'adamant';
       const starter = n.type === 'copper' || n.type === 'tin' ? STARTER_ORE[n.type] : undefined;
-      part(new THREE.DodecahedronGeometry(1.3), starter ? starter.rock : coal ? P.coalRock : mithril ? P.mithrilRock : adamant ? ADAMANT.rock : P.ironRock, 'rock', 0.9);
-      // ore flecks: rust for iron, verdigris for copper, bright silver for tin, glossy black for coal, cold arcane light for mithril
+      part(new THREE.DodecahedronGeometry(1.3), starter ? starter.rock : coal ? P.coalRock : adamant ? ADAMANT.rock : P.ironRock, 'rock', 0.9);
+      // ore flecks: rust for iron, verdigris for copper, bright silver for tin, glossy black for coal, sea-green for adamant
       for (const [dx, dy, dz] of [[0.7, 1.2, 0.6], [-0.6, 1.0, 0.8], [0.1, 1.6, -0.5]]) {
-        const fleck = part(new THREE.OctahedronGeometry(0.28), starter ? starter.fleck : coal ? P.coalFleck : mithril ? P.arcane : adamant ? ADAMANT.fleck : P.ironFleck, coal ? 'coal' : mithril || adamant ? 'beacon' : 'ore', dy);
-        if (!coal && !mithril && !adamant) (fleck.material as Mat).emissive.setHex(starter ? starter.fleck : P.ironFleck).multiplyScalar(0.35); // faint glint so a node reads at range
+        const fleck = part(new THREE.OctahedronGeometry(0.28), starter ? starter.fleck : coal ? P.coalFleck : adamant ? ADAMANT.fleck : P.ironFleck, coal ? 'coal' : adamant ? 'beacon' : 'ore', dy);
+        if (!coal && !adamant) (fleck.material as Mat).emissive.setHex(starter ? starter.fleck : P.ironFleck).multiplyScalar(0.35); // faint glint so a node reads at range
         fleck.position.x = dx; fleck.position.z = dz;
       }
     }
@@ -1119,11 +1116,9 @@ export class Renderer {
   private drawNodes(s: GameState) {
     const now = performance.now() / 1000;
     const active = s.player.action?.k === 'gather' ? s.player.action.nodeId : -1;
-    let vein = 0;
     const p = s.player;
     for (const n of s.nodes) {
       const v = this.nodes.get(n.id)!;
-      if (n.type === 'mithril' && n.charges > 0) vein++;
       v.group.visible = Math.hypot(n.x - p.x, n.z - p.z) <= NODE_RANGE; // far ore costs a scene object each: not drawn, not updated
       if (!v.group.visible) continue;
       const depleted = n.charges <= 0;
@@ -1133,7 +1128,6 @@ export class Renderer {
       v.mats.forEach((m, i) => { const spent = depleted && !v.crown; m.color.setHex(spent ? P.spent : v.base[i]); m.emissiveIntensity = spent ? 0 : 1; });
       v.group.rotation.z = n.id === active ? Math.sin(now * 18) * 0.05 : 0;
     }
-    this.veinGlow = vein / CAVE_ROCKS.filter(r => r.type === 'mithril').length;
   }
 
   private addActor(e: Enemy) {
@@ -1575,7 +1569,7 @@ export class Renderer {
     this.skyClock += dtFx;
     this.applyCaveLight(caveDepth(x, z), x, z);
     this.caveFlames.forEach(f => f.m.scale.set(1, 0.85 + 0.25 * Math.sin(nowMs / 110 + f.phase) + 0.1 * Math.sin(nowMs / 47 + f.phase), 1));
-    if (this.hallLight) this.hallLight.intensity = BRAZIER_LIGHT.intensity * (1 + 0.08 * Math.sin(nowMs / 100) + 0.05 * Math.sin(nowMs / 41));
+    for (const l of this.brazierLights) l.intensity = BRAZIER_LIGHT.intensity * (1 + 0.08 * Math.sin(nowMs / 100) + 0.05 * Math.sin(nowMs / 41));
     this.followSun(x, z);
     this.post.render(this.scene);
   }

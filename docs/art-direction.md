@@ -29,7 +29,7 @@ Facets are deliberate where the surface is hard: **rock, stone, trees, ore, coal
 ## Tier 5 (HOM-47)
 
 - **Colour**: spectral jade `0x3ee0c0` (`TIER5_COLOR`, mirrored in `TIER_COLORS[5]`). Blue is tiers 2 and 4, orange is 3, purple is 4's beam; jade is the cold hue left. Tier 6 should be blood-red or white, not another cool.
-- **Tier fallback** (`TIER_LOOKS[5]`) is jade plate on the rung-4 horned frame. It is a recolour of mithril and **must not be what a tier-5 set ships with**. Every tier-5 set and named piece needs an `ITEM_LOOKS` entry with a `form`.
+- **Tier fallback** (`TIER_LOOKS[5]`) is jade plate on the rung-4 horned frame. It is a recolour of the tier-4 steel set and **must not be what a tier-5 set ships with**. Every tier-5 set and named piece needs an `ITEM_LOOKS` entry with a `form`.
 - **Adamant** (`form: 'adamant'`): dark jade, heavy and square. Brow slab, flat ridge, cheek slabs, T of light; slab shoulders, gorget, squared knee guards; broad short blade (width 1.7).
 - **Stormiron** (`form: 'storm'`): pale matte slate-lilac, lean and spiked. Fan of swept-back crown spikes, upswept shoulder barbs, dorsal and shin barbs; long narrow blade (width 0.7), lilac-white glow.
 - **Greywolf Hauberk** (`greywolf`): two-tier wolfskin mantle with a wolf's head on the left shoulder, cold eyes. **Gutterhook's Cap** (`gutterhook`): salvaged cap with a lashed hook over the brow.

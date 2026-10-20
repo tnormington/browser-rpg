@@ -14,7 +14,7 @@ node bench/look.mjs q \
  "$H S.quest.stage='report2'; P.combat.level=9; P.skills.mining.level=9; P.skills.smithing.level=11; await talk(); const a=D(); await pick(0); const b=D(); await pick(0); return {a,b,T:T(),L:L()};" \
  "$H await talk(); const d=D(); await pick(0); await pick(0); return {state:S.quest.second,d,T:T(),L:L()};" \
  "$H S.quest.kills.ravager=3; await wait(300); return {T:T()};" \
- "$H give('mithril_ore',9); await wait(300); return {second:S.quest.second,T:T()};" \
- "$H give('coal',18); give('mithril_helm',1); give('mithril_greaves',1); give('mithril_chestplate',1); await wait(300); return {second:S.quest.second,T:T()};" \
- "$H const e=P.equipment; e.head='mithril_helm'; e.legs='mithril_greaves'; e.chest='mithril_chestplate'; await wait(300); return {T:T()};" \
+ "$H give('iron_ore',18); await wait(300); return {second:S.quest.second,T:T()};" \
+ "$H give('coal',18); give('steel_helm',1); give('steel_greaves',1); give('steel_chestplate',1); await wait(300); return {second:S.quest.second,T:T()};" \
+ "$H const e=P.equipment; e.head='steel_helm'; e.legs='steel_greaves'; e.chest='steel_chestplate'; await wait(300); return {T:T()};" \
  "$H S.quest.second='report'; await wait(300); const a=T(); await talk(); const d=D(); await pick(0); return {a,d,after:D(),second:S.quest.second,T:T(),L:L()};"

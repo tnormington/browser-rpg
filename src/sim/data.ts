@@ -12,7 +12,7 @@ export const ENERGY_REGEN = 8;        // per second
 export const RESPAWN_DELAY = 4;       // seconds dead before waking at the nearest graveyard
 export const MAX_DURABILITY = 100;    // points a piece of gear starts with (a piece with no entry in `durability` is at this)
 export const DEATH_WEAR = 25;         // points every worn piece loses when you die: four deaths break a set. Ordinary combat wears nothing
-export const REPAIR_FRAC = 0.25;      // mending a piece from broken to whole costs this share of its value (a mithril set and Warden's Edge: ~205 gold, ~51 a death); a vendor does it
+export const REPAIR_FRAC = 0.25;      // mending a piece from broken to whole costs this share of its value (a steel set and Warden's Edge: ~205 gold, ~51 a death); a vendor does it
 export const OOC_DELAY = 5;           // seconds without combat before health regen
 export const OOC_REGEN_FRAC = 0.03;   // of max hp per second
 export const TAB_RANGE = 30;
@@ -199,7 +199,8 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
 
   // The cave. Every one of these is a level above anything outside, and built around one tell the player must read:
   // the Ravagers come in a pack (Cleave), the Archers shoot from range, the Seer punishes standing still, the Ogre slams,
-  // and the Warden does the last two at once. They are tuned against the mithril set (see sim/cave balance checks in verify).
+  // and the Warden does the last two at once. They are tuned against the steel set (see sim/cave balance checks in verify): the set's metal
+  // changed with HOM-81 and its armour did not, 12 / 22 / 16 either way, so every number below stands where it was.
   // The hollow holds seven of them in one room. The radii below are what each group needs to guard its own ground; what
   // keeps them from arriving together is aggroRadius(), which pares the radius back as the player outgrows them: the
   // nearest Ravager sits 7.8 units from the doorway, and at the recommended combat 9 their 7-unit radius leaves it asleep.
@@ -343,8 +344,8 @@ export const SPAWNS: { type: string; x: number; z: number }[] = [
   // pack of pups (one wakes, all wake): the reason to Cleave
   { type: 'pup', x: -5, z: 15 }, { type: 'pup', x: -3.5, z: 16.2 }, { type: 'pup', x: -6.2, z: 16.6 },
   { type: 'hexer', x: 19, z: 19 },
-  // inside the Hollow (see DUNGEONS): the vein guards, the ranged pair, the seer, the ogres, and the Warden at the end
-  // the pack is posted on the mithril seam it guards (x -29.2), not out in the middle of the hollow: from the doorway at
+  // inside the Hollow (see DUNGEONS): the pack that holds the room, the ranged pair, the seer, the ogres, and the Warden at the end
+  // the pack is posted on the seam along the south-west wall (x -29.2), not out in the middle of the hollow: from the doorway at
   // (-18,-46) the nearest of them is 9.4 units off, outside its own notice radius, so walking in is the Archer alone
   { type: 'ravager', x: -27, z: -50 }, { type: 'ravager', x: -25.8, z: -51.2 }, { type: 'ravager', x: -27.6, z: -51.8 },
   { type: 'archer', x: -13, z: -47 }, { type: 'archer', x: -23, z: -63 },
