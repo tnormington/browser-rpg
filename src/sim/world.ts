@@ -436,11 +436,11 @@ const highLandmarks = {
   /** The flight master, just inside the town from the road in from the west. */
   flightHigh: { ...at(HIGHMOOR, -56, 5), r: 0.7 },
   /** The trainer, a little way off the square: Colossus Blow and Last Stand are bought here. */
-  highTrainer: { ...at(HIGHMOOR, -30, -14), r: 0.7 },
+  highTrainer: { ...at(HIGHMOOR, -28, -8), r: 0.7 },
   /** The stablemaster, at the west edge of the town: the second mount is bought here. */
   highStable: { ...at(HIGHMOOR, -52, -16), r: 0.7 },
   /** The tanning rack: the leatherworker's station. */
-  rack: at(HIGHMOOR, -14, 12),
+  rack: at(HIGHMOOR, -13, 12), // the first of the three the town is dressed with (world-view.ts draws them: HOM-97)
 };
 const HIGH_RACK: Obstacle = { ...highLandmarks.rack, r: 1.6, kind: 'rack' };
 const graveHigh: Pt = at(HIGHMOOR, -58, 36);

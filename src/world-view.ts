@@ -285,7 +285,7 @@ export class WorldView {
         case 'person': return;
         case 'thornoak': placeProp(bag, 'thornoak', o.x, o.z, ry, 0.9 + hash(i + 11) * 0.3); return;
         case 'alembic': placeProp(bag, 'alembic', o.x, o.z, Math.atan2(LANDMARKS.thornSquare.x - o.x, LANDMARKS.thornSquare.z - o.z) - Math.PI / 2); return; // the bench's front (+z in its own frame) faces the square
-        case 'rack': placeProp(bag, 'tanningRack', o.x, o.z, Math.atan2(LANDMARKS.highSquare.x - o.x, LANDMARKS.highSquare.z - o.z)); return; // the rack's front (+z) faces the square
+        case 'rack': return; // the station's collider: highmoorTown draws the racks
         case 'tree': { // a dead tree, bent inland by the wind off the sea: a leaning trunk and two bare limbs
           bag.bark.push(place(new THREE.CylinderGeometry(0.14, 0.26, 3.2, 5).rotateZ(0.14).translate(-0.22, 0, 0), o.x, 1.6, o.z),
             place(new THREE.CylinderGeometry(0.05, 0.1, 1.6, 4).rotateZ(0.9), o.x + Math.cos(ry) * 0.5 - 0.35, 2.6, o.z - Math.sin(ry) * 0.5, ry),
@@ -590,11 +590,11 @@ export class WorldView {
     this.person(add, LANDMARKS.highTrainer, 0x4a3a52, 'cap', toward(LANDMARKS.highTrainer), t.picks.trainer, 'high_trainer');
     this.person(add, LANDMARKS.highStable, 0x5a3e28, 'brim', toward(LANDMARKS.highStable), t.picks.trainer, 'high_stable'); // picked like the trainer: a vendor with one thing to sell
     for (const l of [LANDMARKS.highTrainer, LANDMARKS.highStable]) lampPost(bag, l.x + 1.4, l.z - 1.1, 0, 6);
-    lampPost(bag, LANDMARKS.rack.x + 2.4, LANDMARKS.rack.z + 1.2, 0, 5); // the tanner works late
+    lampPost(bag, LANDMARKS.rack.x - 2.6, LANDMARKS.rack.z + 1.4, 0, 5); // the tanner works late
     bag.stone.push(place(new THREE.CylinderGeometry(2.4, 2.8, 0.5, 8), sq.x, 0.25, sq.z));
     for (let n = 0; n < 4; n++) bag.stone.push(place(new THREE.DodecahedronGeometry(1.5 - n * 0.3), sq.x + n * 0.15, 0.9 + n * 1.1, sq.z, n * 0.7));
     for (let n = 0, x = HIGHMOOR.x - 62; x < sq.x - 6; n++, x += 13) lampPost(bag, x, HIGHMOOR.z + (n % 2 ? 4.4 : -4.4), 0, 5.5);
-    for (const [lx, lz, rot] of [[-13, 12, 0.5], [-9, 15, 0.1], [-31, -14, 2.2]]) placeProp(bag, 'tanningRack', HIGHMOOR.x + lx, HIGHMOOR.z + lz, rot); // the tanners' racks, off the road
+    for (const [lx, lz, rot] of [[LANDMARKS.rack.x - HIGHMOOR.x, LANDMARKS.rack.z - HIGHMOOR.z, 0.5], [-9, 15, 0.1], [-31, -14, 2.2]]) placeProp(bag, 'tanningRack', HIGHMOOR.x + lx, HIGHMOOR.z + lz, rot); // the tanners' racks, off the road
     this.emit(bag, add, MOOR_PAL);
   }
 

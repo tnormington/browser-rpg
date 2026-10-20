@@ -506,11 +506,11 @@ export class Renderer {
     this.alembicPick.position.set(alembic.x, 1.5, alembic.z);
     this.alembicPick.rotation.y = Math.atan2(LANDMARKS.thornSquare.x - alembic.x, LANDMARKS.thornSquare.z - alembic.z) - Math.PI / 2;
     this.scene.add(this.alembicPick);
-    // ...and so is Highmoor's tanning rack (its front faces the square too)
+    // ...and so is Highmoor's tanning rack (drawn by the town, turned 0.5 rad: world-view.ts)
     const rack = LANDMARKS.rack;
     this.rackPick = new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.8, 1.4), new THREE.MeshBasicMaterial({ visible: false }));
     this.rackPick.position.set(rack.x, 1.4, rack.z);
-    this.rackPick.rotation.y = Math.atan2(LANDMARKS.highSquare.x - rack.x, LANDMARKS.highSquare.z - rack.z);
+    this.rackPick.rotation.y = 0.5;
     this.scene.add(this.rackPick);
     this.forgeLight = add(new THREE.PointLight(P.forgeLight, FORGE_LIGHT.intensity, FORGE_LIGHT.distance), f.x - 1, FORGE_LIGHT.y, f.z + 3.6) as THREE.PointLight;
 
