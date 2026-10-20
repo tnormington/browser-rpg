@@ -40,7 +40,7 @@ const WOOD_FLOOR = { litter: 0x3a4630, litterAlt: 0x2f3a2a, loam: 0x3a3226 };
 const BARROW_FLOOR = { turf: 0x4a5640, turfAlt: 0x3d4833, peat: 0x2f3329 };
 const MOOR_FLOOR = { heath: 0x5a5840, heathAlt: 0x4b4a38, heather: 0x5e4a5a };
 /** The barrows' mounds (a lighter, drier turf than the ground round them, so a mound is a shape and not a shadow) and the black of a barrow's open mouth. */
-const BARROW = { turf: 0x66744f, dark: 0x07090b };
+const BARROW = { turf: 0x66744f, dark: 0x07090b, jamb: 0x9aa0a4 };
 const MOOR_PAL: Pal = { wall: 0x7d7a72, roof: 0x3d4650, foot: 0x4a4a48 };
 
 let poolMaterial: THREE.MeshBasicMaterial | undefined;
@@ -60,11 +60,11 @@ function headstone(o: Obstacle, ry: number, i: number): THREE.BufferGeometry[] {
   return [place(new THREE.BoxGeometry(0.8, 1.2, 0.22).rotateZ(lean), o.x, 0.6, o.z, ry), place(new THREE.CylinderGeometry(0.4, 0.4, 0.22, 8).rotateX(Math.PI / 2).rotateZ(lean), o.x - lean * 0.6, 1.2, o.z, ry)];
 }
 
-type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed' | 'bone' | 'brush' | 'thorn' | 'cloth' | 'turf' | 'dark' | 'heather', THREE.BufferGeometry[]> & {
+type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed' | 'bone' | 'brush' | 'thorn' | 'cloth' | 'turf' | 'dark' | 'jamb' | 'heather', THREE.BufferGeometry[]> & {
   /** Placed copies of props.ts props, by `prop:layer`: one draw per layer however many there are. */
   props: Map<string, { color: number; cls: string; geoms: THREE.BufferGeometry[] }>;
 };
-const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], bone: [], brush: [], thorn: [], cloth: [], turf: [], dark: [], heather: [], props: new Map() });
+const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], bone: [], brush: [], thorn: [], cloth: [], turf: [], dark: [], jamb: [], heather: [], props: new Map() });
 
 /** A prop's layers as one merged geometry each, built the first time it is wanted and copied (never moved) for every placement. */
 const propSources = new Map<PropId, { name: string; color: number; cls: string; geo: THREE.BufferGeometry }[]>();
@@ -300,8 +300,10 @@ export class WorldView {
             if (dir * Math.cos(a) > 0.8) continue; // not across the mouth
             bag.rock.push(place(new THREE.BoxGeometry(0.9, 0.7, 0.55), o.x + Math.sin(a) * o.r * 1.08, 0.3, o.z + Math.cos(a) * o.r * 1.08, a));
           }
-          for (const s of [-1, 1]) bag.rock.push(place(new THREE.BoxGeometry(0.6, 2.4, 0.7), o.x + s * 1.15, 1.2, mz, 0.08 * s));
-          bag.rock.push(place(new THREE.BoxGeometry(3.3, 0.55, 0.9), o.x, 2.55, mz));
+          // the jambs and lintel are pale stone: a black door only reads as a door against something lighter than the dusk round it (HOM-100)
+          for (const s of [-1, 1]) bag.jamb.push(place(new THREE.BoxGeometry(0.6, 2.4, 0.7), o.x + s * 1.15, 1.2, mz, 0.08 * s));
+          bag.jamb.push(place(new THREE.BoxGeometry(3.3, 0.55, 0.9), o.x, 2.55, mz));
+          bag.dark.push(place(new THREE.BoxGeometry(1.7, 0.06, 2.4), o.x, 0.03, mz + dir * 1.2)); // the threshold, trodden black, so the mouth has a floor in front of it
           bag.dark.push(place(new THREE.BoxGeometry(1.7, 2.1, 1.2), o.x, 1.05, mz - dir * 0.3));
           return;
         }
@@ -484,6 +486,7 @@ export class WorldView {
     one(bag.cloth, 0x7a4a3a, 'cloth', 'cast');
     one(bag.turf, BARROW.turf, 'foliage');
     one(bag.dark, BARROW.dark, 'stone', 'none');
+    one(bag.jamb, BARROW.jamb, 'stone');
     one(bag.heather, MOOR_FLOOR.heather, 'foliage', 'cast');
     for (const e of bag.props.values()) one(e.geoms, e.color, e.cls, e.cls === 'glow' ? 'none' : 'both');
     if (bag.glow.length) { const m = mesh(mergeGeometries(bag.glow)!, LANTERN, 'glow', 'none'); (m.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.1; add(m); }

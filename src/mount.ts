@@ -31,7 +31,11 @@ function courserTack(hang: Hang, { y, z, width: w, length: l }: Saddle) {
   hang('Torso', box(w * 0.7, 0.1, l, leather), [0, y - 0.03, z]);
   hang('Torso', box(w * 0.4, 0.14, 0.1, leather), [0, y + 0.07, z + l / 2]);
   hang('Torso', box(w * 0.7, 0.16, 0.1, leather), [0, y + 0.08, z - l / 2]);
-  for (const sx of [-1, 1]) hang('Torso', box(0.05, 0.05, 0.1, iron), [sx * (w / 2 + 0.02), y - 0.2, z]);
+  // the rider's feet hang outside the saddle at y - 0.46, z + 0.14 (measured on the seated knight at a gallop, HOM-100): an iron and its leather go there, under the boot
+  for (const sx of [-1, 1]) {
+    hang('Torso', box(0.05, 0.04, 0.26, iron), [sx * (w / 2 + 0.3), y - 0.48, z + 0.14]);
+    hang('Torso', box(0.03, 0.36, 0.05, leather), [sx * (w / 2 + 0.3), y - 0.28, z + 0.14]);
+  }
 }
 
 const WAR_STEEL = 0x8e98aa, WAR_DARK = 0x2c303c, WAR_CLOTH = 0x3a4a64, WAR_TRIM = 0xb4bccc, WAR_PLUME = 0xdcdfe2;
@@ -55,7 +59,8 @@ function destrierTack(hang: Hang, { y, z, width: w, length: l }: Saddle) {
     hang('Torso', box(0.06, 0.06, 1.3, trim), [x + sx * 0.04, y - 0.64, z - 0.05], lean);
     for (let i = 0; i < 6; i++) hang('Torso', new THREE.Mesh(dag, trim), [x + sx * 0.05, y - 0.78, z - 0.6 + i * 0.22], lean);
     hang('Torso', box(0.07, 0.2, 0.2, steel), [x, y - 0.12, z + 0.45]); // the plate each skirt is pinned by
-    hang('Torso', box(0.05, 0.05, 0.28, steel), [x + sx * 0.04, y - 1.0, z]); // stirrup iron
+    hang('Torso', box(0.05, 0.04, 0.28, steel), [sx * (w / 2 + 0.3), y - 0.38, z + 0.14]); // stirrup iron, under the rider's boot (his feet hang at y - 0.38, measured)
+    hang('Torso', box(0.03, 0.32, 0.05, dark), [sx * (w / 2 + 0.3), y - 0.2, z + 0.14]); // and its leather
   }
   // crupper: three plates stepping down the quarters
   for (let i = 0; i < 3; i++) hang('Torso', box(w * (1.1 - i * 0.12), 0.05, 0.3, steel), [0, y + 0.02 - i * 0.07, z - 0.55 - i * 0.28], [0.22 + i * 0.08, 0, 0]);
