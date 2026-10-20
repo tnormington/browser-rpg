@@ -2,7 +2,7 @@
 // Exits non-zero on the first failed assertion. Extended every milestone.
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState, Enemy } from './sim';
 import { addItem, countItem, removeItem, INVENTORY_SIZE } from './sim/inventory';
-import { ITEMS, DROP_TABLES, BRONZE_SET, MITHRIL_SET, TIER_COLORS, deriveStats, describeStats, emptyEquipment } from './sim/items';
+import { ITEMS, DROP_TABLES, BRONZE_SET, COPPER_SET, MITHRIL_SET, TIER_COLORS, deriveStats, describeStats, emptyEquipment } from './sim/items';
 import {
   ABILITIES, ENEMY_TYPES, SPAWNS, aggroRadius, castName, GCD, RESPAWN_DELAY, ACQUIRE_BEHIND_RANGE, ACQUIRE_RANGE, AUTO_SLOT, BARE_SWING, ENERGY_REGEN, FRONT_HALF_ARC,
   FALL_GRAVITY, GRAVITY, JUMP_AIRTIME, JUMP_HEIGHT, JUMP_VELOCITY, OOC_DELAY, QUEUE_WINDOW, RECAP_WINDOW, powerForLevel, xpParity,
@@ -3474,7 +3474,7 @@ section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each w
 
   // smithing: bronze first, then iron and steel, then mithril, then adamant, every gate above the last, and a set that is a stretch in itself
   const SM = ['bronze_bar', 'bronze_sword', 'bronze_helm', 'bronze_greaves', 'bronze_chestplate', 'iron_bar', 'steel_bar', 'forged_blade', 'mithril_bar', 'mithril_helm', 'mithril_greaves', 'mithril_chestplate', 'warden_edge', 'adamant_bar', 'adamant_helm', 'adamant_blade', 'adamant_greaves', 'adamant_chestplate'];
-  assert(rec('bronze_bar').level === 1 && SM.every((id, k) => k === 0 || rec(id).level > rec(SM[k - 1]).level), `Smithing opens with bronze at 1 and every gate is above the last: ${SM.map(id => rec(id).level).join(' < ')}`);
+  assert(rec('copper_bar').level === 1 && rec('bronze_bar').level === 1 && SM.every((id, k) => k === 0 || rec(id).level > rec(SM[k - 1]).level), `Smithing opens with copper and bronze at 1 and every gate is above the last: ${SM.map(id => rec(id).level).join(' < ')}`);
   const tiers = [['bronze', 'bronze_bar'], ['iron and steel', 'iron_bar'], ['mithril', 'mithril_bar'], ['adamant', 'adamant_bar']] as const;
   const spans = tiers.map(([, id], k) => (k + 1 < tiers.length ? rec(tiers[k + 1][1]).level : rec('adamant_chestplate').level + 1) - rec(id).level);
   console.log(`  Smithing levels in each tier: ${tiers.map(([n], k) => `${n} ${spans[k]}`).join(', ')} (the first ladder: iron and steel 6, mithril 7, adamant 6: the levels in a tier are about what they were, it is the XP each level costs, and so the swings, that went up)`);
@@ -3537,6 +3537,50 @@ section('HOM-56 the metal ladder: copper, bronze, iron, mithril, adamant, each w
   const herbN = REGIONS.reduce((n, r) => n + (r.herbs?.length ?? 0), 0);
   assert(back !== null && back.nodes.length === 33 + REGIONS.find(r => r.id === 'wayside')!.rocks.length + REGIONS.find(r => r.id === 'wayside')!.trees.length + herbN && back.nodes[0].charges === 1 && back.nodes.slice(beforeSeams).every(n => n.charges === NODE_TYPES[n.type].charges), 'an old save still loads: the nodes it names keep their state, and every later one stands full');
   assert(back !== null && back.player.skills.mining.level === 17 && back.player.skills.smithing.level === 19 && back.player.equipment.chest === 'mithril_chestplate' && back.player.equipment.weapon === 'warden_edge', 'a Mining 17, Smithing 19 character keeps both levels and the gear they wear: only the gates moved above them');
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-81 copper: a set made from the one rock Hale has, under bronze and above hide');
+{
+  const rec = (id: string) => recipeById(id)!, stats = (id: string) => ITEMS[id].stats!;
+  const set = (head: string, chest: string, legs: string) => deriveStats({ ...emptyEquipment(), head, chest, legs }).armor;
+
+  // the recipes: copper and nothing else, bar the hilt's log
+  assert(rec('copper_bar').inputs.length === 1 && rec('copper_bar').inputs[0].id === 'copper_ore' && rec('copper_bar').inputs[0].qty === 2,
+    'a copper bar is two copper ore and nothing else: no second rock, so the whole tier is open to a character who never leaves Hale');
+  assert(COPPER_SET.every(id => rec(id).inputs.every(i => i.id === 'copper_bar' || i.id === 'logs')), 'and every piece is copper bars, plus a log for the sword\'s hilt');
+  assert(COPPER_SET.every(id => rec(id).level <= rec('bronze_chestplate').level) && rec('copper_bar').xp < rec('bronze_bar').xp,
+    `copper sits under bronze and pays less a bar (${rec('copper_bar').xp} against ${rec('bronze_bar').xp}): the walk out for tin is still worth taking`);
+
+  // the gear: hide < copper < bronze < iron, by the set and by the blade
+  const copperArmor = set('copper_helm', 'copper_chestplate', 'copper_greaves');
+  const hideArmor = set('leather_cap', 'hide_jerkin', 'hide_leggings');
+  const bronzeArmor = set('bronze_helm', 'bronze_chestplate', 'bronze_greaves');
+  assert(hideArmor < copperArmor && copperArmor < bronzeArmor, `a copper set is ${copperArmor} armour: above hide (${hideArmor}) and below bronze (${bronzeArmor})`);
+  const dps = (id: string) => stats(id).damage! / stats(id).speed!;
+  assert(dps('rusty_blade') < dps('copper_sword') && dps('copper_sword') < dps('bronze_sword'),
+    `a copper sword is light and soft: quicker than a rusty blade and weaker than bronze (${dps('copper_sword').toFixed(2)} against ${dps('rusty_blade').toFixed(2)} and ${dps('bronze_sword').toFixed(2)})`);
+  assert(COPPER_SET.map(id => ITEMS[id].slot).sort().join() === 'chest,head,legs,weapon' && COPPER_SET.every(id => ITEMS[id].tier === 1 && ITEMS[id].req === undefined && ITEMS[id].dropWeight === 0),
+    'one piece per slot, common tier, no requirement');
+  const copperIds: string[] = [...COPPER_SET, 'copper_bar'];
+  assert(!Object.values(DROP_TABLES).some(t => t.entries.some(e => copperIds.includes(e.id))) && ![...SHOP_STOCK, ...HARBOUR_STOCK].some(id => copperIds.includes(id)),
+    'copper is only smithed: no enemy drops it and no merchant sells it');
+  assert(COPPER_SET.every(id => appearanceOf(id).tint !== appearanceOf('hide_jerkin').tint && appearanceOf(id).tint !== appearanceOf('bronze_helm').tint),
+    'and it has a look of its own: hide, copper and bronze are three readable steps');
+
+  // played: mine copper, chop one log, smith the lot, wear it, all without leaving Hale
+  const g = quietState(8101);
+  gatherUntil(g, 'copper', 28);
+  gatherUntil(g, 'tree', 1);
+  assert(regionAt(g.player.x, g.player.z)?.zone === 'hale' && countOf(g, 'tin_ore') === 0 && countOf(g, 'iron_ore') === 0 && countOf(g, 'coal') === 0,
+    'twenty-eight ore and a log off Hale\'s own rocks and trees: still in the clearing, with no tin, iron or coal in the bag');
+  atForge(g);
+  craft(g, 'copper_bar', 12);
+  for (const id of COPPER_SET) craft(g, id, 1);
+  assert(COPPER_SET.every(id => countOf(g, id) === 1), `a character who has only ever mined copper made the sword, helm, greaves and chestplate (Mining ${g.player.skills.mining.level}, Smithing ${g.player.skills.smithing.level})`);
+  for (const id of COPPER_SET) tick(g, { inv: [{ k: 'equip', slot: g.player.inventory.findIndex(x => x?.id === id) }] });
+  assert(COPPER_SET.every(id => Object.values(g.player.equipment).includes(id)) && g.player.stats.armor === copperArmor && g.player.stats.weaponDamage === stats('copper_sword').damage,
+    `and wore it at combat 1: ${g.player.stats.armor} armour, +${g.player.stats.weaponDamage} damage`);
 }
 
 // ---------------------------------------------------------------------------

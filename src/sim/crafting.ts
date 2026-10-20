@@ -29,7 +29,19 @@ export interface Recipe {
 // a blade 0.4 x (made once, so worth more each). Mining and smithing climb together if you smelt what you mine: a player who does is
 // never more than a few bars short of a gate, but a player who skips the forge meets "needs Smithing N" at every rung.
 export const RECIPES: Recipe[] = [
-  // bronze: copper and tin, the first set a character can make
+  // copper (HOM-81): two copper ore to a bar and nothing else, so the whole set is made from the one rock Hale has. It shares bronze's gate
+  // rather than sitting under it (Smithing starts at 1), and pays less XP a bar: the reason to walk out for tin is still the better metal.
+  { id: 'copper_bar', name: 'Copper Bar', skill: 'smithing', level: 1, time: 3, xp: 12,
+    inputs: [{ id: 'copper_ore', qty: 2 }], output: { id: 'copper_bar', qty: 1 } },
+  { id: 'copper_sword', name: 'Copper Sword', skill: 'smithing', level: 1, time: 6, xp: 20,
+    inputs: [{ id: 'copper_bar', qty: 3 }, { id: 'logs', qty: 1 }], output: { id: 'copper_sword', qty: 1 } },
+  { id: 'copper_helm', name: 'Copper Helm', skill: 'smithing', level: 1, time: 6, xp: 22,
+    inputs: [{ id: 'copper_bar', qty: 2 }], output: { id: 'copper_helm', qty: 1 } },
+  { id: 'copper_greaves', name: 'Copper Greaves', skill: 'smithing', level: 2, time: 7, xp: 26,
+    inputs: [{ id: 'copper_bar', qty: 3 }], output: { id: 'copper_greaves', qty: 1 } },
+  { id: 'copper_chestplate', name: 'Copper Chestplate', skill: 'smithing', level: 3, time: 8, xp: 30,
+    inputs: [{ id: 'copper_bar', qty: 4 }], output: { id: 'copper_chestplate', qty: 1 } },
+  // bronze: copper and tin, the first set worth walking out of Hale for
   { id: 'bronze_bar', name: 'Bronze Bar', skill: 'smithing', level: 1, time: 3, xp: 20,
     inputs: [{ id: 'copper_ore', qty: 1 }, { id: 'tin_ore', qty: 1 }], output: { id: 'bronze_bar', qty: 1 } },
   { id: 'bronze_sword', name: 'Bronze Sword', skill: 'smithing', level: 2, time: 6, xp: 30,

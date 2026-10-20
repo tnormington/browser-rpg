@@ -260,19 +260,19 @@ export const DIALOGUE: Record<QuestStage, Dialogue> = {
     lines: [
       'Well fought! The pack is scattered.',
       'But the Cave Brute, in the cave mouth to the north-west, is another matter. It crushed the last hunter who tried, and plain weapons barely scratch it.',
-      "You need a better blade. Hale has no iron left in it: only copper, by the forge and along the ridge. The iron and the coal are out east, in the waysides of the Greywater Road. Bring them back with a log for the hilt, and the Forgemaster's Blade is smithed at the forge to the east. If you have never swung a pick, start on the copper here, then the tin at the first wayside past the gate: smelt the pair into bronze, and wear what you make.",
+      "You need a better blade. Hale has no iron left in it: only copper, by the forge and along the ridge. The iron and the coal are out east, in the waysides of the Greywater Road. Bring them back with a log for the hilt, and the Forgemaster's Blade is smithed at the forge to the east. If you have never swung a pick, start on the copper here: it smelts on its own, and a copper set off the ridge is better than walking out in nothing. Then the tin at the first wayside past the gate: copper and tin make bronze, and bronze is better again.",
       'And watch its fist. It raises it before every crushing slam: Pummel it (6) to break the swing, or step out of the circle on the ground.',
     ],
     options: [
       { label: "I'll forge the blade.", advance: true,
-        reply: `Click a rock to mine it. Iron wants Mining ${NODE_TYPES.iron.level} and coal Mining ${NODE_TYPES.coal.level}: copper and tin will get you there, the copper here and the tin out on the road. At the forge, smelt Bronze Bars and make yourself a set, then Iron Bars, then Steel Bars (Smithing ${recipeById('steel_bar')!.level}), then forge the blade (Smithing ${recipeById('forged_blade')!.level}). Equip it from your inventory (I) before you face the Brute.` },
+        reply: `Click a rock to mine it. Iron wants Mining ${NODE_TYPES.iron.level} and coal Mining ${NODE_TYPES.coal.level}: copper and tin will get you there, the copper here and the tin out on the road. At the forge, smelt Copper Bars and make yourself a set out of those alone, then Bronze Bars once you have tin, then Iron Bars, then Steel Bars (Smithing ${recipeById('steel_bar')!.level}), then forge the blade (Smithing ${recipeById('forged_blade')!.level}). Equip it from your inventory (I) before you face the Brute.` },
       { label: 'Where is the forge?', reply: 'East of the clearing: the stone hut with the glowing furnace. Click it to open the forge.' },
     ],
   },
   forge: {
-    lines: ['How goes the forging? Iron ore and coal from the waysides of the Greywater Road, a log for the hilt, then back to the forge. Bronze first, if your arms are still soft.'],
+    lines: ['How goes the forging? Iron ore and coal from the waysides of the Greywater Road, a log for the hilt, then back to the forge. Copper first, then bronze, if your arms are still soft.'],
     options: [
-      { label: 'Where do I find ore?', reply: 'Copper is the soft rock by the forge, with a few more on the ridge, and that is every rock Hale has. Go east through the gate and work the stands along the road: tin and iron at the first of them, the black coal seams from the second on, and the richest at the far end. Keep to the road and the camps will leave you be.' },
+      { label: 'Where do I find ore?', reply: 'Copper is the soft rock by the forge, with a few more on the ridge, and that is every rock Hale has: two of it make a bar, and a bar is a bar, so there is a whole set in the ridge if you want one. Go east through the gate and work the stands along the road: tin and iron at the first of them, the black coal seams from the second on, and the richest at the far end. Keep to the road and the camps will leave you be.' },
       CLOSE('Back to work.'),
     ],
   },
@@ -553,7 +553,7 @@ export function questView(s: GameState): QuestView {
       if (gathered) {
         const b = Math.min(P.bars, bars), st = Math.min(P.steel, steel);
         const ironLevel = recipeById('iron_bar')!.level, steelLevel = recipeById('steel_bar')!.level, smithing = s.player.skills.smithing.level;
-        const gate = smithing < ironLevel ? ` (needs Smithing ${ironLevel}: smelt Bronze Bars from copper and tin to practise)` : smithing < steelLevel ? ` (Steel needs Smithing ${steelLevel})` : '';
+        const gate = smithing < ironLevel ? ` (needs Smithing ${ironLevel}: smelt Copper Bars here, or Bronze from copper and tin, to practise)` : smithing < steelLevel ? ` (Steel needs Smithing ${steelLevel})` : '';
         lines.push({ text: `Smelt Iron Bars at the forge: ${b}/${P.bars}${b < P.bars ? gate : ''}`, done: b >= P.bars });
         if (b >= P.bars) lines.push({ text: `Harden Steel Bars: ${st}/${P.steel}`, done: st >= P.steel });
         if (st >= P.steel) lines.push({ text: "Forge the Forgemaster's Blade", done: false });

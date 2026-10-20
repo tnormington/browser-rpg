@@ -221,7 +221,7 @@ Mining and smithing run a **metal ladder** that starts at the bottom of the worl
 
 | Rock (`NODE_TYPES`) | Mining | XP a swing | Smelts into | Smithing: bar | Smithing: pieces |
 | --- | --- | --- | --- | --- | --- |
-| Copper Rock | 1 | 10 | Bronze Bar (1 copper + 1 tin) | 1 | sword 2, helm 3, greaves 4, chestplate 5 |
+| Copper Rock | 1 | 10 | Copper Bar (2 copper), Bronze Bar (1 copper + 1 tin) | copper 1, bronze 1 | copper: sword 1, helm 1, greaves 2, chestplate 3; bronze: sword 2, helm 3, greaves 4, chestplate 5 |
 | Tin Rock | 3 | 12 | (with copper) | | |
 | Iron Rock | 7 | 18 | Iron Bar (2 ore), Steel Bar (iron bar + 2 coal) | iron 7, steel 8 | Forgemaster's Blade 9 |
 | Coal Seam | 10 | 24 | (the fuel, from here on) | | |
@@ -233,6 +233,8 @@ Mining and smithing run a **metal ladder** that starts at the bottom of the worl
 The knob is one number, the `0.12`. If the ladder reads as too long, raise it; if it still reads as too short, lower it. **Not verified by play.**
 
 **Where each rock stands (HOM-77).** The ladder is also a map: a rung is somewhere you have to go, not something laid out in the starting square. **Hale's Rest has copper and nothing else** — three on the ridge, three in the Seams by the forge, six rocks where there were thirteen of four kinds. Everything above it is out in the world: **tin and iron** at the Greywater Road's first waysides past the east gate, **coal** from the second stand on, **mithril** on the Hollow's south-west wall behind the Ravager pack, **adamant** in Saltmarrow's cliffs, and stormiron in the Barrowdowns when that ground is built. The Hollow keeps its veins because the second quest is about them, but it lost its coal seams with the ridge: the nearest coal must never be one a player on the *first* quest has to walk past the Cave Brute to reach. Two consequences worth holding on to: the first quest is now a haul out to the road and back to the forge rather than a lap of the clearing, and because the waysides are clear of every camp's aggro, mining no longer levels a character by accident — the bronze set the Warden tells you to wear is what carries a combat-4 player through the Brute.
+
+**A rung under bronze (HOM-81).** HOM-77 left Hale with a rock and nothing to make out of it: the lowest set was bronze, and bronze wants tin, which is now out on the road. So the ladder gains a **copper** rung below it — a Copper Bar is two copper ore and no second metal, and the sword, helm, greaves and chestplate (armour 2 / 5 / 3 = 10, Copper Sword +2 at a quick 2.1 s swing) are smithed from the ridge alone. It shares bronze's Smithing 1 gate rather than sitting under it, because Smithing starts at 1 and the bronze tier must keep its six levels to the iron bar; what separates the two rungs is the **map and the XP**, not the gate. A copper bar pays 12 XP against bronze's 20 for the same two ore, so walking out to the first wayside for tin is still the better climb as well as the better metal. What copper buys a new character is that they leave town in something they made, instead of in nothing.
 
 Below the metal ladder, woodcutting keeps its own and the metal ladder is extended with new ore (**stormiron**, Mining 40; **starmetal**, Mining 52: derived from the pace rule above in 3.3, HOM-62: ore pays `0.12 x cost` at its own gate, 475 and 1,550 XP a swing), new logs (ash, Woodcutting 12; thornoak, 24; elderwood, 36), all as `NODE_TYPES` rows. A rock a long way from the forge is why **bars are carried home**: smithing stays at the forge in Hale (and gains a forge in each later town in wave 4, so the loop does not need a 6-minute walk).
 
@@ -336,6 +338,7 @@ One set behind costs 1.3 to 3.0 s a fight and 5 to 14 points of health; two behi
 
 | Set | Mining | Smithing (bar / pieces) | Equip combat | Armour (helm / chest / greaves) | Blade | Capstone blade | `tier` |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| **Copper** (HOM-81) | 1 (copper) | 1 / 1, 2, 3 | none | 2 / 5 / 3 = 10 | Copper Sword +2 at 2.1 s (Smithing 1) | none | 1 |
 | **Bronze** (HOM-56) | 1 (copper), 3 (tin) | 1 / 3, 4, 5 | none | 3 / 6 / 4 = 13 | Bronze Sword +3 (Smithing 2) | none | 1 |
 | Iron and steel (the drops, and the Forgemaster's Blade) | 7 (iron), 10 (coal) | 7 (iron), 8 (steel) / the blade 9 | none | 5 / 9 / 6 = 20 dropped | Forgemaster's Blade 18 (Smithing 9) | none | 2 to 3 |
 | Mithril (exists) | 18 | 15 / 16, 17, 18 | none (legacy) | 12 / 22 / 16 = 50 | Warden's Edge 28 (Smithing 20) | (that is the capstone) | 4 |

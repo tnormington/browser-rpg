@@ -58,7 +58,8 @@ export const ITEMS: Record<string, ItemDef> = {
   // materials (M3 smithing uses iron_ore + coal; they come from mining nodes, not drops)
   boar_hide: { name: 'Boar Hide', stack: 50, dropWeight: 40, tier: 0, value: 2, desc: 'Coarse hide. Crafting material.' },
   wolf_pelt: { name: 'Wolf Pelt', stack: 50, dropWeight: 40, tier: 0, value: 3, desc: 'Thick grey fur. Crafting material.' },
-  copper_ore: { name: 'Copper Ore', stack: 50, dropWeight: 0, tier: 0, value: 3, desc: 'Soft red ore from the clearing. Smelted with tin it makes bronze.' },
+  copper_ore: { name: 'Copper Ore', stack: 50, dropWeight: 0, tier: 0, value: 3, desc: 'Soft red ore from the clearing. Smelted on its own it makes copper; with tin it makes bronze.' },
+  copper_bar: { name: 'Copper Bar', stack: 50, dropWeight: 0, tier: 0, value: 7, desc: 'Two ore, smelted on their own. Soft, but it is the one metal Hale can make without leaving.' },
   tin_ore: { name: 'Tin Ore', stack: 50, dropWeight: 0, tier: 0, value: 5, desc: 'Pale, soft ore. On its own it is nothing: smelted with copper it makes bronze.' },
   bronze_bar: { name: 'Bronze Bar', stack: 50, dropWeight: 0, tier: 0, value: 12, desc: 'Copper and tin, smelted together. The first metal a smith can shape into armour.' },
   iron_ore: { name: 'Iron Ore', stack: 50, dropWeight: 0, tier: 0, value: 3, desc: 'Smelts into iron at the forge.' },
@@ -77,6 +78,9 @@ export const ITEMS: Record<string, ItemDef> = {
   ...fishItems(),
   ...herbItems(),
   // weapons
+  // the copper set (HOM-81): the bottom rung, smithed from the one rock Hale has, so a new character can make gear before they leave town.
+  // Soft and light: it swings quicker than a rusty blade and bites less, and every piece is a shade under its bronze counterpart.
+  copper_sword: { name: 'Copper Sword', slot: 'weapon', stats: { damage: 2, speed: 2.1 }, stack: 1, dropWeight: 0, tier: 1, value: 12, desc: 'Your first bars, beaten into an edge. Light and quick; it will not hold a point for long.' },
   // the bronze set (HOM-56): the first armour and blade a new character can smith, a step above hide and below the iron the enemies drop
   bronze_sword: { name: 'Bronze Sword', slot: 'weapon', stats: { damage: 3, speed: 2.3 }, stack: 1, dropWeight: 0, tier: 1, value: 20, desc: 'Cast at the forge from your first bars. Better than a rusty blade, not yet iron.' },
   rusty_blade: { name: 'Rusty Blade', slot: 'weapon', stats: { damage: 2, speed: 2.2 }, stack: 1, dropWeight: 10, tier: 1, value: 6, desc: 'Better than bare hands.' },
@@ -95,6 +99,9 @@ export const ITEMS: Record<string, ItemDef> = {
   leather_cap: { name: 'Leather Cap', slot: 'head', stats: { armor: 2 }, stack: 1, dropWeight: 10, tier: 1, value: 5, desc: 'Stitched hide.' },
   hide_jerkin: { name: 'Hide Jerkin', slot: 'chest', stats: { armor: 4 }, stack: 1, dropWeight: 8, tier: 1, value: 10, desc: 'Stitched hide.' },
   hide_leggings: { name: 'Hide Leggings', slot: 'legs', stats: { armor: 3 }, stack: 1, dropWeight: 10, tier: 1, value: 8, desc: 'Stitched hide.' },
+  copper_helm: { name: 'Copper Helm', slot: 'head', stats: { armor: 2 }, stack: 1, dropWeight: 0, tier: 1, value: 8, desc: 'Smithed from Hale\'s own copper.' },
+  copper_chestplate: { name: 'Copper Chestplate', slot: 'chest', stats: { armor: 5 }, stack: 1, dropWeight: 0, tier: 1, value: 16, desc: 'Smithed from Hale\'s own copper. Soft, and still better than a stitched jerkin.' },
+  copper_greaves: { name: 'Copper Greaves', slot: 'legs', stats: { armor: 3 }, stack: 1, dropWeight: 0, tier: 1, value: 12, desc: 'Smithed from Hale\'s own copper.' },
   bronze_helm: { name: 'Bronze Helm', slot: 'head', stats: { armor: 3 }, stack: 1, dropWeight: 0, tier: 1, value: 14, desc: 'Smithed from copper and tin.' },
   bronze_chestplate: { name: 'Bronze Chestplate', slot: 'chest', stats: { armor: 6 }, stack: 1, dropWeight: 0, tier: 1, value: 28, desc: 'Smithed from copper and tin. Dull, soft and better than hide.' },
   bronze_greaves: { name: 'Bronze Greaves', slot: 'legs', stats: { armor: 4 }, stack: 1, dropWeight: 0, tier: 1, value: 20, desc: 'Smithed from copper and tin.' },
@@ -109,6 +116,9 @@ export const ITEMS: Record<string, ItemDef> = {
   adamant_chestplate: { name: 'Adamant Chestplate', slot: 'chest', stats: { armor: 30 }, stack: 1, dropWeight: 0, tier: 5, value: 350, req: { combat: 14 }, desc: 'Smithed from Strand adamant. Heavy, and worth the weight.' },
   adamant_greaves: { name: 'Adamant Greaves', slot: 'legs', stats: { armor: 22 }, stack: 1, dropWeight: 0, tier: 5, value: 260, req: { combat: 14 }, desc: 'Smithed from Strand adamant.' },
 };
+
+/** The copper set, in smithing order: the bottom rung, made from Hale's own rock. */
+export const COPPER_SET = ['copper_sword', 'copper_helm', 'copper_greaves', 'copper_chestplate'] as const;
 
 /** The bronze set, in smithing order: the sword, then the plate. */
 export const BRONZE_SET = ['bronze_sword', 'bronze_helm', 'bronze_greaves', 'bronze_chestplate'] as const;

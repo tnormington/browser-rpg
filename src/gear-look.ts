@@ -48,6 +48,8 @@ const A: Partial<Appearance> = { tint: 0x58887a, trim: 0x2a4238, metal: 0.3, rou
 const S: Partial<Appearance> = { tint: 0x8c8aa8, trim: 0x5a5878, metal: 0.05, rough: 0.7, glow: 0xd0c8ff, glowI: 0.45, rung: 5, form: 'storm', motes: 0xd8d0ff };
 
 const B: Partial<Appearance> = { tint: 0xa87a4e, trim: 0x5c4230, metal: 0.4, rough: 0.55, rung: 2 };
+/** Copper: redder and duller than bronze, and left on rung 1, so the bottom of the ladder reads as beaten plate rather than plated armour. */
+const C: Partial<Appearance> = { tint: 0xb0683c, trim: 0x6a3a22, metal: 0.3, rough: 0.7, rung: 1 };
 
 /** Per-item overrides, merged over the tier rung. Only where the tier look is not the whole story. */
 export const ITEM_LOOKS: Record<string, Partial<Appearance>> = {
@@ -56,6 +58,10 @@ export const ITEM_LOOKS: Record<string, Partial<Appearance>> = {
   forged_blade: { tint: 0xc8bcb0, scale: 1.3, glow: 0xb0602a, glowI: 0.15, motes: 0xff9a3c },
   // mithril folded round a Warden shard: brighter than the plate it goes with, so the blade is the first thing the eye lands on
   warden_edge: { tint: 0x9db4d8, rough: 0.18 },
+
+  // Smithed copper, the bottom rung: warm red metal, plain silhouette, so hide, copper and bronze are three readable steps.
+  copper_helm: C, copper_chestplate: C, copper_greaves: C,
+  copper_sword: { ...C, scale: 0.9 },
 
   // Smithed bronze, tier 1 but plated: copper-brown metal under iron's grey-blue, no glow. Rung 2 gives it the plate silhouette hide lacks.
   bronze_helm: B, bronze_chestplate: B, bronze_greaves: B,
