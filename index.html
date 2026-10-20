@@ -91,11 +91,18 @@ canvas{display:block}
 .slot{position:relative;box-sizing:border-box;width:var(--slot);height:var(--slot);background:var(--iron);border:2px solid var(--edge);box-shadow:var(--lift-1);border-radius:var(--r);overflow:hidden;text-align:center;cursor:grab}
 .slot.empty{background:var(--iron-glass);border-style:dashed;border-color:var(--edge-dim);cursor:default}
 /* what is printed on a slot follows the slot: the token sizes are the 68px slot's, and they give way proportionally as the bar shrinks to fit the window (HOM-104: 52px at 800 wide) */
-.slot .icon{font-size:clamp(20px,calc(var(--slot)*.44),var(--fs-3xl));line-height:calc(var(--slot)*.68)}.slot .key{position:absolute;top:var(--sp-1);left:5px;font-weight:bold;font-size:clamp(11px,calc(var(--slot)*.19),var(--fs-md));color:var(--gold)}
+/* the key is also the rebind button: click it and the slot takes the next key pressed, so it sits in the corner as a target big enough to hit */
+.slot .icon{font-size:clamp(20px,calc(var(--slot)*.44),var(--fs-3xl));line-height:calc(var(--slot)*.68)}.slot .key{position:absolute;top:0;left:0;padding:var(--sp-1) 5px;font-weight:bold;font-size:clamp(11px,calc(var(--slot)*.19),var(--fs-md));color:var(--gold);cursor:pointer;border-bottom-right-radius:var(--r);min-width:11px}
+.slot .key:hover{background:var(--gold-wash);color:var(--ink-bright)}
 .slot .aname{position:absolute;bottom:var(--sp-1);width:100%;font-size:var(--fs-xs)}
-.slot .sweep{position:absolute;inset:0}.slot .cdtext{position:absolute;inset:0;font-size:clamp(15px,calc(var(--slot)*.32),var(--fs-2xl));font-weight:bold;display:flex;align-items:center;justify-content:center}
+/* a consumable slot: how many are left in the bag, and a flat look once there are none */
+.slot .qty{position:absolute;top:var(--sp-1);right:5px;font-weight:bold;font-size:clamp(9px,calc(var(--slot)*.17),var(--fs-sm));color:var(--gold)}
+.slot.gone .icon,.slot.gone .aname,.slot.gone .qty{opacity:.3}.slot.gone{border-color:var(--edge-dim)}
+.slot.binding{border-color:var(--gold);animation:freshslot .8s ease-in-out infinite}.slot.binding .key{background:var(--gold-wash-hi);color:var(--ink-bright)}
+/* the sweep, the clock and the padlock cover the whole slot, but they are things to read, not to press: the key under them stays clickable */
+.slot .sweep{position:absolute;inset:0;pointer-events:none}.slot .cdtext{position:absolute;inset:0;font-size:clamp(15px,calc(var(--slot)*.32),var(--fs-2xl));font-weight:bold;display:flex;align-items:center;justify-content:center;pointer-events:none}
 .slot.locked .icon,.slot.locked .aname,.slot.locked .key{opacity:.28}.slot.locked{border-color:var(--edge-dim);box-shadow:inset 0 0 0 1px #000}
-.slot .lock{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(6,6,8,.62);color:var(--gold)}
+.slot .lock{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(6,6,8,.62);color:var(--gold);pointer-events:none}
 .slot .lockicon{font-size:clamp(12px,calc(var(--slot)*.22),var(--fs-lg));line-height:calc(var(--slot)*.25)}.slot .locklvl{font-size:clamp(10px,calc(var(--slot)*.19),var(--fs-md));font-weight:bold;letter-spacing:.04em}
 .slot.fresh{border-color:var(--gold);animation:freshslot .8s ease-in-out infinite}
 @keyframes freshslot{50%{box-shadow:inset 0 0 14px 2px rgba(240,200,90,.8),0 0 16px 3px rgba(240,170,60,.9)}}
@@ -184,6 +191,19 @@ canvas{display:block}
 .rstat{color:var(--moss)}.rinputs{margin-top:var(--sp-2)}.rin{display:inline-block;margin-right:10px;color:var(--moss)}
 .rmeta{font-size:var(--fs-sm);opacity:.6;margin-top:var(--sp-1)}.rbtns{margin-top:5px;display:flex;gap:var(--sp-3)}
 
+/* ---- the admin / QA panel (admin-ui.ts): a dev-build panel, so it takes the panel chrome and adds only the form rows the others have no use for ---- */
+/* its button sits in the menu bar's row, in the corner opposite it: the bottom-left is clear of the action bar above and of the XP bar, which starts at 12% */
+.devbar{position:absolute;left:var(--gutter);bottom:var(--sp-2);pointer-events:auto}
+.adminpanel{--ptop:76px;--pbottom:250px;left:286px;width:300px}
+.afield{display:flex;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-3)}
+.afield input,.afield select{flex:1;min-width:0;box-sizing:border-box;padding:var(--sp-2) var(--sp-3);background:var(--iron-lift);border:1px solid var(--edge);border-radius:var(--r);font-family:var(--serif);font-size:var(--fs-md);color:var(--ink)}
+.afield input[type=number]{flex:0 0 68px}
+.anow{font-size:var(--fs-sm);color:var(--ink-dim);margin-bottom:var(--sp-2)}
+.alist{max-height:300px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--edge-hi) transparent}
+.arow{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--edge-dim)}
+.arow:hover{background:var(--iron-lift)}
+.aitem{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
 /* ---- combat bars ---- */
 .swing{--bar-h:10px;--bar-fs:var(--fs-xs);--fill:var(--fill-steel);position:absolute;left:50%;bottom:96px;width:424px;margin-left:-212px;margin-top:0;opacity:.55}.swing .fill{width:0}.swing .label{letter-spacing:.06em}
 .swing.on{--fill:var(--fill-gold);opacity:1;box-shadow:0 0 0 1px var(--gold),0 0 8px rgba(240,190,80,.45)}.swing.on.ready{--fill:var(--fill-gold-hi)}
@@ -219,7 +239,7 @@ canvas{display:block}
 .questbanner{top:20%;color:var(--arcane);text-shadow:0 0 22px #1a8fc0,0 3px 4px #000}.questbanner.show{animation:lvl 3.2s ease-out}
 
 /* ---- the world map screen and the flight ride (flight-ui.ts): the map scene is drawn in place of the game, so the game's own overlays step aside ---- */
-.hud.mapmode .tracker,.hud.mapmode .actionbar,.hud.mapmode .swing,.hud.mapmode .frame.target,.hud.mapmode .msglog,.hud.mapmode .panel,.hud.mapmode .menubar,.hud.mapmode .xp,.hud.mapmode .minimap{display:none!important}
+.hud.mapmode .tracker,.hud.mapmode .actionbar,.hud.mapmode .swing,.hud.mapmode .frame.target,.hud.mapmode .msglog,.hud.mapmode .panel,.hud.mapmode .menubar,.hud.mapmode .devbar,.hud.mapmode .xp,.hud.mapmode .minimap{display:none!important}
 .maplayer,.ridelayer{position:absolute;inset:0;pointer-events:none}
 .maptitle,.ridetitle{position:absolute;left:0;right:0;text-align:center;font-size:var(--fs-3xl);color:var(--gold);text-shadow:0 0 14px #000,0 2px 3px #000}
 .maptitle{top:22px;letter-spacing:.2em}.ridetitle{top:40px;letter-spacing:.12em}

@@ -1,8 +1,9 @@
 import { createState, step, TICK_DT, Input } from './sim';
 import { Renderer } from './render';
-import { BAR_KEYS, Hud } from './hud';
+import { Hud } from './hud';
 import type { InvAction } from './sim/inventory';
 import type { ShopAction } from './sim/shop';
+import type { AdminAction } from './sim/admin';
 import type { Interact } from './sim';
 import type { WeatherKind } from './weather';
 import { loadGame, loadQuality, saveGame, saveQuality, wipeSave } from './storage';
@@ -28,6 +29,7 @@ const view = new Renderer(document.body, state, loadQuality());
 if (trace) (window as any).__frameTrace = trace, trace.attach(view.renderer);
 const pendingInv: InvAction[] = [];
 const pendingShop: ShopAction[] = [];
+const pendingAdmin: AdminAction[] = [];
 let pendingCraft: { recipe: string; count: number } | null = null;
 let pendingAdvance: boolean | 'road' = false;
 let pendingTalent: string | null = null, pendingTalentReset = false;
@@ -54,6 +56,8 @@ const hud = new Hud((x, y, z) => view.showingMap ? null : view.project(x, y, z),
     if (toggle) { view.setQuality(view.quality === 'high' ? 'low' : 'high'); saveQuality(view.quality); }
     return view.quality;
   },
+  // the QA panel, and with it the admin actions, exists only in a debug build: a player's game has no way to raise one
+  admin: debug ? (a: AdminAction) => { pendingAdmin.push(a); saveDirty = true; } : undefined,
   save: () => hud.note(save() ? 'Game saved.' : 'Could not save (browser storage unavailable).', 'log-info'),
   newGame: () => {
     if (!confirm('Wipe your save and start a new game?')) return;
@@ -75,8 +79,20 @@ if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scen
 function eatBest() {
   const slot = bestFoodSlot(state.player);
   if (slot < 0) return hud.say('Nothing to eat');
+  use(slot);
+}
+function use(slot: number) {
   pendingInv.push({ k: 'use', slot });
   saveDirty = true;
+}
+/** An action bar key: a spell goes to the sim as a cast, a consumable as a use of the first stack of it in the bag. */
+function pressBarSlot(barSlot: number) {
+  const entry = hud.entryAt(barSlot);
+  if (!entry) return;
+  if (entry.k === 'ability') return void pendingAbilities.push(entry.i);
+  const slot = state.player.inventory.findIndex(st => st?.id === entry.id);
+  if (slot < 0) return hud.say(`You have no ${ITEMS[entry.id].name} left`);
+  use(slot);
 }
 const keys = new Set<string>();
 let pendingMount = false, pendingTab = false, pendingClear = false, pendingAttack = false, pendingJump = false;
@@ -91,8 +107,9 @@ addEventListener('keydown', e => {
   if (state.player.action?.k === 'flight') return; // the ride owns the screen: no key does anything until it lands
   if (e.code === 'Space' && !hud.modalOpen) { e.preventDefault(); if (!e.repeat) pendingJump = true; return; } // latched here so a tap shorter than a tick still jumps; never scrolls or presses a focused button
   if (e.repeat) return;
-  // the ability bar (1 2 3 4 5 6 Q E R F T 7 8) comes first: it owns those keys, and what each one casts is the player's own layout
-  if (BAR_KEYS.includes(e.code)) { const ability = hud.abilityAt(BAR_KEYS.indexOf(e.code)); if (ability !== null) pendingAbilities.push(ability); return; }
+  // the action bar comes first: it owns its keys, and both the layout and the keys themselves are the player's own
+  const barSlot = hud.slotForKey(e.code);
+  if (barSlot >= 0) { pressBarSlot(barSlot); return; }
   if (e.code === 'Tab') { e.preventDefault(); pendingTab = true; }
   else if (e.code === 'Escape') { if (!hud.closeAll()) pendingClear = true; }
   else if (e.code === 'KeyX') pendingAttack = true;
@@ -107,6 +124,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyK') hud.toggle('skills');
   else if (e.code === 'KeyN') hud.toggle('talents');
   else if (e.code === 'KeyP') hud.toggle('book');
+  else if (debug && e.code === 'Backquote') hud.toggleAdmin(); // the QA panel: after the bar, so a slot bound to ` still wins
 });
 addEventListener('keyup', e => keys.delete(e.code));
 addEventListener('blur', () => { keys.clear(); held.clear(); });
@@ -187,6 +205,7 @@ function readInput(): Input {
     pickup: pendingPickup,
     inv: pendingInv.splice(0),
     shop: pendingShop.splice(0),
+    admin: pendingAdmin.splice(0),
     interact: pendingInteract,
     craft: pendingCraft,
     questAdvance: pendingAdvance,

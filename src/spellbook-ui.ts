@@ -4,7 +4,8 @@ import type { GameState } from './sim';
 import { ABILITIES } from './sim/data';
 import { abilityOpen } from './sim/combat';
 import { talentById } from './sim/talents';
-import { HudWindow, el, panelWindow, titleRow } from './dom';
+import { HudWindow, dragData, el, panelWindow, titleRow } from './dom';
+import type { BarEntry } from './bar-layout';
 
 export class SpellbookUi implements HudWindow {
   private panel: HTMLElement;
@@ -12,11 +13,11 @@ export class SpellbookUi implements HudWindow {
   private win: HudWindow;
   private sig = '';
 
-  /** `bar` is the live layout (ability index per bar slot) and `keyOf` labels it; `clear` takes an ability off the bar. */
-  constructor(root: HTMLElement, private bar: () => (number | null)[], private keyOf: (ability: number) => string | null, private clear: (ability: number) => void) {
+  /** `bar` is the live layout (what sits in each bar slot) and `keyOf` names the key a spell answers to; `clear` takes it off the bar. */
+  constructor(root: HTMLElement, private bar: () => (BarEntry | null)[], private keyOf: (ability: number) => string | null, private clear: (ability: number) => void) {
     this.panel = el(root, 'panel bookpanel');
     titleRow(this.panel, 'Spell Book  (P)', () => this.setOpen(false));
-    el(this.panel, 'shophint', 'Drag a spell onto the action bar to assign it. Right-click a bar slot (or ✕ here) to clear it.');
+    el(this.panel, 'shophint', 'Drag a spell onto the action bar to assign it. Right-click a bar slot (or ✕ here) to clear it. Click a slot\'s key to rebind it.');
     this.list = el(this.panel, 'recipes');
     this.win = panelWindow(this.panel);
     this.panel.style.display = 'none';
@@ -48,7 +49,7 @@ export class SpellbookUi implements HudWindow {
       el(row, 'rstat', a.desc);
       if (!known) continue;
       row.draggable = true;
-      row.addEventListener('dragstart', e => e.dataTransfer?.setData('text/plain', `spell:${i}`));
+      row.addEventListener('dragstart', e => e.dataTransfer?.setData('text/plain', dragData({ k: 'spell', i })));
       if (key) el(el(row, 'rbtns'), 'btn rbtn', `✕ Remove from ${key}`).addEventListener('click', () => this.clear(i));
     }
   }

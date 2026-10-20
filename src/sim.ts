@@ -11,6 +11,7 @@ import { ResourceNode, createNodes, updateNodes } from './sim/gathering';
 import { beginCraft } from './sim/crafting';
 import { Buff, updateConsumables } from './sim/consumables';
 import { ShopAction, applyShopAction } from './sim/shop';
+import { AdminAction, applyAdminAction } from './sim/admin';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
 import { holdDoor } from './sim/dungeon';
@@ -210,6 +211,8 @@ export interface Input {
   flight?: string | null;                       // town id to fly to this tick (from the master the player stands at)
   /** World angle the player is turned to this tick, whatever they are walking: the mouse steering the camera with the right button. */
   face?: number | null;
+  /** QA actions this tick (sim/admin.ts). Only a build with the dev flag on can raise one: the game never puts anything here. */
+  admin?: AdminAction[];
 }
 
 export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, pickup: null, inv: [], interact: null, craft: null, questAdvance: false, talent: null, talentReset: false };
@@ -255,6 +258,9 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
   s.tick++;
   s.events.length = 0;
   const p = s.player;
+
+  // the QA actions go first and are answered whatever the player is doing: being dead or on a flight is one of the states to test out of
+  for (const a of input.admin ?? []) applyAdminAction(s, a);
 
   if (p.dead) {
     updatePlayerDeath(s, dt);

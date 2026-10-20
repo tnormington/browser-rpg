@@ -7,6 +7,7 @@ const KEY = 'browser-rpg.save';
 const HELP_KEY = 'browser-rpg.help-seen';
 const QUALITY_KEY = 'browser-rpg.quality';
 const BAR_KEY = 'browser-rpg.actionbar';
+const KEYS_KEY = 'browser-rpg.actionbar-keys';
 
 export type LoadResult = { state: GameState | null; status: 'none' | 'loaded' | 'incompatible' };
 
@@ -23,7 +24,7 @@ export function saveGame(s: GameState): boolean {
 }
 
 export function wipeSave() {
-  try { localStorage.removeItem(KEY); localStorage.removeItem(HELP_KEY); localStorage.removeItem(BAR_KEY); } catch { /* nothing to wipe */ }
+  try { localStorage.removeItem(KEY); localStorage.removeItem(HELP_KEY); localStorage.removeItem(BAR_KEY); localStorage.removeItem(KEYS_KEY); } catch { /* nothing to wipe */ }
 }
 
 export const helpSeen = () => { try { return localStorage.getItem(HELP_KEY) !== null; } catch { return true; } };
@@ -32,6 +33,8 @@ export const markHelpSeen = () => { try { localStorage.setItem(HELP_KEY, '1'); }
 export const loadQuality = (): Quality => { try { return localStorage.getItem(QUALITY_KEY) === 'low' ? 'low' : 'high'; } catch { return 'high'; } };
 export const saveQuality = (q: Quality) => { try { localStorage.setItem(QUALITY_KEY, q); } catch { /* ignore */ } };
 
-/** The action bar layout (which ability sits in which slot). Unvalidated: the HUD owns what a legal layout is. */
+/** The action bar layout (what sits in which slot) and the key each slot answers to. Unvalidated: actionbar.ts owns what is legal. */
 export const loadBar = (): unknown => { try { return JSON.parse(localStorage.getItem(BAR_KEY) ?? 'null'); } catch { return null; } };
-export const saveBar = (bar: (number | null)[]) => { try { localStorage.setItem(BAR_KEY, JSON.stringify(bar)); } catch { /* ignore */ } };
+export const saveBar = (bar: unknown) => { try { localStorage.setItem(BAR_KEY, JSON.stringify(bar)); } catch { /* ignore */ } };
+export const loadBarKeys = (): unknown => { try { return JSON.parse(localStorage.getItem(KEYS_KEY) ?? 'null'); } catch { return null; } };
+export const saveBarKeys = (keys: string[]) => { try { localStorage.setItem(KEYS_KEY, JSON.stringify(keys)); } catch { /* ignore */ } };
