@@ -41,6 +41,9 @@ Packs:
 | cook-3.ogg | RPG Audio | metalPot3.ogg | Kenney | CC0 | 2026-10-19 |
 | cook-start.ogg | RPG Audio | metalLatch.ogg | Kenney | CC0 | 2026-10-19 |
 | thud.ogg | RPG Audio | dropLeather.ogg | Kenney | CC0 | 2026-10-19 |
+| hoof-1.ogg | Impact Sounds | footstep_wood_000.ogg | Kenney | CC0 | 2026-10-19 |
+| hoof-2.ogg | Impact Sounds | footstep_wood_001.ogg | Kenney | CC0 | 2026-10-19 |
+| hoof-3.ogg | Impact Sounds | footstep_wood_002.ogg | Kenney | CC0 | 2026-10-19 |
 
 ## Ambience beds (not Kenney)
 

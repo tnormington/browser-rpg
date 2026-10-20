@@ -16,6 +16,8 @@ const GROUPS = {
   loot:      { minGap: 150, maxVoices: 2 },
   smith:     { minGap: 800, maxVoices: 3 },
   step:      { minGap: 250, maxVoices: 2 },   // footfalls land every ~450 ms running; the gap only guards a burst
+  hoof:      { minGap: 150, maxVoices: 4 },   // a beat lands every ~270 ms at 10 u/s, each a clop pair
+  mount:     { minGap: 300, maxVoices: 2 },
   gather:    { minGap: 400, maxVoices: 2 },   // strikes land every 1.1 s
   kill:      { minGap: 150, maxVoices: 2 },
   fish:      { minGap: 400, maxVoices: 1 },
@@ -49,6 +51,11 @@ const SOUNDS = {
   death:     { files: ['death'], vol: 0.8 },
   stepGrass: { files: ['step-grass-1', 'step-grass-2', 'step-grass-3'], vol: 0.3, jitter: 0.08 },
   stepCave:  { files: ['step-cave-1', 'step-cave-2'], vol: 0.3, jitter: 0.08 },
+  hoof:      { files: ['hoof-1', 'hoof-2', 'hoof-3'], vol: 0.4, jitter: 0.06, rate: 0.8 },   // a hollow clop: the wood footstep, pitched down for weight
+  hoofLead:  { files: ['hoof-1', 'hoof-2', 'hoof-3'], vol: 0.3, jitter: 0.06, rate: 0.95, delay: 0.11 },   // the fore-hoof half a beat behind: a canter, not a patter
+  saddle:    { files: ['thud'], vol: 0.5, jitter: 0.04, rate: 0.9 },   // leather taking weight
+  tack:      { files: ['cook-start'], vol: 0.3, jitter: 0.04, rate: 1.3, delay: 0.08 },   // a buckle
+  unsaddle:  { files: ['thud'], vol: 0.5, jitter: 0.04, rate: 0.75 },
   mine:      { files: ['mine-1', 'mine-2', 'mine-3'], vol: 0.55, jitter: 0.05 },
   chop:      { files: ['chop'], vol: 0.55, jitter: 0.06 },
   fishCast:  { files: ['swing-2'], vol: 0.3, jitter: 0.04, rate: 0.7 },   // a line whipping out
@@ -256,6 +263,9 @@ function tone(freq: number, dur: number, type: OscillatorType, vol: number, slid
 const arpeggio = (notes: number[], step: number, type: OscillatorType, vol: number) =>
   notes.forEach((f, i) => tone(f, step * 2.2, type, vol, f, i * step));
 
+/** Mounted, as told by the sim's 'mount' events: while it is true the footfalls are a horse's. */
+let riding = false;
+
 export function playEvents(events: GameEvent[]) {
   for (const ev of events) {
     switch (ev.t) {
@@ -300,7 +310,11 @@ export function playEvents(events: GameEvent[]) {
         play('smith', [SOUNDS.smith1, { ...SOUNDS.smith2, delay: SMITH_STEP }, { ...SOUNDS.smith1, delay: SMITH_STEP * 2 }]);
         break;
       case 'forge': play('smith', [SOUNDS.forge]); break;
-      case 'step': play('step', [ev.surface === 'cave' ? SOUNDS.stepCave : SOUNDS.stepGrass]); break;
+      case 'step':
+        if (riding) play('hoof', [SOUNDS.hoof, SOUNDS.hoofLead]);
+        else play('step', [ev.surface === 'cave' ? SOUNDS.stepCave : SOUNDS.stepGrass]);
+        break;
+      case 'mount': riding = ev.on; play('mount', ev.on ? [SOUNDS.saddle, SOUNDS.tack] : [SOUNDS.unsaddle], { noGap: true }); break;
       case 'gather': if (ev.skill === 'mining' || ev.skill === 'woodcutting') play('gather', [ev.skill === 'mining' ? SOUNDS.mine : SOUNDS.chop]); break; // no free splash yet: a shoal is quiet, and so is a patch of herb
       case 'death':
         play('stinger', [SOUNDS.death], { steal: true, noGap: true });
