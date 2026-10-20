@@ -28,7 +28,7 @@ import {
   HARBOURMASTER, QUEST3_NAME, REWARD3, dialogueAt, harbourMarker, ERRAND_GOODS, QUEST4_NAME, REWARD4,
   BRINE_GOALS, QUEST5_NAME, REWARD5,
 } from './sim/quest';
-import { appearanceOf, ITEM_LOOKS, TIER_LOOKS, TIER5_COLOR } from './gear-look';
+import { appearanceOf, ITEM_LOOKS, TIER_LOOKS, TIER5_COLOR, TIER6_COLOR } from './gear-look';
 import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
 import { clearLine } from './sim/sight';
@@ -2017,7 +2017,12 @@ section('HOM-81 the steel rung: smithed rather than mined, a Smithing ladder, an
   assert(mith.armor >= iron.armor * 2 && mith.reduction > iron.reduction + 0.15, `the set is ${mith.armor} armour (${(100 * mith.reduction).toFixed(0)}% off) against the iron the dead drop: ${iron.armor} (${(100 * iron.reduction).toFixed(0)}%)`);
   const top = TIER_LOOKS.length - 1;
   const warm = (hex: number) => ((hex >> 16) & 255) > ((hex & 255)) + 8;
-  assert(top === 5 && TIER_COLORS.length === top + 1 && TIER_COLORS[5] === TIER5_COLOR, 'the worn-look ladder runs to tier 5 and every tier has a colour');
+  assert(top === 6 && TIER_COLORS.length === top + 1 && TIER_COLORS[5] === TIER5_COLOR && TIER_COLORS[6] === TIER6_COLOR, 'the worn-look ladder runs to tier 6 and every tier has a colour');
+  // tier 6 is the end of the ladder: its own shape, its own colour (white, the one the other tiers leave), a glow that is cold and under the cap, and a starmetal set that is not the fallback
+  assert(TIER_LOOKS[6].form === 'star' && TIER_LOOKS[6].rung > TIER_LOOKS[5].rung && !warm(TIER_LOOKS[6].glow) && TIER_LOOKS[6].glow !== TIER_LOOKS[5].glow && !TIER_COLORS.slice(0, 6).includes(TIER6_COLOR), 'tier 6 is star-white, a form of its own, and not a tier-5 recolour');
+  for (const id of ['starmetal_helm', 'starmetal_chestplate', 'starmetal_greaves', 'starmetal_blade', 'crownbreaker'] as const) assert(id in ITEM_LOOKS && TIER_LOOKS[6].glowI * linearPeak(TIER_LOOKS[6].glow) <= EMISSIVE_CAP * 0.75, `${id} has a look of its own under the glow cap`);
+  // the leather ladder's top three are bespoke forms, none of them the tier fallback and none of them Hide
+  for (const [stem, form] of [['marshhide', 'marsh'], ['thornhide', 'thorn'], ['moorhide', 'moor']] as const) for (const slot of ['gloves', 'boots']) assert(ITEM_LOOKS[`${stem}_${slot}`]?.form === form && (ITEM_LOOKS[`${stem}_${slot}`].glow ?? 0) !== 0, `${stem}_${slot} has its own form and a glint`);
   // tier 5: adamant and stormiron share a tier and must not be one metal in two colours (colour, finish, glow hue and silhouette all differ)
   const hueOf = (hex: number) => { const r = hex >> 16, g = (hex >> 8) & 255, b = hex & 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b); if (mx === mn) return 0; const d = mx - mn; return 60 * (mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4); };
   const ad = { ...TIER_LOOKS[5], ...ITEM_LOOKS.adamant_chestplate }, st = { ...TIER_LOOKS[5], ...ITEM_LOOKS.stormiron_chestplate };

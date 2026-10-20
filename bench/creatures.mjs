@@ -1,4 +1,4 @@
-// The wave-3 enemies, before the sim has them: serves the source through vite's dev server (so the page and this script share one ENEMY_TYPES),
+﻿// The wave-3 enemies, before the sim has them: serves the source through vite's dev server (so the page and this script share one ENEMY_TYPES),
 // registers the bible's rows (docs/world-design.md 3.4) for the Fen/Thornwood kinds that have no sim entry yet, and shoots each at play distance
 // and close up, with its rig's original beside it. Shots -> bench/shots/creatures/.   node bench/creatures.mjs [type ...]
 import { createServer } from 'vite';
@@ -30,6 +30,8 @@ const WAVE = [
   ['barrow_wight', 'hexer', 1.0, 0x5a6a78], ['grave_hound', 'wolf', 1.0, 0x8a8e90], ['cairn_brute', 'brute', 1.0, 0x7a8088], ['barrow_lord', 'brute', 1.4, 0x8a94a8],
   ['hollow_knight', 'brute', 1.5, 0xa8aeb8], ['moor_ram', 'boar', 1.5, 0xa09a8a], ['moor_raider', 'hexer', 1.0, 0x6a5a48], ['ridge_ogre', 'brute', 1.2, 0x6a5848],
   ['stonehorn', 'boar', 2.2, 0x7a7a74],
+  // HOM-109: wave 4's three rigs (bible 3.4), brute x1.5 / brute / hexer x1.6
+  ['ashen_colossus', 'brute', 1.5, 0x4a4642], ['rune_golem', 'brute', 1.0, 0x5a6478], ['archmage_vael', 'hexer', 1.6, 0x3a3058],
 ];
 const want = process.argv.slice(2);
 await page.evaluate(async WAVE => {
@@ -51,18 +53,18 @@ await page.evaluate(() => {
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const frame = () => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
 // park one enemy at the clearing's east edge, the player to its south looking north-east: `cam` back, `pitch` down
-async function shoot(type, name, { cam = 9, pitch = 0.3, yaw = 0.7 } = {}) {
-  await page.evaluate(([type, yaw, pitch, cam]) => {
+async function shoot(type, name, { cam = 9, pitch = 0.3, yaw = 0.7, face = Math.PI * 0.8 } = {}) {
+  await page.evaluate(([type, yaw, pitch, cam, face]) => {
     const d = window.__debug, s = d.sim, { X, Z } = window.spot;
     for (const e of s.enemies) if (e.type !== type && e.id > 9000) { e.x = e.z = 400; }
     const e = s.enemies.find(x => x.type === type && x.id > 9000);
-    e.x = e.spawnX = X; e.z = e.spawnZ = Z; e.state = 'idle'; e.facing = yaw + Math.PI * 0.8;
+    e.x = e.spawnX = X; e.z = e.spawnZ = Z; e.state = 'idle'; e.facing = yaw + face;
     s.targetId = e.id;
     const p = s.player; p.x = X + Math.sin(yaw) * (cam + 6); p.z = Z + Math.cos(yaw) * (cam + 6); // behind the camera
     const h = 1.2 + pitch * 2;
     d.view.debugCam = { pos: [X + Math.sin(yaw) * cam, h + cam * pitch * 0.6, Z + Math.cos(yaw) * cam], at: [X, 1.3, Z] };
     d.step(); d.step();
-  }, [type, yaw, pitch, cam]);
+  }, [type, yaw, pitch, cam, face]);
   await wait(900);
   await frame();
   await page.screenshot({ path: join(out, `${name}.png`) });
@@ -71,6 +73,8 @@ async function shoot(type, name, { cam = 9, pitch = 0.3, yaw = 0.7 } = {}) {
   await shoot(type, `${type}-play`, { cam: 11, pitch: 0.35 });
   await shoot(type, `${type}-close`, { cam: 5.5, pitch: 0.25, yaw: 0.9 });
   await shoot(type, `${type}-back`, { cam: 7, pitch: 0.25, yaw: 2.6 });
+  await shoot(type, `${type}-front`, { cam: 8, pitch: 0.2, yaw: 0.4, face: 0 }); // the creature turned to the camera: what the player sees when it comes for them
 }
 await browser.close();
 await server.close();
+

@@ -313,10 +313,74 @@ function stonehorn(): Silhouette {
   return { squash: [1.0, 1.1, 1.0], layers: [{ color: STONE, parts: [horn, ...slabs, ...rubble] }, { color: MOSS, parts: [lump(0.0, 1.02, 0.0, 0.14), lump(0.34, 0.9, 0.32, 0.1)] }] };
 }
 
+// The Spire and the ash waste (HOM-109, wave 4). Past the moor the dead are no longer grey stone but burnt stone and cut stone: the Colossus is the one warm thing out there (ember is
+// fire, and fire is allowed), the Spire's constructs and its master are arcane, violet and cold.
+const ASH = 0x3a3734, CINDER = 0x76706a, EMBER = 0xf0561a, SLATE = 0x4a5266, RUNE = 0x4a6cff, ROBE = 0x2a2440, ARCANE = 0xb070ff;
+
+/**
+ * The Ashen Colossus: a cave brute the height of a house, burnt black. The silhouette is WIDTH and a broken skyline: boulder shoulders, a row of snapped columns standing up the
+ * back like the ribs of a burnt hall, a hunched head sunk between them, and a seam down the chest where it is still alight. Nothing else on the road is as wide, and the ember
+ * is the only warm light in the game's far reaches, so it is found at a glance. The shoulders and the slabs at the fists are what the Crush and the falling ash land from.
+ */
+function ashenColossus(): Silhouette {
+  const sh = BRUTE.sh, head = BRUTE.head;
+  const shoulders = [1, -1].flatMap(s => [lump(s * 0.92, sh + 0.12, 0, 0.62, 0.85), put(new THREE.BoxGeometry(0.7, 0.26, 0.82), s * 1.08, sh + 0.46, -0.04, 0, s * 0.2, s * 0.35)]);
+  const columns = [[-0.62, 0.95, 0.15, -0.12], [-0.25, 1.3, 0.22, 0.05], [0.15, 1.5, -0.18, 0.1], [0.55, 1.05, 0.12, 0.2], [0.0, 0.8, 0.3, 0.0]].map(([x, h, lean, tw], i) =>
+    put(new THREE.CylinderGeometry(0.11, 0.17, h, 5).translate(0, h / 2, 0), x, sh - 0.15 + (i % 2) * 0.1, -0.5 - (i % 3) * 0.08, lean, tw, x * 0.2));
+  const brow = put(new THREE.BoxGeometry(0.85, 0.3, 0.5), 0, head - 0.05, 0.12, 0.2);
+  const slabs = [1, -1].map(s => put(new THREE.BoxGeometry(0.42, 0.7, 0.5), s * 0.95, sh - 0.6, 0.12, 0, 0, s * 0.08)); // the arms' ash-crust, down the forearm
+  const ashfall = hangers(0, sh - 0.1, 0.1, 0.75, 9, 0.8); // streams of burnt cloth and cinder off the arms and belt
+  // a crack, not a cross: four slanting segments zigzagging down the chest and a fifth branching off at the belt
+  const seam = [[0.06, 0.3, 0.45], [-0.06, 0.05, -0.5], [0.07, -0.2, 0.55], [-0.04, -0.45, -0.4]].map(([x, dy, rz]) => put(new THREE.BoxGeometry(0.07, 0.34, 0.04), x, sh + dy, 0.5, 0, 0, rz)).concat(put(new THREE.BoxGeometry(0.05, 0.26, 0.04), 0.2, sh - 0.55, 0.5, 0, 0, -1.1));
+  const eyes_ = eyes(head - 0.12, 0.36, 0.14, 0.06);
+  return {
+    squash: [1.3, 0.95, 1.22], lean: 0.16,
+    layers: [{ color: ASH, parts: [...shoulders, ...columns, brow] }, { color: CINDER, parts: [...slabs, ...ashfall] }, { color: EMBER, parts: [...seam, ...eyes_], lit: true }],
+  };
+}
+
+/**
+ * The Rune Golem: a brute built of cut blocks and not of rubble, so it does not read as the Cairn Brute's cousin. A cube for a head, a square chest slab with a ringed rune let into it,
+ * cube pauldrons edged in light, and three runestones hung in the air over the skull (the thing that keeps it walking). Slate-blue, hard-edged, with arcane light in every joint.
+ */
+function runeGolem(): Silhouette {
+  const sh = BRUTE.sh, head = BRUTE.head;
+  const body = [put(new THREE.BoxGeometry(0.8, 0.72, 0.76), 0, head - 0.02, 0.04), put(new THREE.BoxGeometry(1.4, 1.1, 0.5), 0, sh - 0.4, 0.34),
+    ...[1, -1].flatMap(s => [put(new THREE.BoxGeometry(0.8, 0.7, 0.8), s * 0.95, sh + 0.02, 0), put(new THREE.BoxGeometry(0.5, 0.7, 0.5), s * 1.0, sh - 0.65, 0.2)])];
+  const orbitals = [[0, head + 0.75, 0.05, 0.26], [-0.62, head + 0.5, -0.1, 0.19], [0.62, head + 0.5, -0.1, 0.19]].map(([x, y, z, r], i) => put(new THREE.BoxGeometry(r * 1.4, r * 2.2, r * 0.6), x, y, z, 0.3 * i, i * 0.9, 0.2));
+  const light = [put(new THREE.TorusGeometry(0.3, 0.04, 4, 8), 0, sh - 0.35, 0.6), put(new THREE.BoxGeometry(0.06, 0.55, 0.03), 0, sh - 0.35, 0.6), put(new THREE.BoxGeometry(0.55, 0.06, 0.03), 0, sh - 0.35, 0.6),
+    put(new THREE.BoxGeometry(0.5, 0.07, 0.03), 0, head - 0.05, 0.43), ...[1, -1].map(s => put(new THREE.BoxGeometry(0.62, 0.05, 0.05), s * 0.95, sh + 0.38, 0.4)), ...[1, -1].map(s => put(new THREE.BoxGeometry(0.4, 0.05, 0.05), s * 1.0, sh - 0.3, 0.46)),
+    ...orbitals.map(g => g.clone().scale(0.6, 0.6, 0.6))];
+  return { squash: [1.08, 1.0, 1.0], layers: [{ color: SLATE, parts: [...body, ...orbitals] }, { color: RUNE, parts: light, lit: true }] };
+}
+
+/**
+ * Archmage Vael, the game's last boss and its first ranged one. A boss who fights at fourteen paces is judged at fourteen paces, so his silhouette is built for the length of the room and
+ * not for the click: a ring of blades standing behind the head (nothing else in the game has a vertical halo, and it is the first shape to survive distance, fog and a cave's dark),
+ * a very tall spired hat above it, a robe that pools to a train, and four shards held in the air at the shoulders, the barrage he is about to throw. The cast orb in his hand is the tell.
+ */
+function archmageVael(): Silhouette {
+  const sh = HEXER.sh, hat = HEXER.hat;
+  const halo = [put(new THREE.TorusGeometry(0.78, 0.045, 4, 14), 0, hat + 0.15, -0.4), ...Array.from({ length: 10 }, (_, i) => {
+    const a = (i / 10) * Math.PI * 2;
+    return put(new THREE.ConeGeometry(0.07, i % 2 ? 0.34 : 0.55, 4).translate(0, (i % 2 ? 0.17 : 0.275), 0), Math.sin(a) * 0.78, hat + 0.15 + Math.cos(a) * 0.78, -0.4, 0, 0, -a);
+  })];
+  const spire = [put(new THREE.ConeGeometry(0.34, 1.5, 6).translate(0, 0.75, 0), 0, hat + 0.18, 0, -0.08), put(new THREE.CylinderGeometry(0.5, 0.5, 0.05, 7), 0, hat + 0.1, 0)];
+  const train = [put(new THREE.ConeGeometry(0.95, 1.7, 7, 1, true).translate(0, -0.85, 0), 0, sh + 0.05, -0.12), ...hangers(0, 0.5, -0.1, 0.78, 10, 0.9), put(new THREE.BoxGeometry(0.2, 1.25, 0.05).translate(0, -0.6, 0), 0, sh, 0.35, 0.05)];
+  const shards = [[0.95, sh + 0.35, 0.1], [-0.95, sh + 0.35, 0.1], [0.7, sh + 0.85, 0.2], [-0.7, sh + 0.85, 0.2]].map(([x, y, z], i) => put(new THREE.OctahedronGeometry(0.17).scale(0.7, 1.6, 0.7), x, y, z, 0, i, 0.3 * (i % 2 ? 1 : -1)));
+  const mantle_ = [1, -1].map(s => put(new THREE.BoxGeometry(0.8, 0.14, 0.62), s * 0.62, sh + 0.1, -0.02, 0, 0, s * 0.35));
+  return {
+    squash: [1.05, 1.1, 1.05], lean: 0.04,
+    layers: [{ color: ROBE, parts: [...spire, ...train, ...mantle_] }, { color: CINDER, parts: halo }, { color: ARCANE, parts: [...shards, ...eyes(hat - 0.2, 0.28, 0.1, 0.05), put(new THREE.TorusGeometry(0.2, 0.025, 4, 8), 0, sh + 0.12, 0.2, Math.PI / 2)], lit: true }],
+    handLight: { color: ARCANE, size: 0.3 },
+  };
+}
+
 /** Enemy type id -> its silhouette. A type not listed draws as its rig, tinted and scaled. */
 export const SILHOUETTES: Record<string, () => Silhouette> = {
   barrow_wight: barrowWight, grave_hound: graveHound, cairn_brute: cairnBrute, barrow_lord: barrowLord, cairn_king: cairnKing, hollow_knight: hollowKnight,
   moor_ram: moorRam, moor_raider: moorRaider, ridge_ogre: ridgeOgre, stonehorn,
+  ashen_colossus: ashenColossus, rune_golem: runeGolem, archmage_vael: archmageVael,
   shore_crab: crab,
   fen_stalker: fenStalker, blight_stag: blightStag,
   thornback: () => thornback(false), elder_thornback: () => thornback(true),

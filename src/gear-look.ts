@@ -1,4 +1,4 @@
-// What a piece of worn gear looks like, as data. Pure: no Three.js, no DOM, so verify can test it headlessly.
+﻿// What a piece of worn gear looks like, as data. Pure: no Three.js, no DOM, so verify can test it headlessly.
 //
 // The ladder is keyed to ItemDef.tier (the same number that colours drop beams and tooltips); there is no second rarity
 // concept. An item with no entry in ITEM_LOOKS gets its tier's rung, so a new item is visible the moment it has a tier.
@@ -21,7 +21,7 @@ export interface Appearance {
   /** Colour of the motes that drift off the piece; 0 = none. */
   motes: number;
   /** Bespoke silhouette for a named metal or piece, layered on the rung's. Absent = the rung's plain shape. */
-  form?: 'adamant' | 'storm' | 'greywolf' | 'gutterhook' | 'wolfskin';
+  form?: 'adamant' | 'storm' | 'star' | 'greywolf' | 'gutterhook' | 'wolfskin' | 'marsh' | 'thorn' | 'moor';
   /** Weapon width multiplier (default 1): adamant is broad, stormiron narrow. */
   width?: number;
 }
@@ -40,10 +40,15 @@ export const TIER_LOOKS: Appearance[] = [
   // Tier 5: the generic fallback only. Spectral jade, the one cold hue the ladder has not used (blue is 2 and 4, orange is 3, purple is the beam colour of 4).
   // An item with no entry of its own gets this and the rung-4 frame, which is visibly better than the steel set but is a recolour: every tier-5 SET has an entry below.
   { tint: 0x5e8a82, trim: 0x2c4a46, metal: 0.45, rough: 0.35, glow: 0x3ee0c0, glowI: 0.7, rung: 5, scale: 1.35, motes: 0x6ef0d4 },
+  // Tier 6, the end of the ladder (starmetal, and whatever a boss drops above it). Every tier below is a hue; this one is the absence of one: meteoric black plate with a hard sheen and
+  // points of cold white light, a star-chart on a night sky. White is the one rarity colour no other tier can be mistaken for, and starmetal's form is a different SHAPE as well, not a recolour.
+  { tint: 0x5a6080, trim: 0x9aa0bc, metal: 0.12, rough: 0.45, glow: 0xe8f0ff, glowI: 0.5, rung: 6, scale: 1.5, motes: 0xf0f4ff, form: 'star' },
 ];
 
 /** Beam, tooltip and border colour for tier 5: TIER_COLORS[5] in sim/items.ts should read this value. */
 export const TIER5_COLOR = 0x3ee0c0;
+/** And for tier 6: star-white, the one colour the ladder leaves (blue is 2 and 4, orange 3, jade 5). TIER_COLORS[6] in sim/items.ts. */
+export const TIER6_COLOR = 0xf2f0ff;
 
 const A: Partial<Appearance> = { tint: 0x58887a, trim: 0x2a4238, metal: 0.3, rough: 0.4, glow: 0x3ee0c0, glowI: 0.5, rung: 5, form: 'adamant', motes: 0x3ee0c0 };
 const S: Partial<Appearance> = { tint: 0x8c8aa8, trim: 0x5a5878, metal: 0.05, rough: 0.7, glow: 0xd0c8ff, glowI: 0.45, rung: 5, form: 'storm', motes: 0xd8d0ff };
@@ -51,6 +56,12 @@ const S: Partial<Appearance> = { tint: 0x8c8aa8, trim: 0x5a5878, metal: 0.05, ro
 const B: Partial<Appearance> = { tint: 0xa87a4e, trim: 0x5c4230, metal: 0.4, rough: 0.55, rung: 2 };
 /** Copper: redder and duller than bronze, and left on rung 1, so the bottom of the ladder reads as beaten plate rather than plated armour. */
 const C: Partial<Appearance> = { tint: 0xb0683c, trim: 0x6a3a22, metal: 0.3, rough: 0.7, rung: 1 };
+
+/** The item-id stems each leather set may be filed under: the sim names Hide and Wolfskin `hide_` / `wolfskin_`, and the bible's "Marsh-hide" is not obviously one word. Both spellings carry the look. */
+const LEATHER_STEMS = { marsh: ['marshhide', 'marsh_hide'], thorn: ['thornhide'], moor: ['moorhide'] } as const;
+function leatherPair(form: keyof typeof LEATHER_STEMS, look: Partial<Appearance>): Record<string, Partial<Appearance>> {
+  return Object.fromEntries(LEATHER_STEMS[form].flatMap(stem => [`${stem}_gloves`, `${stem}_boots`].map(id => [id, look])));
+}
 
 /** Per-item overrides, merged over the tier rung. Only where the tier look is not the whole story. */
 export const ITEM_LOOKS: Record<string, Partial<Appearance>> = {
@@ -74,6 +85,16 @@ export const ITEM_LOOKS: Record<string, Partial<Appearance>> = {
   adamant_blade: { ...A, scale: 1.2, width: 1.7 },
   stormiron_helm: S, stormiron_chestplate: S, stormiron_greaves: S,
   stormiron_blade: { ...S, scale: 1.6, width: 0.7 },
+  // Tier 6: starmetal. Black plate, white light, and a shape no other set has: a four-point star hanging over the brow, pinion fans on the shoulders, a star on the back (the read from the
+  // camera, which is behind the player), a star-spike for a knee. The blade is the longest on the ladder and dark to the edge, with a white line down it. Crownbreaker is the same metal, grander.
+  starmetal_helm: {}, starmetal_chestplate: {}, starmetal_greaves: {},
+  starmetal_blade: { scale: 1.75, width: 1.1 },
+  crownbreaker: { scale: 2.0, width: 1.5, glowI: 0.6 },
+  // Leatherworking, the top of the ladder: hands and feet are the leather's slots, and the sets a player is seen in for hours are not recolours of Hide. Marsh-hide is reeds and mud (fringe and
+  // a laced shaft), Thornhide the Thornwood's beasts (thorns round the wrist, a spur at the heel), Moorhide the moor's (a deep fleece, horn toggles). Each has a quiet cold glint on its rung.
+  ...leatherPair('marsh', { tint: 0x7c8c5c, trim: 0x4a5638, metal: 0.02, rough: 1, glow: 0x6ef0d4, glowI: 0.3, rung: 3, form: 'marsh', motes: 0 }),
+  ...leatherPair('thorn', { tint: 0x6a523c, trim: 0xa89878, metal: 0.05, rough: 0.95, glow: 0x7ab0ff, glowI: 0.45, rung: 4, form: 'thorn', motes: 0x7ab0ff }),
+  ...leatherPair('moor', { tint: 0xc2b49a, trim: 0x8a7c66, metal: 0.05, rough: 1, glow: 0xb4dcf0, glowI: 0.4, rung: 5, form: 'moor', motes: 0xb4dcf0 }),
   // named pieces: bespoke by form, each carries one cold glint and no more
   greywolf_hauberk: { tint: 0x6a7078, trim: 0x3e444c, metal: 0.05, rough: 1, glow: 0x6ef0d4, glowI: 0.5, rung: 5, form: 'greywolf' },
   // Leatherworking: two plain materials. Hide is the boar's brown; wolfskin is grey pelt in the Hauberk's colours, furred at the cuffs. Rung 1: no plate, no glow.
@@ -94,3 +115,4 @@ export function appearanceOf(id: string): Appearance {
   const def = ITEMS[id];
   return { ...TIER_LOOKS[tierRung(def ? def.tier : 1)], ...ITEM_LOOKS[id] };
 }
+

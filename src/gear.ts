@@ -1,4 +1,4 @@
-// The player's worn gear, drawn: every equipped item is visible and nothing else is. Rendering only.
+﻿// The player's worn gear, drawn: every equipped item is visible and nothing else is. Rendering only.
 //
 // One PlayerGear owns the knight's bone-mounted pieces. sync() diffs the sim's equipment record against what is mounted and
 // rebuilds only the slot that changed, so swapping gear mid-session (even mid-swing) needs no event from the sim.
@@ -117,6 +117,13 @@ export class PlayerGear {
     return m;
   }
 
+  /** A cone of base radius `r` and length `len` standing at `pos` and pointing along `dir`. */
+  private spikeOut(material: THREE.Material, parent: THREE.Object3D, pos: [number, number, number], dir: [number, number, number], r: number, len: number) {
+    const m = this.part(new THREE.ConeGeometry(r, len, 4).translate(0, len / 2, 0), material, parent, pos);
+    m.quaternion.setFromUnitVectors(UP, new THREE.Vector3(...dir).normalize());
+    return m;
+  }
+
   /** Per-piece material: `trim` is the darker secondary colour, the main tint carries the metal response. Neither glows: only inlays and the blade do, so plate is never lit all over. */
   private material(ap: Appearance, trim = false): THREE.MeshStandardMaterial {
     const m = new THREE.MeshStandardMaterial({
@@ -229,6 +236,17 @@ export class PlayerGear {
         for (const s of [-1, 1]) this.part(curvedSpike(0.05, 0.4, 1.2, -0.5), trim, w, [s * 0.3, 0.02, 0.1]).scale.x = s;
         this.part(new THREE.BoxGeometry(0.03, 0.4, 0.04), vein, w, [0, 0.4, 0.2], [0.9, 0, 0]);
         this.part(new THREE.BoxGeometry(0.34, 0.03, 0.04), vein, w, [0, 0.04, 0.3]);
+      } else if (ap.form === 'star') {
+        // a clean black helm and one thing over it: a four-point star hung on a stem above the brow, two crossed diamonds around a bright core. Two long blades sweep back off the cheeks.
+        const vein = this.inlay(ap);
+        mats.push(vein);
+        helm.root.scale.setScalar(1.12);
+        this.part(new THREE.CylinderGeometry(0.02, 0.05, 0.3, 4), trim, w, [0, 0.44, 0]);
+        this.part(new THREE.OctahedronGeometry(0.1).scale(0.5, 2.8, 0.5), vein, w, [0, 0.72, 0]);
+        this.part(new THREE.OctahedronGeometry(0.1).scale(2.4, 0.5, 0.5), vein, w, [0, 0.72, 0]);
+        this.part(new THREE.OctahedronGeometry(0.06), vein, w, [0, 0.72, 0], [0.6, 0.6, 0]);
+        for (const s of [-1, 1]) this.part(curvedSpike(0.05, 0.62, 1.5, -0.35), trim, w, [s * 0.3, 0.02, -0.02]).scale.x = s;
+        this.part(new THREE.BoxGeometry(0.3, 0.035, 0.04), vein, w, [0, 0.04, 0.3]); // the visor slit
       } else if (ap.rung >= 3) { // a swept crest along the skull: the silhouette cue from behind
         const h = ap.rung >= 4 ? 0.5 : 0.28;
         this.part(crestFin(h, 0.62, ap.rung >= 4 ? 0.07 : 0.05), trim, w, [0, 0.24, -0.02]);
@@ -280,6 +298,18 @@ export class PlayerGear {
       }
       if (ap.form === 'adamant') this.part(new THREE.CylinderGeometry(0.3, 0.38, 0.16, 6), main, w, [0, 0.16, 0]);
       else for (const z of [0, 1, 2]) this.part(curvedSpike(0.045, 0.4 - z * 0.08, 2.6, 0.3, 2), trim, w, [0, 0.1 - z * 0.3, -0.3]); // dorsal barbs down the spine
+    } else if (ap.form === 'star') {
+      // each shoulder a fan of three swept pinions with a lit root, and a four-point star set on the back between them (the camera sits behind the player)
+      const trim = this.material(ap, true), main = this.material(ap), vein = this.inlay(ap);
+      mats.push(trim, main, vein);
+      pads.root.scale.setScalar(1.35);
+      for (const s of [-1, 1]) {
+        for (let i = 0; i < 3; i++) this.part(curvedSpike(0.065 - i * 0.012, 0.78 - i * 0.16, 0.45 + i * 0.4, 0.35, 3), trim, w, [s * 0.34, 0.1 - i * 0.03, -0.02 * i]).scale.x = s;
+        this.part(new THREE.OctahedronGeometry(0.08), vein, w, [s * 0.34, 0.1, 0]);
+      }
+      this.part(new THREE.CylinderGeometry(0.2, 0.2, 0.04, 6).rotateX(Math.PI / 2), main, w, [0, -0.28, -0.3]);
+      this.part(new THREE.OctahedronGeometry(0.1).scale(0.55, 3.0, 0.55), vein, w, [0, -0.28, -0.34]);
+      this.part(new THREE.OctahedronGeometry(0.1).scale(3.0, 0.55, 0.55), vein, w, [0, -0.28, -0.34]);
     } else if (ap.rung >= 3) { // spikes on the shoulders: horizontal read at gathering distance
       const trim = this.material(ap, true), vein = this.inlay(ap), h = ap.rung >= 4 ? 0.3 : 0.18;
       mats.push(trim, vein);
@@ -330,6 +360,12 @@ export class PlayerGear {
       if (ap.rung >= 3) this.part(new THREE.OctahedronGeometry(ap.rung >= 4 ? 0.17 : 0.13), trim, w, [0, len * 0.4 + 0.05, 0.05]);
       if (ap.rung >= 4) this.part(new THREE.ConeGeometry(0.05, 0.22, 4), trim, w, [0, len * 0.4 + 0.05, 0.2], [Math.PI / 2, 0, 0]);
       if (ap.form === 'adamant') this.part(new THREE.BoxGeometry(0.34, 0.12, 0.3), trim, w, [0, len * 0.4 + 0.1, 0.06]); // a squared knee guard over the cop
+      if (ap.form === 'star') { // a lit seam down the front of each shin and a blade trailing off the calf
+        const vein = this.inlay(ap);
+        mats.push(vein);
+        this.part(new THREE.BoxGeometry(0.025, len * 0.7, 0.025), vein, w, [0, 0, 0.14]);
+        this.part(curvedSpike(0.04, 0.34, 2.6, 0.3, 2), trim, w, [0, -len * 0.1, -0.12]);
+      }
       if (ap.form === 'storm') for (const s of [-1, 1]) this.part(curvedSpike(0.04, 0.3, 1.0, -0.4), trim, w, [s * 0.14, 0, 0], [0, 0, 0]).scale.x = s; // shin barbs
       g.add(w);
       this.mountPiece(root, shin, g, a.clone().lerp(b, 0.5));
@@ -339,7 +375,7 @@ export class PlayerGear {
 
   /** Gloves: the knight's own hands recoloured (they are a mesh of their own, see models.ts), plus a cuff at the wrist, on the Palm bone. Wolfskin swaps the cuff for a flared fur ruff and fringes the fingertips. Sizes are world units: the knight's hand is ~0.2 long. */
   private buildHands(id: string) {
-    const ap = appearanceOf(id), fur = ap.form === 'wolfskin';
+    const ap = appearanceOf(id), moor = ap.form === 'moor', fur = ap.form === 'wolfskin' || moor;
     const main = this.material(ap), trim = this.material(ap, true), mats: THREE.Material[] = [main, trim];
     const ruff = fur ? this.double(main) : null;
     if (ruff) mats.push(ruff);
@@ -351,9 +387,20 @@ export class PlayerGear {
       if (!this.bind.has(palm) || !this.bind.has(tip)) continue;
       const a = this.at(palm), dir = this.at(tip).sub(a), len = dir.length() / this.k; // +Y runs from the wrist to the fingertips
       const g = new THREE.Group(), w = this.world();
-      if (fur) {
+      if (moor) {
+        // a deep fleece cuff, taller and wider than wolfskin's, and a horn toggle curling off the back of the hand
+        this.part(new THREE.CylinderGeometry(0.11, 0.2, 0.17, 7, 1, true), ruff!, w, [0, -0.08, 0]);
+        this.part(curvedSpike(0.03, 0.2, 0.2, 1.4, 3), trim, w, [0, len * 0.15, 0.06], [0, Math.PI / 2, 0]);
+      } else if (fur) {
         this.part(new THREE.CylinderGeometry(0.095, 0.16, 0.12, 7, 1, true), ruff!, w, [0, -0.07, 0]); // flared ruff, widest at the elbow end
         for (const x of [-0.04, 0.04]) this.part(new THREE.ConeGeometry(0.035, 0.09, 4), trim, w, [x, len * 1.0, 0], [Math.PI, 0, 0]); // fringe at the fingertips
+      } else if (ap.form === 'marsh') {
+        this.part(new THREE.CylinderGeometry(0.1, 0.095, 0.08, 7), trim, w, [0, -0.02, 0]); // a wrapped cuff, with reeds hung from it
+        for (let i = 0; i < 8; i++) { const t = (i / 8) * Math.PI * 2; this.part(new THREE.ConeGeometry(0.018, 0.2 + 0.04 * (i % 3), 3), main, w, [Math.sin(t) * 0.1, -0.15, Math.cos(t) * 0.1], [Math.PI + Math.cos(t) * 0.25, 0, -Math.sin(t) * 0.25]); }
+      } else if (ap.form === 'thorn') {
+        this.part(new THREE.CylinderGeometry(0.105, 0.1, 0.1, 7), trim, w, [0, -0.04, 0]);
+        for (let i = 0; i < 5; i++) { const t = (i / 5) * Math.PI * 2; this.spikeOut(trim, w, [Math.sin(t) * 0.1, -0.04, Math.cos(t) * 0.1], [Math.sin(t), -0.5, Math.cos(t)], 0.04, 0.17); } // thorns round the wrist
+        for (const x of [-0.04, 0, 0.04]) this.spikeOut(trim, w, [x, len * 0.35 + 0.02, 0.06], [0, 0.35, 1], 0.022, 0.1); // and on the knuckles
       } else {
         this.part(new THREE.CylinderGeometry(0.1, 0.095, 0.1, 7), trim, w, [0, -0.04, 0]); // a plain stitched cuff
       }
@@ -367,7 +414,7 @@ export class PlayerGear {
 
   /** Boots: a shaft over the ankle and a foot with a sole, both on the Foot bone (which sits at ground level, heel). Wolfskin tops the shaft with a flared fur cuff. */
   private buildFeet(id: string) {
-    const ap = appearanceOf(id), fur = ap.form === 'wolfskin';
+    const ap = appearanceOf(id), moor = ap.form === 'moor', fur = ap.form === 'wolfskin' || moor;
     const main = this.material(ap), trim = this.material(ap, true), mats: THREE.Material[] = [main, trim];
     const ruff = fur ? this.double(main) : null;
     if (ruff) mats.push(ruff);
@@ -385,12 +432,21 @@ export class PlayerGear {
       this.part(new THREE.BoxGeometry(0.165, 0.32, 0.025), trim, w, [0, 0.07, zUp * 0.0125]); // sole
       if (ap.rung >= 2) this.part(new THREE.BoxGeometry(0.16, 0.08, 0.09), trim, w, [0, 0.19, zUp * 0.055]); // toe cap: the tier fallback
       if (vein) this.part(new THREE.BoxGeometry(0.02, 0.2, 0.02), vein, w, [0, 0.1, zUp * 0.1]);
+      if (moor) this.part(curvedSpike(0.035, 0.26, 0.1, 0.9, 3), trim, w, [0, 0.2, zUp * 0.09], [0, zUp > 0 ? Math.PI / 2 : -Math.PI / 2, 0]); // a horn toe-cap, curling up off the toe
       g.add(w);
       this.mountPiece(root, foot, g, a, dir);
       const shaft = new THREE.Group(), s = this.world();
       this.part(new THREE.CylinderGeometry(0.105, 0.12, 0.24, 7), main, s, [0, 0.13, -0.03]);
-      if (fur) this.part(new THREE.CylinderGeometry(0.17, 0.11, 0.1, 7, 1, true), ruff!, s, [0, 0.27, -0.03]);
+      if (moor) this.part(new THREE.CylinderGeometry(0.2, 0.12, 0.15, 7, 1, true), ruff!, s, [0, 0.28, -0.03]); // a deep fleece top, wider than wolfskin's
+      else if (fur) this.part(new THREE.CylinderGeometry(0.17, 0.11, 0.1, 7, 1, true), ruff!, s, [0, 0.27, -0.03]);
       else this.part(new THREE.CylinderGeometry(0.12, 0.12, 0.035, 7), trim, s, [0, 0.25, -0.03]); // rolled top
+      if (ap.form === 'marsh') {
+        this.part(new THREE.CylinderGeometry(0.122, 0.128, 0.06, 7), trim, s, [0, 0.04, -0.03]); // the mud line round the ankle
+        for (let i = 0; i < 8; i++) { const t = (i / 8) * Math.PI * 2; this.part(new THREE.ConeGeometry(0.02, 0.17 + 0.04 * (i % 3), 3), main, s, [Math.sin(t) * 0.12, 0.2, -0.03 + Math.cos(t) * 0.12], [Math.PI + Math.cos(t) * 0.3, 0, -Math.sin(t) * 0.3]); } // reeds hung over the top
+      } else if (ap.form === 'thorn') {
+        for (let i = 0; i < 5; i++) { const t = (i / 5) * Math.PI * 2 + 0.3; this.spikeOut(trim, s, [Math.sin(t) * 0.12, 0.25, -0.03 + Math.cos(t) * 0.12], [Math.sin(t), 0.7, Math.cos(t)], 0.035, 0.17); } // a crown of thorns round the rim
+        this.spikeOut(trim, s, [0, 0.06, -0.14], [0, -0.35, -1], 0.04, 0.2); // and a spur at the heel
+      }
       shaft.add(s);
       this.mountPiece(root, foot, shaft, a);
     }
@@ -436,3 +492,4 @@ export class PlayerGear {
     }
   }
 }
+
