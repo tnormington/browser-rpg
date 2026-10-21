@@ -12,6 +12,7 @@
 // so a texel is the same size on a cottage wall, a boulder and the ground, however the geometry was built or merged.
 import * as THREE from 'three';
 
+/** A map's side in pixels. The default suits a tile a world unit or two across; the ground's tile is many times that and says so. */
 const SIZE = 256;
 
 // ---- tileable value noise -------------------------------------------------------------------------------------------
@@ -23,39 +24,73 @@ const cell = (x: number, y: number, period: number, seed: number) =>
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
 /**
- * One octave of tileable value noise: `period` cells across the tile. The cell grid is drawn once and then read, never
- * re-hashed per pixel: hashing the four corners of every pixel of every octave is a million sines a surface and a second
- * of load time.
+ * One octave of tileable value noise over an `n` by `n` map: `period` cells across the tile. The cell grid is drawn once
+ * and then read, never re-hashed per pixel: hashing the four corners of every pixel of every octave is a million sines a
+ * surface and a second of load time.
  */
-function octave(out: Float32Array, period: number, seed: number, amp: number) {
+function octave(n: number, out: Float32Array, period: number, seed: number, amp: number) {
   const grid = new Float32Array(period * period);
   for (let y = 0; y < period; y++) for (let x = 0; x < period; x++) grid[y * period + x] = cell(x, y, period, seed);
-  const step = period / SIZE;
-  for (let py = 0; py < SIZE; py++) {
+  const step = period / n;
+  for (let py = 0; py < n; py++) {
     const gy = py * step, y0 = Math.floor(gy), fy = smooth(gy - y0), r0 = y0 * period, r1 = ((y0 + 1) % period) * period;
-    for (let px = 0; px < SIZE; px++) {
+    for (let px = 0; px < n; px++) {
       const gx = px * step, x0 = Math.floor(gx), fx = smooth(gx - x0), x1 = (x0 + 1) % period;
       const top = grid[r0 + x0] + (grid[r0 + x1] - grid[r0 + x0]) * fx;
       const bot = grid[r1 + x0] + (grid[r1 + x1] - grid[r1 + x0]) * fx;
-      out[py * SIZE + px] += (top + (bot - top) * fy) * amp;
+      out[py * n + px] += (top + (bot - top) * fy) * amp;
     }
   }
 }
 
 /** Fractal noise in 0..1: `period` cells in the first octave, each later one twice as fine and half as loud. */
-function fbm(period: number, octaves: number, seed: number): Float32Array {
-  const out = new Float32Array(SIZE * SIZE);
+function fbm(n: number, period: number, octaves: number, seed: number): Float32Array {
+  const out = new Float32Array(n * n);
   let amp = 1, total = 0;
-  for (let o = 0; o < octaves; o++) { octave(out, period * 2 ** o, seed + o * 17, amp); total += amp; amp /= 2; }
+  for (let o = 0; o < octaves; o++) { octave(n, out, period * 2 ** o, seed + o * 17, amp); total += amp; amp /= 2; }
   for (let i = 0; i < out.length; i++) out[i] /= total;
   return out;
 }
 
 /** Walk the tile, pixel by pixel, in 0..1 coordinates. */
-function field(fn: (u: number, v: number, i: number) => number): Float32Array {
-  const out = new Float32Array(SIZE * SIZE);
-  for (let py = 0; py < SIZE; py++) for (let px = 0; px < SIZE; px++) out[py * SIZE + px] = fn(px / SIZE, py / SIZE, py * SIZE + px);
+function field(n: number, fn: (u: number, v: number, i: number) => number): Float32Array {
+  const out = new Float32Array(n * n);
+  for (let py = 0; py < n; py++) for (let px = 0; px < n; px++) out[py * n + px] = fn(px / n, py / n, py * n + px);
   return out;
+}
+
+// ---- ground variation in world space -----------------------------------------------------------------------------------
+
+/** A random value in 0..1 for an integer cell of the world, unwrapped: unlike `cell` there is no period, so nothing repeats. */
+const worldCell = (x: number, z: number, seed: number) => fract(Math.sin(x * 127.1 + z * 311.7 + seed * 74.7) * 43758.5453);
+
+/** Smooth value noise in 0..1 over world x/z, one feature every `scale` units. */
+function worldNoise(x: number, z: number, scale: number, seed: number) {
+  const u = x / scale, v = z / scale, x0 = Math.floor(u), z0 = Math.floor(v), fx = smooth(u - x0), fz = smooth(v - z0);
+  const top = worldCell(x0, z0, seed) + (worldCell(x0 + 1, z0, seed) - worldCell(x0, z0, seed)) * fx;
+  const bot = worldCell(x0, z0 + 1, seed) + (worldCell(x0 + 1, z0 + 1, seed) - worldCell(x0, z0 + 1, seed)) * fx;
+  return top + (bot - top) * fz;
+}
+
+/**
+ * How far apart a ground mesh sets its vertices, in world units. The drift below is carried by the vertex tint, so a
+ * floor has to be cut fine enough to sample the smallest scale in it; at the 3 and 4 units the floors used to be cut at,
+ * everything under a slab's width averaged away and the ground came out one flat tone.
+ */
+export const GROUND_CELL = 1.5;
+
+/**
+ * How much of a second ground colour shows through at a world point, 0..1. The ground's tint is built out of this
+ * (render.ts for Hale, world-view.ts for everywhere else), so the floor varies at scales the texture's own grain cannot
+ * reach and never lands on a grid. `seed` picks an independent field: the drift that dries the turf is not the drift
+ * that lets the peat through.
+ *
+ * Most of its weight sits at a nine-unit patch, not at the broadest scale, because the camera sees about thirty units:
+ * a field that only varied over a clearing's width would show one half of one feature and read as flat again.
+ */
+export function groundDrift(x: number, z: number, seed = 0): number {
+  const v = (worldNoise(x, z, 26, seed) * 0.5 + worldNoise(x, z, 9, seed + 1) + worldNoise(x, z, 3.5, seed + 2) * 0.55) / 2.05;
+  return Math.max(0, Math.min(1, (v - 0.5) * 2 + 0.5));   // stacked octaves crowd the middle; pulled back out so a caller's threshold means what it did of a flat hash
 }
 
 // ---- the patterns the built surfaces are cut from --------------------------------------------------------------------
@@ -67,8 +102,8 @@ const joint = (t: number, pitch: number, w: number) => {
 };
 
 /** Coursed masonry: `rows` courses of blocks, every other course offset by half a block. */
-function courses(rows: number, perRow: number, rough: Float32Array): Float32Array {
-  return field((u, v, i) => {
+function courses(n: number, rows: number, perRow: number, rough: Float32Array): Float32Array {
+  return field(n, (u, v, i) => {
     const row = Math.floor(v * rows), stagger = (row % 2) * 0.5;
     const m = Math.max(joint(v, rows, 0.14), joint(u + stagger, perRow, 0.1));
     return (1 - m) * (0.72 + rough[i] * 0.28) + m * 0.08;   // blocks stand proud and vary; the mortar is the low ground
@@ -76,17 +111,17 @@ function courses(rows: number, perRow: number, rough: Float32Array): Float32Arra
 }
 
 /** Boards running along u, with a sawn seam between each and the grain drawn down its length. */
-function planks(count: number, grain: Float32Array, rough: Float32Array): Float32Array {
+function planks(n: number, count: number, grain: Float32Array, rough: Float32Array): Float32Array {
   const lifts = Array.from({ length: count }, (_, b) => 0.68 + cell(b, 0, count, 5) * 0.3);   // each board sits a little proud of its neighbours
-  return field((u, v, i) => {
+  return field(n, (u, v, i) => {
     const seam = joint(v, count, 0.1);
     return (1 - seam) * (lifts[Math.floor(v * count)] - grain[i] * 0.22 - rough[i] * 0.08) + seam * 0.06;
   });
 }
 
 /** Overlapping rows of slates, each row offset by half a slate; the exposed foot of a slate is its highest part. */
-function slates(rows: number, perRow: number, rough: Float32Array): Float32Array {
-  return field((u, v, i) => {
+function slates(n: number, rows: number, perRow: number, rough: Float32Array): Float32Array {
+  return field(n, (u, v, i) => {
     const row = Math.floor(v * rows), stagger = (row % 2) * 0.5, down = fract(v * rows);
     const gap = joint(u + stagger, perRow, 0.07);
     return (1 - gap) * (0.25 + down * 0.6 + rough[i] * 0.15) + gap * 0.05;   // the lap: each slate climbs from its head to its foot
@@ -94,12 +129,12 @@ function slates(rows: number, perRow: number, rough: Float32Array): Float32Array
 }
 
 /** Bark: `count` fissures running up the bole, wandering with `warp`, with `rough` as the grain on the ridges between them. */
-function fissures(count: number, warp: Float32Array, rough: Float32Array): Float32Array {
-  return field((u, v, i) => Math.abs(Math.sin((u + (warp[i] - 0.5) * 0.22) * Math.PI * count)) ** 0.55 * (0.7 + rough[i] * 0.3));
+function fissures(n: number, count: number, warp: Float32Array, rough: Float32Array): Float32Array {
+  return field(n, (u, v, i) => Math.abs(Math.sin((u + (warp[i] - 0.5) * 0.22) * Math.PI * count)) ** 0.55 * (0.7 + rough[i] * 0.3));
 }
 
 /** A plain weave: threads over and under in both directions. */
-const weave = (threads: number) => field((u, v) =>
+const weave = (n: number, threads: number) => field(n, (u, v) =>
   0.5 + 0.5 * Math.sin(u * threads * Math.PI * 2) * Math.sin(v * threads * Math.PI * 2) * 0.6 + 0.2 * Math.sin(v * threads * Math.PI * 2));
 
 /** Mix two fields: `a * (1 - k) + b * k`. */
@@ -111,42 +146,54 @@ const chips = (a: Float32Array, t: number) => a.map(v => (v > t ? 0.8 + (v - t) 
 
 // ---- the surfaces ----------------------------------------------------------------------------------------------------
 
-/** `repeat`: tiles per world unit. `relief`: how deep the normal map's extrusion reads. `grime`: how far the detail map darkens. */
-interface Surface { height: () => Float32Array; repeat: number; relief: number; grime: number }
+/**
+ * `height` draws the tile on an `n` by `n` grid. `repeat`: tiles per world unit. `relief`: how deep the normal map's
+ * extrusion reads. `grime`: how far the detail map darkens. `size`: the map's side in pixels, SIZE unless the tile is
+ * wide enough to need more.
+ */
+interface Surface { height: (n: number) => Float32Array; repeat: number; relief: number; grime: number; size?: number }
 
 const SURFACES = {
-  /** Grass and heath: a fine tufted mat with coarser drifts under it. Kept the faintest of the lot: the ground is already tinted per vertex and the two must not fight. */
-  ground: { height: () => mix(fbm(26, 3, 1), fbm(6, 2, 2), 0.3), repeat: 0.5, relief: 1.1, grime: 0.15 },
+  /**
+   * Grass and heath. A nine-unit tile, four times the width of any other surface's and about what the camera can see,
+   * because this is the one material laid out flat and unbroken to the fog: at the pace-and-a-half tile it used to have,
+   * a frame held two hundred copies of one patch of grass and the ground read as sandpaper. A tile that wide can hold
+   * what real ground has and a small one cannot — the tufted mat, hummocks and hollows a stride across, and the odd
+   * stone or bare scuff, sparse enough that no two square yards of the world look alike. Kept the faintest of the lot on
+   * grime: the ground is tinted per vertex as well, and the two must not fight.
+   */
+  ground: { size: 512, repeat: 0.11, relief: 1.1, grime: 0.15,
+    height: (n) => mix(mix(fbm(n, 105, 2, 1), fbm(n, 7, 3, 2), 0.3), chips(fbm(n, 30, 2, 27), 0.74), 0.12) },
   /** Trodden earth: coarser than grass, with scuffs and small stones. */
-  dirt: { height: () => mix(fbm(14, 3, 3), sharpen(fbm(30, 2, 4), 3), 0.3), repeat: 0.5, relief: 1.3, grime: 0.2 },
+  dirt: { height: (n) => mix(fbm(n, 14, 3, 3), sharpen(fbm(n, 30, 2, 4), 3), 0.3), repeat: 0.5, relief: 1.3, grime: 0.2 },
   /** Raw rock: chipped planes, hard-edged. */
-  rock: { height: () => sharpen(mix(fbm(5, 4, 5), fbm(14, 3, 6), 0.4), 1.7), repeat: 0.45, relief: 2.1, grime: 0.3 },
+  rock: { height: (n) => sharpen(mix(fbm(n, 5, 4, 5), fbm(n, 14, 3, 6), 0.4), 1.7), repeat: 0.45, relief: 2.1, grime: 0.3 },
   /** Cut and coursed stone: a footing, a chimney, a waymark, a gate post. */
-  stone: { height: () => courses(4, 3, fbm(18, 3, 7)), repeat: 0.5, relief: 2.4, grime: 0.3 },
+  stone: { height: (n) => courses(n, 4, 3, fbm(n, 18, 3, 7)), repeat: 0.5, relief: 2.4, grime: 0.3 },
   /** Limewash over render: near flat, a faint stipple and the trowel's drift, so a wall is not a bare plane. */
-  plaster: { height: () => mix(fbm(22, 3, 8), fbm(3, 2, 9), 0.45), repeat: 0.35, relief: 0.8, grime: 0.16 },
+  plaster: { height: (n) => mix(fbm(n, 22, 3, 8), fbm(n, 3, 2, 9), 0.45), repeat: 0.35, relief: 0.8, grime: 0.16 },
   /** A roof: rows of lapped slates. The one surface whose relief is its silhouette, so it reads from across a square. */
-  roof: { height: () => slates(7, 5, fbm(20, 2, 10)), repeat: 0.85, relief: 2.6, grime: 0.24 },
+  roof: { height: (n) => slates(n, 7, 5, fbm(n, 20, 2, 10)), repeat: 0.85, relief: 2.6, grime: 0.24 },
   /** Sawn timber: boards with their grain. */
-  wood: { height: () => planks(5, fbm(40, 2, 11), fbm(12, 3, 12)), repeat: 0.55, relief: 1.4, grime: 0.24 },
+  wood: { height: (n) => planks(n, 5, fbm(n, 40, 2, 11), fbm(n, 12, 3, 12)), repeat: 0.55, relief: 1.4, grime: 0.24 },
   /** Bark: fissures up the bole over a coarse grain. A bole, a limb, a fallen bough; a board that was sawn out of one is `wood`. */
-  bark: { height: () => fissures(9, fbm(8, 2, 18), fbm(26, 3, 19)), repeat: 0.6, relief: 2.2, grime: 0.3 },
+  bark: { height: (n) => fissures(n, 9, fbm(n, 8, 2, 18), fbm(n, 26, 3, 19)), repeat: 0.6, relief: 2.2, grime: 0.3 },
   /** Leaf: clumped, not grainy, so a bush keeps its mass. */
-  foliage: { height: () => sharpen(fbm(10, 3, 13), 1.4), repeat: 0.8, relief: 1.6, grime: 0.26 },
+  foliage: { height: (n) => sharpen(fbm(n, 10, 3, 13), 1.4), repeat: 0.8, relief: 1.6, grime: 0.26 },
   /** Ore-bearing rock: a chipped face with crystal flecks standing proud of it, so a node reads as mineral and not as another boulder. */
-  ore: { height: () => mix(sharpen(fbm(6, 3, 20), 1.6), chips(fbm(18, 2, 21), 0.62), 0.45), repeat: 0.8, relief: 2, grime: 0.28 },
+  ore: { height: (n) => mix(sharpen(fbm(n, 6, 3, 20), 1.6), chips(fbm(n, 18, 2, 21), 0.62), 0.45), repeat: 0.8, relief: 2, grime: 0.28 },
   /** Coal: brittle and glassy, broken in big conchoidal flakes with no grain between them. Kept shallow on grime: the colour is already near black. */
-  coal: { height: () => sharpen(mix(fbm(4, 3, 22), fbm(11, 2, 23), 0.35), 2.2), repeat: 0.7, relief: 1.8, grime: 0.18 },
+  coal: { height: (n) => sharpen(mix(fbm(n, 4, 3, 22), fbm(n, 11, 2, 23), 0.35), 2.2), repeat: 0.7, relief: 1.8, grime: 0.18 },
   /** A cut gem: a fine facet grain, barely there. A gem is read by its colour and its glint, not by its texture. */
-  gem: { height: () => fbm(16, 2, 24), repeat: 2.6, relief: 0.5, grime: 0.08 },
+  gem: { height: (n) => fbm(n, 16, 2, 24), repeat: 2.6, relief: 0.5, grime: 0.08 },
   /** Skin: pores, and the faintest surface of the lot — a face must not read as orange peel across a square. */
-  skin: { height: () => mix(fbm(30, 2, 25), fbm(9, 2, 26), 0.25), repeat: 3, relief: 0.45, grime: 0.07 },
+  skin: { height: (n) => mix(fbm(n, 30, 2, 25), fbm(n, 9, 2, 26), 0.25), repeat: 3, relief: 0.45, grime: 0.07 },
   /** Hammered metal: shallow dimples, nothing that would read as rust. */
-  metal: { height: () => fbm(12, 2, 14), repeat: 1.4, relief: 0.7, grime: 0.12 },
+  metal: { height: (n) => fbm(n, 12, 2, 14), repeat: 1.4, relief: 0.7, grime: 0.12 },
   /** Hide and leather: a fine pebble grain. */
-  hide: { height: () => mix(fbm(28, 3, 15), fbm(8, 2, 16), 0.3), repeat: 1.2, relief: 0.9, grime: 0.16 },
+  hide: { height: (n) => mix(fbm(n, 28, 3, 15), fbm(n, 8, 2, 16), 0.3), repeat: 1.2, relief: 0.9, grime: 0.16 },
   /** Woven cloth: awnings, banners, a townsman's robe. */
-  cloth: { height: () => mix(weave(14), fbm(20, 2, 17), 0.35), repeat: 1.4, relief: 0.6, grime: 0.14 },
+  cloth: { height: (n) => mix(weave(n, 14), fbm(n, 20, 2, 17), 0.35), repeat: 1.4, relief: 0.6, grime: 0.14 },
 } satisfies Record<string, Surface>;
 
 export type SurfaceId = keyof typeof SURFACES;
@@ -154,10 +201,10 @@ export const hasSurface = (id: string): id is SurfaceId => id in SURFACES;
 
 // ---- turning a height field into the two maps --------------------------------------------------------------------------
 
-function canvas(): [HTMLCanvasElement, ImageData] {
+function canvas(n: number): [HTMLCanvasElement, ImageData] {
   const c = document.createElement('canvas');
-  c.width = c.height = SIZE;
-  return [c, c.getContext('2d')!.createImageData(SIZE, SIZE)];
+  c.width = c.height = n;
+  return [c, c.getContext('2d')!.createImageData(n, n)];
 }
 function texture(c: HTMLCanvasElement, data: ImageData, repeat: number, srgb: boolean): THREE.CanvasTexture {
   c.getContext('2d')!.putImageData(data, 0, 0);
@@ -170,8 +217,8 @@ function texture(c: HTMLCanvasElement, data: ImageData, repeat: number, srgb: bo
 }
 
 /** The detail map: greyscale, centred just under white, so it darkens into the hollows and never tints the flat colour. */
-function detailMap(h: Float32Array, grime: number, repeat: number): THREE.CanvasTexture {
-  const [c, img] = canvas();
+function detailMap(n: number, h: Float32Array, grime: number, repeat: number): THREE.CanvasTexture {
+  const [c, img] = canvas(n);
   for (let i = 0; i < h.length; i++) {
     const v = Math.round(Math.max(0, Math.min(1, 1 - grime + (h[i] - 0.5) * grime * 2)) * 255);
     img.data.set([v, v, v, 255], i * 4);
@@ -180,17 +227,17 @@ function detailMap(h: Float32Array, grime: number, repeat: number): THREE.Canvas
 }
 
 /** The normal map: the height field's slope, wrapped at the tile edge so neighbouring tiles agree. */
-function normalMap(h: Float32Array, relief: number, repeat: number): THREE.CanvasTexture {
-  const [c, img] = canvas();
-  const at = (x: number, y: number) => h[((y + SIZE) % SIZE) * SIZE + ((x + SIZE) % SIZE)];
-  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
-    const dx = (at(x + 1, y) - at(x - 1, y)) * relief * SIZE / 32, dy = (at(x, y + 1) - at(x, y - 1)) * relief * SIZE / 32;
-    const len = Math.hypot(dx, dy, 1);
+function normalMap(n: number, h: Float32Array, relief: number, repeat: number): THREE.CanvasTexture {
+  const [c, img] = canvas(n);
+  const at = (x: number, y: number) => h[((y + n) % n) * n + ((x + n) % n)];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const dx = (at(x + 1, y) - at(x - 1, y)) * relief * n / 32, dy = (at(x, y + 1) - at(x, y - 1)) * relief * n / 32;
+    const len = Math.sqrt(dx * dx + dy * dy + 1);   // not Math.hypot: it guards against overflow these slopes cannot reach, and costs several times as much over a 512-pixel map
     img.data.set([
       Math.round((-dx / len * 0.5 + 0.5) * 255),
       Math.round((-dy / len * 0.5 + 0.5) * 255),
       Math.round((1 / len * 0.5 + 0.5) * 255), 255,
-    ], (y * SIZE + x) * 4);
+    ], (y * n + x) * 4);
   }
   return texture(c, img, repeat, false);
 }
@@ -205,8 +252,8 @@ export function surfaceFor(cls: string): { map: THREE.Texture; normalMap: THREE.
   if (!hasSurface(cls)) return null;
   if (!built.has(cls)) {
     if (typeof document === 'undefined') return null;
-    const s: Surface = SURFACES[cls], h = s.height();
-    built.set(cls, { map: detailMap(h, s.grime, s.repeat), normalMap: normalMap(h, s.relief, s.repeat) });
+    const s: Surface = SURFACES[cls], n = s.size ?? SIZE, h = s.height(n);
+    built.set(cls, { map: detailMap(n, h, s.grime, s.repeat), normalMap: normalMap(n, h, s.relief, s.repeat) });
   }
   return built.get(cls) ?? null;
 }

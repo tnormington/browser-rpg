@@ -1,7 +1,7 @@
 // surface.ts under tsx: the UV projection (the half that is plain geometry and testable without a canvas) and the guard
 // that keeps the canvas work out of a headless run.
 import * as THREE from 'three';
-import { bakeUV, hasSurface, surfaceFor } from './surface';
+import { GROUND_CELL, bakeUV, groundDrift, hasSurface, surfaceFor } from './surface';
 
 const assert = (ok: boolean, msg: string) => { if (!ok) { console.error('FAIL', msg); process.exit(1); } };
 
@@ -66,5 +66,29 @@ for (let t = 0; t + 2 < pos.count; t += 3) for (const [a, b] of [[0, 1], [1, 2],
   const flat = Math.hypot(uv.getX(t + b) - uv.getX(t + a), uv.getY(t + b) - uv.getY(t + a));
   assert(flat <= len + 1e-6 && flat >= len * 0.8, `edge ${t / 3}.${a} keeps its scale (${flat.toFixed(3)} of ${len.toFixed(3)})`);
 }
+
+// HOM-122: the ground's drift. The floors carry it in their vertex tint, so it has to behave like a tint — in range,
+// the same every load, and actually varying over the thirty-odd units a player can see.
+const SAMPLES: [number, number][] = [];
+for (let x = -60; x < 2000; x += 7.3) for (let z = -60; z < 1100; z += 11.7) SAMPLES.push([x, z]);
+let lo = 1, hi = 0, sum = 0;
+for (const [x, z] of SAMPLES) { const v = groundDrift(x, z); lo = Math.min(lo, v); hi = Math.max(hi, v); sum += v; }
+assert(lo >= 0 && hi <= 1, `the drift stays in 0..1 (${lo.toFixed(3)}..${hi.toFixed(3)})`);
+assert(lo < 0.15 && hi > 0.85, `and uses the range a flat hash would (${lo.toFixed(3)}..${hi.toFixed(3)})`);
+assert(Math.abs(sum / SAMPLES.length - 0.5) < 0.05, `without crowding the middle or either end (mean ${(sum / SAMPLES.length).toFixed(3)})`);
+assert(groundDrift(123.5, 77.25) === groundDrift(123.5, 77.25), 'the same point drifts the same every time: no rng state, no reload flicker');
+assert(groundDrift(123.5, 77.25) !== groundDrift(123.5, 77.25, 7), 'a seed picks an independent field, so worn turf and peat are not the same patch');
+
+// the thing the card is about: within one screen the floor must change, and it must not come back to the same value on a
+// grid. Both are measured down a line a camera's width long, sampled at the spacing the floors are actually cut at.
+const line = Array.from({ length: 40 }, (_, i) => groundDrift(400 + i * GROUND_CELL, 300));
+assert(Math.max(...line) - Math.min(...line) > 0.4, `one screen of floor spans a visible range (${(Math.max(...line) - Math.min(...line)).toFixed(3)})`);
+for (const period of [3, 4, 6, 8, 12, 16, 20]) {   // every stride a tile could repeat at, in vertices
+  let same = 0;
+  for (let i = 0; i + period < line.length; i++) if (Math.abs(line[i] - line[i + period]) < 0.02) same++;
+  assert(same < (line.length - period) * 0.5, `the floor does not repeat every ${period} vertices (${same} matches)`);
+}
+// and the mesh is cut fine enough to carry the finest scale in the field (3.5 units): two vertices to a feature, at least
+assert(GROUND_CELL <= 3.5 / 2, `a floor's vertices (every ${GROUND_CELL}) can sample the drift's finest scale`);
 
 console.log('surface ok');

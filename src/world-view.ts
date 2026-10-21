@@ -14,7 +14,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { HIGHMOOR, LANDMARKS, REGIONS, Gate, Obstacle, Rect, Region, SALTMARROW, SPIRE, THORNWICK } from './sim/world';
 import { PROPS, PropId } from './props';
 import { mergeParts } from './creatures';
-import { bakeUV } from './surface';
+import { GROUND_CELL, bakeUV, groundDrift } from './surface';
 import { HaloSpot, haloMesh } from './halo';
 
 /** The few things this file needs from the renderer: its mesh factory (materials and shadows stay in render.ts) and its palette. */
@@ -269,7 +269,7 @@ export class WorldView {
 
   /** A slab of ground tinted per vertex: grass, with the road down its axis (the road is the region's z-centre), sand toward the sea, paving in a town square. */
   private floor(f: Rect, r: Region): THREE.Mesh {
-    const { P } = this.kit, w = f.x1 - f.x0, d = f.z1 - f.z0, sx = Math.max(1, Math.round(w / 4)), sz = Math.max(1, Math.round(d / 4));
+    const { P } = this.kit, w = f.x1 - f.x0, d = f.z1 - f.z0, sx = Math.max(1, Math.round(w / GROUND_CELL)), sz = Math.max(1, Math.round(d / GROUND_CELL));
     const geo = new THREE.PlaneGeometry(w, d, sx, sz).rotateX(-Math.PI / 2).translate((f.x0 + f.x1) / 2, 0, (f.z0 + f.z1) / 2);
     const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color(), a = new THREE.Color(P.grass), b = new THREE.Color(P.grassAlt);
     const dirt = new THREE.Color(P.dirt).multiplyScalar(1.45), dirtAlt = new THREE.Color(P.dirtAlt).multiplyScalar(1.45), // the road reads as a road in the dark: lighter than the clearing's earth
@@ -280,28 +280,30 @@ export class WorldView {
     else if (waste) { a.set(WASTE_FLOOR.ash); b.set(WASTE_FLOOR.ashAlt); } else if (spire) { a.set(SPIRE_FLOOR.slate); b.set(SPIRE_FLOOR.slateAlt); }
     const drift = new THREE.Color(WASTE_FLOOR.drift), char = new THREE.Color(WASTE_FLOOR.char), ruinGround = new THREE.Color(SPIRE_FLOOR.ruin);
     const peat = new THREE.Color(barrow ? BARROW_FLOOR.peat : FEN.peat), stain = new THREE.Color(FEN.stain), loam = new THREE.Color(WOOD_FLOOR.loam), heather = new THREE.Color(MOOR_FLOOR.heather);
+    const earth = new THREE.Color(P.dirt);   // bare ground showing through worn turf, unlike `dirt` above it is not lightened: it is a patch, not a road
     for (let v = 0; v < pos.count; v++) {
       const x = pos.getX(v), z = pos.getZ(v), j = hash(x * 12.9898 + z * 78.233);
-      c.copy(a).lerp(b, j);
+      c.copy(a).lerp(b, groundDrift(x, z) * 0.8 + j * 0.2);   // the two tones in drifts, not a dapple: the jitter only breaks the drift's edge
+      if (!fen && !wood && !barrow && !waste && !spire) c.lerp(earth, THREE.MathUtils.clamp((groundDrift(x, z, 7) - 0.64) * 2.6, 0, 0.5));   // earth through the thin of it, where the region has no second ground of its own
       if (fen) { // peat in the hollows, and the ground the Withering patches have killed
-        c.lerp(peat, THREE.MathUtils.clamp((hash(Math.floor(x / 7) * 3.7 + Math.floor(z / 7) * 9.1) - 0.55) * 2.2, 0, 0.7));
+        c.lerp(peat, THREE.MathUtils.clamp((groundDrift(x, z, 2) - 0.55) * 2.2, 0, 0.7));
         for (const h of r.hazards ?? []) { const k = THREE.MathUtils.clamp((h.r + 2.2 - Math.hypot(x - h.x, z - h.z)) / 3, 0, 1); if (k > 0) c.lerp(stain, k * 0.85); }
       }
-      if (barrow) c.lerp(peat, THREE.MathUtils.clamp((hash(Math.floor(x / 9) * 3.1 + Math.floor(z / 9) * 7.3) - 0.5) * 1.6, 0, 0.5)); // peat in the low ground between the mounds
+      if (barrow) c.lerp(peat, THREE.MathUtils.clamp((groundDrift(x, z, 2) - 0.5) * 1.6, 0, 0.5)); // peat in the low ground between the mounds
       if (waste) { // pale ash in long drifts, and scorched black where the stone shows through
-        c.lerp(drift, THREE.MathUtils.clamp((hash(Math.floor(x / 8) * 2.7 + Math.floor(z / 14) * 6.1) - 0.5) * 1.5, 0, 0.5));
-        c.lerp(char, THREE.MathUtils.clamp((hash(Math.floor(x / 5) * 5.9 + Math.floor(z / 5) * 3.3) - 0.62) * 2.2, 0, 0.6));
+        c.lerp(drift, THREE.MathUtils.clamp((groundDrift(x, z * 0.6, 5) - 0.5) * 1.5, 0, 0.5));   // z squeezed: the drifts run east to west, as blown ash does
+        c.lerp(char, THREE.MathUtils.clamp((groundDrift(x, z, 6) - 0.62) * 2.2, 0, 0.6));
       }
       if (road) {
         const off = road.axis === 'x' ? Math.abs(z - road.at) : Math.abs(x - road.at); // distance from the road's centre line
         const k = THREE.MathUtils.clamp((4.2 - off) / 2.4, 0, 1) + (r.id === 'greywater' && x < 52 ? 0.6 : 0); // the road, and the dirt of Hale's gate yard
         if (k > 0) c.lerp(dirt.clone().lerp(dirtAlt, j), Math.min(1, k) * (off < 12 ? 1 : 0));
       } else if (wood) {
-        c.lerp(loam, hash(Math.floor(x / 5) * 5.3 + Math.floor(z / 5) * 2.9) * 0.35); // loam showing through the litter
+        c.lerp(loam, groundDrift(x, z, 3) * 0.35); // loam showing through the litter
         if (square) { const k = THREE.MathUtils.clamp((square.r - Math.hypot(x - square.x, z - square.z)) / 8, 0, 1); if (k > 0) c.lerp(stone.clone().lerp(dirtAlt, j * 0.6), k * 0.8); }
         if (Math.abs(x - THORNWICK.x) < 3.6 && z < square!.z) c.lerp(dirt, 0.9); // the road in from the north
       } else if (moor) {
-        c.lerp(heather, THREE.MathUtils.clamp((hash(Math.floor(x / 6) * 4.3 + Math.floor(z / 6) * 8.1) - 0.45) * 1.4, 0, 0.55)); // heather in drifts across the heath
+        c.lerp(heather, THREE.MathUtils.clamp((groundDrift(x, z, 4) - 0.45) * 1.4, 0, 0.55)); // heather in drifts across the heath
         if (square) { const k = THREE.MathUtils.clamp((square.r - Math.hypot(x - square.x, z - square.z)) / 8, 0, 1); if (k > 0) c.lerp(stone.clone().lerp(dirtAlt, j * 0.6), k * 0.8); }
         if (Math.abs(z - HIGHMOOR.z) < 3.6 && x < square!.x) c.lerp(dirt, 0.9); // the road in from the west
       } else if (spire) {

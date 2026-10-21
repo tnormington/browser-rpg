@@ -27,7 +27,7 @@ import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
 import { WorldView, flightMasterFigure, headstones, Kit } from './world-view';
 import { WorldMap, mapPosition } from './world-map';
 import { landingSpot } from './sim/flight';
-import { bakeUV, dress, hasSurface } from './surface';
+import { GROUND_CELL, bakeUV, dress, groundDrift, hasSurface } from './surface';
 
 /**
  * Every colour in the scene, in one place. Desaturated, cold and narrow: the world sits in a tight dark band so that
@@ -462,7 +462,7 @@ export class Renderer {
 
   /** Ground as a coarse mesh tinted per vertex: the grid stays indexed so the tint washes across it instead of tiling it into triangles. */
   private tintedGround() {
-    const segs = Math.min(Math.round(WORLD_HALF * 2 / 3), 90);
+    const segs = Math.min(Math.round(WORLD_HALF * 2 / GROUND_CELL), 180);
     const g = new THREE.PlaneGeometry(WORLD_HALF * 2, WORLD_HALF * 2, segs, segs).rotateX(-Math.PI / 2);
     const a = new THREE.Color(P.grass), b = new THREE.Color(P.grassAlt), c = new THREE.Color();
     const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
@@ -470,7 +470,8 @@ export class Renderer {
     for (let v = 0; v < pos.count; v++) {
       const x = pos.getX(v), z = pos.getZ(v);
       const r = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1; // deterministic per-vertex jitter, no rng state touched
-      c.copy(a).lerp(b, r);
+      c.copy(a).lerp(b, groundDrift(x, z) * 0.8 + r * 0.2); // the two greens in drifts, not a dapple: the jitter only breaks the drift's edge
+      c.lerp(da, THREE.MathUtils.clamp((groundDrift(x, z, 7) - 0.64) * 2.6, 0, 0.5)); // and earth coming through where the turf has worn thin
       // the clearing is the same ground, tinted toward bare earth: no separate slab, so no hard straight edge
       const k = THREE.MathUtils.clamp((clr.r + 1.5 - Math.hypot(x - clr.x, z - clr.z)) / 3, 0, 1);
       if (k > 0) c.lerp(dirt.copy(da).lerp(db, r), k);
