@@ -30,7 +30,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # PUBLIC_BUILD compiles out the QA panel, ?debug=1 and window.__debug: the published game is the
+      # player's game, not the one the benches drive. A local `npm run build` still keeps them.
       - run: npm run build
+        env:
+          PUBLIC_BUILD: '1'
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
