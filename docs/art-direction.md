@@ -17,7 +17,8 @@ Rendered comparisons: `sh bench/art.sh` (frames per reference), `python bench/co
 | --- | --- |
 | Key / fill / rim | Key (moon) `DAY.sun` 4.4, cold. Fill (hemisphere + sky environment) is low, 0.4, so shadows go deep. Rim `DAY.rim` 1.5 from the side opposite the key, so actors keep an edge against dark ground. Tune in `render.ts`; keep key:fill roughly 10:1. |
 | Warm | Fire only: forge, braziers, gold. The forge light is the one warm pool and must not clip the building to white (`FORGE_LIGHT`, forge slot `light`). |
-| Fog / sky | Horizon and fog `0x222c38`, zenith near black. Fog fades to dark, not a bright haze. |
+| Fog / sky | Horizon and fog `0x222c38`, zenith a deep indigo `0x101a33`. Fog fades to dark, not a bright haze. |
+| Sky dome | Everything above the horizon is one shader (`sky.ts`), drawn after the opaque world so it only pays for empty pixels. It is the one place in the frame allowed to be vivid: the aurora is the exception to the emissive rule below, and it takes the arcane family (`P.heal` at the foot, `P.violet` at the top) so it still reads as this world's light. It is a clear-sky thing; `cover` takes it away. Nothing up there may out-glow the forge or compete with an enemy ring for attention: check against `bench/sky.sh`, and against `bench/sky-cost.mjs` for what the dome costs. |
 | Grade | Vignette 0.6 from 0.32, contrast 1.12, cold shadows / warm highlights (`POST.grade`). |
 | Emissive | Saturation is for fire, blood and arcane light only. Arcane crystals (`CRYSTALS`) and tier 3+ gear glow are cold blue; neither may out-glow the forge. Emissive stays under the bloom threshold unless it is a beacon (`glow.ts`); the glow a light throws is a halo over it, not a hotter material (`halo.ts`). |
 | Colour | Flat per material. Ground and cave floor are tinted per vertex with low variance; never per triangle. |
