@@ -8,6 +8,7 @@ import { STATION_REACH, nearStation, stationSites } from './sim/crafting';
 import { countItem } from './sim/inventory';
 import type { EnchantAction } from './sim/enchanting';
 import { actionButton, el, titleRow } from './dom';
+import { itemThumb, materialChip } from './art';
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 const SLOT_NAMES: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs', hands: 'Hands', feet: 'Feet' };
@@ -65,7 +66,9 @@ export class EnchantUi {
       any = true;
       const set = p.enchants[slot] ? enchantById(p.enchants[slot]!) : undefined;
       const head = el(this.list, 'recipe rhead rwrap');
-      el(head, 'rname', `${SLOT_NAMES[slot]}: ${ITEMS[worn].name}`).style.color = hex(TIER_COLORS[ITEMS[worn].tier]);
+      const lead = el(head, 'rlead');
+      itemThumb(lead, worn);
+      el(lead, 'rname', `${SLOT_NAMES[slot]}: ${ITEMS[worn].name}`).style.color = hex(TIER_COLORS[ITEMS[worn].tier]);
       el(head, 'rreq', set ? set.name : 'not enchanted');
       if (set) el(head, 'rstat', set.desc);
       for (const e of options) {
@@ -76,8 +79,8 @@ export class EnchantUi {
         el(h, 'rname', e.name);
         el(h, `rreq${why === 'level' ? ' bad' : ''}`, `Enchanting ${e.level}`);
         el(row, 'rstat', e.desc);
-        const have = countItem(p.inventory, DUST), cost = el(row, 'rinputs');
-        el(cost, `rin${have >= e.dust ? '' : ' bad'}`, `${ITEMS[DUST].name} ${have}/${e.dust}`);
+        const cost = el(row, 'rinputs');
+        materialChip(cost, DUST, countItem(p.inventory, DUST), e.dust);
         el(cost, 'rmeta', `${enchantXp(e)} XP`);
         const b = actionButton(el(row, 'rbtns'), here ? 'Set' : set ? 'Replace' : 'Enchant', can && !here);
         b.addEventListener('click', () => { this.enchant({ k: 'enchant', id: e.id, slot }); });
@@ -98,7 +101,9 @@ export class EnchantUi {
       const row = el(this.list, `recipe enchrow${near ? '' : ' locked'}`);
       row.title = `${def.desc}\nDestroyed at the circle: it cannot be got back.`;
       const head = el(row, 'rhead');
-      el(head, 'rname', def.name).style.color = hex(TIER_COLORS[def.tier]);
+      const lead = el(head, 'rlead');
+      itemThumb(lead, st.id);
+      el(lead, 'rname', def.name).style.color = hex(TIER_COLORS[def.tier]);
       el(head, 'rreq', `${dustFor(st.id)} dust`);
       el(row, 'rmeta', `${disenchantXp(st.id)} Enchanting XP`);
       const b = actionButton(el(row, 'rbtns'), armed ? 'Really grind it?' : 'Disenchant', near);

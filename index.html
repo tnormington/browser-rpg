@@ -23,6 +23,7 @@
      CLASSES .panel     a window: iron chrome, a child of the dock, bounded by it, scrolls inside itself, its .ptitle row stays put. --chrome-edge tints its border (station, vendor).
              .ptitle    the title row; titleRow() in dom.ts builds it with its .pclose.     .rgroup  a small caps group heading inside a panel
              .recipe    a list row (forge, shop, flights, spell book): .rhead (.rname + .rreq), .rstat lines, .rbtns.  .locked dims it; .bad marks what you lack
+                        .rthumb  an item's picture in such a row: in the head's .rlead beside the name, or .sm on a .rin material chip
              .btn       every button. + .pri (the action you came for: Make, Buy, Learn)  + .sm  + .block (full width, left)  + .off (cannot be used now)
              .chrome    iron chrome for a fixed surface (unit frame, tracker).  .pop  the same for a floating layer (tooltip, context menu, help)
              .bar       a gauge: set --bar-h and --fill (a token below); .fill moves, .label sits on it; .thin is the slim world-space gauge
@@ -226,6 +227,14 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .rstat{color:var(--moss)}.rinputs{margin-top:var(--sp-2)}.rin{display:inline-block;margin-right:10px;color:var(--moss)}
 .rmeta{font-size:var(--fs-sm);opacity:.6;margin-top:var(--sp-1)}.rbtns{margin-top:5px;display:flex;gap:var(--sp-3)}
 .rhead.rwrap{flex-wrap:wrap}.rhead.rwrap>.rstat{flex-basis:100%} /* a head that carries a second line under its name and note */
+/* an item's picture in a list row (itemThumb in art.ts): what a recipe makes, pictured beside its name in the .rlead at the left of the head, and
+   .sm on the .rin chip of each material it eats. background-color, not the `background` shorthand, for the reason .tlicon gives above. */
+.rlead{display:flex;align-items:center;gap:var(--sp-3);min-width:0}
+.forgepanel .rhead{align-items:center} /* the level a station asks for, level with the name beside the picture rather than at the top of a taller head */
+.rthumb{flex:none;width:34px;height:34px;border:1px solid var(--edge-dim);border-radius:var(--r);background-color:var(--iron-glass);text-align:center}
+.rthumb .icon{font-size:var(--fs-xl);line-height:32px}
+.rthumb.sm{display:inline-block;width:18px;height:18px;margin-right:var(--sp-2);vertical-align:-5px}
+.rthumb.sm .icon{font-size:var(--fs-sm);line-height:16px}
 /* .enchrow: a recipe row with its button beside the text, not under it (the rune circle lists a row per slot per enchant, so height is what it spends) */
 .enchrow{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:var(--sp-4);align-items:center}.enchrow>*{grid-column:1}.enchrow>.rbtns{grid-column:2;grid-row:1/span 3;margin:0}
 .enchrow .rinputs{margin-top:var(--sp-1);display:flex;flex-wrap:wrap;column-gap:var(--sp-4)}.enchrow .rin{margin-right:0}.enchrow .rinputs .rmeta{margin:0;align-self:center}

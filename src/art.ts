@@ -8,6 +8,7 @@
 //
 // Anything with no file falls back to what the HUD drew before the art existed (src/art.test.ts holds the set complete),
 // so a new item is playable the moment the sim knows it, picture or no picture.
+import { EquipSlot, ITEMS, ItemDef } from './sim/items';
 import { el } from './dom';
 
 const ITEM_ART = import.meta.glob('../assets/art/items/*.webp', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
@@ -46,6 +47,31 @@ export function preloadItemArt() {
 export function paintArt(target: HTMLElement, url: string | null) {
   target.style.backgroundImage = url ? `url("${url}")` : '';
   target.classList.toggle('art', !!url);
+}
+
+/** What an equipment slot draws while it is empty, and what an item of that slot falls back to with no thumbnail. */
+export const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖', hands: '🧤', feet: '🥾' };
+/** The emoji an item with no thumbnail of its own falls back to — what the HUD drew before the art existed. */
+export const itemGlyph = (def: ItemDef) => def.slot ? SLOT_ICON[def.slot] : def.use ? '🍖' : '◆';
+
+/**
+ * An item's thumbnail as a box of its own, for a list row that is not a slot: a recipe's output beside its name at a
+ * station, the gear a rune circle offers to enchant. `.rthumb sm` is the small one a material chip wears.
+ * A bag slot does not call this - there the cell itself wears the picture (inventory-ui.ts), rather than a box inside it.
+ */
+export function itemThumb(parent: HTMLElement, id: string, cls = 'rthumb'): HTMLElement {
+  const url = itemArt(id), box = el(parent, cls);
+  paintArt(box, url);
+  if (!url) el(box, 'icon', itemGlyph(ITEMS[id]));
+  return box;
+}
+
+/** One material on a recipe's cost line: its picture, its name, and what you hold of it against what the recipe wants. */
+export function materialChip(parent: HTMLElement, id: string, have: number, need: number): HTMLElement {
+  const chip = el(parent, `rin${have >= need ? '' : ' bad'}`);
+  itemThumb(chip, id, 'rthumb sm');
+  chip.append(`${ITEMS[id].name} ${have}/${need}`);
+  return chip;
 }
 
 /**

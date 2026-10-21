@@ -8,10 +8,8 @@ import { EQUIP_SLOTS, EquipSlot, ITEMS, TIER_COLORS, describeStats } from './sim
 import { reductionOf, swingInterval } from './sim/combat';
 import { nearVendor } from './sim/shop';
 import { DockWindow, dragData, el, panelWindow, parseDrag } from './dom';
-import { itemArt, paintArt } from './art';
+import { SLOT_ICON, itemArt, itemGlyph, paintArt } from './art';
 
-/** What a slot draws for an item with no thumbnail of its own, and what an empty equipment slot always draws. */
-const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖', hands: '🧤', feet: '🥾' };
 const SLOT_LABEL: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs', hands: 'Hands', feet: 'Feet' };
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 
@@ -134,7 +132,7 @@ export class InventoryUi {
     const def = ITEMS[id], art = itemArt(id);
     cell.style.borderColor = hex(TIER_COLORS[def.tier]);
     paintArt(cell, art); // the thumbnail is the slot's face; the emoji is what a slot draws when the item has none
-    if (!art) el(cell, 'icon', def.slot ? SLOT_ICON[def.slot] : def.use ? '🍖' : '◆').style.color = hex(TIER_COLORS[def.tier]);
+    if (!art) el(cell, 'icon', itemGlyph(def)).style.color = hex(TIER_COLORS[def.tier]);
     el(cell, 'iname', def.name);
     if (qty > 1) el(cell, 'qty', String(qty));
   }

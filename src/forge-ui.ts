@@ -7,6 +7,7 @@ import { SKILLS } from './sim/skills';
 import { ITEMS, TIER_COLORS, describeStats } from './sim/items';
 import { countItem } from './sim/inventory';
 import { actionButton, el, titleRow } from './dom';
+import { itemThumb, materialChip } from './art';
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 
@@ -63,16 +64,15 @@ export class ForgeUi {
     const row = el(this.list, `recipe${can ? '' : ' locked'}`);
     row.title = [out.desc, ...describeStats(out)].join('\n');
     const head = el(row, 'rhead');
-    const name = el(head, 'rname', `${r.output.qty > 1 ? r.output.qty + 'x ' : ''}${r.name}`);
+    const lead = el(head, 'rlead'); // what it makes, pictured beside its name; the level it asks for stays at the right
+    itemThumb(lead, r.output.id);
+    const name = el(lead, 'rname', `${r.output.qty > 1 ? r.output.qty + 'x ' : ''}${r.name}`);
     name.style.color = hex(TIER_COLORS[out.tier]);
     const req = el(head, `rreq${lvlOk ? '' : ' bad'}`, `${SKILLS[r.skill].name} ${r.level}`);
     req.title = lvlOk ? '' : `You need ${SKILLS[r.skill].name} level ${r.level}`;
     for (const line of describeStats(out)) el(row, 'rstat', line);
     const inputs = el(row, 'rinputs');
-    for (const i of r.inputs) {
-      const have = countItem(p.inventory, i.id);
-      el(inputs, `rin${have >= i.qty ? '' : ' bad'}`, `${ITEMS[i.id].name} ${have}/${i.qty}`);
-    }
+    for (const i of r.inputs) materialChip(inputs, i.id, countItem(p.inventory, i.id), i.qty);
     // time and extra-output chance are what your level over the recipe's buys you, so show what it costs you now
     const m = mastery(p.skills[r.skill].level, r.level);
     const extra = bonusOutput(r) && m.bonus > 0 ? `  ·  ${Math.round(m.bonus * 100)}% extra` : '';
