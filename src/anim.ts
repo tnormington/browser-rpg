@@ -60,7 +60,7 @@ const SEAT_LEAN = 0.09; // radians the spine tips forward over the pommel
 const UPPER_BODY = /Abdomen|Torso|Neck|Head|Shoulder|Arm|Palm|Hand|Finger|Thumb/;
 const FADE = 0.18;
 const TWIST_END = 0.85; // clip time at which the swing's hip turn has unwound
-const LEAD = 0.06;
+export const LEAD = 0.06;
 
 const smooth = (a: number) => a * a * (3 - 2 * a);
 /** 0 -> 1 at `peak` (a fraction of the pulse) -> 0, eased: the shape of a flinch or a lunge. */
@@ -91,12 +91,19 @@ export class Animator {
   private twist: Pulse = { t: TWIST_END, dur: TWIST_END, peak: 0, amp: 0, dir: 1 };
   private air = 0;      // 0..1: vertical speed while airborne, stretches the body
   private deadT = 0;
+  private slide = 0;
   private flip = 1;     // alternates the side of a flinch or a fall
   private phase = Math.random() * 10;
   private time = 0;
   private primed = 0;
   private wind = 0;
   private windKind: string | null = null;
+  private stall = 0;      // hit-stop: seconds the whole rig is held on the strike frame
+  private stallShiver = 0; // how hard a held rig trembles (the one that took the blow)
+  private pending: { after: number; dur: number } | null = null; // a stall waiting for the strike pose to arrive
+  private clipIn = 0;      // seconds until the rig's own hit clip starts (the recoil is held back with the strike)
+  /** Seconds until this rig's strike pose lands: effects keyed to the blow wait for it, so nothing bursts before the sword is there. */
+  strikeIn = 0;
   private seat: Seat | null = null;
   private seatBob = 0;
   private hipY = 0; // standing hip height above the feet, taken at the bind pose
@@ -152,6 +159,7 @@ export class Animator {
   attack(heavy = false, step = 0.4, ahead = LEAD): boolean {
     if (this.holding) return false;
     this.primed = 0;
+    this.strikeIn = ahead;
     this.lunge = { t: -ahead, dur: 0.34, peak: 0.2, amp: step * (heavy ? 1.4 : 1), dir: 1 };
     const names = this.def.attack?.filter(n => this.clips.has(n));
     if (!names?.length) return true;
@@ -177,13 +185,29 @@ export class Animator {
   /** The sim swung. If the wind-up already started this cycle, it is already on its way: do not restart it. */
   swung() { if (this.primed > 0) this.primed = 0; else this.attack(false); }
 
-  /** A blow landed on this actor: a recoil sized by `strength`, plus the rig's hit clip where it has one. */
-  react(strength = 1): boolean {
+  /**
+   * A blow landed on this actor: a recoil sized by `strength`, plus the rig's hit clip where it has one. `after` holds the
+   * recoil back until the attacker's strike pose arrives: the sim applies damage 60 ms before the sword is there.
+   */
+  react(strength = 1, after = 0): boolean {
     if (this.holding) return false;
     this.flip = -this.flip;
-    this.hit = { t: 0, dur: 0.18 + 0.14 * strength, peak: 0.2, amp: strength, dir: this.flip };
-    if (this.hasHitClip) this.play(this.def.hit!, { once: true, fade: 0.06 });
+    this.hit = { t: -after, dur: 0.18 + 0.14 * strength, peak: 0.2, amp: strength, dir: this.flip };
+    if (this.hasHitClip) { if (after > 0) this.clipIn = after; else this.playHit(); }
     return true;
+  }
+
+  private playHit() { this.clipIn = 0; this.play(this.def.hit!, { once: true, fade: 0.06 }); }
+
+  /**
+   * Hit-stop: hold the whole rig still for `dur` seconds, `after` seconds from now (so it starts on the strike frame, not
+   * before it). The attacker holds clean; the one that took the blow also trembles (`shiver`, world units).
+   */
+  freeze(dur: number, after = 0, shiver = 0) {
+    if (this.holding) return;
+    this.stallShiver = Math.max(this.stallShiver, shiver);
+    if (after > 0.005) this.pending = { after, dur: Math.max(dur, this.pending?.dur ?? 0) };
+    else this.stall = Math.max(this.stall, dur);
   }
 
   /** Takeoff: the jump clip is stretched over the airtime so it ends as the sim lands. */
@@ -208,10 +232,11 @@ export class Animator {
   /** The wind-up tell, per frame: `kind` is the sim's cast kind (null = not winding up), `k` 0..1 through the wind-up. */
   telegraph(kind: string | null, k: number) { this.windKind = kind; this.wind = kind ? k : 0; }
 
-  /** Death plays once and holds its last frame; `revive()` returns to locomotion. */
-  die(): boolean {
+  /** Death plays once and holds its last frame; `revive()` returns to locomotion. `slide` is how far the killing blow throws the body back (world units). */
+  die(slide = 0): boolean {
     if (!this.hasDeath) return false;
     if (this.holding) return true;
+    this.slide = slide;
     if (this.hasDeathClip) {
       // sped up to land in about a second: enemies are gone (shrunk away) two seconds after dying
       this.play(this.def.death!, { once: true, hold: true, fade: 0.12, speed: Math.max(1, this.actions.get(this.def.death!)!.getClip().duration) });
@@ -226,6 +251,10 @@ export class Animator {
   }
 
   update(dt: number) {
+    this.strikeIn = Math.max(0, this.strikeIn - dt);
+    if (this.clipIn > 0 && (this.clipIn -= dt) <= 0) this.playHit();
+    if (this.pending && (this.pending.after -= dt) <= 0) { this.stall = Math.max(this.stall, this.pending.dur); this.pending = null; }
+    if (this.stall > 0) { this.stall -= dt; dt = 0; if (this.stall <= 0) this.stallShiver = 0; } // held: the clock stops, the pose stays
     this.mixer.update(dt);
     const l = this.layer;
     if (l && l.isRunning() && l.time >= l.getClip().duration - 0.12) { l.fadeOut(0.12); this.layer = null; }
@@ -249,10 +278,12 @@ export class Animator {
     const fall = fk > 0 ? easeOutBack(fk) : 0, hop = fk > 0 ? 0.3 * Math.sin(Math.PI * Math.min(1, this.deadT / 0.4)) : 0;
     const bob = d.hop && this.moving && !this.holding ? d.hop * Math.abs(Math.sin(this.time * 14 + this.phase)) : 0;
     const squash = 0.2 * ld, stretch = 0.1 * this.air;
+    const shiver = this.stall > 0 ? (Math.random() - 0.5) * this.stallShiver : 0;
+    const slide = this.holding ? -this.slide * (1 - Math.exp(-this.deadT * 7)) : 0; // a killing blow carries the body away from it
     r.position.set(
-      tell ? tell.shake * w * Math.sin(this.time * 70) : 0,
+      (tell ? tell.shake * w * Math.sin(this.time * 70) : 0) + shiver,
       (fk > 0 ? d.lie! * smooth(fk) + hop : 0) + bob - (tell ? tell.sink * w : 0) + (this.seat ? this.seat.y - this.hipY + this.seatBob : 0),
-      lg - 0.3 * h + (this.seat?.z ?? 0));
+      lg - 0.3 * h + slide + (this.seat?.z ?? 0));
     r.rotation.set(0.15 * lg - 0.38 * h - (tell ? tell.lean * w : 0), 0, this.hit.dir * 0.16 * h + this.flip * fall * Math.PI / 2);
     const sxz = 1 + squash * 0.6 - stretch * 0.4 + (tell ? tell.swell * w : 0);
     r.scale.set(sxz, 1 - squash + stretch - 0.06 * h + (tell ? tell.swell * w * 0.5 : 0), sxz);

@@ -16,7 +16,7 @@ const server = await preview({ root, logLevel: 'error', preview: { port: 4175, o
 const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
 page.on('pageerror', e => console.error('pageerror', String(e)));
-await page.goto(`${server.resolvedUrls.local[0]}?debug=1`);
+await page.goto(`${server.resolvedUrls.local[0]}?debug=1&weather=clear`);
 await page.waitForFunction(() => window.__debug, null, { timeout: 60000 });
 await page.evaluate(() => window.__debug.view.modelsReady);
 await page.locator('.helpok').click({ timeout: 3000 }).catch(() => {});
@@ -32,7 +32,7 @@ await page.addScriptTag({ content: `
     const x = window.__home.x - 3, z = window.__home.z + 2; for (const o of s.enemies) if (o !== e) { o.x = 900; o.z = 900; o.spawnX = 900; o.spawnZ = 900; o.state = 'idle'; }
     s.targetId = null; p.autoAttack = false; p.swing = 0; p.equipment.weapon = 'steel_sword'; p.x = x; p.z = z; p.facing = Math.PI / 2; p.hp = p.stats.maxHp; p.dead = false;
     e.x = x + gap; e.z = z; e.facing = -Math.PI / 2; e.hp = e.maxHp; e.state = 'idle'; e.attackCd = 99; e.heavyCd = 99; e.spawnX = e.x; e.spawnZ = e.z;
-    d.step(); d.step();
+    d.step(); d.step(); d.view.snapshot(s); d.view.snapshot(s); // snapshot twice: prev == curr, so nothing glides in from where the player was
     window.__e = e;
     return e;
   };
@@ -41,18 +41,25 @@ await page.addScriptTag({ content: `
     v.debugCam = { pos: [p.x + gap / 2 + dx, h + 0.4, p.z + back], at: [p.x + gap / 2 + dx, h, p.z] };
   };` });
 
+// game time is the fake clock's, stepped by hand: a 50 ms hit-stop is two frames, and a real-time screenshot loop would miss it
+await page.clock.install();
+await page.clock.pauseAt(new Date(Date.now() + 2000));
+const adv = ms => page.clock.runFor(ms);
+await adv(1000); // let the loop run under the fake clock before the first staging
 const shots = [];
 const burst = async (label, n, gapMs, clip) => {
   shots.push(label);
   for (let i = 0; i < n; i++) {
+    await new Promise(r => setTimeout(r, 60)); // real time: lets the compositor present the frame the paused clock just drew
     await page.screenshot({ path: join(out, `${label}-${String(i).padStart(2, '0')}.jpg`), type: 'jpeg', quality: 80, clip });
-    await page.waitForTimeout(gapMs);
+    if (process.env.PROBE) console.error(label, i, JSON.stringify(await page.evaluate(process.env.PROBE))); // PROBE='expr' logs a page expression per frame
+    await adv(gapMs);
   }
 };
 // scrub:<who>:<clip>:<t0>:<t1>:<n>  freeze a clip at n times between t0 and t1 (who = player or an enemy type): for reading a clip
 const scrub = async (who, clip, t0, t1, n) => {
   await page.evaluate(([who]) => { stage(who === 'player' ? 'boar' : who, 6); frame(6, 1.1, 5, 0); const v = window.__debug.view; v.debugCam.pos[0] = window.__debug.sim.player.x + 2.4; v.debugCam.pos[2] -= 0; }, [who]);
-  await page.waitForTimeout(300);
+  await adv(300);
   for (let i = 0; i < n; i++) {
     const t = t0 + (t1 - t0) * (i / Math.max(1, n - 1));
     await page.evaluate(([who, clip, t]) => {
@@ -63,7 +70,7 @@ const scrub = async (who, clip, t0, t1, n) => {
       act.reset().play(); act.time = t; act.paused = true; act.weight = 1; act.setEffectiveWeight(1);
       an.mixer.update(0);
     }, [who, clip, t]);
-    await page.waitForTimeout(120);
+    await adv(120);
     await page.screenshot({ path: join(out, `scrub-${clip}-${String(i).padStart(2, '0')}.jpg`), type: 'jpeg', quality: 80, clip: CLIP });
   }
   shots.push('scrub-' + clip);
@@ -77,46 +84,47 @@ const tell = async (type, kind, variants) => {
   for (let i = 0; i < variants.length; i++) {
     await page.evaluate(([kind, v]) => { Object.assign(window.__TELLS[kind].arms, JSON.parse(v)); }, [kind, variants[i]]);
     await page.evaluate(() => { window.__e.cast.t = 900; });
-    await page.waitForTimeout(250);
+    await adv(250);
     await page.screenshot({ path: join(out, `tell-${type}-${kind}-${String(i).padStart(2, '0')}.jpg`), type: 'jpeg', quality: 80, clip: { x: 130, y: 20, width: 700, height: 500 } });
   }
   shots.push(`tell-${type}-${kind}`);
 };
-const CLIP = { x: 180, y: 60, width: 600, height: 400 };
+// CLIP='x,y,w,h' crops tighter (the contact sheets shrink frames to 450 px; a spray is a few pixels there); KEEP=1 leaves the full-size frames beside the sheet
+const CLIP = process.env.CLIP ? Object.fromEntries(['x', 'y', 'width', 'height'].map((k, i) => [k, +process.env.CLIP.split(',')[i]])) : { x: 180, y: 60, width: 600, height: 400 };
 const S = {
   async swing() {
     await page.evaluate(() => { stage('boar', 1.8); frame(1.8); });
-    await page.waitForTimeout(300);
-    await page.keyboard.press('r'); // arm auto-attack: the first swing lands this tick
-    await burst('swing', 24, 70, CLIP);
-    await page.keyboard.press('r');
+    await adv(300);
+    await page.keyboard.press('x'); // arm auto-attack (X): the first swing lands this tick
+    await burst('swing', 24, 50, CLIP);
+    await page.keyboard.press('x'); await adv(60); // the press is read on the next tick: let it, so it cannot leak into the next scenario
   },
   async hit(type, gap = 1.8, h = 1.0) {
     await page.evaluate(([t, g, h]) => { stage(t, g); frame(g, h); }, [type, gap, h]);
-    await page.waitForTimeout(300);
-    await page.keyboard.press('r');
-    await burst(`hit-${type}`, 10, 0, CLIP);
+    await adv(300);
+    await page.keyboard.press('x');
+    await burst(`hit-${type}`, 16, 33, CLIP);
     console.error(type, 'hp', await page.evaluate(() => [window.__e.hp, window.__e.maxHp, window.__debug.sim.targetId, window.__e.id]));
-    await page.keyboard.press('r');
+    await page.keyboard.press('x'); await adv(60); // the press is read on the next tick: let it, so it cannot leak into the next scenario
   },
   async death(type, h = 0.8) {
     await page.evaluate(([t, h]) => { stage(t, 1.8); frame(1.8, h); window.__e.hp = 1; }, [type, h]);
-    await page.waitForTimeout(300);
-    await page.keyboard.press('r');
-    await burst(`death-${type}`, 14, 90, CLIP);
-    await page.keyboard.press('r');
+    await adv(300);
+    await page.keyboard.press('x');
+    await burst(`death-${type}`, 18, 50, CLIP);
+    await page.keyboard.press('x'); await adv(60); // the press is read on the next tick: let it, so it cannot leak into the next scenario
   },
   async 'hit-player'() {
     await page.evaluate(() => { stage('boar', 1.8); frame(1.8, 1.2, 5.5, -0.9); const e = window.__e; e.attackCd = 0; });
-    await burst('hit-player', 10, 70, CLIP);
+    await burst('hit-player', 16, 33, CLIP);
   },
   async 'enemy-lunge'() {
     await page.evaluate(() => { stage('wolf', 1.8); frame(1.8); window.__e.attackCd = 0; });
-    await burst('enemy-lunge', 10, 70, CLIP);
+    await burst('enemy-lunge', 16, 40, CLIP);
   },
   async jump() {
     await page.evaluate(() => { stage('boar', 8); frame(8, 1.2, 5.5, -2.5); });
-    await page.waitForTimeout(300);
+    await adv(300);
     await page.keyboard.down('Space');
     await burst('jump', 14, 60, CLIP);
     await page.keyboard.up('Space');
@@ -150,7 +158,7 @@ for (const label of shots) {
   await sheetPage.setViewportSize({ width: 1800, height: Math.round(rows * 305) });
   await sheetPage.setContent('<body style="margin:0;background:#000;display:grid;grid-template-columns:repeat(4,450px);gap:0">' + imgs.map((u, i) => '<div style="position:relative"><img style="width:450px;display:block" src="' + u + '"><b style="position:absolute;left:4px;top:2px;color:#ff0;font:12px monospace">' + i + '</b></div>').join('') + '</body>');
   await sheetPage.screenshot({ path: join(out, 'sheet-' + label + '.png') });
-  for (const f of files) rmSync(join(out, f));
+  if (!process.env.KEEP) for (const f of files) rmSync(join(out, f));
 }
 await browser.close(); await server.close();
 console.error('wrote', out);

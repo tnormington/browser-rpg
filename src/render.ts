@@ -15,7 +15,7 @@ import { PostStack, Quality } from './post';
 import { Weather } from './weather';
 import { SkyDome, Rain } from './sky';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
-import { Animator } from './anim';
+import { Animator, LEAD } from './anim';
 import { SILHOUETTES, Silhouette, mergeParts } from './creatures';
 import { PROPS, PropId } from './props';
 import { PlayerGear } from './gear';
@@ -54,6 +54,12 @@ const PALETTE = {
   ash: 0xa8a49a, smoke: [0xbbbbbb, 0x888888] as number[],
 } as const;
 const P = PALETTE;
+/** What a blow lands on decides what comes off it: flesh bleeds, stone and armour throw sparks and grit, the unquiet shed bone and cold light. */
+const STONE = /golem|colossus|cairn|stonehorn|hollow_knight|^warden$|spire_warden/, UNQUIET = /wight|barrow_lord|grave_hound|drowned|void_hound/;
+const BLOOD = [PALETTE.blood, PALETTE.bloodDark, PALETTE.bloodDark];
+const matterOf =(type: string): 'flesh' | 'stone' | 'bone' => STONE.test(type) ? 'stone' : UNQUIET.test(type) ? 'bone' : 'flesh';
+/** The ground-plane vector (x, z) scaled to length 1; a zero vector points straight ahead. */
+const unit = (x: number, z: number): [number, number] => { const d = Math.hypot(x, z); return d < 1e-4 ? [0, 1] : [x / d, z / d]; };
 type Mat = THREE.MeshStandardMaterial;
 /** Roughness / metalness per material class. */
 const MATERIALS = {
@@ -254,6 +260,10 @@ export class Renderer {
   private witherMarks = new Map<number, NonNullable<Actor['tele']>>();
   private selection: THREE.Mesh;
   private shakeMag = 0;
+  /** A shove on the camera along the blow (world units), decaying fast: the view is carried with the hit, not just jittered. */
+  private kick = { x: 0, z: 0 };
+  /** Effects waiting on a strike pose that is still on its way (see Animator.strikeIn). */
+  private later: { t: number; fn: () => void }[] = [];
   private levelRing: THREE.Mesh;
   private levelRingAge = 99;
   private castPunch = 0;
@@ -288,6 +298,8 @@ export class Renderer {
   private staffLight!: THREE.PointLight;
   private markerTex!: Record<'offer' | 'ready' | 'wait', THREE.Texture>;
   private particles = new Particles();
+  /** The matter pool (blood, grit, dust): normally blended, so it can be dark. `particles` is light. */
+  private matter = new Particles(true);
   private motes = new Motes();
   private rings: Rings;
   private slashes: Slashes;
@@ -356,7 +368,7 @@ export class Renderer {
     this.scene.add(headstones(this.kit, REGIONS.find(r => r.id === 'clearing')!.obstacles.filter(o => o.kind === 'grave'))); // Hale's graveyard
     this.rings = new Rings(this.scene);
     this.slashes = new Slashes(this.scene);
-    this.scene.add(this.particles.points, this.motes.points);
+    this.scene.add(this.particles.points, this.matter.points, this.motes.points);
     this.buildNpc();
 
     this.player = mesh(new THREE.CapsuleGeometry(0.5, 1, 2, 6), P.player, 'cloth', 'cast');
@@ -1411,15 +1423,36 @@ export class Renderer {
     for (const ev of events) {
       if (ev.t === 'hit') {
         if (ev.target === 'player') {
-          this.playerAnim?.react(ev.heavy ? 1.6 : 0.8);
-          this.shakeMag = Math.max(this.shakeMag, ev.heavy ? 0.4 : 0.12);
-          this.particles.burst(ev.x, 1.2, ev.z, { color: [P.blood, P.bloodLight], count: ev.heavy ? 30 : 12, speed: ev.heavy ? 6 : 4, life: 0.5 });
           const src = ev.src === undefined ? undefined : s.enemies.find(e => e.id === ev.src);
-          if (src && ENEMY_TYPES[src.type].ranged) this.particles.trail(src.x, 1.7, src.z, ev.x, 1.3, ev.z, P.violet); // the bolt
+          const ranged = !!src && !!ENEMY_TYPES[src.type].ranged, lag = ranged ? 0 : LEAD; // a bolt lands on the tick; a bite lands when the jaws arrive
+          const [dx, dz] = src ? unit(ev.x - src.x, ev.z - src.z) : [-Math.sin(s.player.facing), -Math.cos(s.player.facing)];
+          const hold = ev.heavy ? 0.1 : 0.05;
+          this.playerAnim?.react(ev.heavy ? 1.6 : 0.8, lag);
+          this.playerAnim?.freeze(hold, lag, 0.04);
+          if (src && !ranged) this.actors.get(src.id)?.anim?.freeze(hold, 0); // the attacker is caught in the same held frame
+          this.after(lag, () => {
+            this.shakeMag = Math.max(this.shakeMag, ev.heavy ? 0.25 : 0.06);
+            this.punch(dx, dz, ev.heavy ? 0.28 : 0.11);
+            this.particles.burst(ev.x, 1.3, ev.z, { color: P.blood, count: 1, speed: 0, size: 5.5, life: 0.09, gravity: 0, hdr: 1.8 });
+            this.matter.burst(ev.x, 1.3, ev.z, { color: BLOOD, count: ev.heavy ? 24 : 12, speed: ev.heavy ? 7.5 : 5.5, dir: [dx, dz], cone: 0.5, up: 0.5, gravity: -22, drag: 0.6, size: 0.9, life: 0.45, hdr: 1 });
+          });
+          if (src && ranged) this.particles.trail(src.x, 1.7, src.z, ev.x, 1.3, ev.z, P.violet); // the bolt
+        } else if (ev.dot) {
+          this.shakeMag = Math.max(this.shakeMag, 0.04);
+          this.impact(s, ev, 0, 0, false);
         } else {
-          this.shakeMag = Math.max(this.shakeMag, ev.crit ? 0.2 : ev.slot === 1 || ev.slot === 4 ? 0.14 : 0.04);
-          if (!ev.dot) this.actors.get(ev.target as number)?.anim?.react(ev.crit || ev.slot === 1 || ev.slot === 4 ? 1.5 : 1); // the recoil is the proof the blow landed
-          this.impact(s, ev);
+          const A = ABILITIES[ev.slot], heavy = ev.crit || A?.tag === 'crush' || A?.kind === 'cleave';
+          const thrown = A?.kind === 'dot', lag = this.playerAnim?.strikeIn ?? 0, hold = heavy ? 0.09 : 0.05;
+          const [dx, dz] = unit(ev.x - s.player.x, ev.z - s.player.z);
+          const an = this.actors.get(ev.target)?.anim;
+          if (!thrown) this.playerAnim?.freeze(hold, lag); // a thrown blade leaves the hand: only a swung one is held in it
+          an?.freeze(hold, lag, heavy ? 0.05 : 0.03);
+          an?.react(heavy ? 1.5 : 1, lag); // the recoil is the proof the blow landed
+          this.after(lag, () => {
+            this.shakeMag = Math.max(this.shakeMag, ev.crit ? 0.1 : heavy ? 0.08 : 0);
+            this.punch(dx, dz, ev.crit ? 0.2 : heavy ? 0.16 : 0.07);
+            this.impact(s, ev, dx, dz, heavy);
+          });
         }
       } else if (ev.t === 'cast') {
         this.castPunch = 0.12;
@@ -1472,9 +1505,20 @@ export class Renderer {
         this.particles.burst(p.x, 0.3, p.z, { color: [P.gold, P.arcaneLight, P.ember], count: 70, speed: 3, up: 8, gravity: -6, life: 1.4 });
         this.rings.pulse(p.x, 0.2, p.z, P.gold, 4, 0.9);
       } else if (ev.t === 'kill') {
-        const type = s.enemies.find(e => e.id === ev.id)!.type, big = slotOf(type) === 'brute';
-        this.particles.burst(ev.x, 0.8, ev.z, { color: [...P.smoke, P.ember], count: big ? 70 : 32, speed: big ? 6 : 4, up: 2, life: 0.9 });
-        this.rings.pulse(ev.x, 0.15, ev.z, P.ash, big ? 5 : 2.5, 0.5);
+        const type = ev.species, big = slotOf(type) === 'brute', matter = matterOf(type);
+        const [dx, dz] = unit(ev.x - s.player.x, ev.z - s.player.z), lag = this.playerAnim?.strikeIn ?? 0, hold = big ? 0.16 : 0.11;
+        this.playerAnim?.freeze(hold, lag);
+        const an = this.actors.get(ev.id)?.anim;
+        an?.freeze(hold, lag, 0.04);
+        an?.die(big ? 1.1 : 0.7); // the killing blow throws the body back along itself
+        this.after(lag, () => {
+          this.punch(dx, dz, big ? 0.3 : 0.2);
+          if (matter === 'flesh') this.matter.burst(ev.x, 0.9, ev.z, { color: BLOOD, count: big ? 40 : 22, speed: big ? 7.5 : 6.5, dir: [dx, dz], cone: 0.5, up: 1.5, gravity: -20, drag: 0.6, size: 1, life: 0.6, hdr: 1 });
+          else if (matter === 'stone') this.matter.burst(ev.x, 0.9, ev.z, { color: [P.ash, P.boulder, P.stone], count: big ? 40 : 24, speed: 6, up: 2.5, gravity: -12, size: 1.3, life: 0.8, hdr: 1 });
+          else this.particles.burst(ev.x, 0.9, ev.z, { color: [P.bone, P.arcaneLight], count: big ? 30 : 18, speed: 3, up: 3.5, gravity: -2, size: 0.8, life: 1.0, hdr: 1.4 }); // what held it here lets go
+          this.matter.burst(ev.x, 0.15, ev.z, { color: [P.ash, P.dirt], count: big ? 18 : 9, speed: big ? 3.2 : 2.2, flat: true, gravity: 0, drag: 2.5, size: 2.4, life: 0.7, hdr: 0.8, alpha: 0.4 }); // the dust of it hitting the ground
+          if (big) this.rings.pulse(ev.x, 0.15, ev.z, P.ash, 4, 0.5, 0.5, 0.8);
+        });
         if (big) this.shakeMag = Math.max(this.shakeMag, 0.35);
       } else if (ev.t === 'drop') {
         this.particles.burst(ev.x, 0.6, ev.z, { color: TIER_COLORS[ITEMS[ev.item].tier], count: 14, speed: 1.5, up: 3, gravity: -5, life: 0.8 });
@@ -1499,19 +1543,37 @@ export class Renderer {
   }
 
   /** Ability-specific hit feedback: each of the four reads differently at a glance. */
-  private impact(s: GameState, ev: Extract<GameEvent, { t: 'hit' }>) {
-    const p = s.player, y = 1.2;
+  private impact(s: GameState, ev: Extract<GameEvent, { t: 'hit' }>, dx: number, dz: number, heavy: boolean) {
+    const p = s.player, y = 1.2, dir: [number, number] = [dx, dz];
     if (ev.dot) return void this.particles.burst(ev.x, y, ev.z, { color: P.violet, count: 5, speed: 1.5, up: 1, life: 0.4 });
-    if (ev.slot === 1) {
-      this.particles.burst(ev.x, 0.5, ev.z, { color: [P.fire, P.gold, P.arcaneLight], count: 36, speed: 6, up: 3, life: 0.7 });
-      this.rings.pulse(ev.x, 0.15, ev.z, P.fire, 3.2, 0.4);
-    } else if (ev.slot === 2) {
+    const power = heavy ? 1.6 : 1, matter = matterOf(ev.species);
+    const r = ENEMY_TYPES[ev.species]?.radius ?? 0.6, cx = ev.x - dx * r * 0.8, cz = ev.z - dz * r * 0.8; // where the blade met it: the near face, not its middle
+    if (ev.slot === 2) {
       this.particles.trail(p.x, 1.4, p.z, ev.x, y, ev.z, P.violet);
-      this.particles.burst(ev.x, y, ev.z, { color: [P.violet, P.arcaneLight], count: 16, speed: 3, life: 0.5 });
-    } else {
-      this.particles.burst(ev.x, y, ev.z, { color: [P.arcaneLight, P.ash], count: 10, speed: 4, life: 0.35 });
+      this.particles.burst(ev.x, y, ev.z, { color: [P.violet, P.arcaneLight], count: 12, speed: 3, life: 0.5 });
+    } else if (ev.slot === 1) { // Crushing Blow: the ground takes some of it too
+      this.particles.burst(ev.x, 0.4, ev.z, { color: [P.fire, P.gold, P.ember], count: 18, speed: 5, dir, cone: 0.35, up: 2, gravity: -10, size: 0.8, life: 0.55 });
+      this.rings.pulse(ev.x, 0.15, ev.z, P.fire, 2.8, 0.35, 0.4, 1.4);
     }
-    if (ev.crit) this.particles.burst(ev.x, y + 0.4, ev.z, { color: [P.gold, P.arcaneLight], count: 20, speed: 5, up: 2, life: 0.6 });
+    // the contact flash: one big sprite, gone in about five frames; it is what makes the hit read as a hit
+    this.particles.burst(cx, y, cz, { color: matter === 'flesh' ? P.bloodLight : [P.ember, P.gold], count: 1, speed: 0, size: 5 * power, life: 0.09, gravity: 0, hdr: matter === 'flesh' ? 1.8 : 2.4 });
+    if (matter === 'flesh') {
+      this.matter.burst(cx, y, cz, { color: BLOOD, count: Math.round(13 * power), speed: 6.5 * Math.sqrt(power), dir, cone: 0.55, up: 0.4, gravity: -22, drag: 0.6, size: 0.9, life: 0.45, hdr: 1 });
+    } else {
+      // steel on stone or bone throws sparks in a fan and a little grit that falls where it is
+      this.particles.burst(cx, y, cz, { color: [P.ember, P.gold, P.arcaneLight], count: Math.round(6 * power), speed: 8, dir, cone: 0.45, up: 1, gravity: -16, drag: 1.5, size: 0.9, life: 0.35 });
+      this.matter.burst(cx, y, cz, { color: matter === 'stone' ? [P.ash, P.boulder] : [P.bone, P.ash], count: Math.round(5 * power), speed: 3, dir, cone: 0.3, up: 1.5, gravity: -12, size: 1.4, life: 0.5, hdr: 1 });
+    }
+    if (ev.crit) this.particles.burst(ev.x, y + 0.4, ev.z, { color: [P.gold, P.arcaneLight], count: 12, speed: 5, up: 2, size: 0.8, life: 0.5 });
+  }
+
+  /** Run `fn` once `t` seconds have passed on the render clock (at once if it is already time). */
+  private after(t: number, fn: () => void) { if (t > 0.005) this.later.push({ t, fn }); else fn(); }
+
+  /** Shove the camera along (dx, dz), a unit vector: the view is carried with the blow. */
+  private punch(dx: number, dz: number, mag: number) {
+    const x = this.kick.x + dx * mag, z = this.kick.z + dz * mag, n = Math.hypot(x, z), cap = 0.35;
+    this.kick.x = n > cap ? x / n * cap : x; this.kick.z = n > cap ? z / n * cap : z;
   }
 
   /** Quest-complete fanfare: staggered coloured bursts over the player. */
@@ -1687,7 +1749,9 @@ export class Renderer {
     this.castPunch = Math.max(0, this.castPunch - 1 / 60);
     const nowMs = performance.now(), dtFx = Math.min(0.1, (nowMs - this.lastDraw) / 1000);
     this.lastDraw = nowMs;
+    for (let i = this.later.length - 1; i >= 0; i--) if ((this.later[i].t -= dtFx) <= 0) this.later.splice(i, 1)[0].fn();
     this.particles.update(dtFx);
+    this.matter.update(dtFx);
     this.motes.update(dtFx);
     this.rings.update(dtFx);
     this.slashes.update(dtFx);
@@ -1796,7 +1860,10 @@ export class Renderer {
       this.camera.position.x += (Math.random() - 0.5) * this.shakeMag;
       this.camera.position.y += (Math.random() - 0.5) * this.shakeMag;
     }
-    this.camera.lookAt(x, 1.5 + lift, z);
+    const decay = Math.exp(-dtFx * 14);
+    this.kick.x *= decay; this.kick.z *= decay;
+    this.camera.position.x += this.kick.x; this.camera.position.z += this.kick.z;
+    this.camera.lookAt(x + this.kick.x, 1.5 + lift, z + this.kick.z);
     if (this.debugCam) { this.camera.position.fromArray(this.debugCam.pos); this.camera.lookAt(...(this.debugCam.at as [number, number, number])); } // dev only: bench/look.mjs close-ups
     this.forgeLights.forEach((l, i) => { l.intensity = FORGE_LIGHT.intensity * (1 + 0.07 * Math.sin(nowMs / 90 + i * 2.1) + 0.05 * Math.sin(nowMs / 37 + i)); });
     this.weather.update(dtFx);
@@ -1922,7 +1989,7 @@ export class Renderer {
       }
     }
     if (dead) for (const m of a.mats) m.emissive.setHex(0x000000); // a corpse takes no hostile tint and no hit flash (hitFlash stops ticking on death)
-    else if (e.hitFlash > 0) for (const m of a.mats) m.emissive.setHex(P.bloodLight);
+    else if (e.hitFlash > 0) for (const m of a.mats) m.emissive.setHex(P.bloodLight).multiplyScalar(0.7 * Math.min(1, e.hitFlash / 0.12)); // a flash that fades, never so hot the model loses its facets
     else if (wind > 0) for (const m of a.mats) m.emissive.setRGB(0.12 + 0.38 * wind * (0.6 + 0.4 * pulse), 0.06, 0.03);
     else for (const m of a.mats) m.emissive.setHex(a.glow);
     if (e.stagger > 0 && !dead) for (const m of a.mats) m.emissive.setRGB(0.5, 0.45, 0.1); // stunned: a dull gold flash

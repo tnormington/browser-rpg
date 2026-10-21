@@ -9,6 +9,12 @@ export interface BurstOpts {
   life?: number;             // seconds
   gravity?: number;          // units/sec^2 (negative floats)
   flat?: boolean;            // spray sideways only (ground dust, rings)
+  dir?: [number, number];    // unit x,z the spray is thrown along (a blow's direction); omitted = every way
+  cone?: number;             // with dir: 0 = no preference .. 1 = a tight jet
+  size?: number;             // sprite size multiplier: grit and flashes are not the size of a spark
+  drag?: number;             // per-second velocity loss: sparks that bite and stop
+  hdr?: number;              // brightness (default FX_HDR): blood at full HDR blooms to white, so it asks for less
+  alpha?: number;            // solid pool only: peak opacity (dust is a haze, blood is not)
 }
 
 /** Emissive FX are pushed past 1.0 so they cross the bloom threshold in the HDR buffer; they stay vivid either way. */
@@ -25,51 +31,70 @@ function discTexture(): THREE.CanvasTexture {
 }
 
 /** Point FX use world-size attenuation, which balloons a particle spawned beside the camera into a screen-filling quad (HOM-27); cap it at a fraction of the viewport. */
-function pointFxMaterial(size: number): THREE.PointsMaterial {
+function pointFxMaterial(size: number, sized = false, solid = false): THREE.PointsMaterial {
   const m = new THREE.PointsMaterial({
-    size, map: discTexture(), vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, toneMapped: false, // emissive FX stay vivid under ACES
+    size, map: discTexture(), vertexColors: true, transparent: true, depthWrite: false, blending: solid ? THREE.NormalBlending : THREE.AdditiveBlending, sizeAttenuation: true, toneMapped: false, // emissive FX stay vivid under ACES
   });
   m.onBeforeCompile = (sh) => {
-    sh.vertexShader = sh.vertexShader.replace('#include <logdepthbuf_vertex>', 'gl_PointSize = min(gl_PointSize, scale * 0.05);\n#include <logdepthbuf_vertex>');
+    // a big sprite (a contact flash) is allowed a proportionally bigger cap, up to 3x: it lives for five frames and is the point
+    const cap = sized ? 'scale * 0.05 * clamp(aSize, 1.0, 3.0)' : 'scale * 0.05';
+    sh.vertexShader = sh.vertexShader.replace('#include <logdepthbuf_vertex>', `gl_PointSize = min(gl_PointSize, ${cap});\n#include <logdepthbuf_vertex>`);
+    if (sized) sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSize;').replace('gl_PointSize = size;', 'gl_PointSize = size * aSize;');
   };
   return m;
 }
 
+/**
+ * One pool of point sprites. The default pool is additive light (sparks, magic). A `solid` pool is normally blended and
+ * fades by alpha: it is what has to read as matter (blood, grit, dust), because additive light can only brighten a dark
+ * ground, and a dark red is not made of that.
+ */
 export class Particles {
   private max = 900;
   private pos = new Float32Array(this.max * 3);
-  private col = new Float32Array(this.max * 3);
+  private col = new Float32Array(this.max * 4); // rgba
   private vel = new Float32Array(this.max * 3);
   private life = new Float32Array(this.max);
   private maxLife = new Float32Array(this.max);
   private base = new Float32Array(this.max * 3);
   private grav = new Float32Array(this.max);
+  private drag = new Float32Array(this.max);
+  private size = new Float32Array(this.max).fill(1);
+  private opacity = new Float32Array(this.max).fill(1);
   private next = 0;
   readonly points: THREE.Points;
 
-  constructor() {
+  constructor(private solid = false) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
-    g.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(this.col, 4));
+    g.setAttribute('aSize', new THREE.BufferAttribute(this.size, 1));
     this.pos.fill(-1000);
-    this.points = new THREE.Points(g, pointFxMaterial(0.28));
+    this.points = new THREE.Points(g, pointFxMaterial(0.28, true, solid));
     this.points.frustumCulled = false;
   }
 
   burst(x: number, y: number, z: number, o: BurstOpts) {
     const palette = Array.isArray(o.color) ? o.color : [o.color];
-    const c = new THREE.Color();
+    const c = new THREE.Color(), hdr = o.hdr ?? FX_HDR;
+    const aim = o.dir ? Math.atan2(o.dir[1], o.dir[0]) : 0, cone = o.cone ?? 0.7;
     for (let n = 0; n < o.count; n++) {
       const i = this.next; this.next = (this.next + 1) % this.max;
-      const ang = Math.random() * Math.PI * 2, sp = (o.speed ?? 4) * (0.4 + Math.random() * 0.6);
+      // a jet narrows round the aim: cone 1 is +-0.35 rad, cone 0 the full circle
+      const ang = o.dir ? aim + (Math.random() - 0.5) * 2 * (Math.PI * (1 - cone) + 0.35 * cone) : Math.random() * Math.PI * 2;
+      const sp = (o.speed ?? 4) * (0.4 + Math.random() * 0.6);
       const el = o.flat ? 0 : (Math.random() - 0.3) * 2;
       this.pos.set([x, y, z], i * 3);
       this.vel.set([Math.cos(ang) * sp, el * sp * 0.6 + (o.up ?? 0), Math.sin(ang) * sp], i * 3);
       c.setHex(palette[Math.floor(Math.random() * palette.length)]);
-      this.base.set([c.r * FX_HDR, c.g * FX_HDR, c.b * FX_HDR], i * 3);
+      this.base.set([c.r * hdr, c.g * hdr, c.b * hdr], i * 3);
       this.life[i] = this.maxLife[i] = (o.life ?? 0.7) * (0.6 + Math.random() * 0.4);
       this.grav[i] = o.gravity ?? -9;
+      this.drag[i] = o.drag ?? 0;
+      this.size[i] = (o.size ?? 1) * (0.75 + Math.random() * 0.5);
+      this.opacity[i] = o.alpha ?? 1;
     }
+    this.points.geometry.attributes.aSize.needsUpdate = true;
   }
 
   /** A line of sparks from a to b: the Serrated Throw "projectile". */
@@ -82,18 +107,21 @@ export class Particles {
       this.vel.set([(Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6], i * 3);
       this.base.set([c.r * FX_HDR, c.g * FX_HDR, c.b * FX_HDR], i * 3);
       this.life[i] = this.maxLife[i] = 0.12 + t * 0.2; // the head of the trail lingers longest: reads as motion
-      this.grav[i] = 0;
+      this.grav[i] = 0; this.drag[i] = 0; this.size[i] = 1; this.opacity[i] = 1;
     }
+    this.points.geometry.attributes.aSize.needsUpdate = true;
   }
 
   update(dt: number) {
     for (let i = 0; i < this.max; i++) {
       if (this.life[i] <= 0) continue;
       this.life[i] -= dt;
-      const k = Math.max(0, this.life[i] / this.maxLife[i]), j = i * 3;
-      if (this.life[i] <= 0) { this.pos[j + 1] = -1000; this.col[j] = this.col[j + 1] = this.col[j + 2] = 0; continue; }
+      const k = Math.max(0, this.life[i] / this.maxLife[i]), j = i * 3, c = i * 4;
+      if (this.life[i] <= 0) { this.pos[j + 1] = -1000; this.col.fill(0, c, c + 4); continue; }
       this.vel[j + 1] += this.grav[i] * dt;
-      for (let a = 0; a < 3; a++) { this.pos[j + a] += this.vel[j + a] * dt; this.col[j + a] = this.base[j + a] * k; }
+      if (this.drag[i] > 0) { const keep = Math.max(0, 1 - this.drag[i] * dt); this.vel[j] *= keep; this.vel[j + 1] *= keep; this.vel[j + 2] *= keep; }
+      for (let a = 0; a < 3; a++) { this.pos[j + a] += this.vel[j + a] * dt; this.col[c + a] = this.solid ? this.base[j + a] : this.base[j + a] * k; }
+      this.col[c + 3] = this.solid ? Math.min(1, k * 3) * this.opacity[i] : 1;
       if (this.pos[j + 1] < 0.05 && this.vel[j + 1] < 0) { this.pos[j + 1] = 0.05; this.vel[j + 1] *= -0.3; }
     }
     this.points.geometry.attributes.position.needsUpdate = true;
@@ -152,9 +180,9 @@ export class Rings {
 
   constructor(private scene: THREE.Scene) {}
 
-  pulse(x: number, y: number, z: number, color: number, to: number, dur = 0.5, from = 0.3) {
+  pulse(x: number, y: number, z: number, color: number, to: number, dur = 0.5, from = 0.3, hdr = FX_HDR) {
     const mesh = new THREE.Mesh(this.geo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, toneMapped: false }));
-    (mesh.material as THREE.MeshBasicMaterial).color.multiplyScalar(FX_HDR);
+    (mesh.material as THREE.MeshBasicMaterial).color.multiplyScalar(hdr);
     mesh.position.set(x, y, z);
     this.scene.add(mesh);
     this.rings.push({ mesh, age: 0, dur, from, to });
@@ -174,9 +202,9 @@ export class Rings {
 
 /** The arc a sword blow just cut: a crescent that sweeps across the player's front and fades. A small pool, reused. */
 export class Slashes {
-  private geo = new THREE.RingGeometry(0.95, 1.75, 14, 1, -Math.PI / 2 - 0.8, 1.6).rotateX(-Math.PI / 2); // arc centred on +z, lying flat
+  private geo = new THREE.RingGeometry(1.4, 1.8, 14, 1, -Math.PI / 2 - 0.8, 1.6).rotateX(-Math.PI / 2); // arc centred on +z, lying flat
   private pool: { root: THREE.Group; mat: THREE.MeshBasicMaterial; age: number; dur: number; from: number }[] = [];
-  private tint = new THREE.Color(0xbfd2ea).multiplyScalar(FX_HDR * 0.7);
+  private tint = new THREE.Color(0xbfd2ea).multiplyScalar(FX_HDR * 0.45);
 
   constructor(private scene: THREE.Scene) {}
 
@@ -207,7 +235,7 @@ export class Slashes {
       s.age += dt;
       const k = Math.min(1, s.age / s.dur);
       s.root.rotation.y = s.from - 2.2 * (1 - (1 - k) * (1 - k)); // fast out, easing off: the cut
-      s.mat.opacity = 0.6 * (1 - k) * (1 - k);
+      s.mat.opacity = 0.5 * (1 - k) * (1 - k);
     }
   }
 }
