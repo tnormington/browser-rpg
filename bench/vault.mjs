@@ -62,6 +62,15 @@ for (const [name, x, z] of [['stair', 0, -92], ['archive', -16, -112], ['sanctum
   }, [x, z]);
   await page.waitForTimeout(900); await shot(`room-${name}`);
 }
+// the dressing, looked at from where a player stands in each room (HOM-132): the stair's arches, the archive's shelves and lectern, the sanctum's collars and sigils
+for (const [name, x, z, yaw, dist, pitch] of [['dress-stair', 0, -88, 0, 9, 0.4], ['dress-stair-top', 0, -90, 0, 18, 1.3], ['dress-archive', -16, -106, 0, 9, 0.4], ['dress-archive-shelves', -22, -118, Math.PI, 9, 0.35], ['dress-sanctum', 16, -131, 0, 10, 0.4], ['dress-sanctum-stones', 8, -142, Math.PI / 2, 10, 0.4]]) {
+  await page.evaluate(([x, z, yaw, dist, pitch]) => {
+    const d = window.__debug, s = d.sim, p = s.player;
+    for (const e of s.enemies) { e.state = 'dead'; e.respawnIn = 1e9; e.deadFor = 99; }
+    p.hp = p.maxHp = 99999; p.x = 1980 + x; p.z = 8 + z; d.view.yaw = yaw; d.view.pitch = pitch; d.view.distance = dist;
+  }, [x, z, yaw, dist, pitch]);
+  await page.waitForTimeout(900); await shot(name);
+}
 // the stair from the corridor, the way a player walks in
 await page.evaluate(() => {
   const d = window.__debug, s = d.sim, p = s.player;

@@ -1,4 +1,4 @@
-﻿// Rendering only: reads GameState, never mutates it.
+// Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
@@ -169,7 +169,7 @@ const CAIRN = {
  */
 const VAULT = {
   floor: 0x26242f, floorAlt: 0x322f40, wall: new THREE.Color(0.8, 0.74, 1),
-  fog: new THREE.Color(0x09070f), light: { color: 0xa090ff, intensity: 120, distance: 22, y: 5 },
+  fog: new THREE.Color(0x09070f), light: { color: 0xa090ff, intensity: 120, distance: 24, y: 3.9 },
 };
 const FLOORS: Record<string, [number, number]> = { hollow: [P.caveFloor, P.caveFloorAlt], grotto: [GROTTO.floor, GROTTO.floorAlt], rotroot: [ROTROOT.floor, ROTROOT.floorAlt], cairnhold: [CAIRN.floor, CAIRN.floorAlt], vault: [VAULT.floor, VAULT.floorAlt] };
 /** Per-dungeon rock tint and air; the Hollow is the default and falls through. */
@@ -669,10 +669,16 @@ export class Renderer {
     const rnd = () => this.jitter(1700 + n++);
     const box = (w: number, h: number, d: number, x: number, y: number, z: number, ry = 0) => new THREE.BoxGeometry(w, h, d).rotateY(ry).translate(x, y, z);
     for (const { rect: r, name } of rooms) {
-      const l = new THREE.PointLight(VAULT.light.color, VAULT.light.intensity * (name === 'sanctum' ? 1.3 : 1), VAULT.light.distance);
       const cx = (r.x0 + r.x1) / 2;
-      l.position.set(cx, VAULT.light.y, (r.z0 + r.z1) / 2);
-      this.scene.add(l);
+      // lamps spaced along the room's long axis so the dressing against the walls is in reach of one: the stair and the archive take two, the sanctum one at its middle and one over each far corner
+      const lamps: [number, number][] = name === 'sealstair' ? [[cx, r.z0 + 5.25], [cx, r.z0 + 14.25]]
+        : name === 'archive' ? [0.25, 0.75].flatMap(fx => [0.2, 0.8].map(fz => [r.x0 + (r.x1 - r.x0) * fx, r.z0 + (r.z1 - r.z0) * fz] as [number, number]))
+        : [[cx, (r.z0 + r.z1) / 2], [r.x0 + 8, (r.z0 + r.z1) / 2], [r.x1 - 8, (r.z0 + r.z1) / 2]];
+      for (const [lx, lz] of lamps) { // the stair's hang lower and softer: its lintels are two metres off, and a lamp that near blows the cut stone to white
+        const l = new THREE.PointLight(VAULT.light.color, VAULT.light.intensity * (name === 'sanctum' ? 1.25 : name === 'sealstair' ? 0.6 : 1), VAULT.light.distance);
+        l.position.set(lx, name === 'sealstair' ? 3 : VAULT.light.y, lz);
+        this.scene.add(l);
+      }
       // the stair: pointed school arches across the way every few paces, each a pair of piers and a lintel with a rune keystone, and a low step-kerb down both walls
       if (name === 'sealstair') for (let z = r.z0 + 3; z < r.z1 - 2; z += 4.5) {
         for (const side of [1, -1]) cut.push(box(0.9, 4.4, 1, cx + side * 3, 2.2, z), box(1.3, 0.35, 1.3, cx + side * 3, 0.17, z), box(0.7, 0.8, 0.7, cx + side * 3, 4.8, z, Math.PI / 4));
@@ -706,7 +712,8 @@ export class Renderer {
       cut.push(new THREE.CylinderGeometry(o.r * 0.9, o.r * 1.15, 0.5, 8).translate(o.x, 0.25, o.z), new THREE.CylinderGeometry(o.r * 0.75, o.r * 0.75, 0.3, 8).translate(o.x, 3.2, o.z));
       rune.push(new THREE.OctahedronGeometry(0.3).translate(o.x, 4, o.z));
     }
-    const flat = (gs: THREE.BufferGeometry[]) => mergeGeometries(gs.map(g => g.index ? g.toNonIndexed() : g))!; // the octahedra are unindexed, the boxes are not\n    this.scene.add(mesh(flat(cut), 0x8a84ac, 'stone', 'both'), mesh(flat(paper), 0x8a7458, 'rock', 'cast'), mesh(flat(rune), 0xb8a8ff, 'glow', 'none'));
+    const flat = (gs: THREE.BufferGeometry[]) => mergeGeometries(gs.map(g => g.index ? g.toNonIndexed() : g))!; // the octahedra are unindexed, the boxes are not
+    this.scene.add(mesh(flat(cut), 0x8a84ac, 'stone', 'both'), mesh(flat(paper), 0x8a7458, 'rock', 'cast'), mesh(flat(rune), 0xb8a8ff, 'glow', 'none'));
   }
 
   /**
