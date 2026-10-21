@@ -376,11 +376,81 @@ function archmageVael(): Silhouette {
   };
 }
 
+// The Cairnwaste's living (sand, bleached bone, rag) and the Spire's (cut marble, dark academic cloth, violet light): HOM-123.
+const MARBLE = 0x8e8c9c, IRON = 0x2c2a34, SANDCLOTH = 0x9a8662, WRAP = 0x6a5a44, BLEACH = 0xc8c0a8, VOID = 0x1c1a2c;
+
+/**
+ * The Spire Warden, the head of the ruins and the last elite: the school's gaoler. He wears a broken column for a helm (a fluted drum with a jagged snapped top and one lit slit, the same
+ * stump the square is built round, so the town's centrepiece is walking), a fluted drum laid across each shoulder for a pauldron, a long dark tabard down to the shins with the sundering rune
+ * cut in it in offset halves, a cloak, and a ring of chain hanging off the belt. His skyline is a flat-topped pillar over broad shoulders: nothing else has a head taller than it is wide.
+ */
+function spireWarden(): Silhouette {
+  const sh = BRUTE.sh, head = BRUTE.head;
+  const helm = [put(new THREE.CylinderGeometry(0.46, 0.5, 1.5, 8).translate(0, 0.75, 0), 0, head - 0.95, 0.1), put(new THREE.CylinderGeometry(0.58, 0.58, 0.1, 8), 0, head - 0.9, 0.1),
+    ...[0, 1, 2, 3, 4].map(i => spike(Math.sin(i * 1.26) * 0.3, head + 0.55, 0.1 + Math.cos(i * 1.26) * 0.3, 0.18 + (i % 2) * 0.24, 0.08))];
+  const pauldrons = [1, -1].flatMap(s => [put(new THREE.CylinderGeometry(0.34, 0.34, 0.85, 8), s * 0.85, sh + 0.14, 0, 0, 0, Math.PI / 2 + s * 0.15), put(new THREE.CylinderGeometry(0.25, 0.25, 0.6, 8), s * 1.0, sh - 0.22, 0.05, 0, 0, Math.PI / 2 + s * 0.4)]);
+  const tabard = put(new THREE.BoxGeometry(0.62, 1.45, 0.06).translate(0, -0.72, 0), 0, sh + 0.1, 0.4), cloak = put(new THREE.ConeGeometry(0.85, 1.95, 6, 1, true).translate(0, -0.97, 0), 0, sh + 0.2, -0.3, 0.1);
+  const runes = [0, 1, 2].flatMap(i => [put(new THREE.BoxGeometry(0.05, 0.26, 0.03), -0.07, sh - 0.1 - i * 0.38, 0.45, 0, 0, 0.12), put(new THREE.BoxGeometry(0.05, 0.26, 0.03), 0.07, sh - 0.2 - i * 0.38, 0.45, 0, 0, -0.12)]);
+  return {
+    squash: [1.1, 1.0, 1.1], lean: 0.05,
+    layers: [{ color: MARBLE, parts: [...helm, ...pauldrons] }, { color: ROBE, parts: [tabard, cloak] }, { color: IRON, parts: hangers(0, BRUTE.belt + 0.1, 0.1, 0.72, 11, 0.85) },
+      { color: ARCANE, parts: [put(new THREE.BoxGeometry(0.4, 0.06, 0.03), 0, head - 0.4, 0.6), ...runes], lit: true }],
+    handLight: { color: ARCANE, size: 0.28 },
+  };
+}
+
+/** Sand Ogre: a scavenger who carries his house. A frame of two bone poles and a crossbar stands up off his back above the head, hung with bundles of hide, a skull and dangling bones; a sun-wrapped head-cloth with a tail, tusks, and a hunch under the weight. */
+function sandOgre(): Silhouette {
+  const sh = BRUTE.sh, head = BRUTE.head;
+  const frame = [1, -1].map(s => stick(s * 0.42, sh - 1.0, -0.58, 2.6, 0.06, 0.08)).concat([put(new THREE.BoxGeometry(1.25, 0.09, 0.09), 0, sh + 1.2, -0.66), put(new THREE.IcosahedronGeometry(0.15, 0), 0.3, sh + 0.78, -0.7), ...hangers(0, sh + 1.15, -0.66, 0.5, 6, 0.65)]);
+  const bundles = [lump(0, sh + 0.1, -0.72, 0.36, 0.9), lump(0.3, sh + 0.72, -0.7, 0.2), lump(-0.28, sh + 0.6, -0.7, 0.17), lump(0, sh - 0.45, -0.68, 0.2, 1.1)];
+  const wrap = [put(new THREE.CylinderGeometry(0.36, 0.4, 0.3, 7), 0, head - 0.12, 0), put(new THREE.BoxGeometry(0.2, 0.9, 0.04).translate(0, -0.45, 0), 0.05, head - 0.05, -0.34, 0.25)];
+  const tusks = [1, -1].map(s => spike(s * 0.17, head - 0.62, 0.3, 0.42, 0.05, -0.5));
+  return { squash: [1.12, 0.96, 1.1], lean: 0.2, layers: [{ color: BLEACH, parts: [...frame, ...tusks] }, { color: WRAP, parts: bundles }, { color: SANDCLOTH, parts: wrap }] };
+}
+
+/** Waste Reaver: a raider in rag. A long scythe slung across the back with its blade hooked over the head (a skyline no other hexer has), a scarf streaming off the hood, and bone spurs on the shoulders. */
+function wasteReaver(): Silhouette {
+  const sh = HEXER.sh, hat = HEXER.hat, R = 0.7, topX = -0.55 + Math.sin(0.3) * 2.5, topY = 0.15 + Math.cos(0.3) * 2.5;
+  const shaft = stick(-0.55, 0.15, -0.42, 2.5, 0.04, 0, -0.3);
+  const blade = put(new THREE.TorusGeometry(R, 0.05, 4, 12, 1.9), topX + R, topY, -0.42, 0, 0, Math.PI - 1.9, 1, 1, 0.45);
+  const scarf = [put(new THREE.BoxGeometry(0.2, 0.05, 1.5).translate(0, 0, -0.75), 0.05, hat - 0.38, -0.18, 0.25), put(new THREE.BoxGeometry(0.16, 0.05, 1.1).translate(0, 0, -0.55), -0.1, hat - 0.42, -0.18, 0.4, 0.2)];
+  const spurs = [1, -1].map(s => spike(s * 0.5, sh + 0.08, 0, 0.45, 0.07, 0, s * 0.6));
+  return { squash: [1.0, 1.04, 1.0], lean: 0.12, layers: [{ color: BARK, parts: [shaft] }, { color: RUST, parts: [blade] }, { color: SANDCLOTH, parts: scarf }, { color: BONE, parts: spurs }, { color: EYE, parts: eyes(hat - 0.2, 0.22, 0.08, 0.045), lit: true }] };
+}
+
+/** Spire Adept: a student of the school, gone on. A stiff pale collar and epaulettes over dark academic cloth, an open tome hanging in the air at the hip with its pages lit, and two loose pages circling the shoulders. */
+function spireAdept(): Silhouette {
+  const sh = HEXER.sh;
+  const collar = [put(new THREE.TorusGeometry(0.4, 0.07, 4, 8), 0, sh + 0.04, 0, Math.PI / 2), ...[1, -1].map(s => put(new THREE.BoxGeometry(0.5, 0.1, 0.4), s * 0.52, sh + 0.04, 0, 0, 0, s * 0.3))];
+  const cape = put(new THREE.ConeGeometry(0.8, 0.9, 7, 1, true).translate(0, -0.45, 0), 0, sh + 0.08, -0.1);
+  const cover = [put(new THREE.BoxGeometry(0.3, 0.04, 0.42), -0.74, sh - 0.35, 0.42, 0.1, 0.5, -0.5), put(new THREE.BoxGeometry(0.3, 0.04, 0.42), -0.48, sh - 0.35, 0.5, 0.1, 0.5, 0.5)];
+  const pages = [put(new THREE.BoxGeometry(0.26, 0.36, 0.02), 0.7, sh + 0.55, 0.1, 0.2, 0.6, 0.3), put(new THREE.BoxGeometry(0.22, 0.3, 0.02), -0.45, sh + 0.85, -0.3, 0.1, 2.4, -0.3), put(new THREE.BoxGeometry(0.2, 0.28, 0.02), 0.2, sh + 1.0, -0.45, 0.3, 0.2, 0.5)];
+  return { layers: [{ color: MARBLE, parts: collar }, { color: ROBE, parts: [cape, ...cover] }, { color: ARCANE, parts: [...pages, put(new THREE.BoxGeometry(0.24, 0.03, 0.34), -0.61, sh - 0.32, 0.46)], lit: true }], handLight: { color: ARCANE, size: 0.16 } };
+}
+
+/** Dune Hound: the wolf stood up on its toes with two enormous ears, a ridge of bleached bristle down the spine, wrapped forelegs and a tufted tail. Tall ears are the one thing a pack of six is told by from across a dune. */
+function duneHound(): Silhouette {
+  const ears = [1, -1].map(s => spike(s * 0.11, 0.98, 0.78, 0.62, 0.12, 0.1, s * 0.3));
+  const ridge = spineRow(0.62, -0.55, 0.84, 8, 0.3, 0.06, 0, 0.6);
+  const wraps = [[0.18, 0.44], [-0.18, 0.44]].map(([x, z]) => put(new THREE.CylinderGeometry(0.115, 0.115, 0.14, 5), x, 0.32, z));
+  return { squash: [0.82, 1.08, 1.18], layers: [{ color: BLEACH, parts: [...ears, ...ridge] }, { color: WRAP, parts: [...wraps, lump(0, 0.6, -0.9, 0.08, 1.6)] }, { color: EYE, parts: eyes(0.98, 0.95, 0.09, 0.05), lit: true }] };
+}
+
+/** Void Hound: the wolf coming apart. A stream of loose violet shards trails off the hindquarters like the tail of a comet, a crescent rift burns on each flank, and a crest of black spikes runs the spine. A pack is a row of violet streaks at the dark's edge. */
+function voidHound(): Silhouette {
+  const crest = spineRow(0.62, -0.5, 0.84, 7, 0.34, 0.06, 0, 0.5);
+  const shards = Array.from({ length: 8 }, (_, i) => put(new THREE.OctahedronGeometry(0.07 + (i % 3) * 0.02).scale(0.6, 1.5, 0.6), Math.sin(i * 2.1) * 0.18, 0.66 + (i % 3) * 0.1, -0.74 - i * 0.15, 0, i, 0.3 * (i % 2 ? 1 : -1)));
+  const rifts = [1, -1].map(s => put(new THREE.TorusGeometry(0.26, 0.03, 4, 8, Math.PI * 1.1), s * 0.28, 0.58, 0.05, 0, Math.PI / 2, 0.6));
+  return { squash: [0.85, 1.05, 1.2], layers: [{ color: VOID, parts: crest }, { color: ARCANE, parts: [...shards, ...rifts, ...eyes(0.98, 0.95, 0.09, 0.055)], lit: true }] };
+}
+
 /** Enemy type id -> its silhouette. A type not listed draws as its rig, tinted and scaled. */
 export const SILHOUETTES: Record<string, () => Silhouette> = {
   barrow_wight: barrowWight, grave_hound: graveHound, cairn_brute: cairnBrute, barrow_lord: barrowLord, cairn_king: cairnKing, hollow_knight: hollowKnight,
   moor_ram: moorRam, moor_raider: moorRaider, ridge_ogre: ridgeOgre, stonehorn,
   ashen_colossus: ashenColossus, rune_golem: runeGolem, archmage_vael: archmageVael,
+  spire_warden: spireWarden, sand_ogre: sandOgre, waste_reaver: wasteReaver, spire_adept: spireAdept, dune_hound: duneHound, void_hound: voidHound,
   shore_crab: crab,
   fen_stalker: fenStalker, blight_stag: blightStag,
   thornback: () => thornback(false), elder_thornback: () => thornback(true),

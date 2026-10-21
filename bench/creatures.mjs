@@ -32,6 +32,9 @@ const WAVE = [
   ['stonehorn', 'boar', 2.2, 0x7a7a74],
   // HOM-109: wave 4's three rigs (bible 3.4), brute x1.5 / brute / hexer x1.6
   ['ashen_colossus', 'brute', 1.5, 0x4a4642], ['rune_golem', 'brute', 1.0, 0x5a6478], ['archmage_vael', 'hexer', 1.6, 0x3a3058],
+  // HOM-123: the Cairnwaste and the Spire's rigs that were tints (the sim has them; the rows here are only a fallback)
+  ['spire_warden', 'brute', 1.5, 0x6a5a8a], ['sand_ogre', 'brute', 1.25, 0x9a8460], ['waste_reaver', 'hexer', 1.05, 0x8a7458], ['spire_adept', 'hexer', 1.05, 0x5a4a86],
+  ['dune_hound', 'wolf', 1.15, 0xa89468], ['void_hound', 'wolf', 1.15, 0x3a3a5a],
 ];
 const want = process.argv.slice(2);
 await page.evaluate(async WAVE => {
