@@ -179,11 +179,37 @@ addEventListener('mouseup', e => {
     }
   }
   held.delete(e.button);
+  if (!held.size) unlockAfterDrag(); // the second button of a two-button drag keeps the cursor away until it too comes up
+});
+/**
+ * A swing of the camera takes the cursor away: the browser hides it and pins it where the drag began, so a
+ * long swing cannot run off the edge of the window and drop a click on whatever is behind it, and the cursor
+ * is back where you left it when the button comes up. Only once the press is past the slop and is really a
+ * drag — a click that picks something never locks, so it never flashes the cursor away. orbit() reads
+ * movementX/Y, which keeps coming while locked; clientX/Y freeze, which only pins dragMoved above the slop.
+ */
+let dragLocked = false;
+function lockForDrag() {
+  if (dragLocked) return;
+  dragLocked = true;
+  // A refusal (no user activation left, Esc too recently) is not worth saying anything about: the drag still swings the camera, with the cursor showing.
+  Promise.resolve(canvas.requestPointerLock() as unknown).catch(() => { dragLocked = false; });
+}
+function unlockAfterDrag() {
+  if (!dragLocked) return;
+  dragLocked = false; // before the exit, so the change below knows this one was ours
+  document.exitPointerLock();
+}
+// Esc gives the cursor back without a mouseup. Let go of the gesture with it, or the camera would keep swinging under a free cursor.
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement || !dragLocked) return;
+  dragLocked = false;
+  held.clear();
 });
 addEventListener('mousemove', e => {
   if (!held.size) return;
   dragMoved = Math.max(dragMoved, Math.hypot(e.clientX - pressX, e.clientY - pressY)); // a high-water mark: a drag that comes back to where it started is still a drag
-  if (dragMoved >= DRAG_SLOP_PX) view.orbit(e.movementX, e.movementY);
+  if (dragMoved >= DRAG_SLOP_PX) { lockForDrag(); view.orbit(e.movementX, e.movementY); }
 });
 canvas.addEventListener('wheel', e => { e.preventDefault(); view.zoom(e.deltaY); }, { passive: false });
 
