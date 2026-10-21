@@ -40,6 +40,19 @@ export const PORTRAIT_STYLE = 'head and shoulders character portrait, hand-paint
   + 'facing the viewer, calm steady expression, weathered lived-in face, shoulders squared, '
   + BACKDROP + ', nothing else in frame, high detail, 2D game character portrait';
 
+/**
+ * Appended to every enemy prompt (HOM-144). The same paint, palette and light as an NPC's portrait, because the
+ * two are the same kind of picture - a face in a frame - and the target frame sits beside the player's.
+ *
+ * What it drops is the human wording: "calm steady expression" and "weathered lived-in face" on a boar or a golem
+ * come back as a person wearing one as a mask. What it asks for instead is the head itself, turned on the viewer
+ * and filling the frame, because half of this set has no shoulders worth painting.
+ */
+export const ENEMY_STYLE = 'head and shoulders creature portrait, hand-painted fantasy game art, thick painterly brushwork, '
+  + 'muted earthy palette with cold highlights, strong warm rim light from the upper left, deep shadow on the lower right, '
+  + 'one creature alone, its head turned towards the viewer and filling the frame, cropped at the shoulders, menacing, '
+  + BACKDROP + ', nothing else in frame, high detail, 2D game character portrait';
+
 export const NEGATIVE = 'text, letters, numbers, watermark, signature, logo, frame, border, ui overlay, '
   + 'multiple objects, duplicate, two of the same object, pair of identical copies, collage, grid, sprite sheet, '
   + 'photograph, 3d render, plastic, blurry, lowres, jpeg artifacts, '
@@ -342,6 +355,103 @@ export const PORTRAIT_SUBJECTS = {
   flight_spire: 'Kestrel Duskwing, a hawk-nosed human man in his thirties, a flight master in deep blue flying leathers with silver buckles',
 };
 
+// --- the enemies -------------------------------------------------------------------------------
+/**
+ * One phrase per enemy type id in ENEMY_TYPES (src/sim/data.ts), for the face in the target frame (HOM-144).
+ *
+ * Each is painted as the creature its name promises, not as the rig that currently stands in for it: the world
+ * draws a Hollow Ogre with the brute's viking and a Tide Hag with the hexer's wizard, scaled and tinted, because
+ * section 3.4 of the bible buys no new rigs until wave 4. The portrait is where the fiction is already affordable,
+ * so the Ogre is an ogre here. Each one does keep its row's tint, so the picture and the thing on screen are at
+ * least the same colour.
+ *
+ * Kept to the head and what is on it - hide, horn, scar, what burns in the eyes - because the style suffix frames
+ * it, and anything further out (a weapon, a banner, the ground it stands on) is a second subject the backdrop
+ * cannot survive.
+ */
+export const ENEMY_SUBJECTS = {
+  // Hale's own ground, and the Hollow under it
+  boar: 'a wild forest boar, coarse brown bristles, curved yellow tusks, small black eyes, snout raised',
+  wolf: 'a dire wolf, thick grey pelt, ears laid back, lips drawn off long white fangs',
+  pup: 'a wolf pup, soft pale grey fur, ears too large for its head, teeth just bared',
+  brute: 'a cave brute, a heavy-browed ogreish man with a flat broken nose, matted red-brown hair and beard, a crude iron ring through one ear',
+  hexer: 'a cave hexer, a gaunt human cultist in a deep crimson hood, the face half in shadow, cold green light in the eyes',
+  ravager: 'a cave ravager, a lean slate-blue wolf gone hairless across the muzzle, blind white eyes, jaws open',
+  archer: 'a gloom archer, a hooded figure in dark blue-grey wrappings, a drawn bowstring across the lower face, one cold pale eye uncovered',
+  seer: 'a cave seer, a hairless violet-skinned seer with no eyes at all, a third eye burning cold purple in the brow, a thin bone circlet',
+  ogre: 'a hollow ogre, a massive slate-grey ogre with a jutting lower jaw and stubby tusks, small sunken eyes, a scarred bald crown',
+  warden: 'a hollow warden, a colossal blue-grey stone-skinned ogre, a cracked slab of a brow, cold pale light in the eye sockets, iron bands over the shoulders',
+
+  // the Greywater Road
+  marsh_hog: 'a marsh hog, a heavy olive-green boar caked with dried mud, broken tusks, bristles matted flat',
+  road_wolf: 'a greywater wolf, a rangy road wolf with a wet grey-brown coat, ears flat, pale hungry eyes',
+  footpad: 'a footpad, a lean human highway robber in a tan hood with a cloth mask drawn over the mouth, narrow watchful eyes',
+  toll_captain: 'a toll captain, a thick-necked human brigand in a battered brown leather coat and an iron half-helm, broken nose, braided beard',
+  old_grey: 'Old Grey, an ancient white wolf grown huge, scarred muzzle, one eye milky and blind, breath steaming',
+
+  // the Saltmarrow Strand and the Drowned Grotto
+  // A crab has no head and shoulders to crop to, so asked for one the model paints the whole animal on lit
+  // sand instead. Naming the shell as the thing that fills the frame is what keeps it a face.
+  shore_crab: 'a shore crab seen face on, a pitted red-orange shell filling the frame, two black eye stalks raised over it, mouthparts working',
+  drowned_sailor: 'a drowned sailor, a bloated teal-grey drowned man in a rotted oilskin collar, blind white eyes, weed in his hair and barnacles along his jaw',
+  tide_hag: 'a tide hag, a green-skinned sea hag with lank wet hair, webbed ears, a mouth of thin needle teeth, brine running off her chin',
+  barnacle_ogre: 'a barnacle ogre, a huge blue-green ogre whose hide is crusted over with barnacles and shell, kelp hanging from his tusks',
+  gutterhook: 'Gutterhook, a monstrous violet-grey boar-thing, one hooked tusk curling up past its eye, hide scarred white with old cuts',
+  captain_marrow: 'Captain Marrow, a drowned sea captain, waterlogged blue-grey skin under a rotted tricorne hat, one eye socket empty, barnacles along his jaw',
+
+  // the Dunmere Fens
+  fen_stalker: 'a fen stalker, a grey-green marsh wolf, wet fur plastered to a narrow skull, pale yellow eyes, reeds caught behind the ears',
+  // The hardest one in the set. "Swamp light" was painted as a place for the light to come from, and the flood
+  // that flattens the backdrop cannot get past a lit pixel; with that gone, "a hood of woven reeds" was painted
+  // as the reed bed instead - pale stalks standing the whole height of the frame, behind her and over her. She
+  // wears cloth now, and nothing she is wearing is made of anything that grows out of the ground.
+  bog_witch: 'a bog witch, a green-grey marsh witch in a ragged dark hood, lank wet hair under it, a long hooked nose, one clouded eye, deep lines about the mouth',
+  mire_troll: 'a mire troll, a lanky moss-green troll with a long drooping nose and small deep eyes, lichen growing across the scalp',
+  bogfather: 'the Bogfather, a vast dark green bog troll, a slab of a face half sunk under weed and silt, two broken tusks, black water running out of his beard',
+  mother_mire: 'Mother Mire, a towering grey-green bog hag of a troll, a wide flat face under a crown of dead reeds, pale blind eyes',
+
+  // the Thornwood and the Rotroot
+  thornback: 'a thornback boar, a dark-bristled boar with a ridge of black thorns standing up along its brow, tusks splintered',
+  blight_stag: 'a blight stag, a gaunt brown stag with antlers gone black and blistered, sap-dark runnels down its face, dull amber eyes',
+  rotwood_cultist: 'a rotwood cultist, a human cultist in a rust-red hood, a mask of woven bark and briar over the face, dark sap on the chin',
+  thorn_warden: 'a thorn warden, a huge green-black warden grown out of briar and heartwood, a knotted bark face, thorns standing off its shoulders',
+  elder_thornback: 'an elder thornback, a colossal grey-brown boar, tusks as long as a forearm, a mane of black thorns, one eye scarred shut',
+  rotroot_mother: 'the Rotroot Mother, a vast green-black root-grown hag, a face of split bark and pale fungus, long roots hanging where hair would be',
+
+  // the Barrowdowns and the Cairn Hold
+  barrow_wight: 'a barrow wight, a dry grey-skinned undead lord in a rotted grave shroud, shrunken lips off long teeth, cold green light in the eye sockets',
+  grave_hound: 'a grave hound, a bone-pale hound with its hide drawn tight to the skull, the bones of the neck showing, dull grey eyes',
+  cairn_brute: 'a cairn brute, a stone-grey brute of a man with a flat slab of a face, moss in his beard, a cracked iron collar',
+  barrow_lord: 'a barrow lord, an undead warlord in a tarnished blue-grey helm of old iron, a dry withered face beneath it, cold light in the eyes',
+  hollow_knight: 'the Hollow Knight, an empty suit of pale white-grey plate, the visor raised on nothing but cold white light inside',
+  cairn_king: 'the Cairn King, an ancient undead king in a plain heavy crown of cold grey iron, a dry grey face, barrow dust in the hollows of it',
+
+  // Highmoor's moor
+  moor_ram: 'a moor ram, a shaggy tan moorland ram with heavy curled horns, a square black pupil in a yellow eye',
+  moor_raider: 'a moor raider, a windburnt human raider in a hooded sheepskin cloak, a woad stripe across the eyes, tangled fair beard',
+  ridge_ogre: 'a ridge ogre, a tan-brown highland ogre with a heavy jaw and chipped tusks, a sheep skull tied at the shoulder',
+  stonehorn: 'Stonehorn, an immense grey-brown ram, stone-grey horns as thick as tree roots, chipped and banded with iron',
+
+  // the Cairnwaste
+  // "sand", "dust" and "desert" are the same mistake as a named light: every one of them is a place, and the
+  // model paints the place behind the head. Both of these say the colour instead and name no ground at all.
+  waste_reaver: 'a waste reaver, a lean hard-faced human raider, weather-cracked brown skin, a tattered bleached cloth wrap wound round the head and over the mouth, pale eyes',
+  dune_hound: 'a dune hound, a lean pale tan hound with huge upright ears and a long narrow muzzle, coat bleached almost white, dark-rimmed eyes',
+  sand_ogre: 'a sand ogre, a heavy tan ogre with sand-scoured hide, a broad flat nose and small deep-set eyes, cloth wound over the head',
+  ashen_colossus: 'an ashen colossus, a giant of cooled dark grey ash and slag, hot orange light burning in the cracks of its face, no eyes at all',
+
+  // the Sundered Spire and the Vault beneath it
+  spire_adept: 'a spire adept, a human adept in a deep violet hood with silver embroidery, cold blue arcane light under the brow',
+  // "a hound" alone is a hunting dog on every roll, collar and all: what makes this one a void hound is its own
+  // darkness, so the coat is said twice and the eyes are the only lit thing on it.
+  void_hound: 'a void hound, a lean black-blue hound with no sheen on its coat at all, the dark swallowing its outline, cold white starlight burning in both eyes, jaws parted',
+  // "a blank carved face with no mouth" came back an orc's face in stone-blue: the model hears "face" and paints
+  // one. Naming the planes and the cuts instead, and never the word face, is what leaves it a construct.
+  rune_golem: 'a rune golem, a head hewn from slate-blue stone, flat chiselled planes where features would be, no mouth and no nose, cold white light burning in two cut eye slots and in the channels across its brow',
+  spire_warden: 'a spire warden, a towering warden of violet-grey stone and iron, a faceless helm of a head, cold violet light in its seams',
+  archmage_vael: 'Archmage Vael, a gaunt human archmage in violet robes, a shaved head marked with cold silver sigils, eyes burning white, arcane light across his face',
+};
+
 /**
  * A handful of subjects come out wrong on the roll their own id gives them - two swords where the
  * prompt asks for one, a portrait painted down to the waist while the rest are head and shoulders -
@@ -373,4 +483,11 @@ export const REROLLS: Record<string, number> = {
   'talents/opportunist': 1,
   'talents/ruin': 1,
   'talents/stalwart': 1,
+  // Light-on-dark again, and worse here than anywhere: these three came back on pale sand or pale sky, so the
+  // flood that flattens the backdrop never left the border and the crop found no subject to square about.
+  'enemies/bog_witch': 3,
+  'enemies/dune_hound': 1,
+  'enemies/waste_reaver': 1,
+  // A whole boar standing on the ground rather than the head the style asks for, twice over.
+  'enemies/thornback': 2,
 };

@@ -5,7 +5,7 @@
 // Run with `npm run verify`.
 import { existsSync } from 'node:fs';
 import { ITEMS } from './sim/items';
-import { ABILITIES, abilityArtId } from './sim/data';
+import { ABILITIES, abilityArtId, ENEMY_TYPES } from './sim/data';
 import { TALENTS } from './sim/talents';
 import { NPCS } from './sim/quest';
 import { VENDORS } from './sim/shop';
@@ -24,5 +24,7 @@ for (const t of TALENTS) want(`assets/art/talents/${t.id}.webp`, t.name);
 for (const n of NPCS) want(`assets/art/portraits/${n.id}.webp`, n.name);
 for (const v of VENDORS) want(`assets/art/portraits/vendor_${v.id}.webp`, v.name);
 for (const m of FLIGHT_MASTERS) want(`assets/art/portraits/flight_${m.id}.webp`, m.name);
+// the face in the target frame, by enemy type id (HOM-144)
+for (const [id, def] of Object.entries(ENEMY_TYPES)) want(`assets/art/enemies/${id}.webp`, def.name);
 
-console.log(`All ${checks} items, abilities, talents and NPCs have their art on disk.`);
+console.log(`All ${checks} items, abilities, talents, NPCs and enemies have their art on disk.`);

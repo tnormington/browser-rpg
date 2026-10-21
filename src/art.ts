@@ -1,7 +1,7 @@
 // The generated art (HOM-135), looked up by the id the game already knows each thing by: assets/art/items/<item id>.webp
 // for a thumbnail, assets/art/abilities/<ability art id>.webp for an ability icon, assets/art/talents/<talent id>.webp
-// for a talent node, assets/art/portraits/<npc id>.webp for a face, assets/art/cursors/<cursor id>.png for the mouse
-// pointer. Rendering only: nothing here touches the sim.
+// for a talent node, assets/art/portraits/<npc id>.webp for a face, assets/art/enemies/<enemy type>.webp for the face in
+// the target frame, assets/art/cursors/<cursor id>.png for the mouse pointer. Rendering only: nothing here touches the sim.
 //
 // Portrait ids follow the three sets of NPCs, which share ids with each other: a quest giver is their plain id ('hale' is
 // Warden Hale), a merchant or trainer is 'vendor_' + the vendor id, a flight master is 'flight_' + their town. A villager
@@ -17,6 +17,7 @@ const ITEM_ART = import.meta.glob('../assets/art/items/*.webp', { query: '?url',
 const ABILITY_ART = import.meta.glob('../assets/art/abilities/*.webp', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 const TALENT_ART = import.meta.glob('../assets/art/talents/*.webp', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 const PORTRAIT_ART = import.meta.glob('../assets/art/portraits/*.webp', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const ENEMY_ART = import.meta.glob('../assets/art/enemies/*.webp', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 // A cursor is the one piece of art that is not a webp on charcoal: it is cut out and worn over the world, so it is a
 // PNG for the alpha, which is also the one image format every browser takes in a `cursor` rule.
 const CURSOR_ART = import.meta.glob('../assets/art/cursors/*.png', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
@@ -27,6 +28,8 @@ export const abilityArt = (id: string): string | null => ABILITY_ART[`../assets/
 /** A talent node by its id in sim/talents.ts. Its own picture, not the ability a capstone hands over. */
 export const talentArt = (id: string): string | null => TALENT_ART[`../assets/art/talents/${id}.webp`] ?? null;
 export const portraitArt = (id: string): string | null => PORTRAIT_ART[`../assets/art/portraits/${id}.webp`] ?? null;
+/** The face in the target frame, by the enemy's type id in sim/data.ts - not its spawn id, which is one of many of that type. */
+export const enemyArt = (type: string): string | null => ENEMY_ART[`../assets/art/enemies/${type}.webp`] ?? null;
 
 /**
  * A whole CSS `cursor` value for a cursor id (cursor.ts): the picture, its hotspot, and the system cursor to fall
@@ -112,7 +115,11 @@ export function faceRow(panel: HTMLElement): { face: HTMLElement; body: HTMLElem
 
 /** Whose face a panel is wearing now. An NPC with no portrait leaves the panel with no face, not an empty box. */
 export function setFace(face: HTMLElement, id: string) {
-  const url = portraitArt(id);
+  setFaceArt(face, portraitArt(id));
+}
+
+/** The same, for a face that is not an NPC's: the enemy in the target frame (enemyArt). Nothing to show hides the box. */
+export function setFaceArt(face: HTMLElement, url: string | null) {
   paintArt(face, url);
   face.style.display = url ? 'block' : 'none';
 }

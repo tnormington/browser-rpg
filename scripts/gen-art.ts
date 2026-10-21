@@ -1,4 +1,4 @@
-// Draws every item thumbnail, every ability and talent icon and every NPC portrait on the Forge image generator running on this PC (HOM-135).
+// Draws every item thumbnail, every ability and talent icon, every NPC portrait and every enemy's face on the Forge image generator running on this PC (HOM-135, HOM-144).
 //
 //   npx tsx scripts/gen-art.ts                       everything that is not drawn yet
 //   npx tsx scripts/gen-art.ts --force               redraw everything
@@ -25,12 +25,12 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { acquireGpuSlot } from '../bench/browser.mjs';
 import { ITEMS } from '../src/sim/items';
-import { ABILITIES, abilityArtId } from '../src/sim/data';
+import { ABILITIES, abilityArtId, ENEMY_TYPES } from '../src/sim/data';
 import { TALENTS } from '../src/sim/talents';
 import { NPCS } from '../src/sim/quest';
 import { VENDORS } from '../src/sim/shop';
 import { FLIGHT_MASTERS } from '../src/sim/flight';
-import { ABILITY_STYLE, ABILITY_SUBJECTS, ITEM_STYLE, ITEM_SUBJECTS, NEGATIVE, PORTRAIT_STYLE, PORTRAIT_SUBJECTS, REROLLS, TALENT_SUBJECTS } from './art-subjects';
+import { ABILITY_STYLE, ABILITY_SUBJECTS, ENEMY_STYLE, ENEMY_SUBJECTS, ITEM_STYLE, ITEM_SUBJECTS, NEGATIVE, PORTRAIT_STYLE, PORTRAIT_SUBJECTS, REROLLS, TALENT_SUBJECTS } from './art-subjects';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CACHE = join(ROOT, '.art-cache');
@@ -53,6 +53,10 @@ const KINDS = {
   // read side by side when a capstone hands its ability over.
   talents: { subjects: TALENT_SUBJECTS as Record<string, string>, style: ABILITY_STYLE, size: 192, fill: 0.84 },
   portraits: { subjects: PORTRAIT_SUBJECTS as Record<string, string>, style: PORTRAIT_STYLE, size: 320, fill: 0.96 },
+  // An enemy's face is framed like an NPC's and cut smaller: it is only ever seen in the 56px box of the target
+  // frame, where 320 would be five times what the box can show and five times the weight of a set three times
+  // the size of the portraits.
+  enemies: { subjects: ENEMY_SUBJECTS as Record<string, string>, style: ENEMY_STYLE, size: 192, fill: 0.96 },
 };
 type Kind = keyof typeof KINDS;
 const KIND_NAMES = Object.keys(KINDS) as Kind[];
@@ -92,6 +96,8 @@ function checkCoverage() {
     ...Object.keys(TALENT_SUBJECTS).filter(id => !talentIds.includes(id)).map(id => `subject ${id} is not a talent in src/sim/talents.ts`),
     ...portraitIds.filter(id => !PORTRAIT_SUBJECTS[id as keyof typeof PORTRAIT_SUBJECTS]).map(id => `npc ${id} has no portrait subject`),
     ...Object.keys(PORTRAIT_SUBJECTS).filter(id => !portraitIds.includes(id)).map(id => `portrait ${id} is nobody in the game`),
+    ...Object.keys(ENEMY_TYPES).filter(id => !ENEMY_SUBJECTS[id as keyof typeof ENEMY_SUBJECTS]).map(id => `enemy ${id} has no subject in scripts/art-subjects.ts`),
+    ...Object.keys(ENEMY_SUBJECTS).filter(id => !ENEMY_TYPES[id]).map(id => `subject ${id} is not an enemy in src/sim/data.ts`),
     // A reroll key that matches no subject is a silent no-op: the picture it was meant to fix stays
     // on the roll that was wrong.
     ...Object.keys(REROLLS).filter(key => {

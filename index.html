@@ -17,7 +17,8 @@
              .rail     left column, top to just above the swing bar: .tracker, then .msglog, as flex items of one box. The log takes what the tracker leaves and scrolls in it.
              .dock     the open middle: from the rail to the minimap, from the top gutter to --stack above the frames. Every .panel but the help is a flex item of it, so a panel is bounded
                        by it and two panels cannot overlap. Where they do not all fit across, dock.ts docks the HUD (.hud.docked: the rail steps aside) and then shuts the oldest.
-             .frame    the unit frames, above the action bar. The player's is centred on the screen, or pushed right of the rail where the window is too narrow for both. Buffs and the
+             .frame    the unit frames, above the action bar. The target's wears the enemy's face left of its bars, so it is wider than the player's, which is centred on the
+                       screen, or pushed right of the rail where the window is too narrow for both. Buffs and the
                        food wait hang above the frame, inside the --stack gap.
              .actionbar, .minimap, .menubar, .xp, .swing  fixed to their edges.
      CLASSES .panel     a window: iron chrome, a child of the dock, bounded by it, scrolls inside itself, its .ptitle row stays put. --chrome-edge tints its border (station, vendor).
@@ -27,7 +28,7 @@
              .btn       every button. + .pri (the action you came for: Make, Buy, Learn)  + .sm  + .block (full width, left)  + .off (cannot be used now)
              .chrome    iron chrome for a fixed surface (unit frame, tracker).  .pop  the same for a floating layer (tooltip, context menu, help)
              .bar       a gauge: set --bar-h and --fill (a token below); .fill moves, .label sits on it; .thin is the slim world-space gauge
-             .art       generated art worn as an element's face (an item's thumbnail on a slot, an NPC's portrait in a .face); .facerow is a panel's portrait beside its .facebody
+             .art       generated art worn as an element's face (an item's thumbnail on a slot, an NPC's or the target enemy's portrait in a .face); .facerow is a portrait beside its .facebody
      The legacy hook names (.rbtn .mbtn .psort .dopt) stay on the markup for the benches; they carry no style of their own.
      Game-meaning colours stay literal where they carry meaning: the bar fills (--fill-*), floater and log colours, banner and hurt glows, tier colours (from the sim). */
 :root{
@@ -85,6 +86,12 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .frame{position:absolute;bottom:var(--frame-bottom);width:var(--fw);box-sizing:content-box;padding:var(--sp-3);display:grid;grid-template-columns:1fr auto;column-gap:var(--sp-3);align-items:baseline}
 .frame>*{grid-column:1/-1}
 .frame.player{left:var(--frame-l)}.frame.target{left:calc(var(--frame-l) + var(--ftotal) + var(--sp-6));display:none;--chrome-edge:var(--blood-dark)}
+/* the target's face, left of its name and bars (HOM-144). The frame is widened by exactly the face and its gap, so the bars stay the
+   player's length rather than being shortened by the picture; --tface is also the frame's height, which stops it jumping when a cast bar
+   comes and goes under a name that is only two lines without one. */
+.frame.target{--tface:56px;width:calc(var(--fw) + var(--tface) + var(--sp-5))}
+.frame.target .facerow{gap:var(--sp-5);margin-bottom:0;align-items:center}
+.frame.target .face{width:var(--tface);height:var(--tface)}
 .frame .bar{--bar-h:16px;margin-top:var(--sp-2)}.frame .energy,.frame .enemycast{--bar-h:14px}
 .minimap{position:absolute;top:var(--gutter);right:var(--gutter);width:140px;height:140px;border-radius:50%;background:var(--iron-solid);border:2px solid var(--edge);box-shadow:var(--lift-1);overflow:hidden}
 .minimap canvas{display:block;width:140px;height:140px}

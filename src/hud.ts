@@ -32,7 +32,7 @@ import type { AdminAction } from './sim/admin';
 import { SpellbookUi } from './spellbook-ui';
 import { Minimap } from './minimap';
 import { DockWindow, HudWindow, el, dragData, parseDrag } from './dom';
-import { abilityArt, itemArt, paintArt, preloadItemArt } from './art';
+import { abilityArt, enemyArt, faceRow, itemArt, paintArt, preloadItemArt, setFaceArt } from './art';
 import { Dock } from './dock';
 import { loadBar, loadBarKeys, saveBar, saveBarKeys } from './storage';
 import { BarEntry, DEFAULT_KEYS, barWorthy, bindKey, bindRefusal, keyLabel, sameEntry, sanitizeBar, sanitizeKeys } from './bar-layout';
@@ -158,6 +158,7 @@ export class Hud {
   private energy: ReturnType<typeof bar>;
   private xp: ReturnType<typeof bar>;
   private targetFrame: HTMLElement;
+  private targetFace: HTMLElement;
   private targetName: HTMLElement;
   private targetHp: ReturnType<typeof bar>;
   private targetCast: ReturnType<typeof bar>;
@@ -227,9 +228,13 @@ export class Hud {
     this.playerStatus = new StatusRow(el(pf, 'buffs'));
 
     this.targetFrame = el(this.root, 'chrome frame target');
-    this.targetName = el(this.targetFrame, 'name');
-    this.targetHp = bar(this.targetFrame, 'enemyhp');
-    this.targetCast = bar(this.targetFrame, 'enemycast');
+    // the enemy's face left of its name and bars, in the row a panel wears a portrait in (HOM-144). The buffs
+    // stay a child of the frame itself: they hang above it, clear of both columns.
+    const tfr = faceRow(this.targetFrame);
+    this.targetFace = tfr.face;
+    this.targetName = el(tfr.body, 'name');
+    this.targetHp = bar(tfr.body, 'enemyhp');
+    this.targetCast = bar(tfr.body, 'enemycast');
     this.targetStatus = new StatusRow(el(this.targetFrame, 'buffs'));
 
     this.xp = bar(this.root, 'xp');
@@ -716,6 +721,7 @@ export class Hud {
     this.targetFrame.style.display = t ? 'block' : 'none';
     if (t) {
       const def = ENEMY_TYPES[t.type];
+      setFaceArt(this.targetFace, enemyArt(t.type)); // by type: every Wild Boar wears the one boar's face
       this.targetName.textContent = `${def.name}  Lv ${def.level}`;
       this.targetName.className = `name ${def.level > p.combat.level + 2 ? 'hard' : ''}`;
       this.setBar(this.targetHp, t.hp / t.maxHp, `${Math.ceil(t.hp)} / ${t.maxHp}`);
