@@ -79,6 +79,10 @@ section('the forks: a signpost beside the road and a track to somewhere with a n
     const mid = track[Math.floor(track.length / 2)], straight = { x: (fork.x + b.to.x) / 2, z: (fork.z + b.to.z) / 2 };
     assert(dist(mid, straight) > dist(fork, b.to) * 0.07, `${b.id}: the track is bowed, not ruled straight at the waystation`);
     assert(regionAt(b.to.x, b.to.z)?.id === b.region && track.every(p => regionAt(p.x, p.z)?.id === b.region), `${b.id}: the whole track and the waystation are on its own region's floor`);
+    // and twenty inside its edge, so nobody stands at a shrine with their back against the boulder wall that ends the world
+    const main = REGIONS.find(x => x.id === b.region)!.footprint.reduce((best, f) => (f.x1 - f.x0) * (f.z1 - f.z0) > (best.x1 - best.x0) * (best.z1 - best.z0) ? f : best);
+    const inset = Math.min(b.to.x - main.x0, main.x1 - b.to.x, b.to.z - main.z0, main.z1 - b.to.z);
+    assert(inset >= 20, `${b.id}: it stands ${inset.toFixed(0)} inside the region's edge`);
   }
 }
 

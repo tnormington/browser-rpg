@@ -141,15 +141,16 @@ const ROADS: Record<string, Road> = { greywater: GREYWATER_ROAD, dunmere: DUNMER
  * The forks (HOM-134). Each is a track leaving a road for a waystation with a name of its own, and a signpost at the fork with an
  * arm each way: the road on to the next town, or the track. Nothing behind a fork is on the golden path, so taking one is a choice
  * and never a detour the player is made to walk; what is there is a place, a thing to look at, and somebody who knows the country.
- * The waystations sit well inside their region's floor and clear of every camp, so a traveller can stop at one (see roads.test.ts).
+ * The waystations sit clear of every camp and twenty or more inside their region's edge, so a traveller can stop at one and is not
+ * standing with their back against the boulder wall that ends the world (roads.test.ts holds both).
  */
 export const BRANCHES: Branch[] = [
-  { id: 'weeping', region: 'greywater', at: GREYWATER.x - 215, to: at(GREYWATER, -205, -44), name: 'The Weeping Stone', onward: 'Saltmarrow', onwardDir: 1, mark: 'shrine' },
-  { id: 'drovers', region: 'greywater', at: GREYWATER.x + 136, to: at(GREYWATER, 150, -40), name: "The Drover's Rest", onward: 'Saltmarrow', onwardDir: 1, mark: 'wayfire' },
-  { id: 'drowned', region: 'dunmere', at: DUNMERE.z - 340, to: at(DUNMERE, -48, -340), name: 'The Drowned Stones', onward: 'Thornwick', onwardDir: 1, mark: 'shrine' },
-  { id: 'watcher', region: 'barrowdowns', at: BARROWDOWNS.x - 190, to: at(BARROWDOWNS, -176, 58), name: "The Watcher's Cairn", onward: 'Highmoor', onwardDir: 1, mark: 'wayfire' },
-  { id: 'sunken', region: 'barrowdowns', at: BARROWDOWNS.x + 120, to: at(BARROWDOWNS, 134, -56), name: 'The Sunken Barrow', onward: 'Highmoor', onwardDir: 1, mark: 'shrine' },
-  { id: 'ashwell', region: 'cairnwaste', at: CAIRNWASTE.z - 10, to: at(CAIRNWASTE, -56, -4), name: 'The Ashen Well', onward: 'the Sundered Spire', onwardDir: -1, mark: 'wayfire' },
+  { id: 'weeping', region: 'greywater', at: GREYWATER.x - 215, to: at(GREYWATER, -205, -34), name: 'The Weeping Stone', onward: 'Saltmarrow', onwardDir: 1, mark: 'shrine' },
+  { id: 'drovers', region: 'greywater', at: GREYWATER.x + 136, to: at(GREYWATER, 152, -32), name: "The Drover's Rest", onward: 'Saltmarrow', onwardDir: 1, mark: 'wayfire' },
+  { id: 'drowned', region: 'dunmere', at: DUNMERE.z - 340, to: at(DUNMERE, -36, -348), name: 'The Drowned Stones', onward: 'Thornwick', onwardDir: 1, mark: 'shrine' },
+  { id: 'watcher', region: 'barrowdowns', at: BARROWDOWNS.x - 190, to: at(BARROWDOWNS, -176, 46), name: "The Watcher's Cairn", onward: 'Highmoor', onwardDir: 1, mark: 'wayfire' },
+  { id: 'sunken', region: 'barrowdowns', at: BARROWDOWNS.x + 120, to: at(BARROWDOWNS, 134, -46), name: 'The Sunken Barrow', onward: 'Highmoor', onwardDir: 1, mark: 'shrine' },
+  { id: 'ashwell', region: 'cairnwaste', at: CAIRNWASTE.z - 10, to: at(CAIRNWASTE, -46, -4), name: 'The Ashen Well', onward: 'the Sundered Spire', onwardDir: -1, mark: 'wayfire' },
 ];
 export const branchesOf = (region: string): Branch[] => BRANCHES.filter(b => b.region === region);
 export const branchById = (id: string): Branch | undefined => BRANCHES.find(b => b.id === id);
@@ -175,6 +176,10 @@ const wayProps = (b: Branch): Obstacle[] => [
 ];
 /** Every collider a region's forks put on the ground. */
 const wayObstacles = (region: string): Obstacle[] => branchesOf(region).flatMap(wayProps);
+
+/** Is a circle clear of every fork in a region: its track, its mark and the ground round the keeper? What each scatter asks before it drops something. */
+const clearOfForks = (region: string, c: Pt, r: number) => branchesOf(region).every(b =>
+  branchDist(roadOf(b), b, c.x, c.z) > r + 3 && Math.hypot(b.to.x - c.x, b.to.z - c.z) > r + 7);
 
 /** Greywater Road's camps, by the bible's layout table (section 3.4). Local coordinates. */
 const GREYWATER_SPAWNS = [
@@ -347,7 +352,8 @@ function witheringPatches(spawns: Pt[]): { hazards: { x: number; z: number; r: n
   const hazards: { x: number; z: number; r: number }[] = [], herbs: HerbSpot[] = [];
   for (let i = 0; i < 19; i++) {
     const lz = -400 + i * 44 + (hash(i * 5 + 1) - 0.5) * 16, r = 5 + hash(i * 3 + 2) * 3.5, off = 24 + hash(i * 7 + 3) * 28;
-    const spot = [1, -1].map(side => at(DUNMERE, (i % 2 ? 1 : -1) * side * off, lz)).find(c => spawns.every(sp => Math.hypot(sp.x - c.x, sp.z - c.z) > r + 12));
+    const spot = [1, -1].map(side => at(DUNMERE, (i % 2 ? 1 : -1) * side * off, lz))
+      .find(c => spawns.every(sp => Math.hypot(sp.x - c.x, sp.z - c.z) > r + 12) && clearOfForks('dunmere', c, r + 6));
     if (!spot) continue;
     hazards.push({ ...spot, r });
     if (i % 3 === 0) herbs.push({ kind: 'fen', type: 'fenbloom', x: spot.x + r * 0.9, z: spot.z + r * 0.3 });
@@ -470,6 +476,7 @@ function barrowMounds(): Obstacle[] {
   for (let k = 0; k < 200 && out.length < 40; k++) {
     const c = at(BARROWDOWNS, (hash(k * 3 + 1) - 0.5) * 860, (hash(k * 7 + 2) < 0.5 ? -1 : 1) * (18 + hash(k * 5 + 3) * 44)), r = 2.4 + hash(k * 11 + 4) * 1.8;
     if (barrowSpawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 13) || BARROW_ORE.some(o => Math.hypot(o.x - c.x, o.z - c.z) < r + 7) || out.some(o => Math.hypot(o.x - c.x, o.z - c.z) < o.r + r + 8)) continue;
+    if (!clearOfForks('barrowdowns', c, r)) continue;
     out.push(mound(c, r));
   }
   return out;
@@ -573,6 +580,7 @@ function wasteCairns(): Obstacle[] {
   for (let k = 0; k < 220 && out.length < 34; k++) {
     const c = at(CAIRNWASTE, (hash(k * 7 + 2) < 0.5 ? -1 : 1) * (16 + hash(k * 5 + 3) * 44), (hash(k * 3 + 1) - 0.5) * 820), r = 1.6 + hash(k * 11 + 4) * 1.6;
     if (wasteSpawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 12) || WASTE_ORE.some(o => Math.hypot(o.x - c.x, o.z - c.z) < r + 7) || out.some(o => Math.hypot(o.x - c.x, o.z - c.z) < o.r + r + 8)) continue;
+    if (!clearOfForks('cairnwaste', c, r)) continue;
     out.push(cairn(c, r));
   }
   return out;
