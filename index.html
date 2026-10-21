@@ -117,7 +117,7 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 /* the key is also the rebind button: click it and the slot takes the next key pressed, so it sits in the corner as a target big enough to hit */
 .slot .icon{font-size:clamp(20px,calc(var(--slot)*.44),var(--fs-3xl));line-height:calc(var(--slot)*.68)}.slot .key{position:absolute;top:0;left:0;padding:var(--sp-1) 5px;font-weight:bold;font-size:clamp(11px,calc(var(--slot)*.19),var(--fs-md));color:var(--gold);cursor:pointer;border-bottom-right-radius:var(--r);min-width:11px}
 .slot .key:hover{background:var(--gold-wash);color:var(--ink-bright)}
-.slot .aname{position:absolute;bottom:var(--sp-1);width:100%;font-size:var(--fs-xs)}
+.slot .aname{position:absolute;bottom:var(--sp-1);width:100%;font-size:clamp(7px,calc(var(--slot)*.155),var(--fs-xs))} /* the longest name on the bar is Hemorrhage: it has to come down with the slot, or it prints past it */
 /* a consumable slot: how many are left in the bag, and a flat look once there are none */
 .slot .qty{position:absolute;top:var(--sp-1);right:5px;font-weight:bold;font-size:clamp(9px,calc(var(--slot)*.17),var(--fs-sm));color:var(--gold)}
 .slot.gone .icon,.slot.gone .aname,.slot.gone .qty{opacity:.3}.slot.gone{border-color:var(--edge-dim)}

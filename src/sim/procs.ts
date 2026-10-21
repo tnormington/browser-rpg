@@ -31,11 +31,11 @@ export interface ProcDef {
 export interface Proc { id: string; left: number }
 
 export const PROCS: Record<string, ProcDef> = {
-  opening: { name: 'Opening', icon: 'ðŸ—¡', desc: 'Crushing Blow is free and ready, and lands 30% harder.',
+  opening: { name: 'Opening', icon: '🗡', desc: 'Crushing Blow is free and ready, and lands 30% harder.',
     trigger: 'swing', chance: 0.07, duration: 8, ability: 'Crushing Blow', mult: 1.3 },
-  open_wound: { name: 'Open Wound', icon: 'ðŸ©¸', desc: 'Serrated Throw is free and ready, and bites 30% deeper.',
+  open_wound: { name: 'Open Wound', icon: '🩸', desc: 'Serrated Throw is free and ready, and bites 30% deeper.',
     trigger: 'crit', chance: 0.08, duration: 8, ability: 'Serrated Throw', mult: 1.3 },
-  blood_scent: { name: 'Scent of Blood', icon: 'ðŸŒ€', desc: 'Cleave is free and ready, and sweeps 30% harder.',
+  blood_scent: { name: 'Scent of Blood', icon: '🌀', desc: 'Cleave is free and ready, and sweeps 30% harder.',
     trigger: 'bleed', chance: 0.07, duration: 8, ability: 'Cleave', mult: 1.3 },
 };
 
