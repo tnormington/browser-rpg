@@ -9,6 +9,8 @@ export interface WeatherLook {
   cover: number;
   /** Rain intensity, 0..1. */
   rain: number;
+  /** How hard the air is moving, 0..1: nothing is drawn from it, it is what the weather sounds like (WEATHER_BEDS in ambience.ts). */
+  wind: number;
   /** Multipliers on the daylight values (sun, hemisphere, sky environment). */
   sun: number; hemi: number; env: number;
   /** Fog distances; the fog colour lifts toward a pale cold grey by `lift` (0..1). */
@@ -17,10 +19,10 @@ export interface WeatherLook {
 
 /** Sits at the clear-night values render.ts started from (FOG 6..42): `clear` changes nothing, the rest only take things away. */
 export const WEATHER: Record<WeatherKind, WeatherLook> = {
-  clear:    { cover: 0.38, rain: 0, sun: 1,    hemi: 1,    env: 1,    fogNear: 6, fogFar: 42, lift: 0 },
-  overcast: { cover: 0.82, rain: 0, sun: 0.6,  hemi: 0.9,  env: 0.85, fogNear: 6, fogFar: 36, lift: 0.15 },
-  rain:     { cover: 0.97, rain: 1, sun: 0.4,  hemi: 0.8,  env: 0.75, fogNear: 4, fogFar: 28, lift: 0.22 },
-  fog:      { cover: 0.62, rain: 0, sun: 0.45, hemi: 0.9,  env: 0.9,  fogNear: 2, fogFar: 18, lift: 0.5 },
+  clear:    { cover: 0.38, rain: 0, wind: 0,    sun: 1,    hemi: 1,    env: 1,    fogNear: 6, fogFar: 42, lift: 0 },
+  overcast: { cover: 0.82, rain: 0, wind: 0.45, sun: 0.6,  hemi: 0.9,  env: 0.85, fogNear: 6, fogFar: 36, lift: 0.15 },
+  rain:     { cover: 0.97, rain: 1, wind: 0.75, sun: 0.4,  hemi: 0.8,  env: 0.75, fogNear: 4, fogFar: 28, lift: 0.22 },
+  fog:      { cover: 0.62, rain: 0, wind: 0.08, sun: 0.45, hemi: 0.9,  env: 0.9,  fogNear: 2, fogFar: 18, lift: 0.5 },
 };
 
 /** Who can follow whom: the weather moves through overcast, it does not jump from a clear sky to a downpour. */

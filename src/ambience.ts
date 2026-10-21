@@ -20,3 +20,15 @@ export const bedFor = (id: string | null) => {
   const r = id ? REGIONS.find(x => x.id === id) : undefined;
   return !id ? undefined : AMBIENCE[id] ?? (r?.cave ? CAVE_BED : r && AMBIENCE[r.zone]);
 };
+
+export type WeatherLayer = 'rain' | 'wind';
+/**
+ * What the weather sounds like, over whichever bed the place is playing: each layer loops for as long as the weather lasts, at
+ * `vol` times how much of it the player can hear (render.ts eases that with the weather and takes it to nothing underground).
+ * The wind is the moor's own bed slowed down — a heavier, lower air than the one Highmoor already blows, so standing on the
+ * moor in a gale does not read as one loop played twice.
+ */
+export const WEATHER_BEDS: Record<WeatherLayer, { file: string; vol: number; rate?: number }> = {
+  rain: { file: 'rain-weather', vol: 0.5 },
+  wind: { file: 'moor-ambience', vol: 0.28, rate: 0.82 },
+};

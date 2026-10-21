@@ -77,3 +77,15 @@ Same recipe (20 s seamless loop, 2 s triangle crossfade, mono, 32 kHz, -26 LUFS,
 | hale-ambience.ogg | "Ambient Bird Sounds", birds-isaiah658.ogg (22 s from 0:04) - https://opengameart.org/content/ambient-bird-sounds (file: https://opengameart.org/sites/default/files/birds-isaiah658_0.ogg) | isaiah658 | CC0 | 2026-10-20 |
 | cairnwaste-ambience.ogg | "wind1", wind3.wav (24 s from 0:10, 2 s crossfaded loop) - https://opengameart.org/content/wind1 (file: https://opengameart.org/sites/default/files/wind3.wav) | uploader of "wind1" (synthesized in PureData; page names no author) | CC0 | 2026-10-20 |
 | spire-ambience.ogg | "4 Atmospheric ghostly loops", atmoseerie03 from independent_nu_ljudbank-atmosphere_moody.7z (20 s, 2 s crossfaded loop) - https://opengameart.org/content/4-atmospheric-ghostly-loops (file: https://opengameart.org/sites/default/files/independent_nu_ljudbank-atmosphere_moody.7z) | Independent.nu (submitted by qubodup) | CC0 | 2026-10-20 |
+
+### Added 2026-10-21 (HOM-145)
+
+Weather layers: they play over whichever bed the place is playing, at the strength of the weather. Same recipe (20 s seamless
+loop, 2 s triangle crossfade, mono, 32 kHz, -26 LUFS, Vorbis q2). Source recording is not in the repo.
+
+| File | Source | Author | Licence | Fetched |
+|---|---|---|---|---|
+| rain-weather.ogg | "AMB Rain Loop 1", amb_rain_loop_1.ogg (22 s from 0:10) - https://opengameart.org/content/amb-rain-loop-1 (file: https://opengameart.org/sites/default/files/amb_rain_loop_1.ogg) | Kresiek | CC0 | 2026-10-21 |
+
+The wind layer is no new file: it is `moor-ambience.ogg` (IgnasD, CC0, listed above) played at rate 0.82, a heavier and lower
+air than the one Highmoor already blows.

@@ -8,7 +8,7 @@ import type { AdminAction } from './sim/admin';
 import type { Interact } from './sim';
 import type { WeatherKind } from './weather';
 import { loadGame, loadQuality, saveGame, saveQuality, wipeSave } from './storage';
-import { playEvents, setAmbience, toggleMute, unlockAudio } from './sfx';
+import { playEvents, setAmbience, setWeather, toggleMute, unlockAudio } from './sfx';
 import { GATES, LANDMARKS, WITHERING, regionAt } from './sim/world';
 import { bestMount } from './sim/mounts';
 import { applyStress } from './sim/stress';
@@ -282,6 +282,7 @@ function frame(now: number) {
   trace?.drawStart();
   view.draw(state, acc / TICK_DT);
   trace?.drawEnd();
+  setWeather(view.weatherHeard);   // after the draw: the draw is what moves the weather on
   hud.update(state, dt);
   updateCursor(dt); // after the draw: the pick reads the camera the frame was drawn with
   trace?.endFrame();

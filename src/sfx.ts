@@ -5,7 +5,7 @@
 // take all three together.
 import type { GameEvent } from './sim';
 import { ABILITIES } from './sim/data';
-import { bedFor } from './ambience';
+import { WEATHER_BEDS, bedFor, type WeatherLayer } from './ambience';
 import { Music } from './music';
 
 // ---- tuning table: change numbers here, by ear ----
@@ -192,6 +192,32 @@ function syncAmbience() {
   src.connect(gain).connect(master);
   src.start(t);
   bed = { file: cfg.file, src, gain };
+}
+
+// ---- weather: the rain and the wind, looping over the bed, as loud as the weather the player is standing in ----
+/** Each layer's loop, started the first time the weather asks for it and then left running: a loop stopped and restarted is a seam you can hear. */
+const weatherGains = new Map<WeatherLayer, GainNode>();
+
+/** Call every frame with how much of each layer the player can hear (0..1): render.ts eases it with the weather and takes it to nothing underground. */
+export function setWeather(level: Record<WeatherLayer, number>) {
+  if (!ctx || !master || ctx.state !== 'running') return;
+  for (const key of Object.keys(WEATHER_BEDS) as WeatherLayer[]) {
+    const cfg = WEATHER_BEDS[key];
+    let gain = weatherGains.get(key);
+    if (!gain) {
+      const buf = buffers.get(cfg.file);
+      if (level[key] < 0.01 || !buf) continue;   // nothing to hear yet, or the sample is still decoding: try again next frame
+      const src = ctx.createBufferSource();
+      gain = ctx.createGain();
+      src.buffer = buf; src.loop = true;
+      src.playbackRate.value = cfg.rate ?? 1;
+      gain.gain.value = 0;
+      src.connect(gain).connect(master);
+      src.start(ctx.currentTime);
+      weatherGains.set(key, gain);
+    }
+    gain.gain.value = cfg.vol * level[key];   // plain assignment, not a ramp: the weather already eases over seconds (weather.ts), so this never steps
+  }
 }
 
 const live = (g?: Group) => voices.filter(v => !g || v.group === g);

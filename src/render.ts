@@ -335,6 +335,8 @@ export class Renderer {
   readonly weather = new Weather();
   private skyDome!: SkyDome;
   private rain = new Rain();
+  /** How much of the rain and the wind reaches the player where they stand: the eased weather, cut to nothing underground. main.ts hands it to sfx.ts. */
+  readonly weatherHeard = { rain: 0, wind: 0 };
   private skyClock = 0;
   private fogLift = new THREE.Color(0x3b4754);
   private air = { fen: 0, wood: 0 };
@@ -909,9 +911,13 @@ export class Renderer {
     fog.color.setHex(P.horizon).lerp(this.fogLift, w.lift).lerp(FEN_AIR.color, air.fen * 0.5).lerp(WOOD_AIR.color, air.wood * 0.4).lerp(this.caveFogColor, depth);
     fog.near = mix(w.fogNear + air.fen * 2 - air.wood * 2, CAVE_LIGHT.fog.near, depth);
     fog.far = mix(w.fogFar + air.fen * 10 - air.wood * 7, CAVE_LIGHT.fog.far, depth);
-    // the sky and the rain go with the daylight: nothing of the weather reaches underground (rain is gone by the first few metres of cave)
+    // the sky and the rain go with the daylight: nothing of the weather reaches underground (rain is gone by the first few metres of cave), and
+    // what is left of it is also what is left to be heard
+    const outside = 1 - THREE.MathUtils.clamp(depth * 5, 0, 1);
     this.skyDome.update(this.skyClock, w.cover, fog.color, mix(DAY.sky, CAVE_LIGHT.sky, depth), this.camera.position);
-    this.rain.update(this.skyClock, w.rain * (1 - THREE.MathUtils.clamp(depth * 5, 0, 1)), this.camera.position);
+    this.rain.update(this.skyClock, w.rain * outside, this.camera.position);
+    this.weatherHeard.rain = w.rain * outside;
+    this.weatherHeard.wind = w.wind * outside;
     this.lantern.intensity = CAVE_LIGHT.lantern.intensity * depth;
     this.lantern.position.set(x, CAVE_LIGHT.lantern.y, z);
   }
