@@ -3,7 +3,7 @@
 // enchanting panel. The ground marks are the point: the last dungeon is where a floor stacked above them would hide a boss's tells. Screenshots land in bench/shots/vault/.
 //   node bench/vault.mjs        (needs a build: npx vite build)
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -12,7 +12,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shots = join(root, 'bench', 'shots', 'vault');
 mkdirSync(shots, { recursive: true });
 const server = await preview({ root, logLevel: 'error', preview: { port: 4181, open: false } });
-const browser = await chromium.launch({ headless: true, args: ['--use-angle=d3d11', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));

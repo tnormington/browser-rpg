@@ -2,13 +2,13 @@
 // Renders the same frame with the dome on and off and reports GPU ms for each, at both quality settings.
 //   node bench/sky-cost.mjs            (run `npm run build` first)
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { UNCAPPED_ARGS, launchBrowser } from './browser.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const server = await preview({ root, logLevel: 'error', preview: { port: 4175, open: false } });
-const browser = await chromium.launch({ args: ['--disable-frame-rate-limit', '--disable-gpu-vsync', '--ignore-gpu-blocklist', '--use-angle=d3d11'] });
+const browser = await launchBrowser({ args: UNCAPPED_ARGS });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', e => console.error('pageerror', e.stack ?? String(e)));
 await page.goto(`${server.resolvedUrls.local[0]}?debug=1`);

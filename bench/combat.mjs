@@ -29,7 +29,7 @@
 // loop: the type's camps in their natural layout (other types pinned dead), kill -> loot (real clicks) -> walk (real clicks) -> wait for --health of max HP
 //   -> next fight; swing-to-swing time split into fight / loot / walk / regen-wait / engage. Writes bench/shots/bot-<mode>-<tag>.json.
 import { build, preview } from 'vite';
-import { chromium } from 'playwright';
+import { UNCAPPED_ARGS, launchBrowser } from './browser.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -386,7 +386,7 @@ async function runBot(page) {
 
 if (!process.argv.includes('--skip-build')) await build({ root, logLevel: 'warn' });
 const server = await preview({ root, logLevel: 'error', preview: { port, open: false } });
-const browser = await chromium.launch({ args: ['--disable-frame-rate-limit', '--disable-gpu-vsync', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--use-angle=d3d11'] });
+const browser = await launchBrowser({ args: [...UNCAPPED_ARGS, '--enable-gpu-rasterization'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', e => console.error('pageerror', String(e)));
 if (mode && speed !== 1) await page.addInitScript(k => { // sim time runs k times faster than the wall clock: rAF timestamps are scaled, the sim still ticks at its fixed 30 Hz

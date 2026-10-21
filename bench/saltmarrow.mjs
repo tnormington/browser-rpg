@@ -2,7 +2,7 @@
 // a click-to-move across the gate, and an adamant vein. Screenshots land in bench/shots/salt-*.png.
 //   node bench/saltmarrow.mjs        (needs a build: npx vite build)
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -11,7 +11,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shots = join(root, 'bench', 'shots');
 mkdirSync(shots, { recursive: true });
 const server = await preview({ root, logLevel: 'error', preview: { port: 4175, open: false } });
-const browser = await chromium.launch({ headless: true, args: ['--use-angle=d3d11', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));

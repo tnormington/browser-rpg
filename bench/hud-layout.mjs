@@ -15,7 +15,7 @@
 // Run `npm run build` first.
 //   node bench/hud-layout.mjs        exits non-zero on any overlap or any panel past the window's edge
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -24,7 +24,7 @@ const SIZES = [[1600, 900], [1280, 720], [1024, 640], [900, 600], [1000, 520], [
 const MIN_SLOT = 44; // the smallest an action slot may be: the usual floor for a click target. 13 keys reach it at 692px wide, below the 800 the game is played down to.
 const MIN_LOG = { w: 240, h: 120 }; // a message log that is narrower than this wraps a keeper's sentence into a column; shorter shows two lines (HOM-108: 120 wide was the stopgap)
 const server = await preview({ root, logLevel: 'error', preview: { port: 4176, open: false } });
-const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--use-angle=d3d11'] });
+const browser = await launchBrowser();
 const overlaps = (a, b) => !!a && !!b && a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
 let failed = 0;
 

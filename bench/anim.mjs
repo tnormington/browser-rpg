@@ -3,7 +3,7 @@
 //   node bench/anim.mjs <out-name> <scenario> [scenario ...]    -> bench/shots/<out-name>/<scenario>-<n>.png
 // scenarios: swing hit-boar hit-wolf hit-brute hit-player death-wolf death-boar jump telegraph-brute telegraph-hexer enemy-lunge
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -13,7 +13,7 @@ const [name, ...scenarios] = process.argv.slice(2);
 const out = join(root, 'bench', 'shots', name);
 mkdirSync(out, { recursive: true });
 const server = await preview({ root, logLevel: 'error', preview: { port: 4175, open: false } });
-const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--use-angle=d3d11'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
 page.on('pageerror', e => console.error('pageerror', String(e)));
 await page.goto(`${server.resolvedUrls.local[0]}?debug=1`);

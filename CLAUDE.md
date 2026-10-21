@@ -23,6 +23,31 @@ with `git config core.hooksPath .githooks`; it never blocks or delays a commit.
 
 Work in a `wt/*` worktree is not playable until it lands on `master` in the main checkout.
 
+## Benching without flattening the human's GPU
+
+Every bench in `bench/` drives the game in a real Chromium with the GPU unblocked, and seven agents
+bench out of seven worktrees at the same time. All of them rendering at once pins the machine the
+human is playing on, and makes every frame time measured during it meaningless.
+
+So a bench does not call `chromium.launch()` itself. It imports from `bench/browser.mjs`:
+
+    import { launchBrowser } from './browser.mjs';
+    const browser = await launchBrowser({ headless: true });   // queues until a GPU slot is free
+
+`launchBrowser` takes one of a fixed number of slots from a lock directory in the OS temp dir —
+shared by every worktree and every process on the machine — and gives it back when `browser.close()`
+runs, or when the process exits if it never got that far. A bench that is killed leaves a slot behind
+for at most three minutes. Default args are `GPU_ARGS`; pass `args: UNCAPPED_ARGS` only when the
+script is measuring frame time, because uncapped frames are most of the cost.
+
+    BENCH_GPU_SLOTS=2 node bench/look.mjs ...    allow two at once (default 1)
+    BENCH_GPU_WAIT_MS=...                        how long to queue before giving up (default 20 min)
+
+**A new bench script must go through `launchBrowser`** — a script that calls `chromium.launch()`
+directly is outside the limit and is the one that will be rendering while everything else waits.
+`bench/music.mjs` and `bench/sheet.mjs` are the exceptions: neither renders the game, so neither
+takes a slot. `node bench/browser.test.mjs` (part of `npm run verify`) covers the limiter.
+
 ## The admin panel (QA)
 
 The playtest server is a dev build, so the game always has the QA panel: the **Admin** button in the

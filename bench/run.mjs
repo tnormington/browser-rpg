@@ -6,7 +6,7 @@
 //   --headed  visible window     --frames N  timing window (default 300)     --skip-build
 //   --at x,z,yaw   stand there before measuring, e.g. the cave's hollow: --at -20,-55,-0.8 --tag cave   (the player cannot die while it runs)
 import { build, preview } from 'vite';
-import { chromium } from 'playwright';
+import { UNCAPPED_ARGS, launchBrowser } from './browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -31,13 +31,13 @@ const server = await preview({ root, logLevel: 'error', preview: { port: 4173, o
 const base = server.resolvedUrls.local[0];
 
 // Real GPU if there is one; no frame-rate cap so frame time shows cost, not the 60 Hz vsync ceiling.
-const args = ['--disable-frame-rate-limit', '--disable-gpu-vsync', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--use-angle=d3d11'];
+const args = [...UNCAPPED_ARGS, '--enable-gpu-rasterization'];
 async function launch() {
   const o = { headless: !headed, args };
-  try { return { browser: await chromium.launch(o), how: 'playwright chromium' }; }
+  try { return { browser: await launchBrowser(o), how: 'playwright chromium' }; }
   catch (e) {
     console.error(`bundled chromium unavailable (${String(e.message).split('\n')[0]}); falling back to installed Chrome`);
-    return { browser: await chromium.launch({ ...o, channel: 'chrome' }), how: 'installed Chrome (channel chrome)' };
+    return { browser: await launchBrowser({ ...o, channel: 'chrome' }), how: 'installed Chrome (channel chrome)' };
   }
 }
 const { browser, how } = await launch();

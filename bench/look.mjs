@@ -4,7 +4,7 @@
 // The page script sees window.__debug ({ view, sim, scene, step }). Helper: look(x, z, yaw, pitch, dist) frames the camera
 // on a world point by teleporting the player there (the camera orbits the player); wait(ms) lets animation play.
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -14,7 +14,7 @@ const [prefix, ...scripts] = process.argv.slice(2);
 const out = join(root, 'bench', 'shots', process.env.SHOTS ?? 'slots'); // SHOTS=cave -> bench/shots/cave
 mkdirSync(out, { recursive: true });
 const server = await preview({ root, logLevel: 'error', preview: { port: 4174, open: false } });
-const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--use-angle=d3d11'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', e => console.error('pageerror', e.stack ?? String(e)));
 page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') console.error(m.text()); });

@@ -2,7 +2,7 @@
 // Isolde Marr's shop row and the gate lines. Screenshots go to bench/shots/hud/<tag>/<WxH>-<scene>.png; the numbers it prints are the ones the report quotes.
 //   node bench/hud-highmoor.mjs [tag]       (needs a build: npx vite build)
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -13,7 +13,7 @@ const out = join(root, 'bench', 'shots', 'hud', tag);
 mkdirSync(out, { recursive: true });
 const SIZES = [[1600, 900], [800, 560]];
 const server = await preview({ root, logLevel: 'error', preview: { port: 4178, open: false } });
-const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--use-angle=d3d11'] });
+const browser = await launchBrowser();
 
 for (const [width, height] of SIZES) {
   const page = await browser.newPage({ viewport: { width, height } });

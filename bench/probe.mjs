@@ -1,12 +1,12 @@
 // Dev probe: what the renderer is holding at a given spot. node bench/probe.mjs x,z[,yaw]   (needs a built dist/)
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const at = (process.argv[2] ?? '0,6').split(',').map(Number);
 const server = await preview({ root, logLevel: 'error', preview: { port: 4174, open: false } });
-const browser = await chromium.launch({ headless: true, args: ['--use-angle=d3d11', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 await page.goto(`${server.resolvedUrls.local[0]}?debug=1&stress=1`);
 await page.waitForFunction(() => window.__debug, null, { timeout: 120000 });

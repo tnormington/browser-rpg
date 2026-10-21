@@ -3,7 +3,7 @@
 // tiling pitch would read as a grid.
 //   node bench/ground.mjs      Shots -> bench/shots/ground/ (SHOTS=<dir> to put them elsewhere).
 import { createServer } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -13,7 +13,7 @@ const out = join(root, 'bench', 'shots', process.env.SHOTS ?? 'ground');
 mkdirSync(out, { recursive: true });
 const server = await createServer({ root, logLevel: 'error', server: { port: 4183 } });
 await server.listen();
-const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--use-angle=d3d11'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', e => console.error('pageerror', e.stack ?? String(e)));
 page.on('console', m => { if (m.type() === 'error') console.error(m.text()); });

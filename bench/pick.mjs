@@ -3,7 +3,7 @@
 // get, for the old proxy raycast and the new volume pick; then probe near misses. Writes annotated screenshots.
 //   node bench/pick.mjs   (serves the existing dist/: run `npm run build` first)
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -13,7 +13,7 @@ const out = join(root, 'bench', 'shots', 'pick');
 mkdirSync(out, { recursive: true });
 const TOL = 48; // keep in step with CLICK_TOLERANCE_PX in src/main.ts
 const server = await preview({ root, logLevel: 'error', preview: { port: 4175, open: false } });
-const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--use-angle=d3d11'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', e => console.error('pageerror', String(e)));
 await page.goto(`${server.resolvedUrls.local[0]}?debug=1`);

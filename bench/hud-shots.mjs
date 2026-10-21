@@ -1,7 +1,7 @@
 ﻿// HUD screenshots: the same scenes at the largest and smallest window the game is played at, so a restyle can be looked at, not just reasoned about.
 //   node bench/hud-shots.mjs [tag]       (needs a build: npx vite build)   -> bench/shots/hud/<tag>/<WxH>-<scene>.png
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -12,7 +12,7 @@ const out = join(root, 'bench', 'shots', 'hud', tag);
 mkdirSync(out, { recursive: true });
 const SIZES = [[1600, 900], [800, 560]];
 const server = await preview({ root, logLevel: 'error', preview: { port: 4177, open: false } });
-const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--use-angle=d3d11'] });
+const browser = await launchBrowser();
 
 for (const [width, height] of SIZES) {
   const page = await browser.newPage({ viewport: { width, height } });

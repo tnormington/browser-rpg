@@ -1,12 +1,12 @@
 // Prints each skinned rig's key bone positions in fitted rig units, un-yawed, feet at 0 (what creatures.ts is drawn in).  node bench/rigs.mjs
 import { createServer } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const server = await createServer({ root, logLevel: 'error', server: { port: 4178 } });
 await server.listen();
-const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--use-angle=d3d11'] });
+const browser = await launchBrowser();
 const page = await browser.newPage();
 await page.goto('http://localhost:4178/?debug=1');
 await page.waitForFunction(() => window.__debug, null, { timeout: 120000 });

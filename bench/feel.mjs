@@ -1,7 +1,7 @@
 // Input / HUD checks through real browser events (serves the existing dist/: run `npm run build` first).
 //   node bench/feel.mjs   -> prints PASS/FAIL lines, writes bench/shots/feel/*.png
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -10,7 +10,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const out = join(root, 'bench', 'shots', 'feel');
 mkdirSync(out, { recursive: true });
 const server = await preview({ root, logLevel: 'error', preview: { port: 4176, open: false } });
-const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--use-angle=d3d11'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', e => console.error('pageerror', String(e)));
 await page.goto(`${server.resolvedUrls.local[0]}?debug=1`);

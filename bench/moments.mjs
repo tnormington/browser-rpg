@@ -1,7 +1,7 @@
 // Readability moments: combat w/ target + damage numbers, forge, ore node, NPC quest marker, plus the default view.
 //   node bench/moments.mjs <outdir-name>   -> bench/shots/<name>/*.png
 import { build, preview } from 'vite';
-import { chromium } from 'playwright';
+import { GPU_ARGS, launchBrowser } from './browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -10,7 +10,7 @@ const name = process.argv[2] || 'moments';
 const out = join(root, 'bench', 'shots', name); mkdirSync(out, { recursive: true });
 if (!process.argv.includes('--skip-build')) await build({ root, logLevel: 'warn' });
 const server = await preview({ root, logLevel: 'error', preview: { port: 4174, open: false } });
-const browser = await chromium.launch({ headless: true, args: ['--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--use-angle=d3d11'] });
+const browser = await launchBrowser({ headless: true, args: [...GPU_ARGS, '--enable-gpu-rasterization'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', e => console.error('pageerror', e));
 await page.goto(`${server.resolvedUrls.local[0]}?debug=1`);
