@@ -335,6 +335,7 @@ export class WorldView {
         case 'rack': return; // the station's collider: highmoorTown draws the racks
         case 'forge': return; // the station's collider: render.ts draws the forge
         case 'circle': return; // the station's collider: spireTown draws the rune circle
+        case 'tower': return; // the tower's collider: spireTown draws the tower
         case 'ruin': // the wastes' cairns are heaps of black stone, the Spire's ruins broken marble columns
           if (r.id === 'spire') this.brokenColumn(bag, o, ry, i); else this.blackCairn(bag, o, ry);
           return;

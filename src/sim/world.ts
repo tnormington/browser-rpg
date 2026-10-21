@@ -10,7 +10,7 @@
 export const PLAYER_RADIUS = 0.5;
 
 /** What an obstacle is, for whatever draws it: the sim only ever reads the circle. Absent means a rock (or, in the clearing, whatever it always was). */
-export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'rack' | 'barrow' | 'forge' | 'ruin' | 'circle';
+export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'rack' | 'barrow' | 'forge' | 'ruin' | 'circle' | 'tower';
 export interface Obstacle { x: number; z: number; r: number; kind?: PropKind }
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 export interface Pt { x: number; z: number }
@@ -544,6 +544,8 @@ const spireLandmarks = {
 };
 const SPIRE_FORGE: Obstacle = { ...spireLandmarks.forgeSpire, r: 2.6, kind: 'forge' };
 const SPIRE_CIRCLE: Obstacle = { ...spireLandmarks.circle, r: 1.8, kind: 'circle' };
+/** The Spire itself: the shaft is 3.3 at the foot and the four buttresses reach 4.5 from the middle (world-view.ts spireTower); the stepped plinth under it, 1 high, is stepped over. */
+const SPIRE_TOWER: Obstacle = { ...spireLandmarks.spireSquare, r: 4.4, kind: 'tower' };
 const SPIRE_HOUSES: Obstacle[] = [[-36, 48], [34, 44], [-30, 4], [30, 6]].map(([lx, lz]) => ({ ...at(SPIRE, lx, lz), r: 3.1, kind: 'house' as const }));
 const graveSpire: Pt = at(SPIRE, -56, 58);
 const SPIRE_HEADSTONES = headstones(graveSpire);
@@ -889,10 +891,10 @@ export const REGIONS: Region[] = [
       ...SPIRE_GATES.map(g => ({ x0: g.span[0], x1: g.span[1], z0: g.at - 8, z1: SPIRE.z - 66 })),
     ],
     obstacles: [
-      ...SPIRE_HOUSES, SPIRE_FORGE, SPIRE_CIRCLE, ...SPIRE_RUINS, ...SPIRE_HEADSTONES, { ...spireLandmarks.flightSpire, kind: 'person' }, { ...spireLandmarks.spireKeeper, kind: 'person' }, { ...spireLandmarks.spireVendor, kind: 'person' },
+      ...SPIRE_HOUSES, SPIRE_FORGE, SPIRE_CIRCLE, SPIRE_TOWER,...SPIRE_RUINS, ...SPIRE_HEADSTONES, { ...spireLandmarks.flightSpire, kind: 'person' }, { ...spireLandmarks.spireKeeper, kind: 'person' }, { ...spireLandmarks.spireVendor, kind: 'person' },
       ...SPIRE_GATES.map(g => ({ ...g.post, r: 0.55, kind: 'person' as const })),
     ],
-    tall: [...SPIRE_HOUSES, SPIRE_FORGE, ...SPIRE_RUINS.filter(o => o.r >= 1.5)],
+    tall: [...SPIRE_HOUSES, SPIRE_FORGE, SPIRE_TOWER,...SPIRE_RUINS.filter(o => o.r >= 1.5)],
     trees: [], rocks: [],
     landmarks: { ...spireLandmarks, gate: { x: SPIRE.x, z: SPIRE.z + 66 } },
     connections: [{ to: 'cairnwaste', at: { x: SPIRE.x, z: SPIRE.z + 66 } }, { to: 'sealstair', at: VAULT_DOOR }],

@@ -198,6 +198,22 @@ section('the Vault: three rooms in the Spire\'s frame, behind Thale\'s door');
 }
 
 // ---------------------------------------------------------------------------
+section('the Spire\'s tower is solid (HOM-130)');
+{
+  const tower = COLLIDERS.find(o => o.kind === 'tower');
+  assert(tower && dist(tower, LANDMARKS.spireSquare) < 0.01 && tower.r >= 3.3, 'the tower has a collider, on the square, at least as wide as its shaft');
+  evictGrids();
+  const people = [LANDMARKS.flightSpire, LANDMARKS.spireKeeper, LANDMARKS.spireVendor, LANDMARKS.circle, LANDMARKS.forgeSpire];
+  const south = { x: SPIRE.x, z: SPIRE.z + 60 }, north = { x: SPIRE.x, z: SPIRE.z - 10 };
+  assert(people.every(p => route(south, p) !== null), 'the flight master, the Keeper, the vendor, the rune circle and the forge can all be walked to from the road in');
+  const r = route(south, north)!, pts = [south, ...r];
+  assert(r.length > 1, 'a click straight across the tower is routed around it, not through it');
+  let nearest = Infinity;
+  for (let i = 1; i < pts.length; i++) for (let k = 0; k <= 40; k++) nearest = Math.min(nearest, dist(tower!, { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * k / 40, z: pts[i - 1].z + (pts[i].z - pts[i - 1].z) * k / 40 }));
+  assert(nearest >= tower!.r - 0.01, 'and the path never enters it');
+}
+
+// ---------------------------------------------------------------------------
 section('the Vault\'s door opens to the seal, and stays open');
 {
   const VAULT = GATES.find(g => g.id === 'vault')!;
