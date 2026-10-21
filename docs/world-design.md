@@ -262,6 +262,8 @@ You **disenchant** any equippable of tier 2 or above (at the circle; it destroys
 | Warding | any armour | 36 | +4 armour | 25 |
 | Vitality | chest | 40 | +6 % max HP | 60 |
 
+**The pace (HOM-125): grinding pays `8 x value` Enchanting XP, and 8 is a designed number.** Enchanting 36 is 24,815 XP, which is **3,102 gold of gear ground: one hour of the Spire's income** (3.4's loot rule at level 36, the 1.4 pull mix and 90 kills an hour make about 3,100 gold of vendor value an hour). Three things follow, and `vault.test.ts` asserts each so the constant cannot drift: (1) **a hoarder arrives at the top of the list**: every metal and leather piece the climb makes (the steel set, Warden's Edge, the adamant, marrow, stormiron and rotroot sets, the leather pairs) is 5,238 gold, which grinds to Enchanting 41, so a player who kept their old sets can set every enchant the day they arrive; a player who sold half of it is at 36 and has a short smith for the rest; (2) **the shop is a sink, not a shortcut**: the shop sells iron and steel at 4 x value, so buying gear to grind pays 2 XP a gold and opening the skill that way costs 12,400 gold, four hours of income; (3) **smelting for it is the cheap road**: a crafted piece costs 0.6 to 0.8 of its value in materials, so a piece ground for XP is worth 10 to 13 XP a gold of ore against 2 at the shop, and pays 2.5 times the Smithing XP a stormiron piece paid (6 times an adamant one, about the same for starmetal). Dust is not the limit: one hour to 36 also yields 310 dust and the whole slot-enchant list is 305 (Vael adds about 90 a kill). Not measured by play: whether an hour reads as a gate or a chore. If it does, **6 is 45 minutes and 12 is an hour and a half**, one constant.
+
 What enchanting feeds is **gear** and the long tail, not ability unlocks. Abilities are bought from trainers with gold (section 3.5), which is a better sink and a better reason to visit each town. Enchants are consumed when overwritten.
 
 ### 2.3 What stays in Hale's Rest
@@ -523,7 +525,7 @@ How the columns are derived (so the table can be extended rather than argued wit
 
 | id | Name | Lv | Role | Rig | HP | Hit | Swing | Heavy | XP | Tell |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `cairn_king` | The Cairn King | 32 | boss | brute x1.8 tint | 23290 | 58 | 2.4s | 460 / 200 | 520 | boss: Crown Slam + Falling Stone (hazard) + Grave Bolt. 118 s; dies without a heal, 79 % of health with Second Wind on cooldown |
+| `cairn_king` | The Cairn King | 32 | boss | brute x1.8 tint | 23290 | 58 | 2.4s | 460 / 200 | 520 | boss: Crown Slam + Falling Stone (hazard) + Grave Bolt. **Ruled (HOM-125, 3.4a): stands.** 118 s on the line gear, **130 s in the rotroot edge and stormiron a player is in when they reach him**, 120 s in starmetal (HOM-118's 177 s was a 50-damage Marrow's Edge at level 32). Costs 20 % net for a player who steps out of everything, 47 % at 80 % of the telegraphs and 57 to 63 % at 60 % with 3 deaths in 16 |
 
 **Cairnwaste**
 
@@ -547,7 +549,7 @@ How the columns are derived (so the table can be extended rather than argued wit
 
 | id | Name | Lv | Role | Rig | HP | Hit | Swing | Heavy | XP | Tell |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `archmage_vael` | Archmage Vael | 41 | boss | hexer x1.6 | 39915 | 81 | 2.8s | 650 / 285 | 610 | boss: ranged barrage, two hazards, heavy on anyone in melee. **Falls out of the rule; not checked by the bot** (it is a ranged boss and my probe is a melee one) |
+| `archmage_vael` | Archmage Vael | 41 | boss | hexer x1.6 | 39915 | 81 | 2.8s | 650 / 285 | 610 | boss: ranged barrage, two hazards, heavy on anyone in melee. **Ruled (HOM-125, 3.4a): stands.** 140 to 144 s (the model's 130, +8 %), 12 % net for a player who steps out of everything, 57 % at 80 % of the telegraphs with 3 deaths in 16, dead 13 in 16 at 60 %: a dodge check and nothing else, n = 16 to 20 a cell. The bot is a melee probe; a person at range is the one thing it cannot confirm |
 
 **Rows 32 to 41 are wave 4's**, and they fall out of the same rule for free, which is why they are here and why they are not reviewed: nothing about them is a decision yet. Two things to carry into the building of any row: **a "slam every N s" tell on a trash row is a heavier swing, not a telegraphed `heavy`** (a 25 % slam every 9 s in a 12 s fight adds about 30 points of health: a row that has a real slam is an elite and is priced as one), and **the Hit column already has the pack discount in it** for pairs and camps, so the sim must not apply one again.
 
@@ -617,6 +619,26 @@ The last column is a sweep (a dodge chance per telegraph, Pummel and Second Wind
 *How the engineer knows it is right:* on `--gear line`, `--n 20`, the bench should land within 8 points of net and 1.5 s of ttk of the table above on every row, and the three contested rows must come out alive in the slam column and dead in the none column. If they do not, the bench is wrong, not the table.
 
 **What I could not verify.** Whether a person reads a 1.7 s telegraph, and the dodge rate a person actually achieves, is the unknown the whole tier turns on; the bot reacts in one tick and never misjudges the circle. That 40 % of dodges clears the Ogre and 80 % clears every rare is a model of a person, not one. A human pass over the Ogre and Mother Mire by hand (HOM-94's own suggestion) is still the check; it should report how many slams it saw and how many it stepped out of, which is exactly the count the bench now prints.
+
+**The three lenient rows, ruled (HOM-125): kept, nothing moves.** The worry was that a bot which dodges "comfortably" had flattened the bottom of the table. It had not; it showed where the bottom is. Measured at **`--fast 1`** (every heal-sensitive number must be: `--fast 4` decides every fourth tick, casts Second Wind late and reads 20 to 25 points of net too high on Toll Captain, Ogre and Mother Mire, gross damage identical), line gear, the row's own level, `--dodge all`, n = 12 a cell, and `--dodge-rate 0.6` for a player who steps out of 60 % of the telegraphs she had time for. Net as a share of maximum health, deaths out of 12 in brackets:
+
+| Row | Perfect dodge | 60 % dodge | Spread |
+| --- | --- | --- | --- |
+| `toll_captain` | 27 (0) | 68 (0) | 41 |
+| `barnacle_ogre` | 30 (0) | 55 (0) | 25 |
+| `bogfather` | 30 (0) | 39 (0) | 9 |
+| `thorn_warden` | 29 (0) | 38 (0) | 9 |
+| `barrow_lord` | 35 (0) | 47 (0) | 12 |
+| `stonehorn` | 33 (0) | 34 (0) | 1 |
+| `mother_mire` | **10 (0)** | 62 (1) | 52 |
+| `elder_thornback` | 63 (0) | 85 (4) | 22 |
+| `hollow_knight` | 46 (0) | 84 (6) | 38 |
+| `old_grey` | 77 (0) | 97 (9) | 20 |
+| `gutterhook` | 77 (0) | 95 (9) | 18 |
+
+- **Toll Captain, Barnacle Ogre and Mother Mire are kept.** A fight at 10 to 30 % net is cheap *for a player who dodges everything*, which is what 3.4a says the elite tier is priced in. The bottom of the table is not flat, it is a cliff: **the same three rows cost 68, 55 and 62 % at 60 % dodge**, more than the tight elites' best case, and Mother Mire has the widest spread in the table (10 to 62, one death in twelve). The honest price of a row is the column for the dodge rate a person actually achieves, and **that is the one number nothing here measures**: at 60 % the band is as hard as it was thought to be, at 100 % the lenient three are nearly free. That is not a reason to move a constant before somebody has played them, and no lever is named because the bench cannot misjudge a circle and so cannot say which one a person needs. `bogfather`, `thorn_warden`, `barrow_lord` and `stonehorn` barely move between 100 and 60 % dodge (spread 1 to 12): they are the elites a poor dodger still gets through.
+- **The Barnacle Ogre cliff, run** (`--dodge slam --dodge-rate P`, `--fast 1`, line gear, level 17, n = 24): 40 % dodge **5 of 24 dead, 67 % net**; 60 % **0 of 24, 51 %**; 80 % **0 of 24, 51 %**; a perfect dodger 30 %. The claim stands, softened to a slope: the sim sweep said 20 % dead at 40 % dodge and 5 % at 60 %, the bench says 21 % and 0 %. The lever stays `heavy.damage` 250 to 210, **not applied**.
+- **Old Grey and Gutterhook are the one place the spread is a problem**: 77 % net at a perfect dodge and nine deaths in twelve at 60 %, so no player gets them cheap. Already said above (their `damage`, 40 and 55, is the lever and untested); unchanged, and a thing for a person to look at before it is a ruling.
 
 ### 3.5 Abilities and talents: what unlocks where
 

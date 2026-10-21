@@ -13,8 +13,9 @@ export const MIN_DISENCHANT_TIER = 2;
 /** Dust a piece of gear grinds down to: a tenth of its value, never less than one (bible 2.2). */
 export const dustFor = (id: string) => Math.max(1, Math.round(ITEMS[id].value / 10));
 /**
- * Enchanting experience for grinding a piece, per gold of its value. The skill's first enchant is at 36 (24,815 XP) and nothing here is cheap to reach it by: this is what makes the player's own old
- * sets (an adamant set and blade grinds to about 8,800 XP, a stormiron one to about 12,000) the way up, and why a Starmetal piece is worth five of the iron the enemies drop. Not measured by play: it is the one knob.
+ * Enchanting experience for grinding a piece, per gold of its value. Designed (HOM-125, bible 2.2): the skill opens at 36 (24,815 XP), which at 8 is 3,102 gold of gear, one hour of the Spire's income
+ * (about 3,100); everything the climb makes and the player has outgrown (5,238 gold of it) grinds to Enchanting 41, so a hoarder arrives at the top of the list and a seller reaches 36 on 60 % of it;
+ * and buying the shop's iron at 4x to grind it costs four hours. Checked in vault.test.ts, so retuning the curve, the loot rule or the markup says this has to be decided again.
  */
 export const DISENCHANT_XP_PER_VALUE = 8;
 export const disenchantXp = (id: string) => ITEMS[id].value * DISENCHANT_XP_PER_VALUE;

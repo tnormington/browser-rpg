@@ -24,6 +24,12 @@
 //   --cap N is a ttk fight's sim-seconds limit (120); --fast N steps the sim N ticks per bot decision instead of waiting on the game's frames. The game's loop
 //   caps a frame at 0.25 s of sim, so --speed stops helping when frames are slow; --fast 1 is ~3.5x real time and decides every tick (what a 30 fps player does),
 //   --fast 4 is ~11x and decides every 0.13 s. A camp row that took ~25 s now takes ~3 s. Without --fast the bot decides once a frame, which is coarser at low fps.
+// HOM-125: --fast N is NOT the old pacing for anything that heals. Deciding every 4 ticks casts Second Wind late: the same elite rows read 20 to 25 points of net damage higher than at --fast 1
+//   (Toll Captain 52 against 24, Barnacle Ogre 43 against 27, Mother Mire 35 against 9; gross identical). Use --fast 1 for every net figure; --fast 4 is fine for time-to-kill and for a boss, where the
+//   heals are many and the window long. --dodge-rate P steps out of a share P of the telegraphs it could (a person, not a bot); --kit adds Guard (under 60 % health) and Last Stand (under 40 %), which the
+//   bot has not been seen to use well, so read a --kit result as no better than none. --gear rotroot|starmetal|crownbreaker are the sets a player is in at 27 to 31, 32 and from 32 with the Cairn King's blade.
+//   In a dungeon room the player starts at the door (not toward the town), and a dodge never goes to a spot that is not floor: the Cairn King, 5 from his chamber's north wall, killed the bot 3 fights in 12
+//   when its dodge ran into the wall. Every landed slam is listed in the result's `why` (kind, plan, distance, where the player and the enemy stood).
 // Not modelled: food, potions, talents.
 // ttk: isolated 1v1 (everything else in the world pinned dead), player placed 7 units off; per fight: first swing -> kill, damage taken, % of max HP.
 // loop: the type's camps in their natural layout (other types pinned dead), kill -> loot (real clicks) -> walk (real clicks) -> wait for --health of max HP
@@ -57,6 +63,9 @@ async function botInPage(cfg) {
     base: { weapon: 'warden_edge', head: 'steel_helm', chest: 'steel_chestplate', legs: 'steel_greaves' },
     adamant: { weapon: 'adamant_blade', head: 'adamant_helm', chest: 'adamant_chestplate', legs: 'adamant_greaves' },
     marrow: { weapon: 'marrows_edge', head: 'adamant_helm', chest: 'adamant_chestplate', legs: 'adamant_greaves' },
+    rotroot: { weapon: 'rotroot_edge', head: 'stormiron_helm', chest: 'stormiron_chestplate', legs: 'stormiron_greaves' }, // HOM-125: the sets a player is in at 27 to 31 (the ladder's 72 / 86)
+    starmetal: { weapon: 'starmetal_blade', head: 'starmetal_helm', chest: 'starmetal_chestplate', legs: 'starmetal_greaves' }, // 80 / 100 from 32
+    crownbreaker: { weapon: 'crownbreaker', head: 'starmetal_helm', chest: 'starmetal_chestplate', legs: 'starmetal_greaves' },
   };
   const setup = (level, gear) => { // the shortcut the report discloses: level and gear set directly, bag emptied
     p.combat.level = level; p.combat.xp = cum[level]; p.maxHp = 100 + 15 * (level - 1);
@@ -69,6 +78,7 @@ async function botInPage(cfg) {
     p.hp = p.maxHp; p.energy = p.maxEnergy; p.cd.fill(0); p.gcd = 0; p.queued = null; p.autoAttack = false; p.swing = 0; p.buffs = [];
     p.dead = false; p.outOfCombat = 99; p.inCombat = false; s.targetId = null; s.moveTarget = null; s.interact = null; s.drops = [];
     p.inventory.fill(null);
+    if (cfg.kit) for (const n of ['Guard', 'Last Stand']) if (!p.learned.includes(n)) p.learned.push(n); // HOM-125 --kit: the two trainer defences a player at 30 owns (350 g and 750 g)
   };
   const resetEnemy = e => { Object.assign(e, { hp: e.maxHp, state: 'idle', x: e.spawnX, z: e.spawnZ, cast: null, bleed: null, stagger: 0, attackCd: 0, heavyCd: 0, hazardCd: 0, evadeFor: 0, swing: 0 }); };
   const pin = keep => { for (const o of s.enemies) if (!keep(o)) { o.state = 'dead'; o.respawnIn = 1e9; o.deadFor = 99; o.cast = null; } };
@@ -84,9 +94,9 @@ async function botInPage(cfg) {
   // what happened, from every event of every tick (a frame can span several ticks, and the sim clears its event list each one)
   // HOM-106: telegraphs the player is reading, by enemy id. `plan` is decided once, on the first frame the bot sees it (world-design 3.4a).
   const tele = new Map();
-  const teleZero = () => ({ seen: 0, pummelPlan: 0, dodgePlan: 0, late: 0, netted: 0, pummelled: 0, dodged: 0, landed: 0, missed: 0 });
+  const teleZero = () => ({ seen: 0, pummelPlan: 0, dodgePlan: 0, late: 0, netted: 0, pummelled: 0, dodged: 0, landed: 0, missed: 0, skipped: 0 });
   let rec = null;
-  const newRec = () => { tele.clear(); return (rec = { firstSwing: null, kills: [], taken: 0, heavies: 0, interrupts: 0, casts: [0, 0, 0, 0, 0, 0, 0], swings: 0, dealt: 0, heals: 0, healed: 0, tele: {} }); };
+  const newRec = () => { tele.clear(); return (rec = { firstSwing: null, kills: [], taken: 0, heavies: 0, interrupts: 0, casts: new Array(13).fill(0), swings: 0, dealt: 0, heals: 0, healed: 0, tele: {} }); };
   const push = s.events.push.bind(s.events);
   s.events.push = (...evs) => {
     for (const e of evs) if (rec) {
@@ -97,7 +107,7 @@ async function botInPage(cfg) {
       else if (e.t === 'telegraph') { (rec.tele[e.kind] ??= teleZero()).seen++; tele.set(e.id, { ...e, plan: null }); }
       else if (e.t === 'slam') { // lands hit or miss; the sim's own test: centre to centre within the radius
         const pd = tele.get(e.id), k = (rec.tele[pd?.kind ?? 'heavy'] ??= teleZero()); tele.delete(e.id);
-        if (dist(e, p) <= e.radius) k.landed++; else { k.missed++; if (pd?.plan === 'dodge') k.dodged++; }
+        if (dist(e, p) <= e.radius) { k.landed++; (rec.why ??= []).push({ kind: pd?.kind, plan: pd?.plan ?? null, d: +dist(e, p).toFixed(1), goalD: pd?.goal ? +dist(p, pd.goal).toFixed(1) : null, x: +p.x.toFixed(0), z: +p.z.toFixed(0), ex: +e.x.toFixed(1), ez: +e.z.toFixed(1), t: +((s.tick - (rec.firstSwing ?? s.tick)) / 30).toFixed(0) }); } else { k.missed++; if (pd?.plan === 'dodge') k.dodged++; }
       }
       else if (e.t === 'interrupt') { rec.interrupts++; const pd = tele.get(e.id); if (pd) { rec.tele[pd.kind].pummelled++; tele.delete(e.id); } }
       else if (e.t === 'kill') rec.kills.push({ id: e.id, tick: s.tick });
@@ -114,15 +124,23 @@ async function botInPage(cfg) {
     if (!(cfg.dodge === 'all' || (cfg.dodge === 'slam' && pd.kind === 'heavy'))) return 'none';
     if (p.root) { k.netted++; return 'none'; }
     if ((t.cast?.t ?? 0) > 0.9) { k.late++; return 'none'; }
+    if (Math.random() >= cfg.dodgeRate) { k.skipped++; return 'none'; } // HOM-125: --dodge-rate P, a player who steps out of a share P of the telegraphs there was time to (world-design 3.4a's cliff)
     const R = pd.kind === 'heavy' ? cfg.heavyRadius[t.type] : pd.radius;
     if (!(R > 0)) throw new Error(`dodge: no radius for ${t.type}'s ${pd.kind}`);
+    // HOM-125: a person does not walk into a wall to get out of a circle. In a room, a slam goal that is not on the floor is turned (20 degrees at a time, either way) to the nearest one that is,
+    // and the far side of the enemy is not taken when its own slam dodge would be a wall (the Cairn King stands 5 from his chamber's north wall, and 3.4a's far side was exactly it).
+    const reg = d.world.regionAt(t.x, t.z), Rh = cfg.heavyRadius[t.type] ?? 0;
+    const slamGoal = a => ({ x: t.x + Math.cos(a) * (Rh + 0.9), z: t.z + Math.sin(a) * (Rh + 0.9) });
     if (pd.kind === 'heavy') { // straight away from the enemy, along enemy -> player, to radius + 0.9
-      const n = dist(p, t) || 1;
-      pd.goal = { x: t.x + ((p.x - t.x) / n) * (R + 0.9), z: t.z + ((p.z - t.z) / n) * (R + 0.9) };
+      const away = Math.atan2(p.z - t.z, p.x - t.x);
+      const turn = [0, 20, -20, 40, -40, 60, -60, 80, -80, 100, -100, 120, -120, 140, -140, 160, -160, 180].map(o => slamGoal(away + o * Math.PI / 180)).find(g => clearSpot(g.x, g.z, reg));
+      pd.goal = turn ?? slamGoal(away);
     } else { // the point on the 2.4 circle round the enemy that is >= radius + 0.6 from the mark and nearest to the player; else straight away from the mark
       const cands = [];
       for (let a = 0; a < 360; a += 10) cands.push({ x: t.x + 2.4 * Math.cos(a * Math.PI / 180), z: t.z + 2.4 * Math.sin(a * Math.PI / 180) });
-      const far = cands.filter(c => Math.hypot(c.x - pd.x, c.z - pd.z) >= R + 0.6).sort((a, b) => dist(a, p) - dist(b, p))[0];
+      const roomy = c => !Rh || (g => clearSpot(g.x, g.z, reg))(slamGoal(Math.atan2(c.z - t.z, c.x - t.x)));
+      const ok = cands.filter(c => Math.hypot(c.x - pd.x, c.z - pd.z) >= R + 0.6);
+      const far = (ok.filter(roomy).length ? ok.filter(roomy) : ok).sort((a, b) => dist(a, p) - dist(b, p))[0];
       if (far) pd.goal = far;
       else { const n = Math.hypot(pd.x - t.x, pd.z - t.z) || 1; pd.goal = { x: pd.x + ((pd.x - t.x) / n) * (R + 0.6), z: pd.z + ((pd.z - t.z) / n) * (R + 0.6) }; }
     }
@@ -155,14 +173,16 @@ async function botInPage(cfg) {
     // KeyX is the attack key (KeyR is an ability-bar slot, so this used to cast whatever R holds and never arm anything). It is a toggle that the sim
     // only applies on its next tick, so assert the state wanted: tap only when disarmed, and not again until that tap has had ticks to land.
     if (!p.autoAttack && dd <= 3 && s.tick - lastAttackTap >= 6) { lastAttackTap = s.tick; tap('KeyX'); }
-    const slotKey = i => tap('Digit' + (i + 1));
+    const slotKey = i => tap(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyT', 'Digit7', 'Digit8'][i]); // bar-layout.ts DEFAULT_KEYS: slots 6 and up are not Digit7 and on
     if (t.cast && t.cast.t >= 0.25 && p.cd[5] <= 0.02 && p.energy >= 10 && dd <= 3.5) slotKey(5);
+    else if (cfg.kit && p.hp < 0.6 * p.maxHp && p.cd[7] <= 0.02 && p.energy >= 20) slotKey(7); // --kit: Guard (off the GCD) once under 60 %
     else if (p.queued === null && p.gcd <= 0.4) {
       const w = p.gcd, en = Math.min(p.maxEnergy, p.energy + 8 * w);
       const ok = (slot, cost, range) => p.cd[slot] <= w + 0.02 && en >= cost && dd <= range;
       const adjacent = chasers.filter(e => dist(e, p) <= 3.5).length;
       const windHeal = 45 * (1 + 0.07 * (p.combat.level - 1)); // Second Wind's heal (sim/data.ts: 45 x powerForLevel, no talents)
-      if (((cfg.heal && p.maxHp - p.hp >= windHeal) || (cfg.tactics && p.hp < 0.45 * p.maxHp)) && ok(3, 25, 99)) slotKey(3); // --heal: Second Wind on cooldown when none of it is wasted; --tactics: also when low, and Cleave on a crowd
+      if (cfg.kit && p.hp < 0.4 * p.maxHp && ok(12, 40, 99)) slotKey(12); // --kit: Last Stand (3 x Second Wind, 90 s) once under 40 %
+      else if (((cfg.heal && p.maxHp - p.hp >= windHeal) || (cfg.tactics && p.hp < 0.45 * p.maxHp)) && ok(3, 25, 99)) slotKey(3); // --heal: Second Wind on cooldown when none of it is wasted; --tactics: also when low, and Cleave on a crowd
       else if (cfg.tactics && adjacent >= 2 && ok(4, 25, 3.5)) slotKey(4);
       else if (ok(1, 30, 3)) slotKey(1);
       else if (ok(2, 20, 9) && !t.bleed) slotKey(2);
@@ -175,12 +195,15 @@ async function botInPage(cfg) {
   const trial = async (e, level, gear) => {
     setup(level, gear);
     resetEnemy(e); pin(o => o === e);
-    const toward = e.spawnX > 880 ? { x: 881 - e.spawnX, z: 8 - e.spawnZ } : { x: 0, z: Math.sign(8 - e.spawnZ) || 1 }; // toward the town, or the road's axis
-    const base =Math.atan2(toward.z, toward.x);
+    const reg = d.world.regionAt(e.spawnX, e.spawnZ);
+    // HOM-125: in a dungeon room the player comes in by the door, so the stand-off point is toward it. "Toward the town" put the player on the far side of the Cairn King, between him
+    // and the north wall (he spawns 5 from it), where the dodge's "straight away" was a wall: 28 % of his slams landed and 3 of 12 fights died of it, a bench fault and not his.
+    const door = reg?.cave ? reg.connections?.[0]?.at : null;
+    const toward = door ? { x: door.x - e.spawnX, z: door.z - e.spawnZ } : e.spawnX > 880 ? { x: 881 - e.spawnX, z: 8 - e.spawnZ } : { x: 0, z: Math.sign(8 - e.spawnZ) || 1 }; // the door, or toward the town, or the road's axis
+    const base = Math.atan2(toward.z, toward.x);
     // Rotwood Cultist spawn 92 (HOM-85) took 63-92 s to kill and dealt 0: it sits in the Root Warren, whose floor is a 22-wide room, and 7 units "toward the road"
     // put the player in the Thornwood above it, a different region the cultist neither reaches nor sees across. So the stand-off point is the first of
     // the toward-direction and then every 45 degrees round it that is on the enemy's own floor and clear of the region's standing stones; none is a bench fault.
-    const reg = d.world.regionAt(e.spawnX, e.spawnZ);
     const spot = [0, 1, -1, 2, -2, 3, -3, 4].map(k => ({ x: e.spawnX + Math.cos(base + k * Math.PI / 4) * 7, z: e.spawnZ + Math.sin(base + k * Math.PI / 4) * 7 }))
       .find(c => d.world.regionAt(c.x, c.z) === reg && !(reg.obstacles ?? []).some(o => Math.hypot(o.x - c.x, o.z - c.z) < o.r + 1.5));
     if (!spot) throw new Error(`ttk: no stand-off point on ${e.type} #${e.id}'s own floor (${reg?.id}) at (${e.spawnX.toFixed(1)}, ${e.spawnZ.toFixed(1)})`);
@@ -191,7 +214,7 @@ async function botInPage(cfg) {
     const killed = rec.kills.find(k => k.id === e.id);
     const r = { type: e.type, id: e.id, level, gear, maxHp: p.maxHp, killed: !!killed, died: p.dead, ttk: killed && rec.firstSwing != null ? (killed.tick - rec.firstSwing) / 30 : null,
       lead: rec.firstSwing != null ? (rec.firstSwing - start) / 30 : null, taken: rec.taken, takenPct: 100 * rec.taken / p.maxHp, netPct: 100 * (rec.taken - rec.healed) / p.maxHp, heals: rec.heals, healedPct: 100 * rec.healed / p.maxHp,
-      heavies: rec.heavies, interrupts: rec.interrupts, casts: rec.casts, swings: rec.swings, dealt: rec.dealt, tele: rec.tele };
+      heavies: rec.heavies, interrupts: rec.interrupts, casts: rec.casts, swings: rec.swings, dealt: rec.dealt, tele: rec.tele, why: rec.why };
     for (let i = 0; i < 20; i++) await frame();
     return r;
   };
@@ -354,7 +377,7 @@ async function runBot(page) {
   page.on('console', m => { if (m.type() === 'error') console.error('page:', m.text()); });
   const t0 = Date.now();
   await page.exposeFunction('__benchLog', m => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s] ${m}`));
-  const res = await page.evaluate(botInPage, { mode, fast: Number(opt('fast', 0)), cap: Number(opt('cap', 120)), only: opt('types', '') ? types : null, runs, thr, dodge, heavyRadius, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), n, levels, standoff: Number(opt('standoff', 13)), link: Number(opt('link', 13)), size: Number(opt('size', 3)), gearLo: opt('gearlo', 'base').split(','), gearHi: opt('gearhi', 'adamant,marrow').split(',') });
+  const res = await page.evaluate(botInPage, { mode, fast: Number(opt('fast', 0)), cap: Number(opt('cap', 120)), only: opt('types', '') ? types : null, runs, thr, dodge, heavyRadius, dodgeRate: Number(opt('dodge-rate', 1)), kit: process.argv.includes('--kit'), tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), n, levels, standoff: Number(opt('standoff', 13)), link: Number(opt('link', 13)), size: Number(opt('size', 3)), gearLo: opt('gearlo', 'base').split(','), gearHi: opt('gearhi', 'adamant,marrow').split(',') });
   const wall = ((Date.now() - t0) / 1000).toFixed(0);
   if (mode === 'camp' || mode === 'ride' || mode === 'clusters') {
     writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify(res, null, 1));
@@ -370,7 +393,7 @@ async function runBot(page) {
     const mm = a => { const s = stat(a); return s.n ? `${s.median} / ${s.mean}` : '-'; };
     const sumTele = (t, kind) => t.reduce((a, x) => { const k = x.tele[kind]; if (k) for (const f in k) a[f] = (a[f] ?? 0) + k[f]; return a; }, {});
     console.log(`--dodge ${dodge}; ttk, gross, net: median / mean`);
-    console.table(runs.map(r => { const t = res.filter(x => x.type === r.type), hv = sumTele(t, 'heavy'), gr = sumTele(t, 'ground'), tl = k => (k.seen ? `${k.seen} seen, ${k.dodged ?? 0} dodged, ${k.pummelled ?? 0} pummelled, ${k.landed ?? 0} landed, ${k.late ?? 0} late, ${k.netted ?? 0} netted` : '-');
+    console.table(runs.map(r => { const t = res.filter(x => x.type === r.type), hv = sumTele(t, 'heavy'), gr = sumTele(t, 'ground'), tl = k => (k.seen ? `${k.seen} seen, ${k.dodged ?? 0} dodged, ${k.pummelled ?? 0} pummelled, ${k.landed ?? 0} landed, ${k.late ?? 0} late, ${k.netted ?? 0} netted, ${k.skipped ?? 0} skipped` : '-');
       return { type: r.type, level: r.level, gear, fights: t.length, died: t.filter(x => x.died).length, swings: mm(t.map(x => x.swings)), noSwing: t.filter(x => x.swings === 0).length, ttk: mm(t.map(x => x.ttk)), gross: mm(t.map(x => x.takenPct)), net: mm(t.map(x => x.netPct)),
         heals: +(t.reduce((a, x) => a + x.heals, 0) / (t.length || 1)).toFixed(1), healedPct: +(t.reduce((a, x) => a + x.healedPct, 0) / (t.length || 1)).toFixed(0), slams: tl(hv), circles: tl(gr) }; }));
     for (const r of runs) { // a bench that says it dodges and did not is lying; say so rather than print a table that looks fine

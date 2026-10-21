@@ -5,15 +5,16 @@ import { ENEMY_TYPES, SPAWNS, ENERGY_REGEN, ABILITIES } from './sim/data';
 import { DROP_TABLES, ITEMS, EQUIP_SLOTS, deriveStats, emptyEquipment } from './sim/items';
 import { CAVE_ROOMS, DUNGEONS, GATES, LANDMARKS, SPIRE, WITHERING, COLLIDERS, caveDepth, dungeonAt, mountsAllowed, regionAt, regionById, dungeonById } from './sim/world';
 import { route, evictGrids } from './sim/path';
-import { STATIONS, nearStation, stationSites } from './sim/crafting';
-import { xpForLevel } from './sim/xp';
+import { RECIPES, STATIONS, nearStation, stationSites } from './sim/crafting';
+import { BUY_MARKUP } from './sim/shop';
+import { levelForXp, xpForLevel } from './sim/xp';
 import { refreshPlayerStats } from './sim/combat';
 import { addItem, countItem } from './sim/inventory';
 import { rollDrops } from './sim/loot';
 import { deserialize, serialize } from './sim/save';
 import { SKILL_IDS, SKILLS, totalLevel } from './sim/skills';
 import { ENCHANTS, enchantById, enchantXp, enchantFx } from './sim/enchants';
-import { DUST, MIN_DISENCHANT_TIER, canDisenchant, disenchantXp, dustFor, enchantBlocker } from './sim/enchanting';
+import { DISENCHANT_XP_PER_VALUE, DUST, MIN_DISENCHANT_TIER, canDisenchant, disenchantXp, dustFor, enchantBlocker } from './sim/enchanting';
 import { REWARD8B, QUEST8_STAGES, activeQuestView, keeperMarker, dialogueAt, sealRead } from './sim/quest';
 import { FLOOR_STEP, GROUND_MARK_Y, floorLift, roomIndices } from './floor-stack';
 
@@ -88,6 +89,19 @@ section('disenchanting: gear in the bag, ground to dust at the circle');
   for (let i = 0; i < 28; i++) f.player.inventory[i] = { id: 'iron_sword', qty: 1 };
   tick(f, { enchant: [{ k: 'disenchant', slot: 0 }] });
   assert(countItem(f.player.inventory, 'iron_sword') === 27 && countItem(f.player.inventory, DUST) === 3, 'with the bag full the freed slot takes the dust');
+}
+
+// ---------------------------------------------------------------------------
+section('the disenchant constant, priced (HOM-125, bible 2.2)');
+{
+  // The three numbers DISENCHANT_XP_PER_VALUE = 8 is chosen to satisfy; if the curve, the loot rule or the shop's markup is retuned, this says the constant has to be decided again.
+  const k = DISENCHANT_XP_PER_VALUE, to36 = xpForLevel(36), valueTo36 = to36 / k;
+  const incomeHour = (0.6 * 36 + 3) * 1.4 * 90; // bible 3.4's loot rule at the Spire's level, the pull mix (1.4) and a person's 90 kills an hour (5.4): about 3,100 gold of vendor value
+  assert(Math.abs(valueTo36 / incomeHour - 1) < 0.05, `opening the skill (Enchanting 36, ${to36} XP) takes ${valueTo36.toFixed(0)} gold of gear ground: one hour of the Spire's income, ${incomeHour.toFixed(0)}`);
+  const goldToBuy = to36 / (k / BUY_MARKUP); // the shop's iron and steel, bought at 4x and ground
+  assert(goldToBuy >= 3 * incomeHour, `buying the gear instead costs ${goldToBuy.toFixed(0)} gold, ${(goldToBuy / incomeHour).toFixed(1)} hours of income: the shop is a sink, never the cheap way up`);
+  const kept = RECIPES.map(r => ITEMS[r.output.id]).filter(it => it.slot && it.tier >= MIN_DISENCHANT_TIER && it.tier <= 5).reduce((a, it) => a + it.value, 0); // every metal and leather piece the climb makes, bar the starmetal that is worn
+  assert(valueTo36 <= 0.7 * kept && levelForXp(kept * k) >= 40, `a player who kept every outgrown piece (${kept} gold of it) arrives with Enchanting ${levelForXp(kept * k)}; one who kept 60 % of it is at 36`);
 }
 
 // ---------------------------------------------------------------------------
