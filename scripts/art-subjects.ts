@@ -90,6 +90,11 @@ const herbSet = (id, herb, potionId, liquid) => ({
 const ORE = 'a single rough chunk of unsmelted ore, broken facets, flecked with metal';
 const BAR = 'a single cast metal ingot bar lying at an angle, square-edged, hammer marks along the top';
 const HIDE = 'a single rolled animal hide tied with a cord';
+// Leather is the hardest thing in the set to ask for, because every plain description of it names
+// something the model would rather paint: "a flat square" is a framed panel on a wall, "a folded
+// piece" is a leather-bound book, "a rolled strip" is a barrel or a shield. A loose fanned stack is
+// the one wording that comes back as crafting material and nothing else.
+const LEATHER = 'a loose stack of cut pieces of cured leather, fanned slightly apart, soft uneven edges';
 
 // --- the items --------------------------------------------------------------------------------
 /** One phrase per item id in ITEMS. Keep each to the object itself: the style suffix does the rest. */
@@ -100,11 +105,13 @@ export const ITEM_SUBJECTS = {
   marsh_hide: `${HIDE}, slick dark green-black marsh hide`,
   thorn_hide: `${HIDE}, tough russet hide studded with short barbs`,
   moor_hide: `${HIDE}, heavy weathered grey-green hide`,
-  tanned_hide: 'a flat square of cured tan boar leather, edges trimmed clean',
-  wolf_leather: 'a flat square of cured grey wolf leather, edges trimmed clean',
-  marsh_leather: 'a flat square of cured dark slick marsh leather, edges trimmed clean',
-  thorn_leather: 'a flat square of cured russet thorn leather, short barbs still in it',
-  moor_leather: 'a flat square of cured heavy grey-green moor leather, edges trimmed clean',
+  tanned_hide: `${LEATHER}, tan boar leather`,
+  wolf_leather: `${LEATHER}, grey wolf leather`,
+  marsh_leather: `${LEATHER}, dark slick marsh leather`,
+  // The word "thorn" anywhere in this one and it comes back a feather or a fan of leaves, barbs or
+  // no barbs, on every roll. The leather is named by its colour instead.
+  thorn_leather: `${LEATHER}, stiff rust-brown leather`,
+  moor_leather: `${LEATHER}, heavy grey-green moor leather`,
 
   // ores, bars and fuel
   copper_ore: `${ORE}, soft red-brown copper`,
@@ -162,9 +169,11 @@ export const ITEM_SUBJECTS = {
   crownbreaker: `${FORMS.sword}, forged from ${METALS.starmetal} folded around cold grey crown iron, engraved pattern at the ricasso, white light in the fuller`,
 
   // armour: the stitched-hide bottom rung
-  leather_cap: 'an empty simple stitched brown leather cap, worn by nobody',
+  // "cap" alone comes back as a peaked chauffeur's cap, and leggings worn by nobody still come back
+  // with legs in them, so both say what they are not as well as what they are.
+  leather_cap: 'an empty medieval brown leather skullcap helmet with ear flaps, no peak, no brim, worn by nobody',
   hide_jerkin: 'an empty sleeveless stitched brown hide jerkin standing upright, worn by nobody',
-  hide_leggings: 'a pair of empty stitched brown hide leggings standing side by side, worn by nobody',
+  hide_leggings: 'empty stitched brown hide leggings laid out flat and limp, no legs in them, no body, no mannequin',
 
   // armour: the metal ladder
   ...metalSet('copper', [['copper_helm', 'helm'], ['copper_chestplate', 'chestplate'], ['copper_greaves', 'greaves']]),
@@ -215,7 +224,9 @@ export const PORTRAIT_SUBJECTS = {
 
   // trainers
   vendor_trainer: 'Orla Saltblade, a hard-muscled human woman in her thirties, a sword trainer in scarred leather fighting harness, hair braided tight',
-  vendor_thorn_trainer: 'Brannock Vane, a heavy-browed human man in his forties, a sword trainer in a sleeveless gambeson, forearms thick with old scars',
+  // Bare arms on a fighter are painted by standing him back far enough to show them, and no roll of
+  // the dice talks the model out of it, so his arms are covered and his scars are on his face.
+  vendor_thorn_trainer: 'Brannock Vane, a heavy-browed human man in his forties, a sword trainer in a padded gambeson buttoned to the throat, old scars across his cheek',
   vendor_high_trainer: 'Ravn Highcastle, a silver-haired human man in his sixties, a veteran sword trainer in a faded tabard over mail',
 
   // stablemasters
@@ -228,4 +239,20 @@ export const PORTRAIT_SUBJECTS = {
   flight_thornwick: 'Hesper Rookwing, a sly dark-eyed human woman in her thirties, a flight master in black feathered leathers, a rook on her shoulder',
   flight_highmoor: 'Tamsin Highwind, a tall calm human woman in her forties, a flight master in a high-collared wind-worn riding coat',
   flight_spire: 'Kestrel Duskwing, a hawk-nosed human man in his thirties, a flight master in deep blue flying leathers with silver buckles',
+};
+
+/**
+ * A handful of subjects come out wrong on the roll their own id gives them - two swords where the
+ * prompt asks for one, a portrait painted down to the waist while the rest are head and shoulders -
+ * and no wording talks the model out of a bad roll. Rerolling only those keeps every other picture
+ * byte for byte what it was, and keeps the set reproducible from a clean checkout, which rerolling
+ * by hand with --seed does not.
+ */
+export const REROLLS: Record<string, number> = {
+  adamant_chestplate: 1,
+  steel_sword: 1,
+  stormiron_blade: 1,
+  tanned_hide: 1,
+  thorn_leather: 2,
+  vendor_trainer: 2,
 };
