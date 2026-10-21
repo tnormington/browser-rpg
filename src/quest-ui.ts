@@ -57,12 +57,14 @@ export class QuestUi {
 
   update(s: GameState, yaw: number) {
     const v = activeQuestView(s), p = s.player;
-    const trackerSig = JSON.stringify([v.title, v.lines, v.progress]);
+    const trackerSig = JSON.stringify([v.title, v.lines, v.progress, v.journey]);
     if (trackerSig !== this.trackerSig) { // rebuild only when the text changes
       this.trackerSig = trackerSig;
       this.title.textContent = `${v.title}  ${v.progress}`;
       this.lines.textContent = '';
       for (const l of v.lines) el(this.lines, `qline${l.done ? ' done' : ''}`, `${l.done ? '✔' : '•'} ${l.text}`);
+      // the way there, when it is a long way off and in another country: the arrow alone cannot say "south, through the fens"
+      if (v.journey) el(this.lines, 'qline', `➤ ${v.journey}`);
     }
     this.tracker.classList.toggle('ready', v.ready);
 

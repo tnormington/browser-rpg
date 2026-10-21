@@ -2,6 +2,7 @@
 import type { GameState } from '../sim';
 import { GATES, LANDMARKS, inCave } from './world';
 import { VILLAGERS, villagerById } from './villagers';
+import { journeyTo } from './journey';
 import { ENEMY_TYPES } from './data';
 import { SkillId, grantXp } from './skills';
 import { NODE_TYPES } from './gathering';
@@ -659,6 +660,12 @@ export interface QuestView {
   ready: boolean;                                          // true when only a conversation is left
   stageNo: number;                                         // 1-based, within the chain
   progress: string;                                        // "(3/6)" for the tracker title; empty once the chain is done
+  /**
+   * The way to the target when it is a long way off and in another country (HOM-134): "Travel south through Dunmere Fens to
+   * Thornwick". The arrow alone is no use across four regions, and this is what keeps a player from walking into the sea.
+   * Null when the target is near, in the same region, or there is none.
+   */
+  journey: string | null;
 }
 
 const nearest = <T extends { x: number; z: number }>(s: GameState, list: T[]): T | undefined =>
@@ -689,13 +696,22 @@ const practiceTarget = (s: GameState) => {
   return nodeTarget(s, tinOpen && countItem(s.player.inventory, 'tin_ore') < countItem(s.player.inventory, 'copper_ore') ? 'tin' : 'copper');
 };
 
-export function questView(s: GameState): QuestView {
+/**
+ * The way to whatever the tracker points at, worked out in the one place every chain's view passes through so that no chain can
+ * forget it (HOM-134). Every builder below leaves `journey` null and this is what fills it in.
+ */
+const withJourney = (s: GameState, v: QuestView): QuestView => v.target ? { ...v, journey: journeyTo(s.player, v.target) } : v;
+
+/** The first chain's tracker. */
+export const questView = (s: GameState): QuestView => withJourney(s, firstChainView(s));
+
+function firstChainView(s: GameState): QuestView {
   const q = s.quest, have = (id: string) => countItem(s.player.inventory, id);
   const stageNo = QUEST_STAGES.indexOf(q.stage) + 1;
   const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
   const npcTarget = { x: NPC.x, z: NPC.z, label: NPC.name };
   const progress = stageNo >= QUEST_STAGES.length ? '' : `(${stageNo}/${QUEST_STAGES.length - 1})`;
-  const v = (lines: QuestLine[], target: QuestView['target'], ready = false): QuestView => ({ title: QUEST_NAME, lines, target, ready, stageNo, progress });
+  const v = (lines: QuestLine[], target: QuestView['target'], ready = false): QuestView => ({ title: QUEST_NAME, lines, target, ready, stageNo, progress, journey: null });
 
   switch (q.stage) {
     case 'offer': return v([talk(`Speak to ${NPC.name} in the clearing`)], npcTarget, true);
@@ -749,15 +765,17 @@ export function questView(s: GameState): QuestView {
       return v(lines, enemyTarget(s, 'brute'));
     }
     case 'report2': return v([{ text: 'Cave Brute slain', done: true }, talk(`Return to ${NPC.name} for your reward`)], npcTarget, true);
-    case 'done': return { title: QUEST_NAME, lines: [{ text: 'Quest complete. The clearing is safe.', done: true }], target: null, ready: false, stageNo, progress };
+    case 'done': return { title: QUEST_NAME, lines: [{ text: 'Quest complete. The clearing is safe.', done: true }], target: null, ready: false, stageNo, progress, journey: null };
   }
 }
 
 /** The first chain's tracker until it is handed in, then the second's. This is what the HUD shows; `questView` stays the first chain only. */
-export function activeQuestView(s: GameState): QuestView {
+export const activeQuestView = (s: GameState): QuestView => withJourney(s, activeChainView(s));
+
+function activeChainView(s: GameState): QuestView {
   const q = s.quest;
   if ((q.fourth === 'carry' || q.fourth === 'report') && s.player.x > EAST_OF_HALE) return errandView(s); // out on the road the errand is what you are doing
-  if (q.stage !== 'done' || q.second === 'locked') return questView(s);
+  if (q.stage !== 'done' || q.second === 'locked') return firstChainView(s);
   if (q.seventh === 'cleared' && q.eighth !== 'locked') return sealView(s);
   if (q.sixth === 'cleared' && q.seventh !== 'locked') return moorView(s);
   if (q.fifth === 'cleared' && q.sixth !== 'locked') return rotrootView(s);
@@ -767,7 +785,7 @@ export function activeQuestView(s: GameState): QuestView {
   const stageNo = QUEST2_STAGES.indexOf(q.second); // 'offer' is 1: stage 0 is the lock
   const total = QUEST2_STAGES.indexOf('cleared') - 1;
   const v = (lines: QuestLine[], target: QuestView['target'], ready = false): QuestView =>
-    ({ title: QUEST2_NAME, lines, target, ready, stageNo, progress: q.second === 'cleared' ? '' : `(${stageNo}/${total})` });
+    ({ title: QUEST2_NAME, lines, target, ready, stageNo, progress: q.second === 'cleared' ? '' : `(${stageNo}/${total})`, journey: null });
   const npcTarget = { x: NPC.x, z: NPC.z, label: NPC.name };
   const lvl = s.player.combat.level;
   const advice = (n: number): QuestLine[] => lvl < n ? [{ text: `Recommended Combat ${n} (you are ${lvl})`, done: false }] : [];
@@ -823,7 +841,7 @@ function saltRoadView(s: GameState): QuestView {
   const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
   const target = { x: HARBOURMASTER.x, z: HARBOURMASTER.z, label: HARBOURMASTER.name };
   const v = (lines: QuestLine[], t: QuestView['target'], ready = false): QuestView =>
-    ({ title: QUEST3_NAME, lines, target: t, ready, stageNo, progress: q.third === 'cleared' ? '' : `(${stageNo}/${total})` });
+    ({ title: QUEST3_NAME, lines, target: t, ready, stageNo, progress: q.third === 'cleared' ? '' : `(${stageNo}/${total})`, journey: null });
   switch (q.third) {
     case 'hunt': {
       const open = Object.entries(SALT_GOALS).find(([t, n]) => (q.kills[t] ?? 0) < n);
@@ -846,7 +864,7 @@ function brineView(s: GameState): QuestView {
   const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
   const target = { x: HARBOURMASTER.x, z: HARBOURMASTER.z, label: HARBOURMASTER.name };
   const v = (lines: QuestLine[], t: QuestView['target'], ready = false): QuestView =>
-    ({ title: QUEST5_NAME, lines, target: t, ready, stageNo, progress: q.fifth === 'cleared' ? '' : `(${stageNo}/${total})` });
+    ({ title: QUEST5_NAME, lines, target: t, ready, stageNo, progress: q.fifth === 'cleared' ? '' : `(${stageNo}/${total})`, journey: null });
   switch (q.fifth) {
     case 'hunt': {
       const open = Object.entries(BRINE_GOALS).find(([t, n]) => (q.kills[t] ?? 0) < n);
@@ -869,7 +887,7 @@ function rotrootView(s: GameState): QuestView {
   const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
   const target = { x: THORN_REEVE.x, z: THORN_REEVE.z, label: THORN_REEVE.name };
   const v = (lines: QuestLine[], t: QuestView['target'], ready = false): QuestView =>
-    ({ title: QUEST6_NAME, lines, target: t, ready, stageNo, progress: q.sixth === 'cleared' ? '' : `(${stageNo}/${total})` });
+    ({ title: QUEST6_NAME, lines, target: t, ready, stageNo, progress: q.sixth === 'cleared' ? '' : `(${stageNo}/${total})`, journey: null });
   switch (q.sixth) {
     case 'hunt': {
       const open = Object.entries(ROT_GOALS).find(([t, n]) => (q.kills[t] ?? 0) < n);
@@ -892,7 +910,7 @@ function moorView(s: GameState): QuestView {
   const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
   const target = { x: HIGH_STEWARD.x, z: HIGH_STEWARD.z, label: HIGH_STEWARD.name }, corvin = GATES.find(g => g.id === 'cairnwaste')!;
   const v = (lines: QuestLine[], t: QuestView['target'], ready = false): QuestView =>
-    ({ title: QUEST7_NAME, lines, target: t, ready, stageNo, progress: q.seventh === 'cleared' ? '' : `(${stageNo}/${total})` });
+    ({ title: QUEST7_NAME, lines, target: t, ready, stageNo, progress: q.seventh === 'cleared' ? '' : `(${stageNo}/${total})`, journey: null });
   switch (q.seventh) {
     case 'hunt': {
       const open = Object.entries(MOOR_GOALS).find(([t, n]) => (q.kills[t] ?? 0) < n);
@@ -915,7 +933,7 @@ function sealView(s: GameState): QuestView {
   const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
   const target = { x: SPIRE_KEEPER.x, z: SPIRE_KEEPER.z, label: SPIRE_KEEPER.name }, thale = GATES.find(g => g.id === 'vault')!;
   const v = (lines: QuestLine[], t: QuestView['target'], ready = false): QuestView =>
-    ({ title: QUEST8_NAME, lines, target: t, ready, stageNo, progress: sealRead(s) ? '' : `(${stageNo}/${total})` });
+    ({ title: QUEST8_NAME, lines, target: t, ready, stageNo, progress: sealRead(s) ? '' : `(${stageNo}/${total})`, journey: null });
   const goals = Object.entries(SEAL_GOALS).map(([t, n]) => ({ text: `${PLURAL[t]} slain: ${Math.min(n, q.kills[t] ?? 0)}/${n}`, done: (q.kills[t] ?? 0) >= n }));
   const advice = lvl < RECOMMENDED_COMBAT_8 ? [{ text: `Recommended Combat ${RECOMMENDED_COMBAT_8} (you are ${lvl})`, done: false }] : [];
   switch (q.eighth) {
@@ -947,5 +965,5 @@ function errandView(s: GameState): QuestView {
   const open = ERRAND_GOODS.find(g => have(g.item) < g.n);
   const target = open ? nodeTarget(s, open.node) : { x: HARBOURMASTER.x, z: HARBOURMASTER.z, label: HARBOURMASTER.name };
   if (ready) lines.push({ text: `Bring them to ${HARBOURMASTER.name} in Saltmarrow (click or press V)`, done: false });
-  return { title: QUEST4_NAME, lines, target, ready, stageNo: ready ? 2 : 1, progress: `(${ready ? 2 : 1}/2)` };
+  return { title: QUEST4_NAME, lines, target, ready, stageNo: ready ? 2 : 1, progress: `(${ready ? 2 : 1}/2)`, journey: null };
 }

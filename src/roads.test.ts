@@ -1,11 +1,13 @@
 // HOM-134: the roads between the towns. That they bend, that they still meet every gate and seam head-on, that their forks
 // lead somewhere a traveller can actually stand, and that the villagers at the far end of each one can be walked to and asked.
 import {
-  BRANCHES, COLLIDERS, PLAYER_RADIUS, Pt, REGIONS, WITHERING, branchById, branchesOf, clampToWorld, forkPost, regionAt, roadOf, wayKeeper,
+  BRANCHES, COLLIDERS, LANDMARKS, PLAYER_RADIUS, Pt, REGIONS, SALTMARROW, WITHERING,
+  branchById, branchesOf, clampToWorld, forkPost, regionAt, roadOf, wayKeeper,
 } from './sim/world';
 import { Road, branchDist, branchTrack, roadAt, roadDist, roadHalfWidth, roadPoint } from './sim/road';
+import { heading, journeyTo, regionRoute } from './sim/journey';
 import { VILLAGERS, villagerById } from './sim/villagers';
-import { NPCS, TALK_RANGE, dialogueAt, npcName, speakerById, speakerNear } from './sim/quest';
+import { NPCS, TALK_RANGE, activeQuestView, dialogueAt, npcName, speakerById, speakerNear } from './sim/quest';
 import { ENEMY_TYPES } from './sim/data';
 import { GameState, Input, NO_INPUT, createState, step } from './sim';
 import { route } from './sim/path';
@@ -130,6 +132,57 @@ section('talking to one: walk up, open the panel, and nothing else moves');
   const before = JSON.stringify(s.quest);
   tick(s, { questAdvance: true });
   assert(JSON.stringify(s.quest) === before, 'and the advance key at a villager moves no chain: they have nothing to give');
+}
+
+section('the breadcrumb: the tracker always says which way the next town is');
+{
+  assert(heading(1, 0) === 'east' && heading(-1, 0) === 'west' && heading(0, 1) === 'south' && heading(0, -1) === 'north' && heading(1, 1) === 'south-east',
+    'the compass reads the world as it is laid out: +x east, +z south');
+  assert(regionRoute('clearing', 'clearing')!.join() === 'clearing' && regionRoute('clearing', 'saltmarrow')!.join() === 'clearing,greywater,saltmarrow',
+    'the region route is the chain of regions between two places, by the seams they already name');
+  assert(regionRoute('clearing', 'spire')!.length === 9 && regionRoute('highmoor', 'sanctum')!.join().includes('cairnwaste,spire,sealstair'),
+    'and it runs the length of the world, into a dungeon if that is where the thing is');
+  assert(regionRoute('clearing', 'nowhere') === null, 'and is null for somewhere that is not there');
+  assert(journeyTo({ x: 0, z: 8 }, { x: 5, z: 2 }) === null && journeyTo(LANDMARKS.square, { x: SALTMARROW.x + 60, z: SALTMARROW.z }) === null,
+    'nothing is said about a place in the same country, or near: the arrow is answer enough');
+
+  // the four legs of the golden path, each taken from the town before it: the tracker names the way and the town at the end of it
+  const legs: [string, Pt, Pt, string, string][] = [
+    ['Hale to Saltmarrow', { x: 0, z: 8 }, LANDMARKS.harbourmaster, 'east', 'Saltmarrow'],
+    ['Saltmarrow to Thornwick', LANDMARKS.square, LANDMARKS.thornReeve, 'south', 'Thornwick'],
+    ['Thornwick to Highmoor', LANDMARKS.thornSquare, LANDMARKS.highSteward, 'east', 'Highmoor'],
+    // Corvin's gate is in the north wall but over to the east of the square, and that is the way you actually walk first
+    ['Highmoor to the Spire', LANDMARKS.highSquare, LANDMARKS.spireKeeper, 'north-east', 'The Sundered Spire'],
+  ];
+  for (const [label, from, to, dir, town] of legs) {
+    const said = journeyTo(from, to);
+    assert(said !== null && said.startsWith(`Travel ${dir} `) && said.endsWith(town), `${label}: "${said}"`);
+  }
+}
+
+section('and the chain hands the breadcrumb over at every town');
+{
+  const stand = (p: Pt, q: Partial<GameState['quest']>) => {
+    const s = createState(1342);
+    s.player.hp = s.player.maxHp = 1e6;
+    s.player.x = p.x; s.player.z = p.z;
+    Object.assign(s.quest, { stage: 'done', second: 'cleared' }, q);
+    tick(s); // updateQuest opens the next chain the moment the last one is handed in
+    return s;
+  };
+  const cases: [string, Pt, Partial<GameState['quest']>, string][] = [
+    ['the Hollow quiet, in Hale', { x: 0, z: 8 }, {}, 'Saltmarrow'],
+    ['the Strand quiet, in Saltmarrow', LANDMARKS.square, { third: 'cleared', fifth: 'cleared' }, 'Thornwick'],
+    ['the Rotroot quiet, in Thornwick', LANDMARKS.thornSquare, { third: 'cleared', fifth: 'cleared', sixth: 'cleared' }, 'Highmoor'],
+    ['the writ signed, in Highmoor', LANDMARKS.highSquare, { third: 'cleared', fifth: 'cleared', sixth: 'cleared', seventh: 'cleared' }, 'The Sundered Spire'],
+  ];
+  for (const [label, p, q, town] of cases) {
+    const v = activeQuestView(stand(p, q));
+    assert(v.target !== null && v.journey !== null && v.journey.endsWith(town), `${label}: the tracker says "${v.journey}"`);
+  }
+  // and inside the town you were sent to, it stops nagging: the arrow has it from there
+  const there = stand(LANDMARKS.harbourVendor, {});
+  assert(activeQuestView(there).target !== null && activeQuestView(there).journey === null, 'once you are in the town the line goes: the arrow has it from there');
 }
 
 console.log(`\nAll ${checks} road, fork and villager checks passed.`);
