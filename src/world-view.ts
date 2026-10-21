@@ -1,4 +1,4 @@
-// The drawn world beyond Hale's clearing: the Greywater Road and Saltmarrow (docs/world-design.md section 1), built from the same region
+﻿// The drawn world beyond Hale's clearing: the Greywater Road and Saltmarrow (docs/world-design.md section 1), built from the same region
 // data the sim reads (sim/world.ts). Rendering only: reads regions, never mutates them.
 //
 // Cost model. The world is continuous and 900+ units long, so nothing here exists until the player is near it and nothing stays drawn once
@@ -48,6 +48,8 @@ const SPIRE_FLOOR = { slate: 0x464450, slateAlt: 0x3a3844, ruin: 0x2f2d38 };
 const SPIRE_PAL: Pal = { wall: 0x6e6c7c, roof: 0x2c2c3a, foot: 0x45434f };
 /** The cairns' black stone, and the pale marble of the Spire's broken columns: the one light shape in a dark country. */
 const WASTE_STONE = 0x2e2c2e, SPIRE_MARBLE = 0xa6a4b4;
+/** The Spire's arcane light (the same cold violet as the Vault's runes), and the height it lies at on the ground. */
+const RUNE_LIGHT = 0xb8a8ff, RUNE_GROUND = 0.07;
 
 let poolMaterial: THREE.MeshBasicMaterial | undefined;
 const hash = (n: number) => Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1;
@@ -66,11 +68,11 @@ function headstone(o: Obstacle, ry: number, i: number): THREE.BufferGeometry[] {
   return [place(new THREE.BoxGeometry(0.8, 1.2, 0.22).rotateZ(lean), o.x, 0.6, o.z, ry), place(new THREE.CylinderGeometry(0.4, 0.4, 0.22, 8).rotateX(Math.PI / 2).rotateZ(lean), o.x - lean * 0.6, 1.2, o.z, ry)];
 }
 
-type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed' | 'bone' | 'brush' | 'thorn' | 'cloth' | 'turf' | 'dark' | 'jamb' | 'heather' | 'cairn' | 'marble', THREE.BufferGeometry[]> & {
+type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed' | 'bone' | 'brush' | 'thorn' | 'cloth' | 'turf' | 'dark' | 'jamb' | 'heather' | 'cairn' | 'marble' | 'rune', THREE.BufferGeometry[]> & {
   /** Placed copies of props.ts props, by `prop:layer`: one draw per layer however many there are. */
   props: Map<string, { color: number; cls: string; geoms: THREE.BufferGeometry[] }>;
 };
-const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], bone: [], brush: [], thorn: [], cloth: [], turf: [], dark: [], jamb: [], heather: [], cairn: [], marble: [], props: new Map() });
+const newBag = (): Bag => ({ rock: [], bark: [], wall: [], roof: [], wood: [], glow: [], stone: [], hull: [], sign: [], pool: [], water: [], reed: [], bone: [], brush: [], thorn: [], cloth: [], turf: [], dark: [], jamb: [], heather: [], cairn: [], marble: [], rune: [], props: new Map() });
 
 /** A prop's layers as one merged geometry each, built the first time it is wanted and copied (never moved) for every placement. */
 const propSources = new Map<PropId, { name: string; color: number; cls: string; geo: THREE.BufferGeometry }[]>();
@@ -525,19 +527,45 @@ export class WorldView {
     this.person(add, LANDMARKS.spireVendor, 0x5a5a38, 'brim', toward(LANDMARKS.spireVendor), t.picks.vendor, 'spire');
     for (const l of [LANDMARKS.spireKeeper, LANDMARKS.spireVendor]) lampPost(bag, l.x + 1.4, l.z - 1.1, 0, 6);
     lampPost(bag, LANDMARKS.forgeSpire.x - 2.4, LANDMARKS.forgeSpire.z + 3.2, 0, 5); // the smith works late
-    // the Spire's stump: a plinth, a fluted drum, a jagged break and the fallen top
-    bag.marble.push(place(new THREE.CylinderGeometry(3.6, 3.9, 0.6, 10), sq.x, 0.3, sq.z));
-    bag.marble.push(place(new THREE.CylinderGeometry(2.5, 2.8, 4.4, 10), sq.x, 2.8, sq.z));
-    for (let n = 0; n < 5; n++) { const a = n * 1.26 + 0.3; bag.marble.push(place(new THREE.BoxGeometry(0.9, 1.1 + (n % 2) * 0.8, 0.8), sq.x + Math.cos(a) * 2.1, 5.4 + (n % 2) * 0.4, sq.z + Math.sin(a) * 2.1, -a)); } // the broken rim
-    bag.marble.push(place(new THREE.CylinderGeometry(2.1, 2.3, 3.2, 10).rotateZ(Math.PI / 2 - 0.1), sq.x + 6.5, 1.5, sq.z + 2.6, 0.5)); // the top, fallen on its side
+    this.spireTower(bag, sq);
+    this.runeCircle(bag, LANDMARKS.circle);
     for (let n = 0, z = SPIRE.z + 66; z > sq.z + 6; n++, z -= 13) lampPost(bag, SPIRE.x + (n % 2 ? 4.4 : -4.4), z, 0, 5.5);
-    // the rune circle (enchanting, HOM-112): a low dais of pale marble, two rings and a ring of ticks of cold rune light on it, and six short standing stones round the edge. A stand-in until the 3D Artist's
-    const rc = LANDMARKS.circle;
-    bag.marble.push(place(new THREE.CylinderGeometry(2.4, 2.5, 0.2, 18), rc.x, 0.1, rc.z));
-    for (const [rad, tube] of [[2.1, 0.06], [1.2, 0.05]]) bag.glow.push(place(new THREE.RingGeometry(rad - tube, rad + tube, 32).rotateX(-Math.PI / 2), rc.x, 0.22, rc.z));
-    for (let n = 0; n < 8; n++) { const a = n * Math.PI / 4; bag.glow.push(place(new THREE.PlaneGeometry(0.16, 0.42).rotateX(-Math.PI / 2), rc.x + Math.sin(a) * 1.65, 0.22, rc.z + Math.cos(a) * 1.65, a)); }
-    for (let n = 0; n < 6; n++) { const a = n * Math.PI / 3 + 0.3; bag.marble.push(place(new THREE.BoxGeometry(0.5, 1.4 + (n % 2) * 0.5, 0.4), rc.x + Math.sin(a) * 2.9, 0.8 + (n % 2) * 0.25, rc.z + Math.cos(a) * 2.9, a)); }
     this.emit(bag, add, SPIRE_PAL);
+  }
+
+  /**
+   * What is left of the Spire: a stepped plinth, a tall shaft cut by dark window slits and held by four leaning buttresses, a jagged crown, a seam of cold rune light up one side, and the sundering itself, a ring of
+   * stones and a core of arcane light hung in the air over the break. The tallest thing in the game's last town: it is seen from the road in, and from the Vault's door. Same footprint as the old stump.
+   */
+  private spireTower(bag: Bag, sq: { x: number; z: number }) {
+    const H = 11;
+    bag.marble.push(place(new THREE.CylinderGeometry(5.4, 5.8, 0.5, 10), sq.x, 0.25, sq.z), place(new THREE.CylinderGeometry(4.4, 4.8, 0.5, 10), sq.x, 0.75, sq.z));
+    bag.marble.push(place(new THREE.CylinderGeometry(2.7, 3.3, H, 10), sq.x, 1 + H / 2, sq.z));
+    for (let n = 0; n < 4; n++) { const a = n * Math.PI / 2 + 0.4, lean = 0.16; bag.marble.push(place(new THREE.BoxGeometry(0.9, 7.5 - n * 0.9, 1.4).rotateZ(lean), sq.x + Math.cos(a) * 3.8, 1 + (7.5 - n * 0.9) / 2, sq.z + Math.sin(a) * 3.8, -a + Math.PI / 2)); }
+    for (let n = 0; n < 5; n++) { const a = n * 1.26 + 0.9, y = 4.5 + (n % 3) * 2.2; bag.dark.push(place(new THREE.BoxGeometry(0.5, 1.8, 0.5), sq.x + Math.cos(a) * 2.75, y, sq.z + Math.sin(a) * 2.75, -a)); } // window slits
+    for (let n = 0; n < 7; n++) { const a = n * 0.9 + 0.2, h = 1.2 + hash(n * 3.3) * 3 + (n % 2) * 1.3; bag.marble.push(place(new THREE.BoxGeometry(1.1, h, 0.7), sq.x + Math.cos(a) * 2.3, 1 + H + h / 2 - 0.3, sq.z + Math.sin(a) * 2.3, -a, 1, 1, 1)); } // the crown, torn
+    bag.rune.push(place(new THREE.BoxGeometry(0.16, H - 1.5, 0.12), sq.x + 2.78, 1 + H / 2, sq.z - 0.2, 0)); // a seam of rune light up the shaft
+    for (let n = 0; n < 7; n++) { const a = n * 0.9, r = 4 + hash(n * 7.1) * 1.8, y = 14 + (n % 3) * 1.8 + hash(n) * 1.5; bag.marble.push(place(new THREE.DodecahedronGeometry(1), sq.x + Math.cos(a) * r, y, sq.z + Math.sin(a) * r, a, 0.45 + hash(n + 2) * 0.5, 0.35 + hash(n + 4) * 0.4, 0.4)); }
+    bag.rune.push(place(new THREE.OctahedronGeometry(1.1), sq.x, 16.5, sq.z, 0.4, 1, 1.6, 1));
+    bag.marble.push(place(new THREE.CylinderGeometry(2.1, 2.3, 3.4, 10).rotateZ(Math.PI / 2 - 0.1), sq.x + 7, 1.7, sq.z + 3, 0.5)); // the top, fallen on its side
+    for (let n = 0; n < 5; n++) { const a = n * 1.3 + 2; bag.marble.push(place(new THREE.BoxGeometry(1.2 + hash(n) * 0.8, 0.6, 0.9), sq.x + Math.cos(a) * 7.5, 0.3, sq.z + Math.sin(a) * 7.5, a)); } // dropped masonry round the plinth
+    for (let n = 0; n < 24; n++) { const a = n * Math.PI / 12; bag.rune.push(place(new THREE.PlaneGeometry(0.2, n % 2 ? 0.5 : 0.8).rotateX(-Math.PI / 2), sq.x + Math.sin(a) * 9, RUNE_GROUND, sq.z + Math.cos(a) * 9, a)); } // the tower's own circle, laid in the stones of the square
+  }
+
+  /**
+   * The rune circle, the tenth skill's one object: a two-tier dais, a bright inner ring and a ring of glyph ticks in cold light, six tall standing stones each cut with a glowing slit and leaning a little
+   * inward, and a small sigil of light turning over the centre. Cold violet, never warm: the forge across the square is the only orange.
+   */
+  private runeCircle(bag: Bag, rc: { x: number; z: number }) {
+    bag.marble.push(place(new THREE.CylinderGeometry(2.9, 3.1, 0.25, 12), rc.x, 0.12, rc.z), place(new THREE.CylinderGeometry(2.4, 2.6, 0.25, 12), rc.x, 0.37, rc.z));
+    for (const [rad, tube] of [[2.15, 0.07], [1.25, 0.05]]) bag.rune.push(place(new THREE.RingGeometry(rad - tube, rad + tube, 24).rotateX(-Math.PI / 2), rc.x, 0.51, rc.z));
+    for (let n = 0; n < 12; n++) { const a = n * Math.PI / 6; bag.rune.push(place(new THREE.PlaneGeometry(0.16, 0.4).rotateX(-Math.PI / 2), rc.x + Math.sin(a) * 1.7, 0.51, rc.z + Math.cos(a) * 1.7, a)); }
+    for (let n = 0; n < 6; n++) {
+      const a = n * Math.PI / 3 + 0.3, h = 2.4 + (n % 3) * 0.7, x = rc.x + Math.sin(a) * 3.3, z = rc.z + Math.cos(a) * 3.3;
+      bag.marble.push(place(new THREE.BoxGeometry(0.7, h, 0.5).rotateX(-0.07), x, h / 2 + 0.2, z, a));
+      bag.rune.push(place(new THREE.BoxGeometry(0.1, h * 0.55, 0.06), x - Math.sin(a) * 0.27, h / 2 + 0.25, z - Math.cos(a) * 0.27, a)); // the cut slit, on the face toward the centre
+    }
+    bag.rune.push(place(new THREE.OctahedronGeometry(0.4), rc.x, 1.7, rc.z, 0.5, 1, 1.5, 1));
   }
 
   /** Thornwick's own: a well in the square, a stall at the provisioner's, a notice board at the reeve's, barrels and crates, and lamps down the road from the north. */
@@ -587,6 +615,7 @@ export class WorldView {
     one(bag.heather, MOOR_FLOOR.heather, 'foliage', 'cast');
     one(bag.cairn, WASTE_STONE, 'rock');
     one(bag.marble, SPIRE_MARBLE, 'stone');
+    if (bag.rune.length) { const m = mesh(mergeGeometries(bag.rune)!, RUNE_LIGHT, 'glow', 'none'); (m.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.4; add(m); }
     for (const e of bag.props.values()) one(e.geoms, e.color, e.cls, e.cls === 'glow' ? 'none' : 'both');
     if (bag.glow.length) { const m = mesh(mergeGeometries(bag.glow)!, LANTERN, 'glow', 'none'); (m.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.1; add(m); }
     if (bag.pool.length) {
