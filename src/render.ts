@@ -28,6 +28,7 @@ import { WorldView, flightMasterFigure, headstones, Kit } from './world-view';
 import { WorldMap, mapPosition } from './world-map';
 import { landingSpot } from './sim/flight';
 import { GROUND_CELL, bakeUV, dress, groundDrift, hasSurface } from './surface';
+import type { Pick } from './cursor';
 
 /**
  * Every colour in the scene, in one place. Desaturated, cold and narrow: the world sits in a tight dark band so that
@@ -1718,6 +1719,39 @@ export class Renderer {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
     return this.raycaster.intersectObject(this.circlePick, false).length > 0;
+  }
+
+  /**
+   * Everything above in one answer: what is under a screen position, or null for nothing at all. One chain, used
+   * by the click that acts on it (main.ts) and by the cursor that shows what the click would do (HOM-142), so
+   * the pointer can never promise something the press would not deliver.
+   *
+   * Precedence, most specific first: an enemy under the position itself, then the NPC, flight master, node,
+   * vendor and the five stations (all exact), and only then the forgiving picks — a near miss takes the enemy,
+   * else the node, but never something that was really aimed at elsewhere. `tolerance` is how many pixels of
+   * near miss still count; 0 leaves the forgiving pass out.
+   */
+  pickAt(clientX: number, clientY: number, tolerance = 0): Pick | null {
+    const enemy = this.pickEnemy(clientX, clientY);
+    if (enemy !== null) return { k: 'enemy', id: enemy };
+    const node = this.pickNode(clientX, clientY), npc = this.pickNpc(clientX, clientY);
+    const vendor = this.pickVendor(clientX, clientY), flightMaster = this.pickFlightMaster(clientX, clientY), forge = this.pickForge(clientX, clientY);
+    if (npc !== null) return { k: 'npc', id: npc };
+    if (flightMaster !== null) return { k: 'flightmaster', id: flightMaster };
+    if (node !== null) return { k: 'node', id: node };
+    if (vendor !== null) return { k: 'vendor', id: vendor };
+    if (forge !== null) return { k: 'forge', site: forge };
+    if (this.pickRange(clientX, clientY)) return { k: 'range' };
+    if (this.pickAlembic(clientX, clientY)) return { k: 'alembic' };
+    if (this.pickRack(clientX, clientY)) return { k: 'rack' };
+    if (this.pickCircle(clientX, clientY)) return { k: 'circle' };
+    if (tolerance > 0) {
+      const nearEnemy = this.pickEnemy(clientX, clientY, tolerance);
+      if (nearEnemy !== null) return { k: 'enemy', id: nearEnemy };
+      const nearNode = this.pickNode(clientX, clientY, tolerance);
+      if (nearNode !== null) return { k: 'node', id: nearNode };
+    }
+    return null;
   }
 
   /** World point to screen pixels; null when behind the camera. */

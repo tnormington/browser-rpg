@@ -14,6 +14,8 @@ import { bestMount } from './sim/mounts';
 import { applyStress } from './sim/stress';
 import { ITEMS } from './sim/items';
 import { bestFoodSlot } from './sim/consumables';
+import { CursorId, cursorFor } from './cursor';
+import { cursorCss, preloadCursorArt } from './art';
 import { Trace } from './trace';
 
 // False in a public build (vite.config.ts), which folds every branch below it away: the deployed game has no
@@ -159,27 +161,11 @@ canvas.addEventListener('mousedown', e => {
 });
 addEventListener('mouseup', e => {
   if (held.has(0) && e.button === 0 && dragMoved < DRAG_SLOP_PX) {
-    // Precedence, most specific first: an enemy under the cursor itself, then the NPC, ore/tree node and forge (all
-    // exact), and only then the forgiving picks: a near miss takes the enemy, else the node, but never a click that
-    // was really aimed at something else. A click that hits none of them does nothing at all.
-    pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
-    if (pendingEnemy === null) {
-      const node = view.pickNode(e.clientX, e.clientY), npc = view.pickNpc(e.clientX, e.clientY), vendor = view.pickVendor(e.clientX, e.clientY), flightMaster = view.pickFlightMaster(e.clientX, e.clientY), forge = view.pickForge(e.clientX, e.clientY);
-      if (npc !== null) pendingInteract = { k: 'npc', id: npc };
-      else if (flightMaster !== null) pendingInteract = { k: 'flightmaster', id: flightMaster };
-      else if (node !== null) pendingInteract = { k: 'node', id: node };
-      else if (vendor !== null) pendingInteract = { k: 'vendor', id: vendor };
-      else if (forge !== null) pendingInteract = { k: 'forge', site: forge };
-      else if (view.pickRange(e.clientX, e.clientY)) pendingInteract = { k: 'range' };
-      else if (view.pickAlembic(e.clientX, e.clientY)) pendingInteract = { k: 'alembic' };
-      else if (view.pickRack(e.clientX, e.clientY)) pendingInteract = { k: 'rack' };
-      else if (view.pickCircle(e.clientX, e.clientY)) pendingInteract = { k: 'circle' };
-      else {
-        pendingEnemy = view.pickEnemy(e.clientX, e.clientY, CLICK_TOLERANCE_PX);
-        const near = pendingEnemy === null ? view.pickNode(e.clientX, e.clientY, CLICK_TOLERANCE_PX) : null;
-        if (near !== null) pendingInteract = { k: 'node', id: near };
-      }
-    }
+    // What is under the press, by the one precedence both the click and the cursor read (render.ts pickAt). A click
+    // that hits none of them does nothing at all.
+    const hit = view.pickAt(e.clientX, e.clientY, CLICK_TOLERANCE_PX);
+    if (hit?.k === 'enemy') pendingEnemy = hit.id;
+    else if (hit) pendingInteract = hit;
   }
   held.delete(e.button);
   if (!held.size) cursorAwayForDrag(false); // the second button of a two-button drag keeps the cursor away until it too comes up
@@ -194,7 +180,36 @@ addEventListener('mouseup', e => {
 function cursorAwayForDrag(on: boolean) {
   document.body.classList.toggle('swinging', on);
 }
+/**
+ * The cursor is the game's own, and it says what the press under it would do (HOM-142): the arrow everywhere,
+ * an anvil and hammer over the forge, a coin pouch over a merchant, crossed swords over an enemy. It reads the
+ * same pickAt the click reads, so the two can never disagree about what is under the pointer.
+ *
+ * Resolved on the frame rather than on the move, for two reasons. The chain is a dozen raycasts, and a mouse
+ * reports far more often than it is worth running; and the world moves under a pointer that is standing still —
+ * walk past a boar and the cursor has to become a sword without the mouse having been touched. CURSOR_EVERY is
+ * the throttle on top of that: a tenth of a second is under what a hand notices, and cuts the chain to a tenth.
+ *
+ * Only the canvas wears it. Over a HUD panel the panel's own cursor applies (a button is a hand, a bag slot a
+ * grab), and body carries the plain arrow so nothing is ever left on the system's.
+ */
+let pointerX = -1, pointerY = -1, cursorNow: CursorId | null = null, sinceCursor = 0;
+const CURSOR_EVERY = 0.1;
+function updateCursor(dt: number) {
+  sinceCursor += dt;
+  if (pointerX < 0 || sinceCursor < CURSOR_EVERY) return;
+  sinceCursor = 0;
+  // A swing hides the cursor anyway, and the map screen draws no world to pick out of: both stay on the arrow,
+  // so the pointer does not come back from a drag still wearing whatever it was over when the drag began.
+  const want = held.size || view.showingMap ? 'point' : cursorFor(view.pickAt(pointerX, pointerY, CLICK_TOLERANCE_PX));
+  if (want === cursorNow) return;
+  canvas.style.cursor = cursorCss(cursorNow = want);
+}
+document.body.style.cursor = cursorCss('point');
+preloadCursorArt();
+
 addEventListener('mousemove', e => {
+  pointerX = e.clientX; pointerY = e.clientY;
   if (!held.size) return;
   dragMoved = Math.max(dragMoved, Math.hypot(e.clientX - pressX, e.clientY - pressY)); // a high-water mark: a drag that comes back to where it started is still a drag
   if (dragMoved >= DRAG_SLOP_PX) { cursorAwayForDrag(true); view.orbit(e.movementX, e.movementY); }
@@ -264,6 +279,7 @@ function frame(now: number) {
   view.draw(state, acc / TICK_DT);
   trace?.drawEnd();
   hud.update(state, dt);
+  updateCursor(dt); // after the draw: the pick reads the camera the frame was drawn with
   trace?.endFrame();
   requestAnimationFrame(frame);
 }

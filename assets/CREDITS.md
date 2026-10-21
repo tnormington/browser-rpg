@@ -21,6 +21,12 @@ Only the files actually used are committed; the full downloads are not in the re
 | destrier.glb | Second mount | Horse (shipped as glTF, unmodified) | Quaternius, via Poly Pizza | https://poly.pizza/m/qvTrSG9pZF | CC0 |
 
 
+## Cursors
+
+The mouse cursors in `assets/art/cursors/` are the one piece of `assets/art/` not drawn by the generator: they are
+built from **game-icons.net** icons under **CC BY 3.0**, which unlike everything above *requires* the credit. It is in
+`assets/art/cursors/LICENSES.md`, written by `scripts/cursor-art.ts` out of the same map it builds the pictures from.
+
 ## Processing
 
 The packs ship FBX; each used file was converted once to binary glTF with FBX2glTF (`npm i fbx2gltf`,
