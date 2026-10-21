@@ -1,5 +1,21 @@
 # browser-rpg
 
+## Run everything through PowerShell
+
+Every command in this repo goes through the **PowerShell** tool. Do not reach for bash first: the
+Bash tool's PATH is a stub, so `node`, `npm`, `npx`, `tsx` — and even `sleep` — all come back as
+`command not found`. Nothing this file documents can run there, so a bash attempt costs a tool call
+and teaches you nothing. Committing from bash is worse than slow: git fires the `post-commit` hook,
+the hook cannot find `node` either, and the playtest-server check silently never runs.
+
+It is Windows PowerShell 5.1, so the bash reflexes do not carry over:
+
+    a && b              a; if ($?) { b }          `&&` and `||` are a parse error
+    $VAR                $env:VAR
+    VAR=x node y.mjs    $env:VAR='x'; node y.mjs
+    2>/dev/null         2>$null
+    curl ...            curl.exe ...              bare `curl` is an alias for Invoke-WebRequest
+
 ## The playtest server
 
 The game is played at **http://localhost:5173**, served by a vite dev server running against the
@@ -40,8 +56,8 @@ runs, or when the process exits if it never got that far. A bench that is killed
 for at most three minutes. Default args are `GPU_ARGS`; pass `args: UNCAPPED_ARGS` only when the
 script is measuring frame time, because uncapped frames are most of the cost.
 
-    BENCH_GPU_SLOTS=2 node bench/look.mjs ...    allow two at once (default 1)
-    BENCH_GPU_WAIT_MS=...                        how long to queue before giving up (default 20 min)
+    $env:BENCH_GPU_SLOTS=2; node bench/look.mjs ...   allow two at once (default 1)
+    $env:BENCH_GPU_WAIT_MS=...                        how long to queue before giving up (default 20 min)
 
 **A new bench script must go through `launchBrowser`** — a script that calls `chromium.launch()`
 directly is outside the limit and is the one that will be rendering while everything else waits.
@@ -66,7 +82,7 @@ Plain `git fetch`/`push` has no credentials and fails with `could not read Usern
 'https://github.com'`. Credentials are minted per-operation by a launcher shim, so route any
 command that touches the network through it:
 
-    node "$PAPERCLIP_GITHUB_LAUNCHER_DIR/git" -C <repo> fetch origin
+    node "$env:PAPERCLIP_GITHUB_LAUNCHER_DIR/git" -C <repo> fetch origin
 
 Local-only commands (`status`, `log`, `commit`, `rev-list`) work as normal. If you cannot reach the
 remote, say so rather than reporting measurements as verified against it.
