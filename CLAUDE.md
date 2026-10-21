@@ -16,6 +16,11 @@ It is Windows PowerShell 5.1, so the bash reflexes do not carry over:
     2>/dev/null         2>$null
     curl ...            curl.exe ...              bare `curl` is an alias for Invoke-WebRequest
 
+The human is sitting at this machine, so nothing you run may throw a console window onto their
+screen. Commands go in the PowerShell tool, and long jobs go in its background mode. `Start-Process`
+opens a visible window unless you pass `-NoNewWindow`, and so do `cmd /c start` and a `.bat` wrapper
+— none of them belong in a task.
+
 ## The playtest server
 
 The game is played at **http://localhost:5173**, served by a vite dev server running against the
