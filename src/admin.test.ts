@@ -64,7 +64,6 @@ section('Teleporting');
 {
   const s = quiet(), p = s.player;
   const salt = TOWNS.find(t => t.id === 'saltmarrow')!;
-  s.moveTarget = { x: 5, z: 5 };
   s.targetId = 1;
   p.action = { k: 'gather', nodeId: 0, t: 0.5, duration: 3 };
   p.root = { left: 4, total: 6, name: 'Weighted Net' };
@@ -72,7 +71,7 @@ section('Teleporting');
   run(s, { k: 'teleport', x: salt.wake.x, z: salt.wake.z });
   assert(Math.hypot(p.x - salt.wake.x, p.z - salt.wake.z) < 1, `you are at Saltmarrow's waking spot: ${Math.round(p.x)}, ${Math.round(p.z)}`);
   assert(regionAt(p.x, p.z)?.id === 'saltmarrow', 'and standing on its floor');
-  assert(!s.moveTarget && s.targetId === null && !p.action && !p.root, 'the walk, the target, the gather and the net are all left behind');
+  assert(s.targetId === null && !p.action && !p.root, 'the target, the gather and the net are all left behind');
   assert(p.y === 0 && p.vy === 0 && !p.airborne, 'and you arrive on the ground, not mid-jump');
 }
 {

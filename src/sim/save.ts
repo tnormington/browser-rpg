@@ -1,5 +1,5 @@
 // Save format: a versioned JSON snapshot of the progress that matters. Pure sim (no DOM): storage lives in src/storage.ts.
-// Transient state (aggro, cooldowns, current action, moveTarget, target) is deliberately not saved: a loaded game
+// Transient state (aggro, cooldowns, current action, target) is deliberately not saved: a loaded game
 // resumes calm. Anything unrecognised or malformed makes deserialize return null, and the caller starts a new game.
 import { GameState, createState } from '../sim';
 import { SKILL_IDS, SkillId } from './skills';

@@ -19,7 +19,7 @@ page.on('pageerror', e => errors.push(String(e)));
 const fail = msg => { console.error(`FAIL: ${msg}`); process.exitCode = 1; };
 const sim = (fn, arg) => page.evaluate(fn, arg);
 const stand = async (x, z, yaw = 0, ms = 700) => {
-  await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player; s.moveTarget = null; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp; window.__debug.view.yaw = yaw; }, [x, z, yaw]);
+  await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp; window.__debug.view.yaw = yaw; }, [x, z, yaw]);
   await page.waitForTimeout(ms);
 };
 const click = async (x, y, z) => {

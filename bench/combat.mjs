@@ -76,7 +76,7 @@ async function botInPage(cfg) {
     if (line) { w = 36 + 2.6 * (level - 16); a = 60 + 2.2 * (level - 16); }
     Object.assign(p.stats, { weaponDamage: w, armor: a, reduction: Math.min(0.8, a / (a + 40)), swingInterval: sw });
     p.hp = p.maxHp; p.energy = p.maxEnergy; p.cd.fill(0); p.gcd = 0; p.queued = null; p.autoAttack = false; p.swing = 0; p.buffs = [];
-    p.dead = false; p.outOfCombat = 99; p.inCombat = false; s.targetId = null; s.moveTarget = null; s.interact = null; s.drops = [];
+    p.dead = false; p.outOfCombat = 99; p.inCombat = false; s.targetId = null; s.interact = null; s.drops = [];
     p.inventory.fill(null);
     if (cfg.kit) for (const n of ['Guard', 'Last Stand']) if (!p.learned.includes(n)) p.learned.push(n); // HOM-125 --kit: the two trainer defences a player at 30 owns (350 g and 750 g)
   };
@@ -230,17 +230,14 @@ async function botInPage(cfg) {
     Object.assign(p, standoff(first, axis)); p.facing = Math.atan2(first.x - p.x, first.z - p.z);
     const fights = []; const t0 = s.tick, cap = () => s.tick - t0 < 1500 * 30; let prev = null;
     const chasing = () => s.enemies.some(e => e.state === 'chase');
-    const walk = async goal => { // click-to-move legs the camera can see
-      while (dist(p, goal) > 1.5 && !chasing() && cap()) {
-        const dd = dist(p, goal); faceYaw(goal.x, goal.z);
-        let leg = Math.min(dd, 12), sp = null;
-        for (; leg >= 3; leg -= 3) { sp = view.project(p.x + ((goal.x - p.x) / dd) * leg, 0, p.z + ((goal.z - p.z) / dd) * leg); if (onScreen(sp)) break; sp = null; }
-        if (!sp) return 'noclick';
-        await frame(); click(sp.x, sp.y);
-        const legEnd = s.tick + 4 * 30;
-        while (s.moveTarget && !chasing() && s.tick < legEnd) await frame();
+    const walk = async goal => { // walked on the keys, the camera turned to the goal: since HOM-139 nothing else moves the player
+      const legEnd = s.tick + 60 * 30;
+      while (dist(p, goal) > 1.5 && !chasing() && cap() && s.tick < legEnd) {
+        faceYaw(goal.x, goal.z);
+        hold('KeyW', true);
         await frame();
       }
+      hold('KeyW', false);
       return 'ok';
     };
     while (fights.length < count && cap()) {

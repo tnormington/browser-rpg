@@ -28,7 +28,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 async function shoot(name, x, z, { cam = 16, h = 11 } = {}) {
   await page.evaluate(([x, z, cam, h]) => {
     const d = window.__debug, p = d.sim.player;
-    p.hp = p.maxHp = 99999; p.moveTarget = null; p.x = x; p.z = z;
+    p.hp = p.maxHp = 99999; p.x = x; p.z = z;
     for (const e of d.sim.enemies) { e.state = 'dead'; e.respawnIn = 1e9; e.deadFor = 99; }
     d.view.debugCam = { pos: [x, h, z + cam], at: [x, 0, z] };
     for (let i = 0; i < 6; i++) d.step();

@@ -24,7 +24,7 @@ await page.evaluate(async ([X, Z]) => {
   document.querySelectorAll('body > *:not(canvas)').forEach(n => { n.style.visibility = 'hidden'; });
   const d = window.__debug, { spawn, loadSlot } = await import('/src/models.ts'), pine = await loadSlot('tree');
   for (const e of d.sim.enemies) { e.state = 'dead'; e.respawnIn = 1e9; e.deadFor = 99; }
-  d.sim.player.x = X; d.sim.player.z = Z + 14; d.sim.player.moveTarget = null; d.sim.player.hp = d.sim.player.maxHp = 99999;
+  d.sim.player.x = X; d.sim.player.z = Z + 14; d.sim.player.hp = d.sim.player.maxHp = 99999;
   const put = (o, x, z) => { o.position.set(X + x, 0, Z + z); o.updateMatrix(); d.scene.add(o); return o; };
   window.shelf = {
     alembic: put(d.view.buildProp('alembic'), 0, 0), herbFen: put(d.view.buildProp('herbPatchFen'), 24, 0), herbThorn: put(d.view.buildProp('herbPatchThorn'), 48, 0),

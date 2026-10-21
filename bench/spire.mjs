@@ -19,7 +19,7 @@ const sim = (fn, arg) => page.evaluate(fn, arg);
 const at = (x, y, z) => page.evaluate(([x, y, z]) => window.__debug.view.project(x, y, z), [x, y, z]);
 /** Put the player at (x, z) with the camera `yaw` (0 looks north, PI south, -PI/2 east, so 3PI/2 too), health full, and let the sim and a frame settle. */
 const stand = async (x, z, yaw = 0, ms = 500) => {
-  await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player, v = window.__debug.view; s.moveTarget = null; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp; v.yaw = yaw; v.weather.set('clear', true); v.skyClock = 0; }, [x, z, yaw]); // a clear morning, so every shot is judged in the same light
+  await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player, v = window.__debug.view; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp; v.yaw = yaw; v.weather.set('clear', true); v.skyClock = 0; }, [x, z, yaw]); // a clear morning, so every shot is judged in the same light
   await page.waitForTimeout(ms);
 };
 const setLevel = level => page.evaluate(level => {

@@ -34,7 +34,7 @@ export function toggleMount(s: GameState) {
   if (p.inCombat) return refuse(s, 'You cannot mount in combat');
   if (!mountsAllowed(p.x, p.z)) return refuse(s, 'You cannot ride in here');
   if (p.action) return refuse(s, 'Finish what you are doing first');
-  s.moveTarget = null; s.interact = null; // a walk you were on ends where you stand: the cast needs stillness
+  s.interact = null; // whatever you were about to use is dropped: the cast needs stillness
   p.action = { k: 'mount', t: 0, duration: MOUNT_CAST };
 }
 

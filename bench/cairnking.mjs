@@ -27,7 +27,7 @@ const stand = async (dx, dz, ms = 900) => {
   await page.evaluate(([king, dx, dz]) => {
     const s = window.__debug.sim, p = s.player, k = s.enemies.find(e => e.type === 'cairn_king');
     for (const e of s.enemies) if (e !== k) { e.state = 'dead'; e.respawnIn = 1e9; e.deadFor = 99; }
-    s.moveTarget = null; s.interact = null; p.maxHp = p.hp = 99999;
+    s.interact = null; p.maxHp = p.hp = 99999;
     p.x = king.x + dx; p.z = king.z + dz;
     Object.assign(k, { state: 'idle', hp: k.maxHp, x: k.spawnX, z: k.spawnZ, respawnIn: 0, deadFor: 0, cast: null, heavyCd: 1e9, hazardCd: 1e9, attackCd: 1e9 });
     window.__debug.view.yaw = Math.atan2(dx, dz);

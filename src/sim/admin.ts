@@ -56,7 +56,7 @@ export function teleport(s: GameState, x: number, z: number) {
   p.y = 0; p.vy = 0; p.airborne = false; p.moving = false;
   p.action = null;
   p.root = null;
-  s.moveTarget = null; s.interact = null; s.targetId = null; s.tab = null;
+  s.interact = null; s.targetId = null; s.tab = null;
 }
 
 /** Put `qty` of an item in the bag. What arrives is reported as loot, and what will not fit says so, as any pickup does. */

@@ -22,8 +22,7 @@ import { dismount, moveSpeed, toggleMount, updateMount } from './sim/mounts';
 import { START_TOWN, discoverMasters, startFlight, updateFlight } from './sim/flight';
 import { holdAtGates } from './sim/gates';
 import { updateWithering } from './sim/hazards';
-import { PLAYER_RADIUS, clampToWorld, inCave, regionAt, resolveCollisions } from './sim/world';
-import { Pt, route } from './sim/path';
+import { PLAYER_RADIUS, inCave, regionAt, resolveCollisions } from './sim/world';
 import { ABILITIES, CastKind, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
 import {
   acquireFront, clearTarget, pressAbility, refreshPlayerStats, setTarget, tabTarget, toggleAutoAttack,
@@ -38,7 +37,6 @@ export type { QuestState } from './sim/quest';
 
 export { TICK_RATE, TICK_DT };
 export const STRIDE_DIST = 2.7; // one footfall: 0.45s of running at foot speed (the audio request's cadence; not checked against the run clip's footfalls)
-const ARRIVE_DIST = 0.15;
 
 export type EnemyState = 'idle' | 'chase' | 'return' | 'dead';
 
@@ -135,7 +133,7 @@ export type GameEvent =
   | { t: 'auto'; on: boolean }                              // auto-attack armed / disarmed: the HUD button and swing bar follow this
   | { t: 'untarget'; id: number; reason: 'dead' | 'evade' } // the target was taken from you, and why (the player's own Esc / retarget raise nothing)
   | { t: 'combat'; on: boolean }                            // the player entered / left combat
-  | { t: 'stuck' }                                          // a click-to-move walk could not go anywhere: the HUD says so
+  | { t: 'stuck' }                                          // something was clicked from too far off to touch: the HUD says so
   | { t: 'gate'; id: string; keeper: string; text: string; need: number } // a hard gate turned the player back: the keeper's line, and the combat level it asks for
   | { t: 'door'; dungeon: string; blurb: string }           // a shut dungeon door turned the player back: blurb says what opens it (at most one every two seconds)
   | { t: 'jump' }                                           // left the ground
@@ -181,7 +179,6 @@ export interface GameState {
   tick: number;
   rng: number;
   player: Player;
-  moveTarget: { x: number; z: number } | null;
   targetId: number | null;
   /** The Tab cycle in progress: the order frozen when it began and the index last handed out. Valid only while targetId is order[at]. Transient: not saved. */
   tab: { order: number[]; at: number } | null;
@@ -192,7 +189,7 @@ export interface GameState {
   quest: QuestState;
   /** Town ids whose flight master has been found: the only places a flight can go (and, later, where a death wakes you). Hale is home. */
   found: string[];
-  interact: Interact | null; // walking toward a node/forge to use it
+  interact: Interact | null; // the node/forge being used this tick
   events: GameEvent[]; // cleared at the start of every step; presentation reads them after each step
 }
 
@@ -200,7 +197,6 @@ export interface GameState {
 export interface Input {
   dirX: number;
   dirZ: number;
-  clickTarget: { x: number; z: number } | null; // set only on the tick a click happens
   clickEnemy: number | null;                    // enemy id clicked this tick
   tab: boolean;
   clearTarget: boolean;
@@ -209,11 +205,10 @@ export interface Input {
   attack?: boolean;                             // the attack key this tick: with no target, acquire the nearest hostile in front; then toggle auto-attack
   acquire?: boolean;                            // forgiving click: target the nearest hostile in front of the player (always, even with a target held)
   jump?: boolean;                               // jump if on the ground (held = bunny-hop on landing)
-  pickup: number | null;                        // ground-drop id clicked this tick: walk to it
   inv: InvAction[];                             // inventory/equipment actions this tick
   shop?: ShopAction[];                          // sell/buy requests this tick (optional like the others added after the first callers)
   enchant?: EnchantAction[];                    // disenchant / enchant requests this tick, at the rune circle
-  interact: Interact | null;                    // node or forge clicked this tick: walk there and use it
+  interact: Interact | null;                    // node or forge clicked this tick: use it, if it is within reach
   craft: { recipe: string; count: number } | null; // forge recipe chosen this tick
   questAdvance: boolean | 'road';               // the advancing dialogue option was chosen this tick
   talent?: string | null;                       // talent id bought this tick
@@ -226,7 +221,7 @@ export interface Input {
   admin?: AdminAction[];
 }
 
-export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickTarget: null, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, pickup: null, inv: [], interact: null, craft: null, questAdvance: false, talent: null, talentReset: false };
+export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, inv: [], interact: null, craft: null, questAdvance: false, talent: null, talentReset: false };
 
 export function createState(seed = 1): GameState {
   const skills = newSkills();
@@ -242,7 +237,6 @@ export function createState(seed = 1): GameState {
       skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), durability: {}, enchants: {}, stats: deriveStats(emptyEquipment()),
       talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [], procs: [], root: null,
     },
-    moveTarget: null,
     targetId: null,
     tab: null,
     enemies: SPAWNS.map((sp, i): Enemy => ({
@@ -278,8 +272,8 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
   } else if (p.action?.k === 'flight') {
     updateFlight(s, dt); // on the ride nothing else the player presses counts
   } else {
-    // any movement intent abandons the current gather/craft and any walk-to-use
-    if (input.dirX !== 0 || input.dirZ !== 0 || input.clickTarget || input.clickEnemy !== null || input.pickup !== null) {
+    // any movement intent abandons the current gather/craft
+    if (input.dirX !== 0 || input.dirZ !== 0 || input.clickEnemy !== null) {
       s.interact = null;
       p.action = null;
     }
@@ -287,14 +281,9 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     if (input.talentReset) resetTalents(s);
     if (input.clearTarget) clearTarget(s);
     if (input.clickEnemy !== null) setTarget(s, input.clickEnemy);
-    else if (input.clickTarget) s.moveTarget = clampToWorld(input.clickTarget);
     for (const a of input.inv) applyInvAction(s, a);
     for (const a of input.shop ?? []) applyShopAction(s, a);
     for (const a of input.enchant ?? []) applyEnchantAction(s, a);
-    if (input.pickup !== null) {
-      const d = s.drops.find(x => x.id === input.pickup);
-      if (d) s.moveTarget = clampToWorld(d);
-    }
     if (input.interact) requestInteract(s, input.interact);
     if (input.questAdvance) advanceQuest(s, input.questAdvance);
     if (input.craft) beginCraft(s, input.craft.recipe, input.craft.count);
@@ -319,37 +308,10 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
   updateQuest(s);
 }
 
-/** The route for the current walk, planned once per click (moveTarget is a fresh object each time) and consumed as the player passes each waypoint. */
-const routes = new WeakMap<GameState, { for: Pt; pts: Pt[] }>();
-function routedAim(s: GameState, aim: Pt): Pt {
-  const p = s.player;
-  let r = routes.get(s);
-  if (!r || r.for !== aim) { r = { for: aim, pts: route(p, aim) ?? [aim] }; routes.set(s, r); }
-  while (r.pts.length > 1 && Math.hypot(r.pts[0].x - p.x, r.pts[0].z - p.z) < 0.3) r.pts.shift();
-  return r.pts[0];
-}
-
 function movePlayer(s: GameState, input: Input, dt: number) {
   const p = s.player, speed = moveSpeed(p);
   let dx = input.dirX, dz = input.dirZ;
-  if (dx !== 0 || dz !== 0) {
-    s.moveTarget = null; // keyboard cancels click-to-move
-  } else if (s.moveTarget) {
-    // a walk that has to go round scenery or change room is aimed at the next waypoint; moveTarget itself is untouched
-    const aim = routedAim(s, s.moveTarget);
-    const via = aim !== s.moveTarget;
-    const tx = aim.x - p.x, tz = aim.z - p.z;
-    const d = Math.hypot(tx, tz);
-    if (!via && d < ARRIVE_DIST) {
-      s.moveTarget = null;
-    } else if (d > 1e-6) {
-      // don't overshoot the target within a single tick
-      const k = Math.min(1, d / (speed * dt)) / d;
-      dx = tx * k; dz = tz * k;
-    }
-  }
-
-  if (p.root) dx = dz = 0; // netted: your feet are the one thing the net holds, so the keys and the walk go nowhere
+  if (p.root) dx = dz = 0; // netted: your feet are the one thing the net holds, so the keys go nowhere
   const len = Math.hypot(dx, dz);
   if (len > 1) { dx /= len; dz /= len; }
   const px = p.x, pz = p.z;
@@ -357,7 +319,7 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   p.z += dz * speed * dt;
   resolveCollisions(p, PLAYER_RADIUS);
   holdAtGates(s, px, pz);
-  if (holdDoor(s, { x: px, z: pz })) s.moveTarget = null; // a click-to-move walk into a shut door ends there: the door has said why, "can't reach that" would say less
+  holdDoor(s, { x: px, z: pz });
 
   const moved = Math.hypot(p.x - px, p.z - pz);
   p.moving = moved > 1e-4;
@@ -365,11 +327,6 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   if (input.face != null) p.facing = input.face; // steering beats the walk: strafing with the mouse keeps you facing the camera
   stepVertical(s, input.jump === true, dt);
   stepStride(s, moved);
-  // click-to-move blocked by an obstacle: give up instead of pushing forever
-  if (s.moveTarget && len > 1e-4 && moved < len * speed * dt * 0.1) {
-    s.moveTarget = null;
-    s.events.push({ t: 'stuck' });
-  }
 }
 
 /** Footfalls: one `step` per STRIDE_DIST of ground covered, so the cadence follows speed. Airborne or standing resets to mid-stride. */

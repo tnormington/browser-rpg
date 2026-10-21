@@ -4,7 +4,7 @@ import type { Quality } from './post';
 import { helpSeen, markHelpSeen } from './storage';
 
 const CONTROLS: [string, string][] = [
-  ['W A S D', 'Move (relative to the camera)'],
+  ['W A S D', 'Move (relative to the camera). The keys are the only thing that moves you: clicking the ground never does'],
   ['Left-drag', 'Swing the camera round yourself; you keep facing where you were'],
   ['Right-drag', 'Swing the camera and turn to face it'],
   ['Both buttons', 'Steer with the camera and run the way it looks'],
@@ -19,7 +19,7 @@ const CONTROLS: [string, string][] = [
   ['Drag a food onto a slot', 'A bar slot can hold a food or potion as well as a spell: it shows how many are left and eats one when you press its key.'],
   ['P', 'Spell book: every spell you know. Drag one onto the bar, right-click a slot to clear it.'],
   ['Pummel', 'Interrupts an enemy wind-up. Or step out of the red circle.'],
-  ['Click rock / tree', 'Mine or chop it (walks there first)'],
+  ['Click rock / tree', 'Mine or chop it, once you are standing next to it'],
   ['Click a fishing shoal', 'Fish it (Saltmarrow, the quay and the Strand)'],
   ['Click an herb patch', 'Pick it: Marrowleaf by the alembic in Thornwick, Fenbloom in the Fens, Thornmint in the Thornwood'],
   ['Click the forge / range / alembic / rack', 'Smith bars and weapons / cook fish at the inn / brew a potion from a herb and a vial (the provisioner sells vials) / tan hides and make gloves and boots in Highmoor'],
@@ -30,7 +30,7 @@ const CONTROLS: [string, string][] = [
   ['Right-click item', 'Drop it on the ground, destroy it, or sell it when at the merchant'],
   ['Click the merchant', 'Buy gear; shift-click a bag item to sell the stack on the spot'],
   ['N', 'Talents: a point per combat level, spent in three trees, changing what your abilities do. Out of combat only; unlearning is free.'],
-  ['Click a drop', 'Walk over and pick it up'],
+  ['A drop on the ground', 'Walk over it and it goes in your bag'],
   ['Esc', 'Close every open window; with none open, drop your target'],
   ['H', 'This help'],
   ['M', 'Mute sound'],

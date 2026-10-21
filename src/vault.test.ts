@@ -58,9 +58,10 @@ section('the tenth skill and the rune circle');
   assert(regionById('spire').obstacles.some(o => o.kind === 'circle' && o.x === LANDMARKS.circle.x && o.z === LANDMARKS.circle.z), 'and a solid thing you stand beside');
   s.player.x = LANDMARKS.circle.x + 7; s.player.z = LANDMARKS.circle.z; s.player.hp = s.player.maxHp;
   tick(s, { interact: { k: 'circle' } });
-  let opened = false;
-  for (let i = 0; i < 200 && !opened; i++) { tick(s); opened = s.events.some(e => e.t === 'circle'); }
-  assert(opened && nearStation(s, 'circle'), 'clicking it walks the player over and opens the panel');
+  assert(s.events.some(e => e.t === 'stuck') && !s.events.some(e => e.t === 'circle'), 'HOM-139: clicking it from across the square says you cannot reach it, rather than walking you over');
+  s.player.x = LANDMARKS.circle.x + 3;
+  tick(s, { interact: { k: 'circle' } });
+  assert(s.events.some(e => e.t === 'circle') && nearStation(s, 'circle'), 'standing beside it, the click opens the panel');
 }
 
 // ---------------------------------------------------------------------------

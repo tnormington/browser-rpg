@@ -400,12 +400,11 @@ function dashSpot(s: GameState, t: Enemy, d: { away: boolean; gap: number }): { 
   return null;
 }
 
-/** Put the player on the spot the leap found. The walk they were on ends here: they went somewhere else. */
+/** Put the player on the spot the leap found. */
 function leap(s: GameState, slot: number, spot: { x: number; z: number }) {
   const p = s.player, fromX = p.x, fromZ = p.z;
   p.x = spot.x; p.z = spot.z;
   resolveCollisions(p, PLAYER_RADIUS);
-  s.moveTarget = null;
   s.events.push({ t: 'dash', slot, fromX, fromZ, x: p.x, z: p.z });
 }
 
@@ -491,7 +490,6 @@ function killPlayer(s: GameState) {
   p.queued = null;
   p.queuedOff = null;
   s.targetId = null;
-  s.moveTarget = null;
   // the ground is a killer too (hazards.ts): its recap source is no enemy type, so the killer is just what it did
   s.events.push({ t: 'death', killer: last ? (ENEMY_TYPES[last.src] ? `${ENEMY_TYPES[last.src].name}: ${last.what}` : last.what) : '', wear, grave: grave.name, run: dist(p, grave.grave), recap });
 }
@@ -591,7 +589,6 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
     if (p.dead || isFlying(p) || dist(e, p) > n.range + 2) return;
     if (!clearLine(e, p)) return void s.events.push({ t: 'blocked', id: e.id, x: e.x, z: e.z });
     p.root = { left: n.duration, total: n.duration, name: n.name };
-    s.moveTarget = null; // the walk you were on ends here
     e.netRun = n.duration;
     s.events.push({ t: 'net', id: e.id, x: p.x, z: p.z, name: n.name, duration: n.duration });
   } else if (!p.dead && dist(e, p) <= def.ranged!.range + 2) { // a little slack: a pace back mid-cast does not dodge a bolt, leaving its reach does

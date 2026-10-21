@@ -92,7 +92,7 @@ section('HOM-49 the ride: paid, run in full, and nothing touches you');
   const e = s.enemies[0];
   e.state = 'idle'; e.hp = e.maxHp; e.x = s.player.x + 1; e.z = s.player.z; e.spawnX = e.x; e.spawnZ = e.z;
   const hp = s.player.hp;
-  run(s, 1, { dirX: 1, ability: 0, clickTarget: { x: 0, z: 0 } });
+  run(s, 1, { dirX: 1, ability: 0, interact: { k: 'npc' } });
   assert(s.player.hp === hp && e.state === 'idle', 'during the ride nothing aggroes and nothing hurts');
   assert(Math.abs(s.player.x - (m.x - 2)) < 0.01, 'movement keys and clicks do nothing on the ride');
 

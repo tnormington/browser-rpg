@@ -29,17 +29,19 @@ const place = (type, dist) => page.evaluate(([t, d]) => {
   return id;
 }, [type, dist]);
 
-// --- click: a near miss targets the enemy; a click far off walks instead ---
+// --- click: a near miss targets the enemy; a click far off does nothing at all (HOM-139: no click moves the player) ---
 const wolf = await place('wolf', 14); await wait(500);
 const spot = await page.evaluate(id => { const v = window.__debug.view, g = v.actors.get(id).group.position; const a = v.project(g.x, 0.6, g.z); return a; }, wolf);
 await page.mouse.click(spot.x - 22, spot.y + 6);
 await wait(200);
 check('click 22px beside a wolf at 14u targets it', (await sim(() => window.__debug.sim.targetId)) === wolf);
 await sim(() => { window.__debug.sim.targetId = null; });
+const stood = await sim(() => ({ x: window.__debug.sim.player.x, z: window.__debug.sim.player.z }));
 await page.mouse.click(spot.x + 150, spot.y + 150);
 await wait(150);
 check('click 150px away does not target it', (await sim(() => window.__debug.sim.targetId)) === null);
-check('...and click-to-move still works there', await sim(() => !!window.__debug.sim.moveTarget));
+const moved = await sim(() => ({ x: window.__debug.sim.player.x, z: window.__debug.sim.player.z }));
+check('...and it does not walk the player there either', Math.hypot(moved.x - stood.x, moved.z - stood.z) < 1e-6);
 
 // --- precedence: the NPC / a node beside an enemy keeps the click ---
 const brute = await place('brute', 14);

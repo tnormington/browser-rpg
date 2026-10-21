@@ -118,15 +118,13 @@ section('the hard gate south of Saltmarrow: combat 16');
   const s = quiet(10), line = SALT_GATE.at;
   assert(SALT_GATE.combat === 16 && SALT_GATE.from === -1, 'the gate asks combat 16 and holds the Saltmarrow side');
   s.player.x = DUNMERE.x; s.player.z = line - 8;
-  tick(s, { clickTarget: { x: DUNMERE.x, z: line + 40 } });
   let said: ReturnType<typeof gateEvent>;
-  for (let i = 0; i < 90 && !said; i++) { tick(s); said = gateEvent(s); }
-  assert(said && said.id === 'dunmere' && said.keeper === 'Marshwarden Quill' && said.need === 16 && /16/.test(said.text), `a click south from level 10 walks up to the line and the keeper speaks: "${said?.text}"`);
+  for (let i = 0; i < 90 && !said; i++) { tick(s, { dirX: 0, dirZ: 1 }); said = gateEvent(s); }
+  assert(said && said.id === 'dunmere' && said.keeper === 'Marshwarden Quill' && said.need === 16 && /16/.test(said.text), `walking south from level 10 reaches the line and the keeper speaks: "${said?.text}"`);
   assert(s.player.z < line && s.player.z > line - 1, `the player stands at z = ${s.player.z.toFixed(2)}, this side of the line at ${line}`);
   run(s, 3);
   assert(s.player.z < line, 'and keeps standing there');
   let repeats = 0;
-  s.moveTarget = null;
   for (let i = 0; i < 30 * 8; i++) { tick(s, { dirX: 0, dirZ: 1 }); if (gateEvent(s)) repeats++; }
   assert(repeats >= 2 && repeats <= 4 && s.player.z < line, `leaning on it for eight seconds is told ${repeats} times, not every tick, and never gets through`);
   // the same walk at 16

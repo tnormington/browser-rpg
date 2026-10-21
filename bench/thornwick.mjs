@@ -21,7 +21,7 @@ const sim = (fn, arg) => page.evaluate(fn, arg);
 const at = (x, y, z) => page.evaluate(([x, y, z]) => window.__debug.view.project(x, y, z), [x, y, z]);
 /** Put the player at (x, z) with the camera `yaw` (0 looks north, PI south, -PI/2 east), health full, and let the sim and a frame settle. */
 const stand = async (x, z, yaw = 0, ms = 500) => {
-  await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player; s.moveTarget = null; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp; window.__debug.view.yaw = yaw; }, [x, z, yaw]);
+  await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp; window.__debug.view.yaw = yaw; }, [x, z, yaw]);
   await page.waitForTimeout(ms);
 };
 const setLevel = level => page.evaluate(level => {

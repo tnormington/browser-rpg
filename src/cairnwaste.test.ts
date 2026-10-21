@@ -221,11 +221,9 @@ section('the Spire\'s forge: the second one in the world');
   assert(countItem(s.player.inventory, 'crownbreaker') === 1 && countItem(s.player.inventory, 'crown_shard') === 0, 'and Crownbreaker is folded from three bars and three Crown shards');
   const hale = quiet(32); hale.player.x = LANDMARKS.forge.x + 4; hale.player.z = LANDMARKS.forge.z;
   assert(nearStation(hale, 'forge') && nearestSite(hale, 'forge') === 0, 'Hale\'s forge is still a forge');
-  const click = quiet(32); click.player.x = SPIRE.x; click.player.z = SPIRE.z + 55;
+  const click = quiet(32); click.player.x = LANDMARKS.forgeSpire.x + 4; click.player.z = LANDMARKS.forgeSpire.z;
   tick(click, { interact: { k: 'forge', site: 1 } });
-  let opened = false;
-  for (let i = 0; i < 400 && !opened; i++) { tick(click); opened = click.events.some(e => e.t === 'forge'); }
-  assert(opened && nearStation(click, 'forge') && dist(click.player, LANDMARKS.forgeSpire) < 6, 'clicking the Spire\'s forge walks the player over and opens its recipe list');
+  assert(click.events.some(e => e.t === 'forge') && nearStation(click, 'forge') && dist(click.player, LANDMARKS.forgeSpire) < 6, 'standing at the Spire\'s forge, clicking it opens its recipe list');
 }
 
 // ---------------------------------------------------------------------------

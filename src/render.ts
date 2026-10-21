@@ -251,7 +251,6 @@ export class Renderer {
   readonly camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.1, 200);
   private ground: THREE.Mesh;
   private player: THREE.Mesh;
-  private marker: THREE.Mesh;
   private prev = { x: 0, z: 0 };
   private curr = { x: 0, z: 0 };
   private raycaster = new THREE.Raycaster();
@@ -391,10 +390,6 @@ export class Renderer {
     this.scene.add(this.levelRing);
     for (const e of s.enemies) if (Math.hypot(e.x - s.player.x, e.z - s.player.z) <= ACTOR_RANGE) this.addActor(e);
     for (const n of s.nodes) this.addNode(n);
-
-    this.marker = mesh(new THREE.TorusGeometry(0.5, 0.08, 4, 16).rotateX(Math.PI / 2), P.gold, 'beacon', 'none');
-    this.marker.visible = false;
-    this.scene.add(this.marker);
 
     this.curr.x = this.prev.x = s.player.x;
     this.curr.z = this.prev.z = s.player.z;
@@ -1709,14 +1704,6 @@ export class Renderer {
     return this.raycaster.intersectObject(this.circlePick, false).length > 0;
   }
 
-  /** Ground-drop id under a screen position, or null. Drops are generous to click. */
-  pickDrop(clientX: number, clientY: number): number | null {
-    this.raycaster.setFromCamera(
-      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
-    const hit = this.raycaster.intersectObjects([...this.drops.values()].map(d => d.hit), false)[0];
-    return hit ? (hit.object.userData.dropId as number) : null;
-  }
-
   /** World point to screen pixels; null when behind the camera. */
   project(x: number, y: number, z: number): { x: number; y: number } | null {
     const v = new THREE.Vector3(x, y, z).project(this.camera);
@@ -1844,12 +1831,6 @@ export class Renderer {
       this.levelRing.scale.setScalar(1 + this.levelRingAge * 3);
     }
 
-    this.marker.visible = !!s.moveTarget;
-    if (s.moveTarget) {
-      this.marker.position.set(s.moveTarget.x, 0.1, s.moveTarget.z);
-      this.marker.scale.setScalar(1 + 0.15 * Math.sin(performance.now() / 150));
-    }
-
     // orbit camera; y clamped above ground so it never clips through
     // it rides half of a jump: a pure translation (the view angle never changes), so the hop reads without the horizon lurching
     const cp = Math.cos(this.pitch), lift = pl.y * CAMERA_JUMP_FOLLOW;
@@ -1904,13 +1885,9 @@ export class Renderer {
           beam.position.y = 2;
           group.add(beam);
         }
-        const hit = new THREE.Mesh(new THREE.SphereGeometry(1.1, 6, 6), new THREE.MeshBasicMaterial({ visible: false }));
-        hit.position.y = 0.6;
-        hit.userData.dropId = d.id;
-        group.add(hit);
         group.position.set(d.x, 0, d.z);
         this.scene.add(group);
-        v = { group, gem, hit };
+        v = { group, gem };
         this.drops.set(d.id, v);
       }
       v.gem.position.y = 0.6 + 0.12 * Math.sin(now * 3 + d.id);
@@ -2032,4 +2009,4 @@ interface Actor {
 /** One upright click volume: a capsule standing on the ground at (x, z). */
 interface PickCandidate { id: number; x: number; z: number; height: number; radius: number }
 interface NodeView { group: THREE.Group; type: string; crown?: THREE.Mesh; live?: THREE.Object3D; stump?: THREE.Object3D; mats: Mat[]; base: number[] }
-interface DropView { group: THREE.Group; gem: THREE.Mesh; hit: THREE.Mesh }
+interface DropView { group: THREE.Group; gem: THREE.Mesh }

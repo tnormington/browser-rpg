@@ -60,7 +60,7 @@ export function startFlight(s: GameState, to: string) {
   const price = flightPrice(here.id, to);
   if (p.gold < price) return void s.events.push({ t: 'actionfail', reason: 'gold', need: price, what });
   p.gold -= price;
-  s.interact = null; s.moveTarget = null; s.targetId = null; s.tab = null;
+  s.interact = null; s.targetId = null; s.tab = null;
   p.moving = false;
   if (p.autoAttack) { p.autoAttack = false; s.events.push({ t: 'auto', on: false }); }
   p.action = { k: 'flight', from: here.id, to, t: 0, duration: flightSeconds(here.id, to) };

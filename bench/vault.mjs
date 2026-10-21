@@ -29,7 +29,7 @@ const stand = async (dx, dz, { dist = 12, pitch = 0.5, ms = 900 } = {}) => {
   await page.evaluate(([vael, dx, dz, dist, pitch]) => {
     const d = window.__debug, s = d.sim, p = s.player, k = s.enemies.find(e => e.type === 'archmage_vael');
     for (const e of s.enemies) if (e !== k) { e.state = 'dead'; e.respawnIn = 1e9; e.deadFor = 99; }
-    s.moveTarget = null; s.interact = null; p.maxHp = p.hp = 99999;
+    s.interact = null; p.maxHp = p.hp = 99999;
     p.x = vael.x + dx; p.z = vael.z + dz;
     Object.assign(k, { state: 'idle', hp: k.maxHp, x: k.spawnX, z: k.spawnZ, respawnIn: 0, deadFor: 0, cast: null, heavyCd: 1e9, hazardCd: 1e9, attackCd: 1e9 });
     d.view.yaw = Math.atan2(dx, dz); d.view.pitch = pitch; d.view.distance = dist;

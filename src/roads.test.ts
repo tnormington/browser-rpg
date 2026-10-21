@@ -128,9 +128,13 @@ section('talking to one: walk up, open the panel, and nothing else moves');
   s.player.x = v.x - 10; s.player.z = v.z;
   assert(speakerNear(s) === null, 'ten paces off, nobody is in earshot');
   tick(s, { interact: { k: 'npc', id: v.id } });
-  let who = '';
-  for (let n = 0; n < 600 && !who; n++) { tick(s); const ev = s.events.find(e => e.t === 'npc'); if (ev && ev.t === 'npc') who = ev.who; }
-  assert(who === v.id, `clicking ${v.name} walks the player over and opens their words`);
+  assert(s.events.some(e => e.t === 'stuck') && !s.events.some(e => e.t === 'npc'), `HOM-139: clicking ${v.name} from ten paces says you cannot reach them, rather than walking you over`);
+  for (let n = 0; n < 600 && !s.events.some(e => e.t === 'npc'); n++) { // walk the ten paces, and click once they are in reach
+    tick(s, { dirX: 1 });
+    if (Math.hypot(s.player.x - v.x, s.player.z - v.z) <= v.r + 1.5) tick(s, { interact: { k: 'npc', id: v.id } });
+  }
+  const spoke = s.events.find(e => e.t === 'npc');
+  assert(spoke && spoke.t === 'npc' && spoke.who === v.id, `walking up to ${v.name} and clicking them opens their words`);
   assert(speakerNear(s) === v.id && Math.hypot(s.player.x - v.x, s.player.z - v.z) <= TALK_RANGE, 'and they are the one in earshot once you are there');
   assert(speakerById(v.id)!.name === v.name && speakerById('hale')!.name === NPCS[0].name, 'a villager and a giver are both found by id');
   const before = JSON.stringify(s.quest);

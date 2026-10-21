@@ -141,10 +141,10 @@ addEventListener('blur', () => { keys.clear(); held.clear(); cursorAwayForDrag(f
  *  - left drag  : swings the camera round the player, who keeps facing wherever they were
  *  - right drag : swings the camera and turns the player with it
  *  - both held  : the same, and the player runs the way the camera looks
- * A left click that did not drag still picks what is under it (an enemy, a drop, an NPC, a node, the forge).
+ * A left click that did not drag still picks what is under it (an enemy, an NPC, a node, the forge), but it never
+ * moves the player: the only thing that walks is the keys.
  */
 let pendingEnemy: number | null = null;
-let pendingPickup: number | null = null;
 let pendingInteract: Interact | null = null;
 const held = new Set<number>();
 let dragMoved = 0, pressX = 0, pressY = 0;
@@ -159,12 +159,11 @@ canvas.addEventListener('mousedown', e => {
 });
 addEventListener('mouseup', e => {
   if (held.has(0) && e.button === 0 && dragMoved < DRAG_SLOP_PX) {
-    // Precedence, most specific first: ground drop, then an enemy under the cursor itself, then the NPC, ore/tree node and
-    // forge (all exact), and only then the forgiving picks: a near miss takes the enemy, else the node, but never a click
-    // that was really aimed at something else. A click that hits none of them does nothing at all.
-    pendingPickup = view.pickDrop(e.clientX, e.clientY);
-    if (pendingPickup === null) pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
-    if (pendingPickup === null && pendingEnemy === null) {
+    // Precedence, most specific first: an enemy under the cursor itself, then the NPC, ore/tree node and forge (all
+    // exact), and only then the forgiving picks: a near miss takes the enemy, else the node, but never a click that
+    // was really aimed at something else. A click that hits none of them does nothing at all.
+    pendingEnemy = view.pickEnemy(e.clientX, e.clientY);
+    if (pendingEnemy === null) {
       const node = view.pickNode(e.clientX, e.clientY), npc = view.pickNpc(e.clientX, e.clientY), vendor = view.pickVendor(e.clientX, e.clientY), flightMaster = view.pickFlightMaster(e.clientX, e.clientY), forge = view.pickForge(e.clientX, e.clientY);
       if (npc !== null) pendingInteract = { k: 'npc', id: npc };
       else if (flightMaster !== null) pendingInteract = { k: 'flightmaster', id: flightMaster };
@@ -213,7 +212,6 @@ function readInput(): Input {
     dirX: -sy * f + cy * r,
     dirZ: -cy * f - sy * r,
     face: steering ? view.yaw + Math.PI : null, // facing is atan2(dx, dz) of the camera's forward, which is yaw turned round
-    clickTarget: null,
     clickEnemy: pendingEnemy,
     tab: pendingTab,
     attack: pendingAttack,
@@ -221,7 +219,6 @@ function readInput(): Input {
     jump: (pendingJump || keys.has('Space')) && !hud.modalOpen,
     clearTarget: pendingClear,
     ability: pendingAbilities.shift() ?? null,
-    pickup: pendingPickup,
     inv: pendingInv.splice(0),
     shop: pendingShop.splice(0),
     enchant: pendingEnchant.splice(0),
@@ -235,7 +232,7 @@ function readInput(): Input {
   };
   pendingFlight = null;
   pendingInteract = null; pendingCraft = null; pendingAdvance = false; pendingTalent = null; pendingTalentReset = false;
-  pendingEnemy = null; pendingPickup = null; pendingTab = false; pendingAttack = false; pendingMount = false; pendingJump = false; pendingClear = false;
+  pendingEnemy = null; pendingTab = false; pendingAttack = false; pendingMount = false; pendingJump = false; pendingClear = false;
   return input;
 }
 

@@ -17,7 +17,7 @@ const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 const SX = 875, SZ = 1008; // Thornwick's origin: the Grotto's rooms are in its frame
 const stand = async (lx, lz, yaw, ms = 700) => {
-  await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player; s.moveTarget = null; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp = 99999; window.__debug.view.yaw = yaw; }, [SX + lx, SZ + lz, yaw]);
+  await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp = 99999; window.__debug.view.yaw = yaw; }, [SX + lx, SZ + lz, yaw]);
   await page.waitForTimeout(ms);
 };
 

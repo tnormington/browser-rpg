@@ -1,6 +1,6 @@
-// The player's one timed action (gathering, crafting, mounting or a flight) and the click-to-interact walk that starts it.
+// The player's one timed action (gathering, crafting, mounting or a flight) and the click that starts it.
 import type { GameState } from '../sim';
-import { PLAYER_RADIUS, LANDMARKS, OBSTACLES, clampToWorld } from './world';
+import { PLAYER_RADIUS, LANDMARKS, OBSTACLES } from './world';
 import { beginGather, finishGather, nodeById, strikeGather } from './gathering';
 import { finishCraft, nearestSite, stationSites } from './crafting';
 import { NPCS, speakerById, speakerNear } from './quest';
@@ -39,17 +39,14 @@ function target(s: GameState, it: Interact) {
   return n && { x: n.x, z: n.z, r: n.r };
 }
 
-/** Click on a node or the forge: walk up to it, then start (or open) it. */
+/** Click on a node or the forge: start (or open) it, if you are already standing in reach. A click never walks you anywhere. */
 export function requestInteract(s: GameState, it: Interact) {
   const p = s.player;
   p.action = null;
   const t = target(s, it);
   if (!t) { s.interact = null; return; }
-  s.interact = it;
-  const d = Math.hypot(p.x - t.x, p.z - t.z);
-  if (d <= t.r + PLAYER_RADIUS + REACH) return; // already in reach: updateInteract starts it this tick
-  const k = (t.r + PLAYER_RADIUS + 0.8) / d;
-  s.moveTarget = clampToWorld({ x: t.x + (p.x - t.x) * k, z: t.z + (p.z - t.z) * k });
+  if (Math.hypot(p.x - t.x, p.z - t.z) > t.r + PLAYER_RADIUS + REACH) { s.interact = null; s.events.push({ t: 'stuck' }); return; }
+  s.interact = it; // in reach: updateInteract starts it this tick
 }
 
 export function updateInteract(s: GameState) {
@@ -57,12 +54,7 @@ export function updateInteract(s: GameState) {
   if (!it) return;
   const t = target(s, it);
   if (!t) { s.interact = null; return; }
-  if (Math.hypot(p.x - t.x, p.z - t.z) > t.r + PLAYER_RADIUS + REACH) {
-    if (!s.moveTarget) s.interact = null; // walk ended (arrived short or blocked): give up
-    return;
-  }
   s.interact = null;
-  s.moveTarget = null;
   p.moving = false;
   dismount(s); // a node, the forge or somebody to talk to is a stop: you step down
   p.facing = Math.atan2(t.x - p.x, t.z - p.z);

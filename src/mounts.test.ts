@@ -119,26 +119,23 @@ section('Riding, and what throws you');
   tick(swing);
   assert(!swing.player.autoAttack, 'auto-attack does not run from the saddle');
 
-  const spot = riding(); spot.player.x = LANDMARKS.forge.x + 12; spot.player.z = LANDMARKS.forge.z + 12;
+  const spot = riding(); spot.player.x = LANDMARKS.forge.x + 4; spot.player.z = LANDMARKS.forge.z;
   tick(spot, { interact: { k: 'forge' } });
-  run(spot, 6);
-  assert(!spot.player.mounted, 'riding up to the forge to use it dismounts you');
+  assert(!spot.player.mounted, 'using the forge from the saddle puts you down off the horse');
 
   const cave = riding(); Object.assign(cave.player, roomCentre('rotroot'));
   tick(cave);
   assert(!cave.player.mounted, 'a dungeon room takes you off the horse');
 }
 
-section('Click-to-move still arrives at 10 u/s');
+section('A held key carries the rider at 10 u/s');
 {
-  const s = riding(), goal = { x: s.player.x + 40, z: s.player.z + 0.37 };
-  tick(s, { clickTarget: goal });
+  const s = riding(), from = { x: s.player.x, z: s.player.z };
   let ticks = 0;
-  while (s.moveTarget && ticks++ < 600) tick(s);
-  assert(!s.moveTarget && dist(s.player, goal) < 0.15, `the walk ends on its target (${dist(s.player, goal).toFixed(3)} short, ${ticks} ticks)`);
-  tick(s); tick(s);
-  assert(!s.player.moving && dist(s.player, goal) < 0.15, 'and the rider stands still there: no overshoot, no creeping back and forth');
+  while (dist(s.player, from) < 40 && ticks++ < 600) tick(s, { dirX: 1 });
   assert(Math.abs(ticks * TICK_DT - 4) < 0.3, `40 units took ${(ticks * TICK_DT).toFixed(2)} s: 10 u/s`);
+  tick(s); tick(s);
+  assert(!s.player.moving, 'and letting go stops the rider dead: nothing carries them on');
 }
 
 section('Saved and reloaded');

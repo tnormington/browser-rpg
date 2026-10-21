@@ -7,6 +7,7 @@ import { addItem, countItem } from './sim/inventory';
 import { RECIPES } from './sim/crafting';
 import { THORNWICK, LANDMARKS, dungeonAt, dungeonById, regionAt } from './sim/world';
 import { ROTROOT_COMBAT, dungeonOpen } from './sim/dungeon';
+import { route } from './sim/path';
 import { REWARD6, ROT_GOALS, QUEST6_NAME, activeQuestView, dialogueAt, reeveMarker } from './sim/quest';
 import { harmPlayer, pressAbility, abilityOpen, refreshPlayerStats } from './sim/combat';
 import { THORN_TRAINER, SHOP_REACH, taughtBy } from './sim/shop';
@@ -222,18 +223,22 @@ section('the mouth is hard-gated on Q5 and combat 22');
   assert(!dungeonOpen(s, rotroot), 'Q5 not yet handed in is not enough at combat 22');
   s.quest.sixth = 'cleared';
   assert(dungeonOpen(s, rotroot) && walkIn(s), 'Q5 handed in at combat 22: the mouth lets you in');
-  // a click from the town's edge to the Mother is one walk, through all three rooms
+  // the town's edge leads to the Mother on foot, through all three rooms
   s = quiet(26); s.quest.stage = 'done'; s.quest.second = 'cleared'; s.quest.third = 'cleared'; s.quest.fifth = 'cleared'; s.quest.sixth = 'cleared';
   const mother = s.enemies.find(e => e.type === 'rotroot_mother')!;
   s.player.x = MOUTH.x; s.player.z = THORNWICK.z + 60; s.player.hp = s.player.maxHp = 1e6;
-  tick(s, { clickTarget: { x: mother.x, z: mother.z - 8 } });
+  const goal = { x: mother.x, z: mother.z - 8 };
+  const pts = route(s.player, goal) ?? [goal];
   const rooms: string[] = [];
-  for (let t = 0; t < 90 && dist(s.player, { x: mother.x, z: mother.z - 8 }) > 2; t += TICK_DT) {
-    tick(s);
+  for (let t = 0; t < 90 && dist(s.player, goal) > 2; t += TICK_DT) {
+    while (pts.length > 1 && dist(s.player, pts[0]) < 0.3) pts.shift();
+    const dx = pts[0].x - s.player.x, dz = pts[0].z - s.player.z, d = Math.hypot(dx, dz);
+    if (d < 1e-6) break;
+    tick(s, { dirX: dx / d, dirZ: dz / d });
     const id = regionAt(s.player.x, s.player.z)?.id ?? '?';
     if (rooms[rooms.length - 1] !== id) rooms.push(id);
   }
-  assert(dist(s.player, { x: mother.x, z: mother.z - 8 }) <= 2 && rooms.join() === 'thornwick,mouth,warren,heart', `one click walks the three rooms (${rooms.join(' > ')})`);
+  assert(dist(s.player, goal) <= 2 && rooms.join() === 'thornwick,mouth,warren,heart', `the walk crosses the three rooms (${rooms.join(' > ')})`);
 }
 
 // ---------------------------------------------------------------------------

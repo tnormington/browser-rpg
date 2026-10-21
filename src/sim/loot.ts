@@ -46,7 +46,6 @@ export function updateDrops(s: GameState, dt: number) {
     const left = addItem(p.inventory, d.item, d.qty);
     if (left === d.qty) { d.blocked = true; s.events.push({ t: 'invfull' }); return true; }
     s.events.push({ t: 'loot', item: d.item, qty: d.qty - left });
-    if (s.moveTarget && Math.hypot(s.moveTarget.x - d.x, s.moveTarget.z - d.z) < PICKUP_RADIUS) s.moveTarget = null;
     if (left > 0) { d.qty = left; d.blocked = true; s.events.push({ t: 'invfull' }); return true; }
     return false;
   });

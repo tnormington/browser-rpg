@@ -1,5 +1,5 @@
-// Drives Saltmarrow in real Chromium, with real mouse clicks: the harbourmaster's dialogue and the third quest, the chandler's shop,
-// a click-to-move across the gate, and an adamant vein. Screenshots land in bench/shots/salt-*.png.
+// Drives Saltmarrow in real Chromium, with a real keyboard and mouse: the harbourmaster's dialogue and the third quest, the
+// chandler's shop, a walk out through the gate, and an adamant vein. Screenshots land in bench/shots/salt-*.png.
 //   node bench/saltmarrow.mjs        (needs a build: npx vite build)
 import { preview } from 'vite';
 import { launchBrowser } from './browser.mjs';
@@ -20,8 +20,14 @@ const sim = fn => page.evaluate(fn);
 const at = (x, y, z) => page.evaluate(([x, y, z]) => window.__debug.view.project(x, y, z), [x, y, z]);
 /** Stand `dz` south of a spot (the default camera looks north, so it is in front of us), let the sim and a frame settle. */
 const standSouthOf = async (x, z, dz = 9) => {
-  await page.evaluate(([x, z]) => { const s = window.__debug.sim, p = s.player; s.moveTarget = null; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp = 99999; window.__debug.view.yaw = 0; }, [x, z + dz]);
+  await page.evaluate(([x, z]) => { const s = window.__debug.sim, p = s.player; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp = 99999; window.__debug.view.yaw = 0; }, [x, z + dz]);
   await page.waitForTimeout(400);
+};
+/** Step right up to a spot and give back where it lands on screen: since HOM-139 a click only does anything in reach. */
+const stepUpTo = async (x, y, z, dz = 2.4) => {
+  await page.evaluate(([x, z]) => { const p = window.__debug.sim.player; p.x = x; p.z = z; }, [x, z + dz]);
+  await page.waitForTimeout(400);
+  return at(x, y, z);
 };
 
 await page.goto(`${server.resolvedUrls.local[0]}?debug=1`);
@@ -36,20 +42,21 @@ await sim(() => {
   p.skills.mining.xp = 2000; p.skills.mining.level = 17; // the sim reads `level`, so both are set
 });
 
-// 1. click-to-move across the gate: click the ground on the far side of Hale's east wall
+// 1. out through the gate on the keys: W runs the way the camera looks
 await sim(() => { const p = window.__debug.sim.player; p.x = 24; p.z = 8; window.__debug.view.yaw = -Math.PI / 2; }); // camera west of the player, looking east
 await page.waitForTimeout(400);
-const ground = await at(60, 0, 8);
-await page.mouse.click(ground.x, ground.y);
-await page.waitForTimeout(3200);
+await page.keyboard.down('KeyW');
+await page.waitForTimeout(4000);
+await page.keyboard.up('KeyW');
+await page.waitForTimeout(200);
 const x1 = await sim(() => window.__debug.sim.player.x);
-if (x1 < 36) fail(`a click on the road beyond the gate walked the player to x = ${x1.toFixed(1)}, not through it`);
+if (x1 < 36) fail(`four seconds of running east left the player at x = ${x1.toFixed(1)}, not through the gate`);
 await page.screenshot({ path: join(shots, 'salt-gate-walk.png') });
 
 // 2. the harbourmaster
 await standSouthOf(886, 12);
-const pell = await at(886, 1.2, 12);
 await page.screenshot({ path: join(shots, 'salt-town.png') });
+const pell = await stepUpTo(886, 1.2, 12);
 await page.mouse.click(pell.x, pell.y);
 await page.waitForSelector('.dialogue', { state: 'visible', timeout: 8000 }).catch(() => fail('clicking the harbourmaster did not open a dialogue'));
 await page.waitForTimeout(400);
@@ -67,8 +74,7 @@ if (!tracker.includes('The Salt Road')) fail(`the tracker reads "${tracker}"`);
 await page.screenshot({ path: join(shots, 'salt-quest.png') });
 
 // 3. the chandler
-await standSouthOf(876, 14);
-const tam = await at(876, 1.2, 14);
+const tam = await stepUpTo(876, 1.2, 14);
 await page.mouse.click(tam.x, tam.y);
 await page.waitForSelector('.shoppanel', { state: 'visible', timeout: 8000 }).catch(() => fail('clicking the chandler did not open the shop'));
 await page.waitForTimeout(400);
@@ -86,8 +92,8 @@ if (await page.locator('.shoppanel').isVisible()) fail('the chandler\'s shop sta
 
 // 4. an adamant vein in the cliffs
 await standSouthOf(892, -56, 8);
-const vein = await at(892, 1, -56);
 await page.screenshot({ path: join(shots, 'salt-cliffs.png') });
+const vein = await stepUpTo(892, 1, -56, 3);
 await page.mouse.click(vein.x, vein.y);
 await page.waitForTimeout(9000);
 const ore = await sim(() => window.__debug.sim.player.inventory.reduce((n, s) => n + (s && s.id === 'adamant_ore' ? s.qty : 0), 0));
@@ -95,7 +101,7 @@ if (ore < 1) fail('clicking an adamant vein with Mining 17 did not yield ore');
 await page.screenshot({ path: join(shots, 'salt-vein.png') });
 
 // 5. the quay
-await sim(() => { const s = window.__debug.sim, p = s.player; s.moveTarget = null; s.interact = null; p.x = 930; p.z = 8; window.__debug.view.yaw = -Math.PI / 2; });
+await sim(() => { const s = window.__debug.sim, p = s.player; s.interact = null; p.x = 930; p.z = 8; window.__debug.view.yaw = -Math.PI / 2; });
 await page.waitForTimeout(500);
 await page.screenshot({ path: join(shots, 'salt-quay.png') });
 

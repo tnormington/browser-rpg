@@ -11,7 +11,7 @@ import { xpForLevel, levelForXp, addXp, newTrack, levelProgress } from './sim/xp
 import { SKILL_IDS, SKILLS, grantXp } from './sim/skills';
 import { NODE_TYPES } from './sim/gathering';
 import { MAX_BONUS, MAX_SPEEDUP, mastery } from './sim/mastery';
-import { RECIPES, FORGE_REACH, recipeById } from './sim/crafting';
+import { RECIPES, FORGE_REACH, recipeById, stationSites } from './sim/crafting';
 import {
   CAVE_DOOR_Z, CAVE_PILLARS, CAVE_ROCKS, CAVE_ROOMS, COLLIDERS, LANDMARKS, PLAYER_RADIUS, ROCKS, TREES, WORLD_HALF,
   GREYWATER, REGIONS, SALTMARROW, THORNWICK, TOWNS, caveDepth, caveWallPoints, clampToWorld, inCave, regionAt, resolveCollisions, sameSideOfDoor,
@@ -165,9 +165,12 @@ section('Movement (M0 regression)');
   const z0 = s.player.z;
   run(s, 1, { dirX: 0, dirZ: -1 });
   assert(Math.abs((z0 - s.player.z) - 6) < 0.3, 'WASD moves the player ~6 units/sec');
-  tick(s, { clickTarget: { x: 5, z: 5 } });
+  const stood = { x: s.player.x, z: s.player.z };
+  const far = s.nodes.find(n => Math.hypot(n.x - stood.x, n.z - stood.z) > 8)!;
+  tick(s, { interact: { k: 'node', id: far.id } });
+  assert(hasEvent(s, e => e.t === 'stuck') && s.interact === null, 'HOM-139: a click on something out of reach says so instead of walking there');
   run(s, 3);
-  assert(Math.hypot(s.player.x - 5, s.player.z - 5) < 0.3, 'click-to-move arrives');
+  assert(Math.hypot(s.player.x - stood.x, s.player.z - stood.z) < 1e-6, '...and the feet never move: no click moves the player, only the keys do');
 }
 
 // ---------------------------------------------------------------------------
@@ -408,15 +411,11 @@ section('M2 items: drops, pickup, inventory, equipment, stats from gear');
   assert(hasEvent(s, e => e.t === 'drop') && Math.hypot(drop.x - boar.x, drop.z - boar.z) < 2, 'drop event raised, drop lies at the corpse');
   assert(countItem(s.player.inventory, drop.item) === 0, 'drop is NOT silently auto-looted');
 
-  // pickup: click it, the player walks over, it lands in the inventory
+  // pickup: walk over it on the keys and it lands in the inventory (HOM-139: nothing fetches it for you)
   s.player.x = drop.x + 8; s.player.z = drop.z;
-  tick(s, { pickup: drop.id });
-  assert(s.moveTarget !== null, 'clicking a drop starts walking to it');
   const qty = drop.qty, item = drop.item;
-  let guard = 0;
-  while (s.drops.includes(drop) && guard++ < 150) tick(s);
+  walkTo(s, drop.x, drop.z, 1);
   assert(!s.drops.includes(drop) && countItem(s.player.inventory, item) === qty, `walked over drop: ${qty}x ${ITEMS[item].name} in inventory`);
-  assert(s.moveTarget === null, 'walk target cleared after pickup');
 
   // stacking + full-inventory refusal
   const inv = s.player.inventory;
@@ -538,17 +537,18 @@ function gatherUntil(s: GameState, type: string, want: number) {
   for (let guard = 0; countOf(s, item) < want && guard < 400; guard++) {
     const n = nearestNode(s, type);
     if (!n) { run(s, 1); continue; }
-    tick(s, { interact: { k: 'node', id: n.id } });
+    useNode(s, n);
     untilIdle(s);
     defend(s);
   }
 }
+/** Walk to the nearest forge and click it open. */
 function atForge(s: GameState) {
   for (let tries = 0; tries < 5; tries++) {
+    const f = stationSites('forge').sort((a, b) => dist2(a, s.player) - dist2(b, s.player))[0];
+    walkTo(s, f.x, f.z, 4, 60); // the hut is a 2.6 collider: 4 centre-to-centre is inside the click's reach
     tick(s, { interact: { k: 'forge' } });
-    let opened = hasEvent(s, e => e.t === 'forge');
-    for (let n = 0; busy(s) && n++ < 2000;) { tick(s); opened ||= hasEvent(s, e => e.t === 'forge'); }
-    if (opened) return true;
+    if (hasEvent(s, e => e.t === 'forge')) return true;
     defend(s); // aggroed on the way: deal with it and retry the walk
   }
   return false;
@@ -666,10 +666,10 @@ section('M3 gathering: nodes, timing, depletion, respawn, interruption');
 
   const far = dist2(s.player, rock);
   tick(s, { interact: { k: 'node', id: rock.id } });
-  assert(s.interact !== null && s.moveTarget !== null && s.player.action === null, `clicking a far node (${far.toFixed(0)}u) starts a walk, not an instant gather`);
-  let guard = 0;
-  while (s.interact && guard++ < 2000) tick(s);
-  assert(actionKind(s) === 'gather' && dist2(s.player, rock) < rock.r + 2.5, 'player walks into reach, then the gather action begins');
+  assert(s.interact === null && s.player.action === null && hasEvent(s, e => e.t === 'stuck'), `clicking a far node (${far.toFixed(0)}u) neither walks there nor gathers: it says you can't reach it`);
+  walkTo(s, rock.x, rock.z, rock.r + 2);
+  tick(s, { interact: { k: 'node', id: rock.id } });
+  assert(actionKind(s) === 'gather' && dist2(s.player, rock) < rock.r + 2.5, 'walked into reach by hand, the same click begins the gather');
   const a = s.player.action!;
   run(s, def.time / 2);
   assert(s.player.action === a && countOf(s, 'copper_ore') === 0, 'gathering takes time: nothing yielded halfway');
@@ -691,7 +691,7 @@ section('M3 gathering: nodes, timing, depletion, respawn, interruption');
   assert(s.player.action !== null, 'gathering again');
   tick(s, { dirX: 0, dirZ: 1 });
   assert(s.player.action === null, 'moving cancels the gather');
-  tick(s, { interact: { k: 'node', id: rock.id } });
+  useNode(s, rock);
   run(s, 1);
   assert(s.player.action !== null, 'gathering a third time');
   const w = enemyOf(s, 'wolf');
@@ -703,7 +703,7 @@ section('M3 gathering: nodes, timing, depletion, respawn, interruption');
   // trees feed Woodcutting
   const tree = nearestNode(s, 'tree');
   s.player.hp = s.player.maxHp = 999;
-  tick(s, { interact: { k: 'node', id: tree.id } });
+  useNode(s, tree);
   untilIdle(s);
   assert(countOf(s, 'logs') === NODE_TYPES.tree.charges && s.player.skills.woodcutting.xp === NODE_TYPES.tree.xp * NODE_TYPES.tree.charges, 'chopping a tree yields Logs and Woodcutting XP');
   assert(tree.charges === 0, 'trees deplete too');
@@ -711,7 +711,7 @@ section('M3 gathering: nodes, timing, depletion, respawn, interruption');
   // full bag stops the gather instead of losing the ore
   const s2 = quietState(2);
   s2.player.inventory.fill({ id: 'boar_hide', qty: 50 });
-  tick(s2, { interact: { k: 'node', id: nodesOf(s2, 'copper')[0].id } });
+  useNode(s2, nodesOf(s2, 'copper')[0]);
   untilIdle(s2);
   assert(hasEvent(s2, e => e.t === 'actionfail' && e.reason === 'full') && s2.player.action === null && nodesOf(s2, 'copper')[0].charges === 3, 'full inventory refuses to gather and tells the player');
 }
@@ -759,7 +759,7 @@ section('M3 smithing: forge recipes');
   assert(RECIPES.every(r => ITEMS[r.output.id] && r.inputs.every(i => ITEMS[i.id])), 'every recipe references real items');
   const s = quietState(4);
   addItem(s.player.inventory, 'copper_ore', 4); addItem(s.player.inventory, 'tin_ore', 4);
-  assert(atForge(s) && dist2(s.player, LANDMARKS.forge) <= FORGE_REACH, 'clicking the forge walks there and opens it');
+  assert(atForge(s) && dist2(s.player, LANDMARKS.forge) <= FORGE_REACH, 'walking to the forge and clicking it opens it');
   tick(s, { craft: { recipe: 'bronze_bar', count: 2 } });
   assert(actionKind(s) === 'craft' && countOf(s, 'bronze_bar') === 0, 'craft starts; nothing is produced instantly');
   run(s, recipeById('bronze_bar')!.time + TICK_DT * 2);
@@ -856,25 +856,39 @@ const secondStage = (s: GameState): string => s.quest.second;
 const lineTexts = (s: GameState) => questView(s).lines.map(l => l.text);
 const questNamed = (s: GameState, what: string, name: string) => hasEvent(s, e => e.t === 'quest' && e.what === what && e.name === name);
 const sawQuest = (s: GameState, what: string) => hasEvent(s, e => e.t === 'quest' && e.what === what);
-/** Click the NPC: walk over and open the dialogue. */
+/** Walk over to the NPC and click him: the dialogue opens (HOM-139: the click itself fetches nobody). */
 function talkToNpc(s: GameState) {
   for (let tries = 0; tries < 5; tries++) {
+    walkTo(s, NPC.x, NPC.z, NPC.r + 1.5, 60);
     tick(s, { interact: { k: 'npc' } });
-    let opened = hasEvent(s, e => e.t === 'npc');
-    for (let n = 0; busy(s) && n++ < 2000;) { tick(s); opened ||= hasEvent(s, e => e.t === 'npc'); }
-    if (opened) return true;
+    if (hasEvent(s, e => e.t === 'npc')) return true;
     defend(s);
   }
   return false;
 }
-/** Walk with click-to-move until within `within` of a point (gives up after maxSec). Enemies that aggro on the way are the caller's problem. */
+/**
+ * Walk there on the keys, held toward each waypoint of the route the world allows, until within `within` of a point
+ * (gives up after maxSec). Enemies that aggro on the way are the caller's problem.
+ */
 function walkTo(s: GameState, x: number, z: number, within = 2, maxSec = 40) {
-  tick(s, { clickTarget: { x, z } });
-  for (let t = 0; t < maxSec && dist2(s.player, { x, z }) > within; t += TICK_DT) {
-    if (s.player.dead || (!s.moveTarget && !s.player.moving)) break;
-    tick(s);
+  const away = () => Math.hypot(s.player.x - x, s.player.z - z); // not dist2: walkTo is called from sections above its const
+  const pts = route(s.player, { x, z }) ?? [{ x, z }];
+  let wedged = 0; // ticks held against scenery going nowhere: give up rather than push at it for the whole budget
+  for (let t = 0; t < maxSec && away() > within; t += TICK_DT) {
+    if (s.player.dead || wedged > 15) break;
+    while (pts.length > 1 && Math.hypot(s.player.x - pts[0].x, s.player.z - pts[0].z) < 0.3) pts.shift();
+    const dx = pts[0].x - s.player.x, dz = pts[0].z - s.player.z, d = Math.hypot(dx, dz);
+    if (d < 1e-6) break;
+    const was = { x: s.player.x, z: s.player.z };
+    tick(s, { dirX: dx / d, dirZ: dz / d });
+    wedged = Math.hypot(s.player.x - was.x, s.player.z - was.z) < 1e-3 ? wedged + 1 : 0;
   }
-  return dist2(s.player, { x, z }) <= within;
+  return away() <= within;
+}
+/** Walk into reach of a node, then click it: since HOM-139 the click alone travels nowhere. */
+function useNode(s: GameState, n: { id: number; x: number; z: number; r: number }) {
+  walkTo(s, n.x, n.z, n.r + 1.5, 60);
+  tick(s, { interact: { k: 'node', id: n.id } });
 }
 /** Rest (real time) until nearly healed and energy is back. No cheating: the clock keeps running. */
 function rest(s: GameState) {
@@ -903,7 +917,7 @@ section('M4 quest: NPC, dialogue gating, stage transitions, kill credit');
   tick(s, { questAdvance: true });
   assert(stage(s) === 'offer', 'accepting from across the map does nothing: you have to be in earshot');
   s.player.x = 0; s.player.z = 6; // the spawn point: walk over
-  assert(talkToNpc(s), 'clicking the NPC walks over and opens the dialogue (npc event)');
+  assert(talkToNpc(s), 'walking over to the NPC and clicking him opens the dialogue (npc event)');
   assert(Math.hypot(s.player.x - NPC.x, s.player.z - NPC.z) <= TALK_RANGE, 'the player stands within talking range');
   tick(s, { questAdvance: true });
   assert(stage(s) === 'hunt' && sawQuest(s, 'accept'), 'accepting moves the quest to the hunt and raises a quest event');
@@ -1652,11 +1666,10 @@ section('HOM-16 jump: leaves the ground, lands, and changes nothing about reach 
       tick(g, { dirX: n < 90 ? -1 : 0.4, dirZ: n < 90 ? 0 : -1, jump: spam });
       trace.push(`${g.player.x.toFixed(6)},${g.player.z.toFixed(6)}`);
     }
-    tick(g, { clickTarget: { x: 25, z: -25 }, jump: spam });
-    for (let n = 0; n < 8 * 30; n++) { tick(g, { jump: spam }); trace.push(`${g.player.x.toFixed(6)},${g.player.z.toFixed(6)}`); }
+    for (let n = 0; n < 8 * 30; n++) { tick(g, { dirX: 0.7071, dirZ: -0.7071, jump: spam }); trace.push(`${g.player.x.toFixed(6)},${g.player.z.toFixed(6)}`); }
     return trace.join(';');
   };
-  assert(route(false) === route(true), 'every x/z of a long walk (tree collision, click-to-move) is identical whether or not the player jumps the whole way');
+  assert(route(false) === route(true), 'every x/z of a long walk (tree collision, a turn across the clearing) is identical whether or not the player jumps the whole way');
 }
 {
   // it does not dodge: the slam telegraph, the heavy hit and ordinary swings all land on an airborne player
@@ -1720,8 +1733,7 @@ section('HOM-16 jump: leaves the ground, lands, and changes nothing about reach 
   // hopping breaks a gather, as moving does
   const g = quietState(410);
   const node = g.nodes.find(n => n.type === 'copper')!;
-  tick(g, { interact: { k: 'node', id: node.id } });
-  for (let n = 0; n < 2000 && g.interact; n++) tick(g);
+  useNode(g, node);
   run(g, 0.5);
   assert(g.player.action !== null, 'gathering');
   tick(g, { jump: true });
@@ -2265,7 +2277,7 @@ function dressAndTidy(s: GameState) {
 function sweepDrops(s: GameState) {
   for (const d of s.drops.slice()) { if (dist2(d, s.player) < 12) { s.player.x = d.x; s.player.z = d.z; tick(s); } }
 }
-/** Walk a list of waypoints with click-to-move; scenery that blocks a step is stepped past, as huntOne does. */
+/** Walk a list of waypoints on the keys; scenery that blocks a step is stepped past, as huntOne does. */
 function walkVia(s: GameState, pts: [number, number][]) {
   for (const [x, z] of pts) if (!walkTo(s, x, z, 2.5, 30) && !s.player.dead) { s.player.x = x; s.player.z = z; }
 }
@@ -2381,7 +2393,11 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
   for (const type of ['archer', 'archer', 'seer', 'ogre', 'ogre']) {
     for (let go = 0; go < 3; go++) {
       if (s.player.dead) wake(s);
-      if (!inCave(s.player.x, s.player.z)) walkVia(s, mouthWalk); // a go that ended at the graveyard starts again at the mouth
+      // every go starts with the room at rest and walks in from the mouth. The hollow is meant to be taken in pieces,
+      // and anything a previous go left chasing is still on its feet when the next one walks in, so they stack up.
+      walkVia(s, [[-18, -24]]);
+      for (let n = 0; n < 30 * 60 && s.enemies.some(e => inCave(e.spawnX, e.spawnZ) && st(e) !== 'dead' && st(e) !== 'idle'); n++) tick(s);
+      walkVia(s, mouthWalk);
       if (!s.enemies.some(e => e.type === type && st(e) !== 'dead')) break;
       const before = tally[type] ?? 0;
       huntOne(s, type);
@@ -2464,7 +2480,7 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
 }
 
 // ---------------------------------------------------------------------------
-section('HOM-15 getting around: one click gets you out of the cave, and nothing stays stuck on scenery');
+section('HOM-15 getting around: the way out of the cave is walkable, and nothing stays stuck on scenery');
 {
   const same = { x: -25, z: -50 };
   assert(route({ x: -18, z: -55 }, same)?.length === 1, 'within one room a walk goes straight at its target');
@@ -2475,21 +2491,16 @@ section('HOM-15 getting around: one click gets you out of the cave, and nothing 
   for (const [name, from, to] of [['the warden hall to the clearing', { x: -18, z: -85 }, { x: 0, z: 6 }], ['the clearing to the warden hall', { x: 0, z: 6 }, { x: -18, z: -85 }], ['the far corner of the hollow to the forge', { x: -30, z: -60 }, { x: LANDMARKS.forge.x - 4, z: LANDMARKS.forge.z + 4 }]] as const) {
     const s = quietState(960);
     s.player.x = from.x; s.player.z = from.z;
-    tick(s, { clickTarget: to });
-    let n = 0;
-    for (; n < 30 * 60 && (s.moveTarget || s.player.moving); n++) tick(s);
-    assert(dist2(s.player, to) < 1.5, `one click walks ${name} (${(n * TICK_DT).toFixed(0)}s, ends ${dist2(s.player, to).toFixed(1)}u short)`);
+    assert(walkTo(s, to.x, to.z, 1.5, 60), `${name} can be walked (ends ${dist2(s.player, to).toFixed(1)}u short)`);
   }
+  // HOM-139: a click never fetches you. From the deepest room Warden Hale is out of reach and says so; walked out, the same click opens him
   const f = quietState(961);
   f.player.x = -18; f.player.z = -85;
   tick(f, { interact: { k: 'npc' } });
-  let opened = false;
-  for (let n = 0; n < 30 * 60 && busy(f); n++) { tick(f); opened ||= hasEvent(f, e => e.t === 'npc'); }
-  assert(opened, 'clicking Warden Hale from the deepest room walks all the way out and opens his dialogue');
-  const g = quietState(962);
-  g.player.x = -18; g.player.z = -35;
-  tick(g, { dirX: 0, dirZ: 1 });
-  assert(g.moveTarget === null, 'keyboard movement is untouched by the routing: it is a click-to-move feature only');
+  assert(hasEvent(f, e => e.t === 'stuck') && !hasEvent(f, e => e.t === 'npc'), 'clicking Warden Hale from the deepest room says you cannot reach him');
+  walkTo(f, NPC.x, NPC.z, NPC.r + 1.5, 60);
+  tick(f, { interact: { k: 'npc' } });
+  assert(hasEvent(f, e => e.t === 'npc'), '...and once you have walked out to him, the click opens his dialogue');
 
   // an enemy walking home that is walled in by scenery is put home, not left untouchable
   const w = quietState(963);
@@ -2547,9 +2558,7 @@ section('HOM-30 the Cave Brute is a door guard, and it stays dead');
   const m = quietState(974);
   m.player.x = -18; m.player.z = -40;
   const rock = ROCKS[0];
-  tick(m, { interact: { k: 'node', id: m.nodes.find(n => n.type === rock.type && n.x === rock.x && n.z === rock.z)!.id } });
-  for (let n = 0; n < 30 * 30 && busy(m); n++) tick(m);
-  assert(dist2(m.player, rock) < 6, `a click on a ridge rock from inside the throat walks all the way out to it (${dist2(m.player, rock).toFixed(1)} away)`);
+  assert(walkTo(m, rock.x, rock.z, 6, 60), `the walk from inside the throat out to a ridge rock gets there (${dist2(m.player, rock).toFixed(1)} away)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -2582,6 +2591,8 @@ section('HOM-31 the delve: the first trip into the hollow is made before the set
       if (s.player.hp < s.player.maxHp * 0.97) { run(s, 1); continue; }
       const vein = nearestNode(s, 'tin');
       if (!vein) { run(s, 1); continue; }
+      // the seam is walked to a fraction of a second at a time, so anything that wakes on the way is picked up at the top of the loop
+      if (dist2(s.player, vein) > vein.r + 1.5) { walkTo(s, vein.x, vein.z, vein.r + 1.5, 0.2); continue; }
       tick(s, { interact: { k: 'node', id: vein.id } });
       for (let n = 0; busy(s) && n < 4000 && !s.enemies.some(e => st(e) === 'chase'); n++) tick(s);
     }
@@ -2602,25 +2613,22 @@ section('HOM-31 the delve: the first trip into the hollow is made before the set
   assert(ENEMY_TYPES.archer.leash * 0.8 < 6, 'the archers hold their post: they back off 5u at most, which is what keeps the sentry fight where it started');
 }
 
-// HOM-29: outdoor click-to-move routes round the ridge rocks instead of wedging in the pocket and giving up silently
+// HOM-29: the ridge rocks can be walked round, rather than wedging the player in the pocket east of the mouth
 {
   const r = quietState(975);
   for (const [tx, tz] of [[-10.65, -27.09], [-5, -30], [-18, -22], [27.4, -25.1]] as [number, number][]) {
     r.player.x = 0; r.player.z = 0;
-    tick(r, { clickTarget: { x: tx, z: tz } });
-    let stuck = false;
-    for (let n = 0; n < 30 * 40 && (r.moveTarget || r.player.moving); n++) { tick(r); stuck = stuck || r.events.some(e => e.t === 'stuck'); }
-    assert(!stuck && dist2(r.player, { x: tx, z: tz }) < 1.5, `a click at (${tx}, ${tz}) from the clearing walks there round the rocks (${dist2(r.player, { x: tx, z: tz }).toFixed(1)} away)`);
+    assert(walkTo(r, tx, tz, 1.5), `(${tx}, ${tz}) can be walked to from the clearing, round the rocks (${dist2(r.player, { x: tx, z: tz }).toFixed(1)} away)`);
   }
   r.player.x = -10.65; r.player.z = -27.09;
-  tick(r, { interact: { k: 'node', id: r.nodes.find(n => n.x === -5 && n.z === -27.5)!.id } });
-  for (let n = 0; n < 30 * 30 && busy(r); n++) tick(r);
-  assert(dist2(r.player, { x: -5, z: -27.5 }) < 3.3, `from the pocket east of the mouth a click on the next rock along walks to it (${dist2(r.player, { x: -5, z: -27.5 }).toFixed(1)} away)`);
+  const next = r.nodes.find(n => n.x === -5 && n.z === -27.5)!;
+  assert(walkTo(r, next.x, next.z, 3.3), `from the pocket east of the mouth the next rock along can be reached (${dist2(r.player, next).toFixed(1)} away)`);
+  useNode(r, next);
+  assert(actionKind(r) === 'gather', '...and standing there, clicking it starts the gather');
+  // HOM-139: a click too far off is acknowledged, not dropped silently
   const w = quietState(976);
-  tick(w, { clickTarget: { x: -5, z: -27.5 } }); // dead centre of a ridge rock: cannot be stood on
-  let said = false;
-  for (let n = 0; n < 30 * 20 && (w.moveTarget || w.player.moving); n++) { tick(w); said = said || w.events.some(e => e.t === 'stuck'); }
-  assert(said, 'a click that cannot be walked is acknowledged with a stuck event, not dropped silently');
+  tick(w, { interact: { k: 'node', id: next.id } });
+  assert(w.events.some(e => e.t === 'stuck'), 'a click on something out of reach raises a stuck event, not silence');
 }
 
 // ---------------------------------------------------------------------------
@@ -3344,13 +3352,14 @@ section('HOM-42 economy: gold, item values and a merchant who buys your junk');
   tick(dead, { shop: [{ k: 'buy', item: 'leather_cap', qty: 1 }] });
   assert(countOf(dead, 'leather_cap') === 0 && dead.player.gold === 1000, 'the dead do not shop');
 
-  // clicking the merchant walks up to him and opens the shop
+  // from across the square the merchant is out of reach; walked up to, the click opens the shop (HOM-139)
   const walk = quietState(424);
   walk.player.x = VENDOR.x - 12; walk.player.z = VENDOR.z;
   tick(walk, { interact: { k: 'vendor' } });
-  let opened = false;
-  for (let n = 0; n < 400 && !opened; n++) { tick(walk); opened = hasEvent(walk, ev => ev.t === 'shop'); }
-  assert(opened, 'clicking the merchant walks the player over and raises the shop event');
+  assert(hasEvent(walk, ev => ev.t === 'stuck') && !hasEvent(walk, ev => ev.t === 'shop'), 'clicking the merchant from 12u off says you cannot reach him');
+  walkTo(walk, VENDOR.x, VENDOR.z, VENDOR.r + 1.5, 30);
+  tick(walk, { interact: { k: 'vendor' } });
+  assert(hasEvent(walk, ev => ev.t === 'shop'), 'walking over to the merchant and clicking him raises the shop event');
 
   // the invariant that keeps it unfarmable: computed from the data, not a hand-written list
   const inputs = new Set(RECIPES.flatMap(r => r.inputs.map(i => i.id)));
@@ -3509,15 +3518,19 @@ section('HOM-46 the road east: Hale to Saltmarrow on foot, and back, with no tra
   let leftFloor = 0, stuck = 0, woke = false, gateX = 0;
   const gate = { z: null as number | null };
   const walkTo = (x: number, z: number, limit: number) => {
-    tick(s, { clickTarget: { x, z } });
+    const pts = route(s.player, { x, z }) ?? [{ x, z }];
     let t = 0;
     while (t < limit && Math.hypot(s.player.x - x, s.player.z - z) > 1.2) {
       s.player.hp = s.player.maxHp = 1e6; // this is about the ground, not the fight: every enemy on the road may chase
-      tick(s);
+      while (pts.length > 1 && Math.hypot(s.player.x - pts[0].x, s.player.z - pts[0].z) < 0.3) pts.shift();
+      const dx = pts[0].x - s.player.x, dz = pts[0].z - s.player.z, d = Math.hypot(dx, dz);
+      if (d < 1e-6) break;
+      const was = { x: s.player.x, z: s.player.z };
+      tick(s, { dirX: dx / d, dirZ: dz / d });
+      if (Math.hypot(s.player.x - was.x, s.player.z - was.z) < 1e-4) stuck++; // held a direction and went nowhere: wedged on scenery
       t += TICK_DT;
       const c = clampToWorld(s.player);
       if (Math.hypot(c.x - s.player.x, c.z - s.player.z) > 1e-6) leftFloor++;
-      if (hasEvent(s, e => e.t === 'stuck')) stuck++;
       const r = regionAt(s.player.x, s.player.z)?.id ?? '?';
       if (seen[seen.length - 1] !== r) seen.push(r);
       if (gate.z === null && s.player.x >= 30) { gate.z = s.player.z; gateX = s.player.x; }
@@ -3526,14 +3539,14 @@ section('HOM-46 the road east: Hale to Saltmarrow on foot, and back, with no tra
     return t;
   };
   const out = walkTo(sq.x, sq.z, 220);
-  assert(Math.hypot(s.player.x - sq.x, s.player.z - sq.z) <= 1.2, `one click on Saltmarrow's square from the clearing walks there: ${out.toFixed(0)}s at 6 units a second`);
+  assert(Math.hypot(s.player.x - sq.x, s.player.z - sq.z) <= 1.2, `Saltmarrow's square can be walked to from the clearing: ${out.toFixed(0)}s at 6 units a second`);
   assert(out < 200, 'in under 200 seconds: the road is 800 long and runs straight');
   assert(seen.includes('clearing') && seen.includes('greywater') && seen.includes('saltmarrow') && seen.indexOf('clearing') < seen.indexOf('greywater') && seen.indexOf('greywater') < seen.indexOf('saltmarrow'), `through the clearing, the road and the town in that order (${seen.join(' > ')})`);
   assert(gate.z !== null && gate.z >= 5.5 - 1e-6 && gate.z <= 10.5 + 1e-6, `and out through the gate: it crossed the wall at x = ${gateX.toFixed(1)}, z = ${gate.z?.toFixed(2)}, inside the 6-unit gap`);
   assert(leftFloor === 0 && stuck === 0, 'never off the floor, never stuck on scenery');
   assert(woke, 'and it was not an empty road: the camps woke to a level 1 walking through (the walker could not die, so they chased and struck for nothing)');
   const back = walkTo(0, 6, 220);
-  assert(Math.hypot(s.player.x, s.player.z - 6) <= 1.2 && stuck === 0 && leftFloor === 0, `and one click on the clearing walks all the way back: ${back.toFixed(0)}s`);
+  assert(Math.hypot(s.player.x, s.player.z - 6) <= 1.2 && stuck === 0 && leftFloor === 0, `and the whole way back again: ${back.toFixed(0)}s`);
   assert(s.enemies.filter(e => e.region === 'greywater').length === 18 && s.enemies.filter(e => e.region === 'saltmarrow').length === 11 && s.enemies.filter(e => e.region === 'clearing' || e.region === 'hollow' || e.region === 'hall').length === 20, 'every enemy is tagged with its region: 18 on the road, 11 on the Strand, Hale\'s 20');
 }
 
@@ -3635,13 +3648,12 @@ section('HOM-46 Saltmarrow: its harbourmaster, its chandler, and the third quest
   const bad = JSON.parse(serialize(quietState(4642))); bad.quest.third = 'hunt';
   assert(deserialize(JSON.stringify(bad)) === null, 'a save that has the road open before the Hollow is quiet is refused');
 
-  // clicking the harbourmaster walks over and opens his dialogue, naming him
+  // walked up to, clicking the harbourmaster opens his dialogue, naming him
   const w = quietState(4643);
   w.player.x = pell.x - 15; w.player.z = pell.z;
+  walkTo(w, pell.x, pell.z, pell.r + 1.5, 30);
   tick(w, { interact: { k: 'npc', id: 'harbour' } });
-  let who = '';
-  for (let n = 0; n < 300 && !who; n++) { tick(w); const ev = w.events.find(e => e.t === 'npc'); if (ev && ev.t === 'npc') who = ev.who; }
-  assert(who === 'harbour', 'clicking the harbourmaster walks the player over and opens his dialogue');
+  assert(w.events.some(e => e.t === 'npc' && e.who === 'harbour'), 'clicking the harbourmaster opens his dialogue');
   const e = quietState(4644);
   e.player.x = NPC.x + 1; e.player.z = NPC.z;
   tick(e, { interact: { k: 'npc' } });
@@ -3877,15 +3889,11 @@ section('HOM-64 dungeons as data: the Hollow is the first, the Drowned Grotto th
   const said: string[] = [];
   for (let n = 0; n < 120; n++) { tick(s, { dirZ: -1 }); for (const ev of s.events) if (ev.t === 'door') said.push(ev.blurb); }
   assert(said.length >= 1 && said.length <= 3 && said[0] === grotto.gate!.blurb, `and the door says why, once in a while rather than every tick (${said.length} times in 4 s)`);
-  s.player.x = door.x; s.player.z = door.z;
-  tick(s, { clickTarget: { x: door.x, z: gz - 90 } });
-  run(s, 6);
-  assert(dungeonAt(s.player.x, s.player.z) === null && !s.moveTarget, 'a click inside is refused the same way');
 
   s.quest.stage = 'done'; s.quest.second = 'cleared'; s.quest.third = 'cleared'; s.quest.fifth = 'cleared';
   s.player.x = door.x; s.player.z = door.z;
   const marrow = s.enemies.find(e => e.type === 'captain_marrow')!;
-  assert(isOpen(s) && walkTo(s, marrow.x, marrow.z + 10, 2, 90) && dungeonAt(s.player.x, s.player.z) === grotto, 'open: a walk from the cliff door to the hold is one click, through three rooms');
+  assert(isOpen(s) && walkTo(s, marrow.x, marrow.z + 10, 2, 90) && dungeonAt(s.player.x, s.player.z) === grotto, 'open: the cliff door leads to the hold on foot, through three rooms');
 
   // Brine and Bone
   const q = quietState(6402);
@@ -3984,7 +3992,7 @@ section('HOM-75 the Rotroot: the third dungeon, in Thornwick\'s frame');
   s.quest.sixth = 'cleared';
   s.player.x = door.x; s.player.z = door.z;
   const mother = s.enemies.find(e => e.type === 'rotroot_mother')!;
-  assert(dungeonOpen(s, rr) && walkTo(s, mother.x, mother.z - 10, 2, 90) && dungeonAt(s.player.x, s.player.z) === rr, 'at combat 22 a walk from the mouth to the heart is one click, through three rooms');
+  assert(dungeonOpen(s, rr) && walkTo(s, mother.x, mother.z - 10, 2, 90) && dungeonAt(s.player.x, s.player.z) === rr, 'at combat 22 the mouth leads to the heart on foot, through three rooms');
   const s21 = quietState(7502); atLevel(s21, 21); s21.quest.sixth = 'cleared';
   assert(!dungeonOpen(s21, rr), 'and at 21 it stays shut');
 

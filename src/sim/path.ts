@@ -1,6 +1,10 @@
-// Click-to-move routing over the whole world: grid A* across a region's floor and round its colliders, string-pulled to a few
+// Routing over the whole world: grid A* across a region's floor and round its colliders, string-pulled to a few
 // waypoints. One layer for the clearing, the ridge, the cave, the road and the town alike: no hand-placed waypoints.
 // Pure: no Three.js, no DOM.
+//
+// Since HOM-139 took click-to-move out, nothing in the game walks a route: the player walks on the keys and nothing else
+// moves them. What this is still for is the walkability guarantee the tests hold the world to - that every town, gate,
+// node and spawn can actually be reached on foot - and the steering the test bots use to get about.
 //
 // The world is continuous, so a route may cross from one region into the next (Hale's gate, the road, Saltmarrow) with no transition.
 // What keeps that affordable is that there is no global grid:

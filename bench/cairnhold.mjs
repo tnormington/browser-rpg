@@ -25,7 +25,7 @@ const HX = 1910, HZ = 1008; // Highmoor's frame: the bible's local coordinates a
 const stand = async (x, z, look = null, ms = 500) => {
   await page.evaluate(([x, z, look]) => {
     const s = window.__debug.sim, p = s.player;
-    s.moveTarget = null; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp;
+    s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp;
     window.__debug.view.yaw = look ? Math.atan2(x - look.x, z - look.z) : 0;
   }, [x, z, look]);
   await page.waitForTimeout(ms);

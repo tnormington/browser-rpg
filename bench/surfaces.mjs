@@ -26,7 +26,7 @@ await page.evaluate(async ([X, Z, SLOTS]) => {
   document.querySelectorAll('body > *:not(canvas)').forEach(n => { n.style.visibility = 'hidden'; });
   const d = window.__debug, { spawn, loadSlot } = await import('/src/models.ts');
   for (const e of d.sim.enemies) { e.state = 'dead'; e.respawnIn = 1e9; e.deadFor = 99; }
-  d.sim.player.moveTarget = null; d.sim.player.hp = d.sim.player.maxHp = 99999;
+  d.sim.player.hp = d.sim.player.maxHp = 99999;
   for (let i = 0; i < SLOTS.length; i++) {
     const o = spawn(await loadSlot(SLOTS[i])).root;
     o.position.set(X + i * 14, 0, Z); o.updateMatrix(); d.scene.add(o);
@@ -77,7 +77,7 @@ for (const [name, type] of [['play-ore', 'iron'], ['play-tree', 'tree']]) {
   await page.evaluate(([type]) => {
     const d = window.__debug, n = d.sim.nodes.find(n => n.type === type);
     d.view.debugCam = null;
-    d.sim.player.x = n.x + 2.5; d.sim.player.z = n.z + 3; d.sim.player.moveTarget = null;
+    d.sim.player.x = n.x + 2.5; d.sim.player.z = n.z + 3;
     d.view.yaw = Math.PI; d.view.pitch = 0.5; d.view.distance = 9;
     d.step(); d.step();
   }, [type]);

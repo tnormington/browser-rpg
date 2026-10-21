@@ -107,9 +107,10 @@ section('HOM-65 alchemy: a recipe made at the alembic, not the forge');
   const click = quiet(6523);
   stand(click, LANDMARKS.alembic, 12);
   tick(click, { interact: { k: 'alembic' } });
-  let opened = false;
-  for (let n = 0; n < 400 && !opened; n++) { tick(click); opened = click.events.some(e => e.t === 'alembic'); }
-  assert(opened && nearStation(click, 'alembic'), 'clicking the alembic walks the player over and opens its recipe list');
+  assert(click.events.some(e => e.t === 'stuck') && !click.events.some(e => e.t === 'alembic'), 'HOM-139: clicking the alembic from 12u off says you cannot reach it, rather than walking you there');
+  stand(click, LANDMARKS.alembic, 3);
+  tick(click, { interact: { k: 'alembic' } });
+  assert(click.events.some(e => e.t === 'alembic') && nearStation(click, 'alembic'), 'standing at it, the click opens its recipe list');
 
   const lv = quiet(6522);
   addItem(lv.player.inventory, 'fenbloom', 1); addItem(lv.player.inventory, VIAL, 1);
