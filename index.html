@@ -34,7 +34,7 @@
   --ink:#d6cdb4;--ink-dim:#8d8672;--ink-bright:#ece6d2;
   --gold:#c0a55e;--gold-hi:#e8d9a0;--gold-dim:#6a5a22;--gold-wash:#3f351a;--gold-wash-hi:#54471f;
   --blood:#c23a32;--blood-dark:#6e1f1c;--bad:#e8523f;--moss:#93b58c;--arcane:#6ad8ff;--arcane-dim:#2f3b5a;--ember:#ff8a3a;--ember-dim:#5a3a22;--flare:#ff7a5a;
-  --violet:#b39be0;--heal:#7fe8c8;--spark:#ffd06a;
+  --violet:#b39be0;--heal:#7fe8c8;--spark:#ffd06a;--crit:#ffd21f;--crit-glow:#b8801a;
   /* what a gauge is filled with: each is a whole background, so a bar can also take a flat colour (--fill:var(--blood)) */
   --fill-hp:linear-gradient(#6f8f56,#4a6a3a);--fill-energy:linear-gradient(#b08a3a,#7a5e24);--fill-blood:linear-gradient(#c23a32,#7e1f1c);
   --fill-xp:linear-gradient(#6b4aa0,#43306a);--fill-skill:linear-gradient(#5a7a96,#3a566e);--fill-cast:linear-gradient(#c0883a,#85591f);--fill-ride:linear-gradient(#a08a44,#6a5a22);
@@ -141,7 +141,7 @@ canvas{display:block}
 @keyframes lvl{0%{opacity:0;transform:scale(.4)}12%{opacity:1;transform:scale(1.25)}25%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:translateY(-30px)}}
 .death{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:var(--fs-3xl);background:rgba(60,0,0,.55)}
 .floater{position:absolute;left:0;top:0;font-weight:bold;font-size:var(--fs-2xl);white-space:nowrap;text-shadow:0 0 3px #000,0 2px 3px #000,0 0 8px #000}
-.dmg-out{color:var(--ink-bright)}.dmg-crit{color:var(--spark);font-size:var(--fs-3xl)}.dmg-dot{color:var(--violet);font-size:var(--fs-xl)}.dmg-in{color:var(--bad)}.heal{color:var(--heal)}.xpgain{color:var(--violet);font-size:var(--fs-xl)}
+.dmg-out{color:var(--ink-bright)}.dmg-crit{color:var(--crit);font-size:var(--fs-4xl);text-shadow:0 0 3px #000,0 2px 3px #000,0 0 10px #000,0 0 14px var(--crit-glow)}.dmg-dot{color:var(--violet);font-size:var(--fs-xl)}.dmg-in{color:var(--bad)}.heal{color:var(--heal)}.xpgain{color:var(--violet);font-size:var(--fs-xl)}
 .plate{position:absolute;left:0;top:0;display:none;text-align:center;font-size:var(--fs-sm);white-space:nowrap;text-shadow:0 0 3px #000,0 1px 2px #000}
 .plate .pbar{--fill:var(--blood);width:60px;margin:var(--sp-1) auto 0}
 .plate.sel .pname{color:var(--bad);font-weight:bold}

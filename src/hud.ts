@@ -146,7 +146,7 @@ const NODE_PLATE_W = 96, NODE_PLATE_H = 36; // two plates closer than this on sc
 const PLATE_W = 96, PLATE_STACK_H = 40; // enemy plate footprint; a clustered plate is lifted one step per plate beneath it
 const FLOATER_HALF_W = 24, FLOATER_HALF_H = 14; // footprint of a floating number around its centre
 
-interface Floater { el: HTMLElement; x: number; y: number; z: number; age: number; drift: number }
+interface Floater { el: HTMLElement; x: number; y: number; z: number; age: number; drift: number; pop: boolean }
 
 export class Hud {
   private root = el(document.body, 'hud');
@@ -477,7 +477,7 @@ export class Hud {
       if (ev.t === 'hit') {
         const toPlayer = ev.target === 'player';
         const cls = toPlayer ? 'dmg-in' : ev.dot ? 'dmg-dot' : ev.crit ? 'dmg-crit' : 'dmg-out';
-        this.float(`${ev.amount}${ev.crit ? '!' : ''}`, cls, ev.x, toPlayer ? 2.6 : 2.4, ev.z);
+        this.float(`${ev.amount}${ev.crit ? '!' : ''}`, cls, ev.x, toPlayer ? 2.6 : 2.4, ev.z, cls === 'dmg-crit');
         if (toPlayer) {
           this.hurtFlash(false);
           if (this.acting) { // the sim drops the action on any hit; say so instead of failing silently
@@ -683,9 +683,9 @@ export class Hud {
     this.hurt.classList.add('show');
   }
 
-  private float(text: string, cls: string, x: number, y: number, z: number) {
+  private float(text: string, cls: string, x: number, y: number, z: number, pop = false) {
     const d = el(this.root, `floater ${cls}`, text);
-    this.floaters.push({ el: d, x, y, z, age: 0, drift: (Math.random() - 0.5) * 40 });
+    this.floaters.push({ el: d, x, y, z, age: 0, drift: (Math.random() - 0.5) * 40, pop });
   }
 
   update(s: GameState, dtSeconds: number) {
@@ -801,9 +801,9 @@ export class Hud {
       f.age += dtSeconds;
       const scr = f.age < 1.1 ? this.project(f.x, f.y, f.z) : null;
       if (!scr) { f.el.remove(); return false; }
-      const rise = f.age * 55, k = Math.min(1, f.age * 6);
+      const rise = f.age * 55, k = Math.min(1, f.age * 6), pop = f.pop ? 0.45 * Math.max(0, 1 - f.age * 5) : 0; // a crit lands oversize, then settles
       const fx = scr.x + f.drift * f.age, fy = this.clearOfHud(blockers, fx, scr.y - rise);
-      f.el.style.transform = `translate(${fx}px, ${fy}px) translate(-50%, -50%) scale(${0.6 + 0.4 * k})`;
+      f.el.style.transform = `translate(${fx}px, ${fy}px) translate(-50%, -50%) scale(${0.6 + 0.4 * k + pop})`;
       f.el.style.opacity = String(Math.min(1, (1.1 - f.age) * 3));
       return true;
     });
