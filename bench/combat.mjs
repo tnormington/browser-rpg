@@ -19,6 +19,11 @@
 // of it is wasted (the elite rows are 'with a heal'); --no-heal is the no-heal column; other modes opt in with --heal. ttk prints mean and median together.
 // --dodge none|slam|all (HOM-106, world-design 3.4a; ttk defaults to slam, the other modes to none): Pummel a telegraph if it will be off cooldown, else walk out of a slam
 // (all: and out of a marked circle) with W held and view.yaw toward the point. ttk prints gross and net damage, heals, and telegraphs seen / dodged / pummelled / landed.
+// --dodge all is the mode that steps out of ground circles too (the Cairn King's Falling Stone); the table's circles column says how many it dodged / pummelled / landed.
+// HOM-118: every finished fight prints a line with its wall time, so a long run is visibly progressing; --types filters camp / ride / clusters to those camps;
+//   --cap N is a ttk fight's sim-seconds limit (120); --fast N steps the sim N ticks per bot decision instead of waiting on the game's frames. The game's loop
+//   caps a frame at 0.25 s of sim, so --speed stops helping when frames are slow; --fast 1 is ~3.5x real time and decides every tick (what a 30 fps player does),
+//   --fast 4 is ~11x and decides every 0.13 s. A camp row that took ~25 s now takes ~3 s. Without --fast the bot decides once a frame, which is coarser at low fps.
 // Not modelled: food, potions, talents.
 // ttk: isolated 1v1 (everything else in the world pinned dead), player placed 7 units off; per fight: first swing -> kill, damage taken, % of max HP.
 // loop: the type's camps in their natural layout (other types pinned dead), kill -> loot (real clicks) -> walk (real clicks) -> wait for --health of max HP
@@ -39,7 +44,14 @@ const shots = join(root, 'bench', 'shots'); mkdirSync(shots, { recursive: true }
 async function botInPage(cfg) {
   const d = window.__debug, s = d.sim, p = s.player, view = d.view, canvas = d.renderer.domElement, ITEMS = d.items;
   const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
-  const frame = () => new Promise(r => requestAnimationFrame(r));
+  // --fast N (HOM-118): the game's loop caps a frame at 0.25 s of sim and a loaded frame is slow, so --speed gains nothing once frames are slow. Fast steps the sim
+  // itself, N ticks per call (the same step() the loop runs, the same held keys), and takes a real frame every 30 calls so the camera view.project reads stays current.
+  let calls = 0;
+  const frame = () => {
+    if (!cfg.fast) return new Promise(r => requestAnimationFrame(r));
+    for (let i = 0; i < cfg.fast; i++) d.step();
+    return ++calls % 30 ? new Promise(r => setTimeout(r, 0)) : new Promise(r => requestAnimationFrame(r));
+  };
   const cum = [0, 0]; for (let l = 1, pt = 0; l < 99; l++) { pt += Math.floor(l + 300 * Math.pow(2, l / 7)); cum[l + 1] = Math.floor(pt / 4); } // sim/xp.ts's curve: xp must match the level or the first kill resets it
   const GEAR = {
     base: { weapon: 'warden_edge', head: 'steel_helm', chest: 'steel_chestplate', legs: 'steel_greaves' },
@@ -174,7 +186,7 @@ async function botInPage(cfg) {
     if (!spot) throw new Error(`ttk: no stand-off point on ${e.type} #${e.id}'s own floor (${reg?.id}) at (${e.spawnX.toFixed(1)}, ${e.spawnZ.toFixed(1)})`);
     p.x = spot.x; p.z = spot.z; p.facing = Math.atan2(e.spawnX - p.x, e.spawnZ - p.z);
     newRec(); const start = s.tick;
-    while (!rec.kills.some(k => k.id === e.id) && !p.dead && s.tick - start < 120 * 30) { fightStep(e); await frame(); }
+    while (!rec.kills.some(k => k.id === e.id) && !p.dead && s.tick - start < cfg.cap * 30) { fightStep(e); await frame(); }
     hold('KeyW', false);
     const killed = rec.kills.find(k => k.id === e.id);
     const r = { type: e.type, id: e.id, level, gear, maxHp: p.maxHp, killed: !!killed, died: p.dead, ttk: killed && rec.firstSwing != null ? (killed.tick - rec.firstSwing) / 30 : null,
@@ -252,7 +264,7 @@ async function botInPage(cfg) {
     const es = s.enemies, grp = es.map((_, i) => i), find = i => (grp[i] === i ? i : (grp[i] = find(grp[i])));
     es.forEach((a, i) => es.forEach((b, j) => { if (i < j && Math.hypot(a.spawnX - b.spawnX, a.spawnZ - b.spawnZ) <= cfg.link) grp[find(i)] = find(j); }));
     const by = {}; es.forEach((e, i) => (by[find(i)] ??= []).push(e));
-    return Object.values(by).filter(g => g.length === size).map(g => ({ members: g, cx: g.reduce((a, e) => a + e.spawnX, 0) / g.length, cz: g.reduce((a, e) => a + e.spawnZ, 0) / g.length }));
+    return Object.values(by).filter(g => g.length === size && (!cfg.only || g.every(e => cfg.only.includes(e.type)))).map(g => ({ members: g, cx: g.reduce((a, e) => a + e.spawnX, 0) / g.length, cz: g.reduce((a, e) => a + e.spawnZ, 0) / g.length }));
   };
   const nameOf = c => c.members.map(e => e.type).join('+') + `@${c.cx.toFixed(0)},${c.cz.toFixed(0)}`;
   const clearSpot = (x, z, reg) => d.world.regionAt(x, z) === reg && !(reg.obstacles ?? []).some(o => Math.hypot(o.x - x, o.z - z) < o.r + 1.5);
@@ -303,12 +315,13 @@ async function botInPage(cfg) {
   };
 
   const out = [];
+  const note = (what, r) => window.__benchLog(`${what} ${JSON.stringify(r)}`); // one line per finished fight, so a stall shows as a silence after a known fight
   if (cfg.mode === 'camp' || cfg.mode === 'ride') {
     for (const c of clusters(cfg.size)) {
       const level = Math.max(...c.members.map(e => cfg.levels[e.type] ?? 1));
       for (const gear of level >= 18 ? cfg.gearHi : cfg.gearLo) for (let i = 0; i < cfg.n; i++) {
-        if (cfg.mode === 'camp') out.push(await campFight(c, level, gear));
-        else for (const off of [0, 12]) out.push(await rideTrial(c, level, gear, off));
+        if (cfg.mode === 'camp') { out.push(await campFight(c, level, gear)); note('camp', out.at(-1)); }
+        else for (const off of [0, 12]) { out.push(await rideTrial(c, level, gear, off)); note('ride', out.at(-1)); }
       }
     }
   } else if (cfg.mode === 'clusters') {
@@ -316,7 +329,7 @@ async function botInPage(cfg) {
   } else if (cfg.mode === 'ttk') {
     for (const run of cfg.runs) {
       const spawns = s.enemies.filter(e => e.type === run.type);
-      for (let i = 0; i < run.n; i++) out.push(await trial(spawns[i % spawns.length], run.level, run.gear));
+      for (let i = 0; i < run.n; i++) { const r = await trial(spawns[i % spawns.length], run.level, run.gear); out.push(r); note('ttk', { type: run.type, i: i + 1, of: run.n, ttk: r.ttk, died: r.died }); }
     }
   } else {
     for (const run of cfg.runs) out.push({ type: run.type, level: run.level, gear: run.gear, thr: cfg.thr, fights: await loop(run.type, run.level, run.gear, run.n, cfg.thr) });
@@ -340,7 +353,8 @@ async function runBot(page) {
   const runs = types.map(type => ({ type, n, gear, level: opt('level', '') ? Number(opt('level', '')) : levels[type] }));
   page.on('console', m => { if (m.type() === 'error') console.error('page:', m.text()); });
   const t0 = Date.now();
-  const res = await page.evaluate(botInPage, { mode, runs, thr, dodge, heavyRadius, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), n, levels, standoff: Number(opt('standoff', 13)), link: Number(opt('link', 13)), size: Number(opt('size', 3)), gearLo: opt('gearlo', 'base').split(','), gearHi: opt('gearhi', 'adamant,marrow').split(',') });
+  await page.exposeFunction('__benchLog', m => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s] ${m}`));
+  const res = await page.evaluate(botInPage, { mode, fast: Number(opt('fast', 0)), cap: Number(opt('cap', 120)), only: opt('types', '') ? types : null, runs, thr, dodge, heavyRadius, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), n, levels, standoff: Number(opt('standoff', 13)), link: Number(opt('link', 13)), size: Number(opt('size', 3)), gearLo: opt('gearlo', 'base').split(','), gearHi: opt('gearhi', 'adamant,marrow').split(',') });
   const wall = ((Date.now() - t0) / 1000).toFixed(0);
   if (mode === 'camp' || mode === 'ride' || mode === 'clusters') {
     writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify(res, null, 1));
