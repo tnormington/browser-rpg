@@ -322,7 +322,7 @@ export class PlayerGear {
       const hook = this.part(curvedSpike(0.05, 0.62, -0.1, 2.9, 5), trim, w, [0, 0.2, 0.22], [0, -Math.PI / 2, 0]); // up from the brow and over, point back down
       hook.scale.setScalar(1);
       this.part(new THREE.OctahedronGeometry(0.06), vein, w, [0, 0.42, 0.02]);
-      this.part(new THREE.BoxGeometry(0.5, 0.04, 0.04), vein, w, [0, -0.02, 0.32]); // a narrow eye slit's worth of light across the brim
+      this.part(new THREE.BoxGeometry(0.32, 0.035, 0.04), vein, w, [0, -0.02, 0.32]); // a narrow eye slit's worth of light under the brim
     } else if (ap.form === 'crown') {
       // the one head piece that is not a helm: a five-point circlet over a bare head, its own stone over the brow
       this.band(0.3, 0.315, 0.13, 'plate', p, w, [0, -0.12, 0]);
@@ -475,15 +475,16 @@ export class PlayerGear {
     const g = new THREE.Group(), w = this.world(), p = this.palette(ap);
     const fur = this.double(p.get('plate')), dark = p.get('trim'), eye = p.get('inlay');
     p.list.push(fur);
-    this.part(new THREE.CylinderGeometry(0.34, 0.5, 0.2, 14, 1, true), fur, w, [0, 0.12, 0]);
-    this.part(new THREE.CylinderGeometry(0.46, 0.64, 0.2, 14, 1, true), fur, w, [0, -0.04, 0]);
+    // seven sides, not the eighteen a rolled cuff takes: a pelt hangs in folds, and a mantle shaded smooth reads as a cone of stone
+    this.part(new THREE.CylinderGeometry(0.34, 0.5, 0.2, 7, 1, true), fur, w, [0, 0.12, 0]);
+    this.part(new THREE.CylinderGeometry(0.46, 0.64, 0.2, 7, 1, true), fur, w, [0, -0.04, 0]);
     this.band(0.345, 0.345, 0.035, 'strap', p, w, [0, 0.2, 0]); // the thong the mantle is drawn up on
     // the head: snout forward and out over the left shoulder, ears up
     this.part(new THREE.ConeGeometry(0.15, 0.4, 5), dark, w, [-0.4, 0.26, 0.2], [Math.PI / 2, 0, 0]);
-    this.part(new THREE.BoxGeometry(0.3, 0.2, 0.26), dark, w, [-0.4, 0.28, 0.02]);
+    this.part(new THREE.CylinderGeometry(0.17, 0.13, 0.22, 5).rotateX(Math.PI / 2), dark, w, [-0.4, 0.28, 0.02]); // a tapered skull, not a cube
     for (const x of [-0.5, -0.3]) {
       this.part(new THREE.ConeGeometry(0.07, 0.2, 4), dark, w, [x, 0.46, -0.04]);
-      this.part(new THREE.BoxGeometry(0.06, 0.04, 0.04), eye, w, [x, 0.32, 0.14]);
+      this.part(new THREE.OctahedronGeometry(0.035), eye, w, [x, 0.33, 0.12]);   // an eye the size of an eye
     }
     // a spiked fur ridge on the right so the mantle is not symmetrical from behind
     this.part(curvedSpike(0.06, 0.34, 0.4, 0.6), dark, w, [0.4, 0.14, 0]);
@@ -543,10 +544,10 @@ export class PlayerGear {
       const g = new THREE.Group(), w = this.world();
       if (moor) {
         // a deep fleece cuff, taller and wider than wolfskin's, and a horn toggle curling off the back of the hand
-        this.part(new THREE.CylinderGeometry(0.11, 0.2, 0.17, 14, 1, true), ruff!, w, [0, -0.08, 0]);
+        this.part(new THREE.CylinderGeometry(0.11, 0.2, 0.17, 7, 1, true), ruff!, w, [0, -0.08, 0]);
         this.part(curvedSpike(0.03, 0.2, 0.2, 1.4, 3), trim, w, [0, len * 0.15, 0.06], [0, Math.PI / 2, 0]);
       } else if (fur) {
-        this.part(new THREE.CylinderGeometry(0.095, 0.16, 0.12, 14, 1, true), ruff!, w, [0, -0.07, 0]); // flared ruff, widest at the elbow end
+        this.part(new THREE.CylinderGeometry(0.095, 0.16, 0.12, 7, 1, true), ruff!, w, [0, -0.07, 0]); // flared ruff, widest at the elbow end
         for (const x of [-0.04, 0.04]) this.part(new THREE.ConeGeometry(0.035, 0.09, 4), trim, w, [x, len * 1.0, 0], [Math.PI, 0, 0]); // fringe at the fingertips
       } else if (ap.form === 'marsh') {
         this.band(0.1, 0.095, 0.08, 'trim', p, w, [0, -0.02, 0]); // a wrapped cuff, with reeds hung from it
@@ -596,8 +597,8 @@ export class PlayerGear {
       const shaft = new THREE.Group(), s = this.world();
       this.part(new THREE.CylinderGeometry(0.105, 0.12, 0.24, 14), main, s, [0, 0.13, -0.03]);
       this.band(0.113, 0.113, 0.04, 'strap', p, s, [0, 0.16, -0.03]); // the buckle strap round the shaft
-      if (moor) this.part(new THREE.CylinderGeometry(0.2, 0.12, 0.15, 14, 1, true), ruff!, s, [0, 0.28, -0.03]); // a deep fleece top, wider than wolfskin's
-      else if (fur) this.part(new THREE.CylinderGeometry(0.17, 0.11, 0.1, 14, 1, true), ruff!, s, [0, 0.27, -0.03]);
+      if (moor) this.part(new THREE.CylinderGeometry(0.2, 0.12, 0.15, 7, 1, true), ruff!, s, [0, 0.28, -0.03]); // a deep fleece top, wider than wolfskin's
+      else if (fur) this.part(new THREE.CylinderGeometry(0.17, 0.11, 0.1, 7, 1, true), ruff!, s, [0, 0.27, -0.03]);
       else this.band(0.12, 0.12, 0.035, 'edge', p, s, [0, 0.25, -0.03]); // rolled top
       if (ap.form === 'marsh') {
         this.band(0.122, 0.128, 0.06, 'trim', p, s, [0, 0.04, -0.03]); // the mud line round the ankle
