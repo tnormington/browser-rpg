@@ -28,12 +28,14 @@ export interface AnimDef {
   hop?: number;
 }
 
+/** Directions for one or both arms, in the body's own frame (+x its left, +y up, +z forward): the arm is aimed there whatever the rig's bone axes are. */
+export type ArmDirs = { L?: [number, number, number]; R?: [number, number, number] };
+
 /**
- * A tell held for the length of a wind-up. `arms` are directions the arms point at full wind, in the body's own frame
- * (+x its left, +y up, +z forward): the arm is aimed there whatever the rig's bone axes are. Plus how far the body
+ * A tell held for the length of a wind-up. `arms` are directions the arms point at full wind. Plus how far the body
  * leans back and sinks, how much it swells, and how hard it trembles.
  */
-export interface TellPose { arms: { L?: [number, number, number]; R?: [number, number, number] }; lean: number; sink: number; swell: number; shake: number }
+export interface TellPose { arms: ArmDirs; lean: number; sink: number; swell: number; shake: number }
 /**
  * Keyed by the sim's cast kind. Heavy: both fists high over the head. Bolt: the casting hand thrown up and back.
  * Ground: both hands raised and spread, calling the mark down. Net: both arms out wide, the mesh gathered to throw.
@@ -43,6 +45,25 @@ export const TELLS: Record<string, TellPose> = {
   bolt: { arms: { R: [-0.3, 1, -0.5], L: [0.25, 0.3, 1] }, lean: 0.2, sink: 0.04, swell: 0.06, shake: 0.015 },
   ground: { arms: { R: [-0.3, 1, -0.5], L: [0.3, 1, -0.5] }, lean: 0.15, sink: 0.02, swell: 0.08, shake: 0.02 },
   net: { arms: { L: [0.85, 0.25, 0.5], R: [-0.85, 0.25, 0.5] }, lean: 0.25, sink: 0.1, swell: 0.05, shake: 0.02 },
+};
+
+/**
+ * A gathering job, held for as long as the action runs: the rig works the node on the sim's own beat (GATHER_STRIKE).
+ * `up` is where the arms are at the top of the raise and `down` where they are when the blow lands; `stoop` and `squat`
+ * are the posture the whole job is done in (a herb patch is picked bent over it), while `lean`, `sink` and `step` are
+ * spent on the blow itself and unwound through the raise. `drive` is the share of the beat spent coming down on it.
+ */
+export interface GatherPose { up: ArmDirs; down: ArmDirs; stoop: number; squat: number; lean: number; sink: number; step: number; drive: number }
+/**
+ * Keyed by the sim's gathering skill. A pick is driven down two-handed from over the head and an axe swung across from
+ * the right shoulder, both hard and short. Fishing only works the rod held out over the water, and a herb is picked
+ * from a stoop, close to the ground: neither is a blow, so both ride the same machine with almost nothing in it.
+ */
+export const GATHERS: Record<string, GatherPose> = {
+  mining: { up: { L: [0.18, 1, -0.3], R: [-0.18, 1, -0.3] }, down: { L: [0.22, -0.95, 0.5], R: [-0.22, -0.95, 0.5] }, stoop: 0.1, squat: 0.05, lean: 0.45, sink: 0.16, step: 0.22, drive: 0.22 },
+  woodcutting: { up: { L: [-0.4, 0.95, -0.2], R: [-0.6, 0.85, -0.18] }, down: { L: [0.45, -0.8, 0.6], R: [0.22, -0.9, 0.5] }, stoop: 0.08, squat: 0.04, lean: 0.35, sink: 0.12, step: 0.2, drive: 0.2 },
+  fishing: { up: { L: [0.24, 0.3, 0.9], R: [-0.22, 0.38, 0.88] }, down: { L: [0.26, -0.12, 0.95], R: [-0.24, -0.04, 0.96] }, stoop: 0.06, squat: 0, lean: 0.07, sink: 0.02, step: 0, drive: 0.35 },
+  herbalism: { up: { L: [0.3, -0.45, 0.85], R: [-0.25, -0.5, 0.82] }, down: { L: [0.28, -0.88, 0.45], R: [-0.22, -0.9, 0.42] }, stoop: 0.55, squat: 0.18, lean: 0.14, sink: 0.05, step: 0, drive: 0.4 },
 };
 
 /**
@@ -99,6 +120,8 @@ export class Animator {
   private primed = 0;
   private wind = 0;
   private windKind: string | null = null;
+  private workKind: string | null = null;
+  private workK = 0;
   private stall = 0;      // hit-stop: seconds the whole rig is held on the strike frame
   private stallShiver = 0; // how hard a held rig trembles (the one that took the blow)
   private pending: { after: number; dur: number } | null = null; // a stall waiting for the strike pose to arrive
@@ -237,6 +260,12 @@ export class Animator {
   /** The wind-up tell, per frame: `kind` is the sim's cast kind (null = not winding up), `k` 0..1 through the wind-up. */
   telegraph(kind: string | null, k: number) { this.windKind = kind; this.wind = kind ? k : 0; }
 
+  /**
+   * Working a node, per frame: `skill` is the sim's gathering skill (null = not gathering), `k` 0..1 through the current
+   * strike's beat, 1 as the blow lands. A skill with no pose of its own simply stands and idles, as it did before.
+   */
+  gather(skill: string | null, k = 0) { this.workKind = skill && GATHERS[skill] ? skill : null; this.workK = k; }
+
   /** Death plays once and holds its last frame; `revive()` returns to locomotion. `slide` is how far the killing blow throws the body back (world units). */
   die(slide = 0): boolean {
     if (!this.hasDeath) return false;
@@ -294,17 +323,43 @@ export class Animator {
     r.rotation.set(0.15 * lg - 0.2 * pre - 0.38 * h - (tell ? tell.lean * w : 0), 0, this.hit.dir * 0.16 * h + this.flip * fall * Math.PI / 2);
     const sxz = 1 + squash * 0.6 - stretch * 0.4 + (tell ? tell.swell * w : 0);
     r.scale.set(sxz, 1 - squash + stretch - 0.06 * h - 0.08 * pre +(tell ? tell.swell * w * 0.5 : 0), sxz);
-    const bone = (name: string, x: number, y: number, z: number) => {
-      const b = this.bones.get(name);
-      if (b) b.quaternion.multiply(_q.setFromEuler(_e.set(x, y, z)));
-    };
     if (this.twist.t < TWIST_END) { // the swing's hip turn: wound back while the weapon is up, then through the blow and unwinding
       const t = this.twist.t, hit = this.twist.peak;
       const spin = (t < hit ? -0.3 + 0.7 * smooth(Math.max(0, t - hit + 0.22) / 0.22) : 0.4 * (1 - smooth((t - hit) / (TWIST_END - hit)))) * this.twist.amp;
-      bone('Abdomen', 0, spin * 0.6, 0); bone('Torso', 0, spin * 0.6, 0);
+      this.turn('Abdomen', 0, spin * 0.6, 0); this.turn('Torso', 0, spin * 0.6, 0);
     }
     if (this.seat) this.sit();
+    if (this.workKind) this.work(GATHERS[this.workKind]);
     if (tell && w > 0) for (const side of ['L', 'R'] as const) if (tell.arms[side]) this.aim(`UpperArm${side}`, `LowerArm${side}`, tell.arms[side]!, w);
+  }
+
+  /** Add a rotation to a bone on top of whatever the clip wrote into it. */
+  private turn(name: string, x: number, y: number, z: number) {
+    const b = this.bones.get(name);
+    if (b) b.quaternion.multiply(_q.setFromEuler(_e.set(x, y, z)));
+  }
+
+  /**
+   * The gather, on top of whatever locomotion is playing: the arms travel between the raise and the blow, and the body
+   * goes with them. The fold is put through the spine rather than the fit wrapper, so a deep stoop bends at the waist
+   * instead of tipping the whole rig over its feet.
+   */
+  private work(g: GatherPose) {
+    const rise = Math.max(0.05, 1 - g.drive);
+    // 1 at the top of the raise, 0 as the blow lands: eased out of the follow-through, then driven back down accelerating
+    const mix = this.workK < rise ? smooth(this.workK / rise) : 1 - Math.pow((this.workK - rise) / g.drive, 2);
+    const blow = 1 - mix, fold = g.stoop + g.lean * blow - 0.3 * g.lean * mix;
+    this.root.position.y -= g.squat + g.sink * blow;
+    this.root.position.z += g.step * blow;
+    this.bend(fold * 0.6);
+    this.turn('Torso', fold * 0.4, 0, 0); // the idle animates the Torso, so this one is an offset the clip writes over
+    for (const side of ['L', 'R'] as const) {
+      const a = g.up[side], b = g.down[side];
+      if (!a || !b) continue;
+      const dir: [number, number, number] = [a[0] * mix + b[0] * blow, a[1] * mix + b[1] * blow, a[2] * mix + b[2] * blow];
+      this.aim(`UpperArm${side}`, `LowerArm${side}`, dir, 1);
+      this.aim(`LowerArm${side}`, `Palm${side}`, dir, 0.85); // the elbow keeps a little of the clip's own bend
+    }
   }
 
   /** Bend the standing rig into the saddle: legs astride, hands forward, the spine tipped over the pommel. Runs after the clip, so it holds whatever the idle is doing. */
@@ -324,8 +379,16 @@ export class Animator {
       this.aim(`UpperArm${side}`, `LowerArm${side}`, mirror(SEATED.UpperArm), 1);
       this.aim(`LowerArm${side}`, `Palm${side}`, mirror(SEATED.LowerArm), 1);
     }
+    this.bend(SEAT_LEAN);
+  }
+
+  /**
+   * Tip the spine forward by `lean` radians. Set from the Abdomen's bind rotation, never stacked on the last frame's: no
+   * locomotion clip on this rig has an Abdomen track, so a multiply there is never written over and would wind up forever.
+   */
+  private bend(lean: number) {
     const b = this.bones.get('Abdomen');
-    if (b && this.spine) b.quaternion.copy(this.spine).multiply(_q.setFromEuler(_e.set(SEAT_LEAN, 0, 0)));
+    if (b && this.spine) b.quaternion.copy(this.spine).multiply(_q.setFromEuler(_e.set(lean, 0, 0)));
   }
 
   /**

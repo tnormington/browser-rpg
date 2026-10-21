@@ -6,7 +6,7 @@ import { floorLift, roomIndices } from './floor-stack';
 import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, dungeonAt, inCave, regionAt } from './sim/world';
 import { ABILITIES, ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE, SPAWNS } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
-import { NODE_TYPES } from './sim/gathering';
+import { GATHER_STRIKE, NODE_TYPES, nodeById } from './sim/gathering';
 import { HARBOURMASTER, HIGH_STEWARD, NPC, SPIRE_KEEPER, THORN_REEVE, harbourMarker as harbourMarkOf, keeperMarker as keeperMarkOf, npcMarker as markerOf, reeveMarker as reeveMarkOf, stewardMarker as stewardMarkOf } from './sim/quest';
 import { nearestSite, stationSites } from './sim/crafting';
 import { VENDOR } from './sim/shop';
@@ -1527,6 +1527,22 @@ export class Renderer {
         this.particles.burst(ev.x, 0.6, ev.z, { color: TIER_COLORS[ITEMS[ev.item].tier], count: 14, speed: 1.5, up: 3, gravity: -5, life: 0.8 });
       } else if (ev.t === 'loot') {
         this.particles.burst(s.player.x, 1.6, s.player.z, { color: [P.heal, P.arcaneLight], count: 12, speed: 1.2, up: 2.5, gravity: -3, life: 0.7 });
+      } else if (ev.t === 'gather') {
+        // the blow landed on the node: what comes off it is thrown back at whoever struck it
+        const n = nodeById(s, ev.node);
+        if (!n) continue;
+        const [dx, dz] = unit(s.player.x - n.x, s.player.z - n.z);
+        if (ev.skill === 'mining') {
+          this.matter.burst(n.x, 1.1, n.z, { color: [P.ash, P.stone, P.boulder], count: 11, speed: 4, dir: [dx, dz], cone: 0.5, up: 1.2, gravity: -16, size: 1, life: 0.5, hdr: 1 });
+          this.particles.burst(n.x, 1.1, n.z, { color: [P.ember, P.gold], count: 5, speed: 3, dir: [dx, dz], cone: 0.6, up: 0.6, size: 0.7, life: 0.22 }); // struck stone throws a few sparks
+        } else if (ev.skill === 'woodcutting') {
+          this.matter.burst(n.x, 1.2, n.z, { color: [P.bark, P.pine], count: 11, speed: 3.5, dir: [dx, dz], cone: 0.5, up: 1.4, gravity: -14, size: 1.1, life: 0.6, hdr: 1 });
+        } else if (ev.skill === 'fishing') {
+          this.rings.pulse(n.x, 0.12, n.z, FISH_RIPPLE, 1.7, 0.5, 0.35, 1.2); // the line goes in: a ring on the water and a little spray
+          this.matter.burst(n.x, 0.2, n.z, { color: [FISH_RIPPLE, P.slate], count: 8, speed: 1.6, up: 2.2, gravity: -10, size: 0.9, life: 0.5, hdr: 1, alpha: 0.7 });
+        } else {
+          this.particles.burst(n.x, 0.45, n.z, { color: [P.pine, P.heal], count: 8, speed: 1.2, up: 1.8, gravity: -4, size: 0.8, life: 0.6 }); // a tuft pulled: leaves and a breath of sap
+        }
       } else if (ev.t === 'depleted') {
         const n = s.nodes.find(x => x.id === ev.id)!;
         this.particles.burst(n.x, 1, n.z, { color: n.type === 'tree' ? [P.pine, P.bark] : P.smoke, count: 24, speed: 3, up: 1, life: 0.8 });
@@ -1787,6 +1803,9 @@ export class Renderer {
     if (pa) {
       if (pl.dead !== this.playerWasDead) { if (pl.dead) pa.die(); else pa.revive(); this.playerWasDead = pl.dead; }
       pa.locomotion(pl.moving && !pl.dead, 6);
+      // working a node: the swing rides the sim's own strike beat, so the pick lands with the sound and the chips
+      const act = pl.action?.k === 'gather' ? pl.action : null, work = act && nodeById(s, act.nodeId);
+      pa.gather(work ? NODE_TYPES[work.type].skill : null, act ? (act.t % GATHER_STRIKE) / GATHER_STRIKE : 0);
       for (const rig of this.mounts.values()) if (rig.root.visible) { rig.update(dtFx, pl.moving && !pl.dead); pa.rideBob(rig.bob); }
       pa.update(dtFx);
       pa.airborne(pl.airborne ? pl.vy : 0);

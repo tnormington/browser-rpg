@@ -2,6 +2,7 @@
 // sim + renderer path, and screenshots a burst of frames across it.
 //   node bench/anim.mjs <out-name> <scenario> [scenario ...]    -> bench/shots/<out-name>/<scenario>-<n>.png
 // scenarios: swing hit-boar hit-wolf hit-brute hit-player death-wolf death-boar jump telegraph-brute telegraph-hexer enemy-lunge
+//   gather:<node type>[:<which>]   work a node of that type (copper, tree, silverfin, marrowleaf): one skill's gathering motion
 import { preview } from 'vite';
 import { launchBrowser } from './browser.mjs';
 import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
@@ -75,6 +76,28 @@ const scrub = async (who, clip, t0, t1, n) => {
   }
   shots.push('scrub-' + clip);
 };
+// gather:<node type>[:<which>]  park the player in reach of a node of that type and start working it, levelled up enough to be
+// allowed. `which` picks among the nodes of that type: not every one of them stands on ground the camera can see it from.
+const gather = async (type, which) => {
+  await page.evaluate(([type, which]) => {
+    const d = window.__debug, s = d.sim, p = s.player;
+    for (const o of s.enemies) { o.x = 900; o.z = 900; o.spawnX = 900; o.spawnZ = 900; o.state = 'idle'; }
+    for (const k of ['mining', 'woodcutting', 'fishing', 'herbalism']) p.skills[k].level = 60;
+    const n = s.nodes.filter(n => n.type === type)[which];
+    if (!n) throw new Error('no node ' + which + ' of type ' + type);
+    n.respawnIn = 0; n.charges = 99; // the burst outruns a node's three charges, and a depleted one ends the action
+    p.x = n.x - (n.r + 1.4); p.z = n.z; p.moving = false; p.dead = false; p.hp = p.stats.maxHp; p.autoAttack = false;
+    p.equipment.weapon = 'steel_sword'; s.targetId = null;
+    d.step(); d.view.snapshot(s); d.view.snapshot(s);
+    s.interact = { k: 'node', id: n.id }; // updateInteract turns the player to it and begins the gather on the next tick
+    d.step();
+    // the game's own orbit camera, swung round to the player's south: square on to a swing that travels west to east, so the
+    // whole arc is across the frame rather than into it. A fixed debugCam would sit under the ground on half this world's nodes
+    d.view.debugCam = null; d.view.yaw = Math.PI; d.view.pitch = 0.32; d.view.distance = 6.5;
+  }, [type, which]);
+  await adv(300);
+  await burst(`gather-${type}`, 24, 70, CLIP);
+};
 // tell:<type>:<kind>:<json>[;<json>...]  hold a wind-up with TELLS[kind].bones set to each json in turn (tuning arm raises)
 const tell = async (type, kind, variants) => {
   await page.evaluate(([type, kind]) => {
@@ -139,6 +162,7 @@ const S = {
 };
 for (const sc of scenarios) {
   await adv(1500); // the last scenario's particles and rings expire before this one is staged
+  if (sc.startsWith('gather:')) { const [, t, i] = sc.split(':'); await gather(t, +(i ?? 0)); continue; }
   if (sc.startsWith('tell:')) { const [, t, k, ...rest] = sc.split(':'); await tell(t, k, rest.join(':').split(';')); continue; }
   if (sc.startsWith('scrub:')) { const [, w, c, a, b, n] = sc.split(':'); await scrub(w, c, +a, +b, +n); continue; }
   if (sc === 'hit-boar') await S.hit('boar');
