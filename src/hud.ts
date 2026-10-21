@@ -32,7 +32,7 @@ import type { AdminAction } from './sim/admin';
 import { SpellbookUi } from './spellbook-ui';
 import { Minimap } from './minimap';
 import { DockWindow, HudWindow, el, dragData, parseDrag } from './dom';
-import { abilityArt, itemArt, paintArt } from './art';
+import { abilityArt, itemArt, paintArt, preloadItemArt } from './art';
 import { Dock } from './dock';
 import { loadBar, loadBarKeys, saveBar, saveBarKeys } from './storage';
 import { BarEntry, DEFAULT_KEYS, barWorthy, bindKey, bindRefusal, keyLabel, sameEntry, sanitizeBar, sanitizeKeys } from './bar-layout';
@@ -297,6 +297,7 @@ export class Hud {
       this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char,
       ...(this.adminUi ? [this.adminUi] : [])];
     this.renderBar();
+    preloadItemArt(); // every panel built above that draws an item is shut, so none of their thumbnails would be sent for until one opens
   }
 
   toggle(which: 'inv' | 'char' | 'skills' | 'talents' | 'book') {

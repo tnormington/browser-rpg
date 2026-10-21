@@ -22,6 +22,26 @@ export const abilityArt = (id: string): string | null => ABILITY_ART[`../assets/
 export const talentArt = (id: string): string | null => TALENT_ART[`../assets/art/talents/${id}.webp`] ?? null;
 export const portraitArt = (id: string): string | null => PORTRAIT_ART[`../assets/art/portraits/${id}.webp`] ?? null;
 
+/**
+ * Every item thumbnail, fetched before anything asks to see one (HOM-140). A shut panel is `display: none`, so a
+ * picture painted into it is never sent for: opening the bag used to ask for all 28 slots at that moment and leave
+ * them blank until the files landed. The whole set is 650 KB, cheaper to spend up front — at idle, where it never
+ * races the models the game is still loading — than a slot at a time on the open.
+ *
+ * `warmed` is the point of this, not a leak. Dropping each Image the moment its load starts leaves the file in the
+ * disk cache, where the dev server's `no-cache` makes the open revalidate all 28 anyway and wait on the round trips;
+ * holding it keeps the decoded picture in the renderer's own cache, and the slot is drawn with no request at all.
+ * `node bench/invart.mjs` is what measures that: 28 requests on the open without this line, none with it.
+ *
+ * One warm covers every panel that draws an item - the bag, a vendor's stock, a forge list, a loot window.
+ */
+const warmed: HTMLImageElement[] = [];
+export function preloadItemArt() {
+  requestIdleCallback(() => {
+    for (const url of Object.values(ITEM_ART)) { const img = new Image(); img.src = url; warmed.push(img); }
+  }, { timeout: 2000 });
+}
+
 /** Paint a piece of art as an element's whole face, or take it off again. `.art` is what makes it cover the element. */
 export function paintArt(target: HTMLElement, url: string | null) {
   target.style.backgroundImage = url ? `url("${url}")` : '';
