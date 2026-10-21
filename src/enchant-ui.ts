@@ -64,20 +64,21 @@ export class EnchantUi {
       if (!worn || !options.length) continue;
       any = true;
       const set = p.enchants[slot] ? enchantById(p.enchants[slot]!) : undefined;
-      const head = el(this.list, 'recipe rhead');
+      const head = el(this.list, 'recipe rhead rwrap');
       el(head, 'rname', `${SLOT_NAMES[slot]}: ${ITEMS[worn].name}`).style.color = hex(TIER_COLORS[ITEMS[worn].tier]);
-      el(head, 'rreq', set ? `${set.name}: ${set.desc}` : 'not enchanted');
+      el(head, 'rreq', set ? set.name : 'not enchanted');
+      if (set) el(head, 'rstat', set.desc);
       for (const e of options) {
         const why = enchantBlocker(s, e.id, slot), can = why === null, here = p.enchants[slot] === e.id;
-        const row = el(this.list, `recipe${can && !here ? '' : ' locked'}`);
+        const row = el(this.list, `recipe enchrow${can && !here ? '' : ' locked'}`);
         row.title = `${e.desc} Belongs to the slot, not the item: it stays when you change what you wear. Setting another on the slot replaces it.`;
         const h = el(row, 'rhead');
         el(h, 'rname', e.name);
         el(h, `rreq${why === 'level' ? ' bad' : ''}`, `Enchanting ${e.level}`);
         el(row, 'rstat', e.desc);
-        const have = countItem(p.inventory, DUST);
-        el(el(row, 'rinputs'), `rin${have >= e.dust ? '' : ' bad'}`, `${ITEMS[DUST].name} ${have}/${e.dust}`);
-        el(row, 'rmeta', `${enchantXp(e)} Enchanting XP`);
+        const have = countItem(p.inventory, DUST), cost = el(row, 'rinputs');
+        el(cost, `rin${have >= e.dust ? '' : ' bad'}`, `${ITEMS[DUST].name} ${have}/${e.dust}`);
+        el(cost, 'rmeta', `${enchantXp(e)} XP`);
         const b = actionButton(el(row, 'rbtns'), here ? 'Set' : set ? 'Replace' : 'Enchant', can && !here);
         b.addEventListener('click', () => { this.enchant({ k: 'enchant', id: e.id, slot }); });
       }
@@ -94,7 +95,7 @@ export class EnchantUi {
       if (!st || !canDisenchant(st.id)) return;
       any = true;
       const def = ITEMS[st.id], armed = this.armed === i, ask = def.tier >= CONFIRM_TIER;
-      const row = el(this.list, `recipe${near ? '' : ' locked'}`);
+      const row = el(this.list, `recipe enchrow${near ? '' : ' locked'}`);
       row.title = `${def.desc}\nDestroyed at the circle: it cannot be got back.`;
       const head = el(row, 'rhead');
       el(head, 'rname', def.name).style.color = hex(TIER_COLORS[def.tier]);

@@ -1,4 +1,4 @@
-// HUD screenshots: the same scenes at the largest and smallest window the game is played at, so a restyle can be looked at, not just reasoned about.
+﻿// HUD screenshots: the same scenes at the largest and smallest window the game is played at, so a restyle can be looked at, not just reasoned about.
 //   node bench/hud-shots.mjs [tag]       (needs a build: npx vite build)   -> bench/shots/hud/<tag>/<WxH>-<scene>.png
 import { preview } from 'vite';
 import { chromium } from 'playwright';
@@ -68,6 +68,18 @@ for (const [width, height] of SIZES) {
     log.scrollTop = log.scrollHeight; d.step();
   });
   await shot('10-worst-case');
+  // the Spire's rune circle (HOM-112): gear worn on every slot an enchant takes, one set already, and a bag of gear to grind. Last, because it walks the player to the Spire.
+  await page.evaluate(() => {
+    const d = window.__debug, p = d.sim.player, r = d.world.LANDMARKS.circle;
+    Object.assign(p.equipment, { weapon: 'crownbreaker', head: 'steel_helm', hands: 'moorhide_gloves', feet: 'moorhide_boots' });
+    p.enchants.weapon = 'keen'; p.skills.enchanting.level = 37; p.inventory[2] = { id: 'arcane_dust', qty: 52 };
+    ['stormiron_blade', 'starmetal_blade', 'adamant_blade', 'thornhide_gloves'].forEach((id, i) => { p.inventory[3 + i] = { id, qty: 1 }; });
+    p.x = r.x - 3; p.z = r.z; d.step(); d.step(); d.sim.interact = { k: 'circle' };
+  });
+  await shot('11-circle'); await closeAll();
+  // ten skills with the Total level meter at a believable number
+  await page.evaluate(() => { const sk = window.__debug.sim.player.skills; for (const id of Object.keys(sk)) sk[id].level = 24; });
+  await key('KeyK'); await shot('12-skills-ten'); await closeAll();
   await page.close();
 }
 await browser.close(); await server.close();

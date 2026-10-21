@@ -210,9 +210,13 @@ canvas{display:block}
 .bookpanel{width:300px}
 .bookpanel .recipe[draggable="true"]{cursor:grab}
 .recipe{background:var(--iron-lift);border:1px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-3)}.recipe.locked{opacity:.8}
-.rhead{display:flex;justify-content:space-between}.rname{font-weight:bold}.rreq{color:var(--moss)}.rreq.bad,.rin.bad,.psub.bad{color:var(--bad)}
+.rhead{display:flex;justify-content:space-between;gap:var(--sp-3)}.rname{font-weight:bold}.rreq{color:var(--moss)}.rreq.bad,.rin.bad,.psub.bad{color:var(--bad)}
 .rstat{color:var(--moss)}.rinputs{margin-top:var(--sp-2)}.rin{display:inline-block;margin-right:10px;color:var(--moss)}
 .rmeta{font-size:var(--fs-sm);opacity:.6;margin-top:var(--sp-1)}.rbtns{margin-top:5px;display:flex;gap:var(--sp-3)}
+.rhead.rwrap{flex-wrap:wrap}.rhead.rwrap>.rstat{flex-basis:100%} /* a head that carries a second line under its name and note */
+/* .enchrow: a recipe row with its button beside the text, not under it (the rune circle lists a row per slot per enchant, so height is what it spends) */
+.enchrow{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:var(--sp-4);align-items:center}.enchrow>*{grid-column:1}.enchrow>.rbtns{grid-column:2;grid-row:1/span 3;margin:0}
+.enchrow .rinputs{margin-top:var(--sp-1);display:flex;flex-wrap:wrap;column-gap:var(--sp-4)}.enchrow .rin{margin-right:0}.enchrow .rinputs .rmeta{margin:0;align-self:center}
 
 /* ---- the admin / QA panel (admin-ui.ts): a dev-build panel, so it takes the panel chrome and adds only the form rows the others have no use for ---- */
 /* its button sits in the menu bar's row, in the corner opposite it: the bottom-left is clear of the action bar above and of the XP bar, which starts at 12% */

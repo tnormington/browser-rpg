@@ -2,13 +2,13 @@
 // 1. Opens the Warden's dialogue with a long quest tracker up and checks the two never meet (a short or narrow
 //    window used to put the dialogue right on top of the tracker).
 // 2. Holds a target (both unit frames up, the player's with its buffs on), fills the message log, then opens every panel in turn (the forge's recipe list,
-//    the bag, the character sheet, skills, talents, spellbook, help, the shop, the tanning rack, the stable) and checks each one sits inside the window
+//    the bag, the character sheet, skills, talents, spellbook, help, the shop, the tanning rack, the stable, the Spire's rune circle) and checks each one sits inside the window
 //    and clear of the minimap, both unit frames, the quest tracker, the message log, the swing and XP bars, the menu bar and the action bar.
 //    The help screen is a modal veil over the whole game and is the one panel exempt from "clear of".
 // 3. Every pair of panels that the player can open together (bag + sheet, bag then skills, forge then bag, a shop then the sheet, a dialogue then the bag ...)
 //    is opened in both orders and must not print over each other. Below 1000px or 640px high the HUD docks: opening a panel shuts the others (the bag and
 //    the sheet are the one pair that stay), so this is where "the window cannot hold both" is settled, not left to the player's eye.
-// 4. The skills list (with a tenth skill added) must not scroll, and the message log is a readable width and height at every size.
+// 4. The skills list (all ten skills, enchanting last) must not scroll, and the message log is a readable width and height at every size.
 // 5. With a target held, checks the HUD that is always on (quest tracker, minimap, both unit frames, action bar, swing bar, XP bar, menu bar, log)
 //    is clear of itself and sits inside the window.
 // 6. (HOM-104) The action bar is one row, no slot under MIN_SLOT px, and nothing printed on a slot wider than the slot.
@@ -95,7 +95,15 @@ for (const [width, height] of SIZES) {
     };
     const closeAll = async () => { for (let i = 0; i < 3; i++) { key('Escape'); await wait(60); if (!shown('.panel').length) break; } };
     // the single panels, each opened the way the player opens it. The help screen is a veil over everything, so it is only held to the window.
-    const scenes = [['forge', station('forge', 'forge')], ['bag', () => key('KeyI')], ['sheet', () => key('KeyC')], ['bag+sheet', () => { key('KeyI'); key('KeyC'); }],
+    // the Spire's rune circle (HOM-112), at its tallest: every armour slot and the weapon worn with something an enchant can go on, and a bag of grindable gear
+    const circle = async () => {
+      const r = d.world.LANDMARKS.circle;
+      const worn = { weapon: 'crownbreaker', head: 'steel_helm', hands: 'moorhide_gloves', feet: 'moorhide_boots' };
+      for (const [slot, id] of Object.entries(worn)) p.equipment[slot] = id;
+      ['stormiron_blade', 'starmetal_blade', 'adamant_blade', 'marrows_edge', 'rotroot_edge', 'thornhide_gloves', 'thornhide_boots', 'warden_edge'].forEach((id, i) => { p.inventory[3 + i] = { id, qty: 1 }; });
+      go(r.x - 3, r.z); s.interact = { k: 'circle' }; await wait(300);
+    };
+    const scenes = [['forge', station('forge', 'forge')], ['circle', circle], ['bag', () => key('KeyI')], ['sheet', () => key('KeyC')], ['bag+sheet', () => { key('KeyI'); key('KeyC'); }],
       ['skills', () => key('KeyK')], ['talents', () => key('KeyN')], ['spellbook', () => key('KeyP')],
       ['admin', () => key('Backquote')], // the QA panel (HOM-114): only there with ?debug=1, which is how this bench loads the game
       ['shop', async () => { await vendor(-7, 3)(); }],
@@ -113,20 +121,21 @@ for (const [width, height] of SIZES) {
     // two at once: the player can open one while the other is up, in either order. A docked HUD answers by shutting the first; it must never print both over each other.
     const keys = { bag: 'KeyI', sheet: 'KeyC', skills: 'KeyK', talents: 'KeyN', spellbook: 'KeyP', admin: 'Backquote' };
     const firsts = { ...Object.fromEntries(Object.entries(keys).map(([n, k]) => [n, async () => { key(k); }])),
-      forge: station('forge', 'forge'), shop: async () => { await vendor(-7, 3)(); }, dialogue: talk };
+      forge: station('forge', 'forge'), circle, shop: async () => { await vendor(-7, 3)(); }, dialogue: talk };
     for (const [a, openA] of Object.entries(firsts)) for (const [b, k] of Object.entries(keys)) {
       if (a === b) continue;
-      go(5.5, 2); await openA(); await wait(a === 'forge' || a === 'shop' ? 350 : 120); hold(); key(k); await wait(250);
+      go(5.5, 2); await openA(); await wait(a === 'forge' || a === 'circle' || a === 'shop' ? 350 : 120); hold(); key(k); await wait(250);
       check(`${a} then ${b}`);
       await closeAll();
     }
-    // the skills list at ten skills (the tenth lands with enchanting): a list of skills does not scroll
+    // the skills list, as many skills as the game has (ten with enchanting), the Total level meter inside it: a list of skills does not scroll
     go(5.5, 2); key('KeyK'); await wait(300);
     const sp = shown('.skillspanel')[0];
     if (sp) {
-      const grid = sp.querySelector('.skillgrid') ?? sp, rows = grid.querySelectorAll('.skillrow');
-      if (rows.length && rows.length < 10) { for (let i = rows.length; i < 10; i++) grid.append(rows[rows.length - 1].cloneNode(true)); await wait(100); }
-      if (sp.scrollHeight > sp.clientHeight + 1) fails.push(`skills: ${grid.querySelectorAll('.skillrow').length} skills scroll by ${sp.scrollHeight - sp.clientHeight}px in a ${sp.clientHeight}px panel`);
+      const rows = sp.querySelectorAll('.skillrow').length;
+      if (rows < 10) fails.push(`skills: only ${rows} skills listed, enchanting is the tenth`);
+      for (const e of sp.querySelectorAll('.skilltotal .skilllvl, .skilltotal .skillnote')) if (e.scrollWidth > e.clientWidth + 1) fails.push(`skills: the total level's "${e.textContent}" is cut off`);
+      if (sp.scrollHeight > sp.clientHeight + 1) fails.push(`skills: ${rows} skills scroll by ${sp.scrollHeight - sp.clientHeight}px in a ${sp.clientHeight}px panel`);
     } else fails.push('skills: the panel did not open');
     await closeAll();
     // the log: readable, and its home is clear of everything (checked above with the rest)
