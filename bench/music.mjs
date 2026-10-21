@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-execFileSync(process.execPath, [join(root, 'scripts', 'dev-server.mjs'), 'ensure'], { stdio: 'inherit' });
+execFileSync(process.execPath, [join(root, 'scripts', 'dev-server.mjs'), 'ensure'], { stdio: 'inherit', windowsHide: true });
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage();
 page.on('pageerror', e => console.error('pageerror', e.stack ?? String(e)));

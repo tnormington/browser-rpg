@@ -18,12 +18,15 @@ const here = dirname(dirname(fileURLToPath(import.meta.url)));
 // Agents work in git worktrees; the human plays the main checkout, so that is the one we serve.
 const root = (() => {
   try {
-    const gitDir = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: here, encoding: 'utf8' }).trim();
+    const gitDir = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: here, encoding: 'utf8', windowsHide: true }).trim();
     return basename(gitDir) === '.git' ? dirname(gitDir) : here;
   } catch { return here; }
 })();
 
-const quiet = (cmd, args) => { try { return execFileSync(cmd, args, { encoding: 'utf8' }); } catch { return ''; } };
+// windowsHide matters here: the post-commit hook runs this script with no console of its own, so a
+// console child without it makes Windows allocate a fresh console — a Windows Terminal window that
+// flashes on the human's screen every time an agent commits.
+const quiet = (cmd, args) => { try { return execFileSync(cmd, args, { encoding: 'utf8', windowsHide: true }); } catch { return ''; } };
 
 // strictPort means at most one server owns the port, so whoever listens on it is the playtest server.
 const portOwner = () => {

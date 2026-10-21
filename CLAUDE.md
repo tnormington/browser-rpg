@@ -21,6 +21,13 @@ screen. Commands go in the PowerShell tool, and long jobs go in its background m
 opens a visible window unless you pass `-NoNewWindow`, and so do `cmd /c start` and a `.bat` wrapper
 — none of them belong in a task.
 
+The same applies to code you write. **Every `child_process` call in this repo passes
+`windowsHide: true`** — `spawn`, `exec`, `execFileSync`, all of them. Without it a console child
+inherits its parent's console, which is invisible right up until the parent has none: scripts run
+from the `post-commit` hook have no console, so Windows gives the child a fresh one and hands it to
+Windows Terminal — a window that flashes on the human's screen. `windowsHide` on a parent that
+already has a console is a harmless no-op, so there is never a reason to leave it off.
+
 ## The playtest server
 
 The game is played at **http://localhost:5173**, served by a vite dev server running against the
