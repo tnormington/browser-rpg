@@ -50,7 +50,7 @@ const PALETTE = {
   blood: 0xd02424, bloodDark: 0x701010, bloodLight: 0xff7a5a,
   arcane: 0x6ad8ff, arcaneLight: 0xc4efff, violet: 0xb070ff, heal: 0x5affd0,
   // atmosphere
-  moon: 0xa9b8cc, rim: 0x6d8aa8, skyZenith: 0x07090d, skyMid: 0x141a22, horizon: 0x222c38, skyGround: 0x0c0f13, hemiSky: 0x4a5a74, hemiGround: 0x161b22,
+  moon: 0xa9b8cc, rim: 0x6d8aa8, skyZenith: 0x101a33, skyMid: 0x172536, horizon: 0x222c38, skyGround: 0x0c0f13, hemiSky: 0x4a5a74, hemiGround: 0x161b22,
   ash: 0xa8a49a, smoke: [0xbbbbbb, 0x888888] as number[],
 } as const;
 const P = PALETTE;
@@ -432,7 +432,8 @@ export class Renderer {
     const rt = pmrem.fromScene(skyScene);
     this.scene.environment = rt.texture;
     this.scene.environmentIntensity = DAY.env;
-    this.skyDome = new SkyDome({ zenith: P.skyZenith, mid: P.skyMid, horizon, ground: P.skyGround, moon: P.moon }, SUN_OFFSET);
+    // the aurora is the one saturated thing in the sky, and it borrows the arcane family so it still belongs to this world
+    this.skyDome = new SkyDome({ zenith: P.skyZenith, mid: P.skyMid, horizon, ground: P.skyGround, moon: P.moon, auroraLow: P.heal, auroraHigh: P.violet }, SUN_OFFSET);
     this.scene.add(this.skyDome.mesh, this.rain.lines);
     this.rain.setQuality('high');
     pmrem.dispose();

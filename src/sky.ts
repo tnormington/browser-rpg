@@ -4,30 +4,34 @@ import type { Quality } from './post';
 // The visible sky: a live dome (drifting cloud, slow colour) and rain. The lighting environment stays the one PMREM bake from
 // render.ts: re-baking it per frame is the cost, and a dim night ambient does not need to follow the clouds. Weather scales its intensity instead.
 
-export interface SkyColors { zenith: number; mid: number; horizon: number; ground: number; moon: number }
+export interface SkyColors { zenith: number; mid: number; horizon: number; ground: number; moon: number; auroraLow: number; auroraHigh: number }
 
 const DOME_RADIUS = 150; // inside the camera far plane (200); the dome rides the camera so it never has parallax
 
 /** Two octaves on low: the clouds go flatter and the cost drops. */
 const OCTAVES = { high: 4, low: 2 } as const; // the broad second layer is always two
+/** The trimmings that are pure cost once the clouds are flat: aurora striations, moon mottling, shooting stars. */
+const DETAIL = { high: 1, low: 0 } as const;
 
 export class SkyDome {
   readonly mesh: THREE.Mesh;
   private u: Record<string, THREE.IUniform>;
-  private drift = new THREE.Color(0x1a2030); // the slow colour the mid band breathes toward: a cold violet-teal, never warm
 
   constructor(c: SkyColors, sunDir: THREE.Vector3) {
     this.u = {
       zenith: { value: new THREE.Color(c.zenith) }, mid: { value: new THREE.Color(c.mid) }, horizon: { value: new THREE.Color(c.horizon) },
       ground: { value: new THREE.Color(c.ground) }, moon: { value: new THREE.Color(c.moon) }, sun: { value: sunDir.clone().normalize() },
-      time: { value: 0 }, cover: { value: 0.4 }, dim: { value: 1 }, octaves: { value: OCTAVES.high },
-      cloudDark: { value: new THREE.Color(0x1b2330) }, cloudLight: { value: new THREE.Color(0x56667c) },
+      time: { value: 0 }, cover: { value: 0.4 }, dim: { value: 1 }, octaves: { value: OCTAVES.high }, detail: { value: DETAIL.high },
+      cloudDark: { value: new THREE.Color(0x1a2338) }, cloudLight: { value: new THREE.Color(0x6f82a0) },
+      auroraLow: { value: new THREE.Color(c.auroraLow) }, auroraHigh: { value: new THREE.Color(c.auroraHigh) },
     };
     this.mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false, uniforms: this.u, // depth-tested and drawn last: only the pixels the world left empty pay for the cloud shader
       vertexShader: 'varying vec3 d; void main() { d = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: `uniform vec3 zenith, mid, horizon, ground, moon, sun, cloudDark, cloudLight; uniform float time, cover, dim, octaves; varying vec3 d;
+      fragmentShader: `uniform vec3 zenith, mid, horizon, ground, moon, sun, cloudDark, cloudLight, auroraLow, auroraHigh;
+        uniform float time, cover, dim, octaves, detail; varying vec3 d;
         float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float hash3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
         float noise(vec2 p) {
           vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
@@ -37,21 +41,66 @@ export class SkyDome {
           for (int i = 0; i < 4; i++) { if (float(i) >= oct) break; s += a * noise(p); p = p * 2.03 + 11.7; a *= 0.5; }
           return s;
         }
+        // Stars on a grid in direction space: one cell in fourteen carries one, each with its own size, colour and twinkle rate.
+        // The early-out is what keeps it cheap: a cell is several pixels across, so neighbouring pixels agree and the branch stays coherent.
+        vec3 starField(vec3 n) {
+          vec3 p = n * 90.0, ci = floor(p), cf = fract(p) - 0.5;
+          float h = hash3(ci);
+          if (h < 0.93) return vec3(0.0);
+          float m = fract(h * 311.0), r = length(cf - (fract(vec3(h * 37.0, h * 91.0, h * 157.0)) - 0.5) * 0.8);
+          float tw = 0.55 + 0.45 * sin(time * (0.8 + m * 2.4) + h * 53.0);
+          vec3 tint = mix(vec3(0.72, 0.84, 1.0), vec3(1.0, 0.91, 0.78), fract(h * 17.0));
+          return tint * (0.35 + 0.65 * m) * tw * (smoothstep(0.16, 0.02, r) + 0.2 * smoothstep(0.5, 0.1, r));
+        }
+        // The aurora: a curtain of arcane light hung in a band of the sky, folded by a warped noise and drifting across it.
+        vec3 aurora(vec3 n) {
+          float band = smoothstep(0.05, 0.30, n.y) * smoothstep(0.98, 0.50, n.y);
+          if (band < 0.003) return vec3(0.0);
+          vec2 ap = n.xz / (n.y + 0.30);
+          float warp = fbm(ap * 0.40 + vec2(time * 0.020, time * 0.008), 2.0);
+          float sheet = fbm(vec2(ap.x * 2.6 + warp * 3.0 + time * 0.035, ap.y * 0.22 - time * 0.012), 3.0);
+          float curtain = smoothstep(0.47, 0.64, sheet);
+          if (detail > 0.5) curtain *= 0.3 + 1.4 * fbm(vec2(ap.x * 22.0 + warp * 2.0, ap.y * 0.5 + time * 0.25), 2.0); // striations, folded with the sheet and running up it
+          return mix(auroraLow, auroraHigh, smoothstep(0.08, 0.45, n.y) * 0.75 + curtain * 0.25) * curtain * band; // green at the foot, violet at the top
+        }
+        // A shooting star: one track per six-second bucket, over half of them empty, and each lit for only a slice of its bucket.
+        float meteor(vec3 n) {
+          float id = floor(time / 6.0), ph = fract(time / 6.0);
+          float live = smoothstep(0.0, 0.015, ph) * smoothstep(0.30, 0.12, ph);
+          if (live < 0.003 || hash(vec2(id, 3.7)) < 0.45) return 0.0;
+          vec3 a = normalize(vec3(hash(vec2(id, 1.0)) - 0.5, 0.30 + hash(vec2(id, 2.0)) * 0.6, hash(vec2(id, 3.0)) - 0.5));
+          vec3 b = normalize(a + vec3(hash(vec2(id, 4.0)) - 0.5, -0.55, hash(vec2(id, 5.0)) - 0.5) * 1.1);
+          float t1 = smoothstep(0.0, 0.30, ph);
+          vec3 tail = normalize(mix(a, b, max(t1 - 0.11, 0.0))), seg = normalize(mix(a, b, t1)) - tail;
+          float u = clamp(dot(n - tail, seg) / max(dot(seg, seg), 1e-5), 0.0, 1.0);
+          return live * smoothstep(0.016, 0.0, length(n - (tail + seg * u))) * (0.1 + 0.9 * u * u); // brightest at the head
+        }
         void main() {
           vec3 n = normalize(d);
           float h = clamp(n.y, 0.0, 1.0);
-          vec3 m = mix(mid, mid * 0.6 + vec3(0.012, 0.018, 0.03), 0.5 + 0.5 * sin(time * 0.035)); // drifting colour
+          vec3 m = mix(mid * vec3(0.72, 1.00, 1.18), mid * vec3(1.22, 0.84, 1.26), 0.5 + 0.5 * sin(time * 0.045)); // the band breathes between a cold teal and a violet
           vec3 c = mix(horizon, m, smoothstep(0.0, 0.22, h));
           c = mix(c, zenith, smoothstep(0.1, 0.8, h));
           // clouds: a plane projected overhead, so they thin and flatten toward the horizon like real ones
           vec2 uv = n.xz / (n.y + 0.3) * 0.9;
-          float q = fbm(uv * 1.3 + vec2(time * 0.012, time * 0.005), octaves) * 0.65 + fbm(uv * 0.6 - vec2(time * 0.006, 0.0) + 7.0, 2.0) * 0.35;
+          vec2 fold = vec2(fbm(uv * 0.5 + time * 0.013, 2.0), fbm(uv * 0.5 + 19.0 - time * 0.009, 2.0)) - 0.5; // warped, so the cloud billows instead of sliding past rigidly
+          float q = fbm(uv * 1.3 + fold * 1.1 + vec2(time * 0.022, time * 0.009), octaves) * 0.62
+                  + fbm(uv * 0.55 - vec2(time * 0.011, time * 0.004) + 7.0, 2.0) * 0.38;              // the two layers drift apart, which reads as depth
           float dens = smoothstep(1.0 - cover, 1.0 - cover + 0.3, q) * smoothstep(0.0, 0.2, n.y);
-          float moonGlow = pow(max(dot(n, sun), 0.0), 40.0);
+          float toMoon = max(dot(n, sun), 0.0), md = length(n - sun);
+          // the sky's own lights, all behind the cloud
+          c += starField(n) * 0.9 * smoothstep(0.02, 0.26, n.y) * (1.0 - dens);
+          c += aurora(n) * clamp((0.75 - cover) / 0.45, 0.0, 1.0) * (0.55 + 0.25 * sin(time * 0.07)); // a clear-sky thing, and it breathes
+          c += moon * (exp(-md * 18.0) * 0.55 + exp(-md * 4.0) * 0.07);                              // a tight halo over a faint wide one
+          c = mix(c, moon * 2.2 * (detail > 0.5 ? 0.82 + 0.18 * fbm((n.xz - sun.xz) * 55.0, 2.0) : 1.0), smoothstep(0.055, 0.040, md)); // the disc itself, mottled
+          c += vec3(0.9, 0.95, 1.0) * meteor(n);
+          // thin cirrus, four times the deck's speed and never fully gone: in a clear sky it is the only thing overhead that moves
+          float wisp = smoothstep(0.44, 0.74, fbm(vec2(uv.x * 2.2 + time * 0.055, uv.y * 0.55 + time * 0.02), 3.0)) * smoothstep(0.06, 0.32, n.y);
+          c = mix(c, mix(cloudDark, cloudLight, 0.75) + moon * pow(toMoon, 6.0) * 0.3, wisp * 0.34 * (1.0 - dens));
           vec3 cloud = mix(cloudDark, cloudLight, smoothstep(0.35, 0.9, q));
-          cloud += moon * pow(max(dot(n, sun), 0.0), 5.0) * 0.18;                // cloud near the moon is lit from behind
+          cloud += moon * pow(toMoon, 5.0) * 0.18;                                 // cloud near the moon is lit from behind
+          cloud += moon * pow(toMoon, 8.0) * (1.0 - smoothstep(0.4, 0.8, q)) * 0.5; // and its thin edge there takes a silver rim
           cloud = mix(horizon, cloud, smoothstep(0.0, 0.3, n.y));                  // and sinks into the fog colour at the horizon
-          c += moon * moonGlow * 0.55 * (1.0 - dens);                              // the moon shows in the gaps
           c = mix(c, cloud, dens * 0.92);
           c = mix(c, ground, smoothstep(0.0, -0.25, n.y));
           gl_FragColor = vec4(c * dim, 1.0);
@@ -74,7 +123,7 @@ export class SkyDome {
     this.mesh.visible = dim > 0.002;
   }
 
-  setQuality(q: Quality) { this.u.octaves.value = OCTAVES[q]; }
+  setQuality(q: Quality) { this.u.octaves.value = OCTAVES[q]; this.u.detail.value = DETAIL[q]; }
 }
 
 const RAIN = { high: 1400, low: 500 } as const;
