@@ -41,13 +41,14 @@ export class TalentsUi {
         const rowEl = el(col, `ttier${row.length === 1 ? ' cap' : ''}`);
         for (const def of row) {
           const cell = el(rowEl, 'talent');
-          // The node's picture, then its words beside it. A talent with no art drawn keeps the empty square
-          // rather than reflowing the row, so one missing file does not shuffle the tree out of line.
+          // The node's picture, above its words rather than beside them: a node is 96px wide inside and
+          // Counterstrike alone is 79px of that, so there is no icon size that shares the line. A talent
+          // with no art drawn keeps the empty square rather than reflowing the row, so one missing file
+          // does not shuffle the tree out of line.
           paintArt(el(cell, 'tlicon'), talentArt(def.id));
-          const text = el(cell, 'tltext');
-          el(text, 'tlname', def.name);
-          const rank = el(text, 'tlrank');
-          const req = def.prereq ? el(text, 'tlreq', `needs ${talentById(def.prereq)!.name}`) : null;
+          el(cell, 'tlname', def.name);
+          const rank = el(cell, 'tlrank');
+          const req = def.prereq ? el(cell, 'tlreq', `needs ${talentById(def.prereq)!.name}`) : null;
           cell.addEventListener('click', () => this.actions.learn(def.id));
           this.cells.set(def.id, { root: cell, rank, req });
         }

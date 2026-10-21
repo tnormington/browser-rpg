@@ -107,8 +107,10 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 
 /* ---- action bar ---- */
 /* a slot is 68px (64 and its border) unless the window is too narrow for the whole bar in one row, then it shrinks so the bar never wraps onto the frames above it.
-   --slots is set by the HUD from the bar's length. The width is explicit, not shrink-to-fit (left:50% caps the space a shrunk box may take at half the viewport); the 1px is slack against rounding. */
-.actionbar{--slot:min(68px,calc((100vw - 2*var(--gutter) - (var(--slots) - 1)*var(--sp-4))/var(--slots)));position:absolute;left:50%;bottom:28px;width:calc(var(--slots)*var(--slot) + (var(--slots) - 1)*var(--sp-4) + 1px);transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-4);pointer-events:auto}
+   --slots is set by the HUD from the bar's length. The width is explicit, not shrink-to-fit (left:50% caps the space a shrunk box may take at half the viewport); the 1px is slack against rounding.
+   The gap gives way before the slot does: at sixteen keys (HOM-138) the usual 8px gap leaves a 41px slot at 800 wide, under the 44px floor a click target wants. */
+.actionbar{--slot-gap:var(--sp-4);--slot:min(68px,calc((100vw - 2*var(--gutter) - (var(--slots) - 1)*var(--slot-gap))/var(--slots)));position:absolute;left:50%;bottom:28px;width:calc(var(--slots)*var(--slot) + (var(--slots) - 1)*var(--slot-gap) + 1px);transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:var(--slot-gap);pointer-events:auto}
+@media (max-width:1100px){.actionbar{--slot-gap:var(--sp-2)}} /* narrow enough that the slots have started to shrink: the gap goes first */
 .slot{position:relative;box-sizing:border-box;width:var(--slot);height:var(--slot);background:var(--iron);border:2px solid var(--edge);box-shadow:var(--lift-1);border-radius:var(--r);overflow:hidden;text-align:center;cursor:grab}
 .slot.empty{background:var(--iron-glass);border-style:dashed;border-color:var(--edge-dim);cursor:default}
 /* what is printed on a slot follows the slot: the token sizes are the 68px slot's, and they give way proportionally as the bar shrinks to fit the window (HOM-104: 52px at 800 wide) */
@@ -203,11 +205,10 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 /* a tier is a row of two, the capstone a row of one; the mark between rows is what that tier costs to open */
 .ttier{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2);margin-bottom:5px}.ttier.cap{grid-template-columns:1fr}
 .ttiermark{font-size:var(--fs-xs);text-align:center;color:var(--ink-dim);opacity:.55;letter-spacing:.06em;margin-bottom:var(--sp-1)}
-.talent{position:relative;display:flex;gap:var(--sp-2);align-items:flex-start;background:var(--iron-lift);border:2px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-2) var(--sp-3);cursor:pointer}
-/* the node's picture, square beside its words. background-color, not the `background` shorthand: the shorthand
+.talent{position:relative;background:var(--iron-lift);border:2px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-2) var(--sp-3);cursor:pointer}
+/* the node's picture, centred above its words. background-color, not the `background` shorthand: the shorthand
    would undo the size and position .art sets at the foot of this sheet (see the note down there) */
-.tlicon{flex:none;width:34px;height:34px;border:1px solid var(--edge-dim);border-radius:var(--r);background-color:var(--iron-glass)}
-.tltext{flex:1;min-width:0}
+.tlicon{width:34px;height:34px;margin:0 auto var(--sp-1);border:1px solid var(--edge-dim);border-radius:var(--r);background-color:var(--iron-glass)}
 .talent:hover{border-color:var(--edge-hi)}
 .talent.taken{border-color:var(--gold)}
 .talent.shut{opacity:.45;cursor:default}.talent.shut:hover{border-color:var(--edge-dim)}

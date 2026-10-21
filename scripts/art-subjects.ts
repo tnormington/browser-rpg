@@ -239,6 +239,13 @@ export const ABILITY_SUBJECTS = {
   hemorrhage: 'a barbed crimson iron hook torn backwards, a spray of dark red droplets flung off its point',
   colossus_blow: 'a colossal two-handed stone warhammer standing upright on its long iron-bound handle, the huge cracked grey stone hammer at the top of the handle, hot orange light glowing in the cracks',
   last_stand: 'a dented iron shield boss with a heart of warm golden light burning in its centre, rays breaking out through the dents',
+  // The three HOM-138 added to the bar.
+  battle_fury: 'a torn deep red war banner on a short scarred iron haft, hot orange embers streaming off its trailing edge',
+  sidestep: 'a slim steel dagger blade leaning hard to one side, a pale blue after-image of the same blade streaked behind it',
+  // The hardest one in the set to name. A ram came back a cannon, a spearhead came back a shield, a lance
+  // came back a sword, and worn armour came back the knight wearing it - a whole figure, which is the one
+  // thing this style has no room for. So it is light, the way Cleave's crescent is: shape, not object.
+  charge: 'a single hard white chevron of light driving forward, shaped like an arrowhead, long pale speed lines trailing back from its point',
 };
 
 // --- the talents ------------------------------------------------------------------------------
