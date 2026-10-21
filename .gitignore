@@ -6,3 +6,4 @@ dist
 bench/shots/
 bench/before/
 bench/after/
+.art-cache/
