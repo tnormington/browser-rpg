@@ -12,6 +12,7 @@ import { TalentEffects, TalentFail, Talents, deriveTalents, learnTalent, newTale
 import { ResourceNode, createNodes, updateNodes } from './sim/gathering';
 import { beginCraft } from './sim/crafting';
 import { Buff, updateConsumables } from './sim/consumables';
+import type { Proc } from './sim/procs';
 import { ShopAction, applyShopAction } from './sim/shop';
 import { AdminAction, applyAdminAction } from './sim/admin';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
@@ -108,6 +109,8 @@ export interface Player {
   food: { left: number; rate: number; pending: number } | null;
   foodCd: number;          // seconds until any food may be eaten again
   buffs: Buff[];           // timed effects (Well Fed), by BUFFS id: max health reads them, death clears them
+  /** Proc windows open right now (sim/procs.ts), by PROCS id. Transient like a cooldown, so a save never carries one. */
+  procs: Proc[];
   /** Held where you stand by a net: no walking for `left` more seconds. Turning, swinging and casting are untouched. Transient, so a save never carries one. */
   root: { left: number; total: number; name: string } | null;
 }
@@ -115,7 +118,9 @@ export interface Player {
 export type GameEvent =
   | { t: 'hit'; target: 'player' | number; x: number; z: number; amount: number; crit: boolean; slot: number; dot: boolean; heavy?: boolean; src?: number; species: string }
   | { t: 'heal'; x: number; z: number; amount: number }
-  | { t: 'fail'; reason: 'range' | 'cooldown' | 'gcd' | 'energy' | 'target' | 'locked' | 'nocast'; slot: number }
+  | { t: 'fail'; reason: 'range' | 'cooldown' | 'gcd' | 'energy' | 'target' | 'locked' | 'nocast' | 'rooted' | 'noroom'; slot: number }
+  | { t: 'proc'; id: string; on: boolean }                  // a proc window opened (or was spent / ran out): see sim/procs.ts
+  | { t: 'dash'; slot: number; fromX: number; fromZ: number; x: number; z: number }  // a leap moved the player, in one tick, from there to here
   | { t: 'unlock'; slot: number; level: number }       // combat level handed over an ability: fires once per ability
   | { t: 'talent'; id: string; rank: number }          // a talent point was spent, and the rank it bought
   | { t: 'talentfail'; reason: TalentFail; id: string } // ...or could not be
@@ -235,7 +240,7 @@ export function createState(seed = 1): GameState {
       gcd: 0, cd: ABILITIES.map(() => 0), learned: [], mounts: [], mounted: false, unlocked: 1, queued: null, queuedOff: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
       skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), durability: {}, enchants: {}, stats: deriveStats(emptyEquipment()),
-      talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [], root: null,
+      talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [], procs: [], root: null,
     },
     moveTarget: null,
     targetId: null,

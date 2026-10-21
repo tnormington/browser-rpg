@@ -51,8 +51,12 @@ export const powerForLevel = (level: number) => 1 + 0.07 * (level - 1); // scale
 export interface AbilityDef {
   name: string;
   desc: string;
-  /** `bash` staggers whether or not the target is winding up; `burst` tears the bleed off it and spends what is left at once. */
-  kind: 'strike' | 'dot' | 'heal' | 'cleave' | 'interrupt' | 'guard' | 'bash' | 'burst';
+  /**
+   * `bash` staggers whether or not the target is winding up; `burst` tears the bleed off it and spends what is left at once.
+   * `guard` is any self-buff: it takes no target and puts the buff named in `buff` on the player (Guard, Battle Fury).
+   * `dash` hits the target and moves the player in the same breath (see `dash`).
+   */
+  kind: 'strike' | 'dot' | 'heal' | 'cleave' | 'interrupt' | 'guard' | 'bash' | 'burst' | 'dash';
   unlockLevel: number; // combat level that hands the ability over; locked slots do nothing and say why
   damage: number;     // direct damage (strike/dot/cleave) or heal amount (heal), at power 1; 0 for interrupt
   dotDamage?: number; // per tick
@@ -60,6 +64,13 @@ export interface AbilityDef {
   cost: number;       // energy
   cooldown: number;   // seconds, on top of the GCD
   range: number;      // world units, center to center; 0 = self
+  /** Nearer than this the ability refuses: a leap has nowhere to go when you are already in their face (Charge). */
+  minRange?: number;
+  /**
+   * `dash`: where the leap puts you. `away` leaps straight back from the target by `gap` units; otherwise it closes to
+   * the target and stops `gap` short of it. A leap blocked by rock is shortened, and refused only if even a short one is.
+   */
+  dash?: { away: boolean; gap: number };
   arc?: number;       // cleave: full width in degrees of the cone, centred on the line to the target
   offGcd?: boolean;   // interrupt, guard, bash: usable mid-GCD, so it can answer a wind-up the instant it starts
   /** guard: the buff it puts on the player (see BUFFS), which is what actually takes the damage down. */
@@ -106,6 +117,16 @@ export const ABILITIES: AbilityDef[] = [
     kind: 'strike', unlockLevel: 25, damage: 60, weaponMult: 2.5, cost: 55, cooldown: 18, range: 3, trainer: { vendor: 'high_trainer', price: 500 } },
   { name: 'Last Stand', desc: 'Heal yourself for three times what Second Wind does. A long cooldown: it is the one you save. Learned from the Highmoor trainer.',
     kind: 'heal', unlockLevel: 30, damage: 140, cost: 40, cooldown: 90, range: 0, trainer: { vendor: 'high_trainer', price: 750 } },
+  // The three that gave the fight a shape of its own (HOM-138). The upkeep is free and early, because it is what the
+  // rotation is built round; the two leaps are bought, like every ability past combat 5.
+  { name: 'Battle Fury', desc: 'Everything you deal hits 15% harder for 20 seconds. No cooldown: keeping it up, and paying for it, is the work.',
+    kind: 'guard', unlockLevel: 5, damage: 0, cost: 25, cooldown: 0, range: 0, buff: 'battle_fury' },
+  { name: 'Sidestep', desc: 'Off the global cooldown. Cut your target and leap clear of it: out of a slam, off marked ground, still swinging. Learned from the Saltmarrow trainer.',
+    kind: 'dash', unlockLevel: 12, damage: 6, weaponMult: 0.5, cost: 15, cooldown: 12, range: 4, offGcd: true,
+    dash: { away: true, gap: 8 }, trainer: { vendor: 'trainer', price: 150 } },
+  { name: 'Charge', desc: 'Cover the ground to a distant target in one bound and open with a hit. The way back in after a Sidestep. Learned from the Saltmarrow trainer.',
+    kind: 'dash', unlockLevel: 14, damage: 12, weaponMult: 0.8, cost: 15, cooldown: 15, range: 25, minRange: 8,
+    dash: { away: false, gap: 2 }, trainer: { vendor: 'trainer', price: 200 } },
 ];
 
 /**

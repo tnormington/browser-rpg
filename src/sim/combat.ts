@@ -3,14 +3,15 @@ import type { GameState, Enemy, EnemyState, Player } from '../sim';
 import { MAX_REDUCTION } from './items';
 import { EXECUTE_BONUS, WOUNDED_UNDER } from './talents';
 import { grantXp } from './skills';
-import { applyBuff, breakFood, buffedDamage, clearBuffs, maxHpOf } from './consumables';
+import { applyBuff, breakFood, buffedDamage, buffedOutgoing, clearBuffs, maxHpOf } from './consumables';
+import { PROCS, clearProcs, procOn, rollProcs, spendProc, updateProcs } from './procs';
 import { ITEMS, EQUIP_SLOTS } from './items';
 import { wearWornGear } from './durability';
 import { refreshGearStats } from './inventory';
 import { rollDrops } from './loot';
 import { questOnKill, questReached } from './quest';
 import { nextRandom } from './rng';
-import { inSafeZone, nearestTown, resolveCollisions, sameSideOfDoor } from './world';
+import { PLAYER_RADIUS, clampToWorld, inSafeZone, nearestTown, resolveCollisions, sameSideOfDoor } from './world';
 import { clearLine } from './sight';
 import { isFlying } from './flight';
 import { dismount } from './mounts';
@@ -69,9 +70,10 @@ export function cooldownOf(p: Player, slot: number): number {
   if (a.tag === 'crush') return Math.max(1, a.cooldown - fx.crushCdCut);
   return a.cooldown;
 }
-/** An ability's energy cost after talents: Whirling makes Cleave cheaper. */
+/** An ability's energy cost after talents and procs: Whirling makes Cleave cheaper, and an open proc makes its ability free. */
 export const costOf = (p: Player, slot: number) =>
-  ABILITIES[slot].kind === 'cleave' ? Math.max(0, ABILITIES[slot].cost - p.talentFx.cleaveCost) : ABILITIES[slot].cost;
+  procOn(p, slot) ? 0
+    : ABILITIES[slot].kind === 'cleave' ? Math.max(0, ABILITIES[slot].cost - p.talentFx.cleaveCost) : ABILITIES[slot].cost;
 
 /**
  * Incoming damage after armour and talents. Never below 1: nothing that reaches you is free.
@@ -202,6 +204,7 @@ function updateAutoAttack(s: GameState, dt: number) {
   const { amount, crit } = rollDamage(s, AUTO_BASE, power, p.stats.weaponDamage * AUTO_WEAPON_SHARE, t);
   p.energy = Math.min(p.maxEnergy, p.energy + p.talentFx.swingEnergy); // Unbridled: the swings pay for the abilities
   damageEnemy(s, t, amount, crit, AUTO_SLOT);
+  rollProcs(s, 'swing'); // the rhythm you are not pressing is where the openings come from
 }
 
 // ---------- damage ----------
@@ -213,7 +216,7 @@ function updateAutoAttack(s: GameState, dt: number) {
 function rollDamage(s: GameState, base: number, power: number, bonus: number, target: Enemy, mult = 1) {
   const p = s.player, fx = p.talentFx;
   const crit = rand(s) < CRIT_CHANCE + fx.crit + p.stats.crit;
-  const amount = Math.max(1, Math.round((base + bonus) * power * mult * fx.damage
+  const amount = Math.max(1, Math.round((base + bonus) * power * mult * fx.damage * buffedOutgoing(p)
     * (wounded(p) ? fx.lowHpDamage : 1) * (target.bleed ? fx.bleedHunter : 1)
     * (0.9 + 0.2 * rand(s)) * (crit ? CRIT_MULT + fx.critMult : 1)));
   return { amount, crit };
@@ -229,6 +232,7 @@ function damageEnemy(s: GameState, e: Enemy, amount: number, crit: boolean, slot
   if (crit && !dot) {
     if (e.bleed) e.bleed.ticks += fx.critBleed;                             // Bloodscent: a crit works the wound open
     p.energy = Math.min(p.maxEnergy, p.energy + fx.critEnergy);             // Opportunist: ...and pays you for it
+    rollProcs(s, 'crit');                                                   // ...and may open a window on top
   }
   aggro(s, e);
   if (e.hp <= 0) killEnemy(s, e);
@@ -253,7 +257,7 @@ function killEnemy(s: GameState, e: Enemy) {
 
 // ---------- abilities ----------
 
-type Fail = 'range' | 'cooldown' | 'gcd' | 'energy' | 'target' | 'locked' | 'nocast';
+type Fail = 'range' | 'cooldown' | 'gcd' | 'energy' | 'target' | 'locked' | 'nocast' | 'rooted' | 'noroom';
 
 function fail(s: GameState, reason: Fail, slot: number) {
   s.events.push({ t: 'fail', reason, slot });
@@ -263,6 +267,7 @@ function fail(s: GameState, reason: Fail, slot: number) {
  * Press an ability slot. Honors GCD, cooldown, energy and range; queues presses just before the ability is ready.
  * An off-GCD ability (Pummel, Guard) neither waits for the GCD nor takes it, and its queue is its own: pressing one while a GCD ability is held
  * must never replace that ability, and it must not be replaced by it, or the defensive would eat the next action (or the next action the defensive).
+ * An open proc (sim/procs.ts) answers the cooldown for its ability, so the window is pressable the moment it appears.
  */
 export function pressAbility(s: GameState, slot: number) {
   const p = s.player;
@@ -271,25 +276,37 @@ export function pressAbility(s: GameState, slot: number) {
   if (!abilityOpen(p, slot)) return fail(s, 'locked', slot);
   // a press this close to ready (its own cooldown or the GCD, whichever is later) is held and fires the moment it is
   const gcdWait = a.offGcd ? 0 : p.gcd;
-  if (p.cd[slot] > QUEUE_WINDOW) return fail(s, 'cooldown', slot);
+  const cdWait = procOn(p, slot) ? 0 : p.cd[slot];
+  if (cdWait > QUEUE_WINDOW) return fail(s, 'cooldown', slot);
   if (gcdWait > QUEUE_WINDOW) return fail(s, 'gcd', slot);
-  if (gcdWait > 0 || p.cd[slot] > 0) { if (a.offGcd) p.queuedOff = slot; else p.queued = slot; return; }
+  if (gcdWait > 0 || cdWait > 0) { if (a.offGcd) p.queuedOff = slot; else p.queued = slot; return; }
   tryUse(s, slot);
 }
 
 function tryUse(s: GameState, slot: number) {
   const p = s.player, a = ABILITIES[slot], fx = p.talentFx, cost = costOf(p, slot);
-  if (p.cd[slot] > 0) return fail(s, 'cooldown', slot);
+  const proc = procOn(p, slot);
+  if (!proc && p.cd[slot] > 0) return fail(s, 'cooldown', slot);
   let target: Enemy | undefined;
+  let spot: { x: number; z: number } | null = null;
   if (a.kind !== 'heal' && a.kind !== 'guard') {
     target = enemyById(s, s.targetId);
     if (!target || !targetable(target)) return fail(s, 'target', slot);
     if (dist(p, target) > a.range) return fail(s, 'range', slot);
+    if (a.minRange !== undefined && dist(p, target) < a.minRange) return fail(s, 'range', slot); // a leap has nowhere to go from their face
     if (a.kind === 'interrupt' && !target.cast) return fail(s, 'nocast', slot); // costs nothing and does nothing
+    if (a.dash) {
+      if (p.root) return fail(s, 'rooted', slot); // the net holds your feet, and that is exactly what a leap needs
+      spot = dashSpot(s, target, a.dash);
+      if (!spot) return fail(s, 'noroom', slot);
+    }
   }
   if (p.energy < cost) return fail(s, 'energy', slot);
 
   p.energy -= cost;
+  // the proc is spent on the press that used it, before anything it empowers is worked out
+  const mult = proc ? PROCS[proc].mult : 1;
+  if (proc) spendProc(s, proc);
   if (a.kind !== 'guard') p.action = null; // fighting interrupts gathering/crafting; a raised guard is not fighting, and a hit will break the work anyway
   if (!a.offGcd) p.gcd = GCD;
   p.cd[slot] = cooldownOf(p, slot);
@@ -298,7 +315,7 @@ function tryUse(s: GameState, slot: number) {
   const power = powerForLevel(p.combat.level);
 
   if (target) p.facing = Math.atan2(target.x - p.x, target.z - p.z);
-  if (target && (a.kind === 'strike' || a.kind === 'cleave')) setAutoAttack(s, true); // a melee ability on a target starts the swings, as in WoW
+  if (target && (a.kind === 'strike' || a.kind === 'cleave' || a.kind === 'dash')) setAutoAttack(s, true); // a melee ability on a target starts the swings, as in WoW
 
   if (a.kind === 'guard') {
     applyBuff(s, a.buff!);
@@ -315,11 +332,16 @@ function tryUse(s: GameState, slot: number) {
     // Shield Bash: the stagger a Pummel only lands on a wind-up, landed on anything, and it hits as well
     staggerEnemy(s, target);
     s.events.push({ t: 'interrupt', id: target.id, x: target.x, z: target.z });
-    const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), target);
+    const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), target, mult);
+    damageEnemy(s, target, amount, crit, slot);
+  } else if (target && a.kind === 'dash' && spot) {
+    // Sidestep / Charge: the leap and the hit are one press. The move lands first, so the hit is thrown from where you end up.
+    leap(s, slot, spot);
+    const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), target, mult);
     damageEnemy(s, target, amount, crit, slot);
   } else if (target && a.kind === 'burst') {
     // Hemorrhage: the wound is spent in one go. Its own hit lands first, so Predator still reads the bleed.
-    const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), target);
+    const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), target, mult);
     const left = target.bleed ? target.bleed.ticks * target.bleed.damage : 0;
     target.bleed = null;
     damageEnemy(s, target, amount, crit, slot);
@@ -334,17 +356,17 @@ function tryUse(s: GameState, slot: number) {
     const hit = s.enemies.filter(e => targetable(e) && dist(p, e) <= a.range && (e === target || angleTo(e) <= half))
       .sort((m, n) => dist(p, m) - dist(p, n));
     for (const e of hit) {
-      const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), e, fx.cleaveDamage);
+      const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), e, fx.cleaveDamage * mult);
       damageEnemy(s, e, amount, crit, slot);
     }
   } else if (target) {
     // Execute: Crushing Blow finishes a wounded target, and a kill hands the cooldown straight back
     const exec = a.tag === 'crush' && fx.executeUnder > 0 && target.hp <= target.maxHp * fx.executeUnder;
     const { amount, crit } = rollDamage(s, a.damage * (exec ? 1 + EXECUTE_BONUS : 1), power,
-      p.stats.weaponDamage * (a.weaponMult ?? 1), target, a.tag === 'strike' ? fx.strikeBonus : 1);
+      p.stats.weaponDamage * (a.weaponMult ?? 1), target, (a.tag === 'strike' ? fx.strikeBonus : 1) * mult);
     if (a.kind === 'dot') target.bleed = {
       ticks: a.dotTicks! + fx.bleedTicks, timer: fx.bleedInterval, interval: fx.bleedInterval,
-      damage: Math.round(a.dotDamage! * power * fx.bleedBonus),
+      damage: Math.round(a.dotDamage! * power * fx.bleedBonus * mult), // a procced throw opens the deeper wound, not just the bigger hit
     };
     damageEnemy(s, target, amount, crit, slot);
     if (exec && target.state === 'dead') p.cd[slot] = 0;
@@ -353,6 +375,38 @@ function tryUse(s: GameState, slot: number) {
       if (heal > 0) { p.hp += heal; s.events.push({ t: 'heal', x: p.x, z: p.z, amount: heal }); }
     }
   }
+}
+
+/** The fractions of a leap that are tried, longest first: rock shortens a leap rather than refusing it. */
+const DASH_STEPS = [1, 0.7, 0.45];
+/** Shorter than this there is no leap worth the energy, and the ability says so instead of spending it. */
+const DASH_MIN = 1.5;
+
+/**
+ * Where a leap would put the player, or null when there is nowhere to land. Nothing is leapt through: the line to the
+ * spot has to be as clear as a bolt's, and a spot the far side of a dungeon wall is no spot at all.
+ */
+function dashSpot(s: GameState, t: Enemy, d: { away: boolean; gap: number }): { x: number; z: number } | null {
+  const p = s.player, ox = p.x - t.x, oz = p.z - t.z, len = Math.hypot(ox, oz) || 1;
+  // away: straight back along the line from the target. Closing: along the same line the other way, stopping `gap` short.
+  const sign = d.away ? 1 : -1;
+  const full = d.away ? d.gap : Math.max(0, len - d.gap);
+  for (const frac of DASH_STEPS) {
+    const far = full * frac;
+    if (far < DASH_MIN) break;
+    const spot = clampToWorld({ x: p.x + (ox / len) * sign * far, z: p.z + (oz / len) * sign * far });
+    if (clearLine(p, spot) && sameSideOfDoor(p, spot)) return spot;
+  }
+  return null;
+}
+
+/** Put the player on the spot the leap found. The walk they were on ends here: they went somewhere else. */
+function leap(s: GameState, slot: number, spot: { x: number; z: number }) {
+  const p = s.player, fromX = p.x, fromZ = p.z;
+  p.x = spot.x; p.z = spot.z;
+  resolveCollisions(p, PLAYER_RADIUS);
+  s.moveTarget = null;
+  s.events.push({ t: 'dash', slot, fromX, fromZ, x: p.x, z: p.z });
 }
 
 /** Stun an enemy and push back everything it was about to do, so it cannot slam the instant it comes round. */
@@ -379,6 +433,7 @@ export function updatePlayerCombat(s: GameState, dt: number) {
   if (!p.inCombat) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * OOC_REGEN_FRAC * p.talentFx.oocRegen * dt);
   for (let i = 0; i < p.cd.length; i++) p.cd[i] = Math.max(0, p.cd[i] - dt);
   p.gcd = Math.max(0, p.gcd - dt);
+  updateProcs(s, dt);
   announceUnlocks(s);
   if (p.queuedOff !== null && p.cd[p.queuedOff] === 0) { // the off-GCD press goes first: it is the one that cannot wait on the GCD, and it takes none
     const slot = p.queuedOff;
@@ -427,6 +482,7 @@ function killPlayer(s: GameState) {
   refreshGearStats(s);
   const grave = nearestTown(p.x, p.z, s.found);
   clearBuffs(s);
+  clearProcs(s);
   p.root = null;
   p.dead = true;
   p.action = null;
@@ -604,6 +660,7 @@ export function updateEnemies(s: GameState, dt: number) {
         const dmg = e.bleed.damage;
         if (--e.bleed.ticks <= 0) e.bleed = null;
         damageEnemy(s, e, dmg, false, 2, true);
+        rollProcs(s, 'bleed'); // the wound you opened is a clock of its own
         if ((e.state as EnemyState) === 'dead') continue;
       }
     }

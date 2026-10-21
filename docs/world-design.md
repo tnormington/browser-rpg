@@ -644,7 +644,7 @@ The last column is a sweep (a dodge chance per telegraph, Pummel and Second Wind
 
 **All six starting abilities are open at combat 5.** The talents used to run out with them: nine of them, 18 ranks, all bought by combat 19. HOM-80 rebuilt the trees, and they now hold **54 ranks**, which is more than level 40 hands out — so from here the ladder's job is the abilities, not the talents.
 
-**Abilities.** Five new ones. Each has an `unlockLevel` and is **bought from a trainer for gold** (a gold sink that also makes each town worth visiting). The bar is **11 slots** as of HOM-80, which is where the three capstones below went; the trainer's five will share it. Combat 5 abilities stay free.
+**Abilities.** Five new ones. Each has an `unlockLevel` and is **bought from a trainer for gold** (a gold sink that also makes each town worth visiting). The bar is **11 slots** as of HOM-80, which is where the three capstones below went; the trainer's five will share it. Combat 5 abilities stay free. (HOM-138 later added three more and took the bar to **16 keys** — see *What HOM-138 added* at the end of this section.)
 
 | Ability | Combat | Trainer | Price | Kind | What it does | Cost / CD |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -675,6 +675,46 @@ The last column is a sweep (a dodge chance per telegraph, Pummel and Second Wind
 | **Hemorrhage** | new kind `burst`, range 9 | `10 + 0.8 x weapon`, then tears the bleed off the target and deals everything it still owed at once | 30 / 15 s |
 
 The trainer's five abilities above are still the ladder's job; the capstones are not for sale and cost no gold.
+
+#### What HOM-138 added: an upkeep, windows, and two leaps
+
+The kit above is a priority list: press the cooldowns as they come up, fill with Strike. Three things were added to give the
+fight a shape of its own. Nothing in the tables above moved.
+
+| Ability | Combat | Source | Price | Kind | What it does | Cost / CD |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Battle Fury** | 5 | free, with the rest of the starting kit | — | `guard` (a self-buff) | +15 % to everything you deal, for 20 s | 25 / none |
+| **Sidestep** | 12 | Saltmarrow | 150 g | new kind `dash`, off the GCD | `6 + 0.5 x weapon` and a leap 8 units straight back from the target | 15 / 12 s |
+| **Charge** | 14 | Saltmarrow | 200 g | `dash` | `12 + 0.8 x weapon` and a bound in to the target, from 8 to 25 units out | 15 / 15 s |
+
+**Battle Fury is upkeep, not a cooldown.** No cooldown at all, so nothing stops you reapplying it; what it costs is 25 energy
+and a global cooldown every 20 seconds, which is about a sixth of your energy and a thirteenth of your casts. Played well it
+is a gain; let it lapse and you lose it, and nothing tells you but the clock on your own frame. It is the free level-5
+ability, so it is there from the first fights that matter, which is where the flatness was worst.
+
+**The two leaps answer the telegraphs the world already has.** A slam is a circle round the enemy and a ground mark is a
+circle where you stood: both are answered by moving, and until now moving meant walking out of melee and losing the swings.
+Sidestep is off the GCD, cuts the target on the way out, and clears any heavy's radius in one press; Charge is how you are
+back on it a second later. Neither works while a net holds you (`fail: 'rooted'`), and neither is leapt through rock — the
+line to the landing spot has to be as clear as a bolt's, and a blocked leap is shortened before it is refused (`'noroom'`).
+
+**Procs (`src/sim/procs.ts`) are the part you cannot plan.** Something you were doing anyway throws a short window open, and
+inside it one ability you would be waiting on is free and ready *now*. Each names its ability by name, not by slot, and never
+opens for an ability the player has not got yet.
+
+| Window | Opened by | Chance | Runs for | Offers |
+| --- | --- | --- | --- | --- |
+| **Opening** | an auto-attack swing landing | 7 % | 8 s | Crushing Blow, free, off cooldown, 1.3x |
+| **Open Wound** | a critical hit | 8 % | 8 s | Serrated Throw, free, off cooldown, 1.3x (the bleed included) |
+| **Scent of Blood** | a bleed tick | 7 % | 8 s | Cleave, free, off cooldown, 1.3x |
+
+Two rules keep this from being a retune of the ladder by the back door. The dice are their **own** dice (`sideRandom` in
+`sim/rng.ts`): drawing them from the world's stream would have re-rolled every drop and damage spread recorded before the
+windows existed. And the **budget is capped and measured**: `src/combat-depth.test.ts` runs the same bot with the layer on
+and off and holds the gain between 1.5 % and 8 % (it measures about 5 %). That is deliberately small, because the gear gates
+in `golden-path.test.ts`'s cave matrix are knife-edged — the Warden at combat 10 in iron is 0/6 without the windows and
+flips to 3/6 at a 6 % gain. That matrix is therefore measured with the layer off: a gate decided by how the dice fell is not
+a gate. **If the ladder should instead be retuned around the new ceiling, that is a designer's call and a separate task.**
 
 ### 3.6 Level 40 and the long tail
 

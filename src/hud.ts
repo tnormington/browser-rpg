@@ -13,6 +13,7 @@ import { nearestTown } from './sim/world';
 import { BUFFS, FOOD_COOLDOWN } from './sim/consumables';
 import { clearLine } from './sim/sight';
 import { abilityOpen, cooldownOf, costOf, swingInterval } from './sim/combat';
+import { PROCS, procOn } from './sim/procs';
 import { VENDORS } from './sim/shop';
 import { mountById } from './sim/mounts';
 import { InventoryUi } from './inventory-ui';
@@ -84,7 +85,7 @@ function lockedWhy(a: AbilityDef, level: number): string {
   return `${a.name} comes with the ${talentById(a.talent!)!.name} talent (N)`;
 }
 
-const ICONS =['⚔', '🔨', '🗡', '❤', '🌀', '✊', '🌪', '🛡', '🫀', '🔰', '🩸', '💥', '🏰'];
+const ICONS =['⚔', '🔨', '🗡', '❤', '🌀', '✊', '🌪', '🛡', '🫀', '🔰', '🩸', '💥', '🏰', '🔥', '💨', '⚡'];
 /** The face a consumable with no thumbnail wears on the bar: the bag draws its food the same way. */
 const ITEM_ICON = '🍖';
 /** How many slots the bar has: one per key it ships with. */
@@ -92,6 +93,7 @@ const SLOT_COUNT = DEFAULT_KEYS.length;
 const FAIL_TEXT = {
   range: 'Out of range', cooldown: 'Not ready yet', gcd: 'Not ready yet',
   energy: 'Not enough energy', target: 'No target', nocast: 'Nothing to interrupt',
+  rooted: 'Held fast: you cannot leap', noroom: 'No room to leap',
 } as const;
 /** How long a freshly unlocked slot keeps glowing, and the gap between banners when one level hands over several abilities. */
 const UNLOCK_GLOW_MS = 4000, UNLOCK_BANNER_GAP_MS = 1900;
@@ -126,7 +128,7 @@ class StatusRow {
     for (const s of list) {
       let cell = this.cells.get(s.key);
       if (!cell) {
-        const root = el(this.host, `buff${s.bad ? ' bad' : ''}`);
+        const root = el(this.host, `buff${s.bad ? ' bad' : ''}${s.proc ? ' proc' : ''}`);
         el(root, 'bicon', s.icon);
         cell = { root, clock: el(root, 'bclock'), fill: el(root, 'bfill') };
         this.cells.set(s.key, cell);
@@ -554,6 +556,11 @@ export class Hud {
         this.note('You were hit and spat out your meal.', 'log-bad');
       } else if (ev.t === 'buff') {
         this.note(ev.on ? `${BUFFS[ev.id].name}: ${BUFFS[ev.id].desc}` : `${BUFFS[ev.id].name} has worn off.`, 'log-info');
+      } else if (ev.t === 'proc' && ev.on) {
+        // a window is something to answer, so it is said in the middle of the screen and names the key that answers it
+        const def = PROCS[ev.id], key = this.keyForAbility(ABILITIES.findIndex(a => a.name === def.ability));
+        this.say(`${def.name.toUpperCase()}!  ${key ? `${def.ability} (${key}) is free and ready` : def.desc}`);
+        this.note(`${def.name}: ${def.desc}`, 'log-xp');
       } else if (ev.t === 'gate') {
         this.say(`${ev.keeper}: "${ev.text}"`, true);
         // the level is only held against a player who is short of it: a keeper who asks a quest, not a level, has need 0, and one who asks both
@@ -731,7 +738,7 @@ export class Hud {
       if (entry === null) { // an empty slot shows nothing but its key
         this.setSweep(slot, 0, 0);
         slot.lock.style.display = 'none';
-        slot.root.classList.remove('locked', 'noenergy', 'outrange', 'queued', 'gone');
+        slot.root.classList.remove('locked', 'noenergy', 'outrange', 'queued', 'gone', 'proc');
         continue;
       }
       if (entry.k === 'item') { // a consumable: how many are left in the bag, and the shared food clock
@@ -740,13 +747,14 @@ export class Hud {
         slot.qty.textContent = left ? String(left) : '0';
         this.setSweep(slot, cd, FOOD_COOLDOWN);
         slot.lock.style.display = 'none';
-        slot.root.classList.remove('locked', 'noenergy', 'outrange', 'queued');
+        slot.root.classList.remove('locked', 'noenergy', 'outrange', 'queued', 'proc');
         slot.root.classList.toggle('gone', left === 0);
         continue;
       }
       const i = entry.i;
       const a = ABILITIES[i];
-      const cd = p.cd[i];
+      const proc = procOn(p, i);
+      const cd = proc ? 0 : p.cd[i]; // a proc answers the cooldown, so the slot reads ready rather than dark
       const gcd = a.offGcd ? 0 : p.gcd; // an off-GCD button does not dim while the GCD runs: it is the one you can press
       const remaining = Math.max(cd, gcd);
       const total = cd > gcd ? cooldownOf(p, i) : GCD;
@@ -761,6 +769,7 @@ export class Hud {
       slot.root.classList.toggle('noenergy', noEnergy);
       slot.root.classList.toggle('outrange', outOfRange);
       slot.root.classList.toggle('queued', p.queued === i || p.queuedOff === i);
+      slot.root.classList.toggle('proc', !!proc);
     }
     if (this.binding >= 0) this.slots[this.binding].key.textContent = '?'; // the waiting slot keeps asking, whatever else redrew
 

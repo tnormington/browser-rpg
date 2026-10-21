@@ -9,6 +9,7 @@ import { addItem } from './inventory';
 import { refreshPlayerStats } from './combat';
 import { ENEMY_TYPES, EnemyDef, SPAWNS } from './data';
 import { DUNGEONS, PLAYER_RADIUS, REGIONS, Rect, Region, TOWNS, clampToWorld, regionAt, regionById, resolveCollisions } from './world';
+import { MAX_GOLD } from './shop';
 
 /** The most of one item a single grant may add: more than a bag of full stacks holds, and far more than a test needs. */
 export const MAX_GRANT = 999;
@@ -16,11 +17,13 @@ export const MAX_GRANT = 999;
 export type AdminAction =
   | { k: 'level'; level: number }
   | { k: 'teleport'; x: number; z: number }
-  | { k: 'give'; id: string; qty: number };
+  | { k: 'give'; id: string; qty: number }
+  | { k: 'gold'; amount: number };
 
 export function applyAdminAction(s: GameState, act: AdminAction) {
   if (act.k === 'level') setCombatLevel(s, act.level);
   else if (act.k === 'teleport') teleport(s, act.x, act.z);
+  else if (act.k === 'gold') giveGold(s, act.amount);
   else giveItem(s, act.id, act.qty);
 }
 
@@ -63,6 +66,16 @@ export function giveItem(s: GameState, id: string, qty: number) {
   const left = addItem(s.player.inventory, id, want);
   if (left < want) s.events.push({ t: 'loot', item: id, qty: want - left });
   if (left > 0) s.events.push({ t: 'invfull' });
+}
+
+/**
+ * Put gold in the purse, up to what the purse holds. A trainer's ability is the one thing the panel could not reach:
+ * the level it asks for is a button here, the price was an afternoon's play.
+ */
+export function giveGold(s: GameState, amount: number) {
+  if (!Number.isFinite(amount)) return;
+  const want = Math.max(1, Math.min(MAX_GOLD, Math.round(amount)));
+  s.player.gold = Math.min(MAX_GOLD, s.player.gold + want);
 }
 
 /** Somewhere the panel can send you: `group` is the heading it sits under, `detail` what is standing there. */

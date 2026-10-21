@@ -7,18 +7,25 @@ import { maxHpForLevel } from './data';
 export const FOOD_TIME = 5;       // seconds a meal takes to heal in full
 export const FOOD_COOLDOWN = 20;  // one shared clock for every food, from the moment you start eating
 
-/** `damageTaken` multiplies every hit that lands on the player while the buff is on (Guard halves it). `desc` is the line the log says when it goes on, `icon` the face it wears on the unit frame. */
-export interface BuffDef { name: string; desc: string; icon: string; duration: number; maxHp?: number; damageTaken?: number }
+/**
+ * `damageTaken` multiplies every hit that lands on the player while the buff is on (Guard halves it) and `damageDealt`
+ * every hit they deal (Battle Fury). `desc` is the line the log says when it goes on, `icon` the face it wears on the unit frame.
+ */
+export interface BuffDef { name: string; desc: string; icon: string; duration: number; maxHp?: number; damageTaken?: number; damageDealt?: number }
 export interface Buff { id: string; left: number }
 
 export const BUFFS: Record<string, BuffDef> = {
   well_fed: { name: 'Well Fed', desc: '+10% max health.', icon: '🍗', duration: 20 * 60, maxHp: 0.10 },
   guard: { name: 'Guard', desc: 'damage taken halved.', icon: '🛡', duration: 4, damageTaken: 0.5 },
+  battle_fury: { name: 'Battle Fury', desc: 'everything you deal hits 15% harder.', icon: '🔥', duration: 20, damageDealt: 1.15 },
 };
 
 /** What a hit that has already been through armour is worth once every buff has had its say. */
 export const buffedDamage = (p: Player, amount: number) =>
   Math.max(1, Math.round(p.buffs.reduce((n, b) => n * (BUFFS[b.id]?.damageTaken ?? 1), amount)));
+
+/** The multiplier every point of damage the player deals carries from their buffs (Battle Fury); 1 with none of them up. */
+export const buffedOutgoing = (p: Player) => p.buffs.reduce((n, b) => n * (BUFFS[b.id]?.damageDealt ?? 1), 1);
 
 /** Max health at the player's level with every buff, Bastion and Vitality enchant on it: the one place that is worked out (combat's stat refresh reads it too). */
 export const maxHpOf = (p: Player) =>

@@ -2,6 +2,7 @@
 import type { Enemy, Player } from '../sim';
 import { ABILITIES, STAGGER_TIME } from './data';
 import { BUFFS, FOOD_TIME } from './consumables';
+import { PROCS } from './procs';
 
 export interface Status {
   key: string;   // stable while the effect lasts: its icon is kept between frames rather than rebuilt
@@ -10,13 +11,19 @@ export interface Status {
   left: number;  // seconds remaining
   total: number; // seconds it runs for at full, so the duration bar is left/total
   bad: boolean;  // a debuff rather than a buff
+  /** An open proc window rather than a plain buff: the HUD lights it, because it is a thing to press, not a thing to have. */
+  proc?: boolean;
 }
 
 const BLEED_TICKS = ABILITIES.find(a => a.kind === 'dot')!.dotTicks!;
 
-/** What is on the player: the net round their legs, the meal in the mouth, then every timed buff. */
+/** What is on the player: the proc windows first (they are the ones that want answering), then the net, the meal and every timed buff. */
 export function playerStatuses(p: Player): Status[] {
   const out: Status[] = [];
+  for (const x of p.procs) {
+    const def = PROCS[x.id];
+    if (def) out.push({ key: `proc:${x.id}`, icon: def.icon, name: `${def.name}: ${def.desc}`, left: x.left, total: def.duration, bad: false, proc: true });
+  }
   if (p.root) out.push({ key: 'root', icon: '🕸️', name: p.root.name, left: p.root.left, total: p.root.total, bad: true });
   if (p.food) out.push({ key: 'food', icon: '🍲', name: 'Eating', left: p.food.left, total: FOOD_TIME, bad: false });
   for (const b of p.buffs) {

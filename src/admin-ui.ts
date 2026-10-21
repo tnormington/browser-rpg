@@ -1,9 +1,11 @@
-// The admin / QA panel (HOM-114): set the combat level, jump anywhere on the map, and put any item in the bag.
+// The admin / QA panel (HOM-114): set the combat level, jump anywhere on the map, put any item in the bag and gold in
+// the purse (HOM-138: a trainer's ability has a price, and that price was the one thing the panel could not hand over).
 // Dev tooling, not a game feature: the HUD only builds it when main.ts passes an `admin` callback, which it does on the
 // dev server or with ?debug=1. Reads GameState; every change it makes leaves as an AdminAction, like any other panel.
 import type { GameState } from './sim';
 import { AdminAction, MAX_GRANT, destinations } from './sim/admin';
 import { MAX_LEVEL } from './sim/xp';
+import { MAX_GOLD } from './sim/shop';
 import { ITEMS } from './sim/items';
 import { regionAt } from './sim/world';
 import { el, titleRow } from './dom';
@@ -62,6 +64,11 @@ export class AdminUi {
       const d = DESTINATIONS[Number(this.where.value)];
       if (d) this.send({ k: 'teleport', x: d.x, z: d.z });
     });
+
+    el(this.panel, 'rgroup', 'Gold');
+    const purse = el(this.panel, 'afield');
+    const gold = numberBox(purse, 500, MAX_GOLD);
+    button(purse, 'Add gold', () => this.send({ k: 'gold', amount: Number(gold.value) }));
 
     el(this.panel, 'rgroup', 'Items');
     const give = el(this.panel, 'afield');

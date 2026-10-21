@@ -2,7 +2,8 @@
 // sim step like any other action, and that every place the panel offers is somewhere you can actually stand.
 // Run with `npm run verify`.
 import { GameState, NO_INPUT, createState, step } from './sim';
-import { AdminAction, BOSS_GROUP, MAX_GRANT, NAMED_RESPAWN, destinations, giveItem, setCombatLevel, teleport } from './sim/admin';
+import { AdminAction, BOSS_GROUP, MAX_GRANT, NAMED_RESPAWN, destinations, giveGold, giveItem, setCombatLevel, teleport } from './sim/admin';
+import { MAX_GOLD } from './sim/shop';
 import { MAX_LEVEL, xpForLevel } from './sim/xp';
 import { ABILITIES, ENEMY_TYPES, SPAWNS } from './sim/data';
 import { countItem } from './sim/inventory';
@@ -121,6 +122,19 @@ section('Granting items');
   for (let i = 0; i < p.inventory.length; i++) p.inventory[i] = { id: 'iron_sword', qty: 1 };
   run(s, { k: 'give', id: 'iron_sword', qty: 1 });
   assert(has(s, 'invfull') && !has(s, 'loot'), 'a full bag takes none of it and says so');
+}
+
+section('Granting gold');
+{
+  const s = quiet(), purse = () => s.player.gold; // read through a call: an assert on the number narrows the next one to a literal
+  run(s, { k: 'gold', amount: 500 });
+  assert(purse() === 500, 'five hundred gold arrives: a trainer\'s price is a button now, not an afternoon');
+  run(s, { k: 'gold', amount: 250 });
+  assert(purse() === 750, 'and it adds to what was already in the purse');
+  run(s, { k: 'gold', amount: MAX_GOLD * 2 });
+  assert(purse() === MAX_GOLD, `the purse still stops where it always did (${MAX_GOLD})`);
+  giveGold(s, Number.NaN);
+  assert(purse() === MAX_GOLD, 'an amount that is not a number changes nothing');
 }
 
 section('Everywhere the panel can send you');

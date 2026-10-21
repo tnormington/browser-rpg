@@ -102,6 +102,8 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .buff .bfill{position:absolute;left:0;bottom:0;height:3px;background:var(--moss)}.buff.bad .bfill{background:var(--blood)}
 .buff.soon{animation:buffsoon 1s ease-in-out infinite}
 @keyframes buffsoon{50%{border-color:var(--gold)}}
+/* a proc window is not a thing you have, it is a thing to press: it burns, and so does the slot it opens */
+.buff.proc{border-color:var(--ember)}.buff.proc .bfill{background:var(--ember)}
 
 /* ---- action bar ---- */
 /* a slot is 68px (64 and its border) unless the window is too narrow for the whole bar in one row, then it shrinks so the bar never wraps onto the frames above it.
@@ -126,6 +128,9 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .slot.fresh{border-color:var(--gold);animation:freshslot .8s ease-in-out infinite}
 @keyframes freshslot{50%{box-shadow:inset 0 0 14px 2px rgba(240,200,90,.8),0 0 16px 3px rgba(240,170,60,.9)}}
 .slot.noenergy{border-color:var(--arcane-dim);filter:saturate(.3) brightness(.7)}.slot.outrange{border-color:var(--blood)}.slot.queued{border-color:var(--gold)}
+/* a proc has opened this one: it comes last so it wins over the tints above, because it is the button to press right now */
+.slot.proc{border-color:var(--ember);filter:none;animation:procslot .7s ease-in-out infinite}
+@keyframes procslot{50%{box-shadow:inset 0 0 14px 2px var(--ember-dim),0 0 16px 3px var(--ember)}}
 
 /* ---- banners, floaters, plates (the screen's loud voices: these keep their own colours) ---- */
 .msg{position:absolute;left:0;right:0;top:62%;text-align:center;font-size:var(--fs-2xl);font-weight:bold;color:var(--flare);opacity:0}
