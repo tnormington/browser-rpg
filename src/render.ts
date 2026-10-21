@@ -1,4 +1,4 @@
-// Rendering only: reads GameState, never mutates it.
+﻿// Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
@@ -634,17 +634,49 @@ export class Renderer {
    * the ground marks (RUNE_Y) so none of his circles is ever buried by the dressing.
    */
   private buildVault() {
-    const rooms = CAVE_ROOMS.filter(r => r.dungeon === 'vault'), rune: THREE.BufferGeometry[] = [];
+    const rooms = CAVE_ROOMS.filter(r => r.dungeon === 'vault'), rune: THREE.BufferGeometry[] = [], cut: THREE.BufferGeometry[] = [], paper: THREE.BufferGeometry[] = [];
+    let n = 0;
+    const rnd = () => this.jitter(1700 + n++);
+    const box = (w: number, h: number, d: number, x: number, y: number, z: number, ry = 0) => new THREE.BoxGeometry(w, h, d).rotateY(ry).translate(x, y, z);
     for (const { rect: r, name } of rooms) {
       const l = new THREE.PointLight(VAULT.light.color, VAULT.light.intensity * (name === 'sanctum' ? 1.3 : 1), VAULT.light.distance);
-      l.position.set((r.x0 + r.x1) / 2, VAULT.light.y, (r.z0 + r.z1) / 2);
+      const cx = (r.x0 + r.x1) / 2;
+      l.position.set(cx, VAULT.light.y, (r.z0 + r.z1) / 2);
       this.scene.add(l);
-      if (name !== 'sanctum') continue;
-      const vael = SPAWNS.find(sp => sp.type === 'archmage_vael')!;
-      for (const [rad, tube] of [[7, 0.07], [3.6, 0.06]]) rune.push(new THREE.RingGeometry(rad - tube, rad + tube, 40).rotateX(-Math.PI / 2).translate(vael.x, RUNE_Y, vael.z));
-      for (let i = 0; i < 16; i++) rune.push(new THREE.PlaneGeometry(0.2, 0.5).rotateX(-Math.PI / 2).rotateY(i * Math.PI / 8).translate(vael.x + Math.sin(i * Math.PI / 8) * 5.3, RUNE_Y, vael.z + Math.cos(i * Math.PI / 8) * 5.3));
+      // the stair: pointed school arches across the way every few paces, each a pair of piers and a lintel with a rune keystone, and a low step-kerb down both walls
+      if (name === 'sealstair') for (let z = r.z0 + 3; z < r.z1 - 2; z += 4.5) {
+        for (const side of [1, -1]) cut.push(box(0.9, 4.4, 1, cx + side * 3, 2.2, z), box(1.3, 0.35, 1.3, cx + side * 3, 0.17, z), box(0.7, 0.8, 0.7, cx + side * 3, 4.8, z, Math.PI / 4));
+        cut.push(box(7.4, 0.7, 1, cx, 4.5, z));
+        rune.push(new THREE.OctahedronGeometry(0.28).scale(0.7, 1.4, 0.7).translate(cx, 3.8, z));
+      }
+      // the archive: shelves in long ranks down both walls, some of them fallen, with books (paper) on the shelves and scattered about the toppled ones, and a lectern with a lit page in the room's middle
+      if (name === 'archive') {
+        for (const side of [1, -1]) for (let x = r.x0 + 4; x < r.x1 - 3; x += 3.4) {
+          const z = side > 0 ? r.z1 - 1.3 : r.z0 + 1.3, fallen = rnd() < 0.22;
+          if (fallen) { cut.push(box(2.6, 0.3, 1.1, x, 0.9, z - side * 1.1, (rnd() - 0.5) * 0.5)); for (let k = 0; k < 5; k++) paper.push(box(0.35, 0.12 + rnd() * 0.1, 0.5, x + (rnd() - 0.5) * 3, 0.07, z - side * (1.5 + rnd() * 2), rnd() * 3)); continue; }
+          cut.push(box(0.2, 3.6, 1, x - 1.3, 1.8, z), box(0.2, 3.6, 1, x + 1.3, 1.8, z), box(2.8, 0.18, 1, x, 3.6, z));
+          for (const y of [0.15, 1.0, 1.9, 2.8]) { cut.push(box(2.6, 0.12, 0.95, x, y, z)); for (let k = 0; k < 5; k++) if (rnd() < 0.75) paper.push(box(0.32, 0.55 + rnd() * 0.15, 0.6, x - 1.0 + k * 0.5, y + 0.4, z)); }
+        }
+        const lz = (r.z0 + r.z1) / 2;
+        cut.push(new THREE.CylinderGeometry(0.2, 0.35, 1.2, 6).translate(cx, 0.6, lz), box(1.1, 0.12, 0.8, cx, 1.3, lz));
+        rune.push(new THREE.PlaneGeometry(0.8, 0.55).rotateX(-Math.PI / 2 + 0.3).translate(cx, 1.4, lz));
+      }
+      // the sanctum: a stepped dais under Vael with a ring of cold rune, and the four standing stones capped with a sigil
+      if (name === 'sanctum') {
+        const vael = SPAWNS.find(sp => sp.type === 'archmage_vael')!;
+        for (const [rad, tube] of [[7, 0.07], [3.6, 0.06]]) rune.push(new THREE.RingGeometry(rad - tube, rad + tube, 40).rotateX(-Math.PI / 2).translate(vael.x, RUNE_Y, vael.z));
+        for (let i = 0; i < 16; i++) rune.push(new THREE.PlaneGeometry(0.2, 0.5).rotateX(-Math.PI / 2).rotateY(i * Math.PI / 8).translate(vael.x + Math.sin(i * Math.PI / 8) * 5.3, RUNE_Y, vael.z + Math.cos(i * Math.PI / 8) * 5.3));
+        // wall braziers of rune light: tall spiked obelisks against the back and side walls, half-sunk
+        for (let x = r.x0 + 4; x < r.x1 - 3; x += 7) rune.push(new THREE.OctahedronGeometry(0.4).scale(0.6, 2.2, 0.6).translate(x, 2.6, r.z0 + 1.2));
+        for (const [x, z] of [[r.x0 + 1.3, r.z1 - 6], [r.x1 - 1.3, r.z1 - 6]]) cut.push(new THREE.CylinderGeometry(0.5, 0.7, 5, 6).translate(x, 2.5, z));
+      }
     }
-    this.scene.add(mesh(mergeGeometries(rune)!, 0xb8a8ff, 'glow', 'none'));
+    // the standing stones: every vault obstacle gets a cut collar and a floating sigil, so none reads as a bare rock
+    for (const o of CAVE_PILLARS.filter(o => dungeonAt(o.x, o.z)?.id === 'vault')) {
+      cut.push(new THREE.CylinderGeometry(o.r * 0.9, o.r * 1.15, 0.5, 8).translate(o.x, 0.25, o.z), new THREE.CylinderGeometry(o.r * 0.75, o.r * 0.75, 0.3, 8).translate(o.x, 3.2, o.z));
+      rune.push(new THREE.OctahedronGeometry(0.3).translate(o.x, 4, o.z));
+    }
+    const flat = (gs: THREE.BufferGeometry[]) => mergeGeometries(gs.map(g => g.index ? g.toNonIndexed() : g))!; // the octahedra are unindexed, the boxes are not\n    this.scene.add(mesh(flat(cut), 0x8a84ac, 'stone', 'both'), mesh(flat(paper), 0x8a7458, 'rock', 'cast'), mesh(flat(rune), 0xb8a8ff, 'glow', 'none'));
   }
 
   /**
