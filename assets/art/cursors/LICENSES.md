@@ -16,6 +16,7 @@ edited. The SVGs themselves are not in the repo.
 | trade.png | [two-coins](https://game-icons.net/1x1/delapouite/two-coins.html) | Delapouite | CC BY 3.0 |
 | flight.png | [feather](https://game-icons.net/1x1/lorc/feather.html) | Lorc | CC BY 3.0 |
 | gather.png | [war-pick](https://game-icons.net/1x1/delapouite/war-pick.html) | Delapouite | CC BY 3.0 |
+| chop.png | [hatchet](https://game-icons.net/1x1/delapouite/hatchet.html) | Delapouite | CC BY 3.0 |
 | forge.png | [anvil-impact](https://game-icons.net/1x1/lorc/anvil-impact.html) | Lorc | CC BY 3.0 |
 | cook.png | [cooking-pot](https://game-icons.net/1x1/delapouite/cooking-pot.html) | Delapouite | CC BY 3.0 |
 | brew.png | [bubbling-flask](https://game-icons.net/1x1/lorc/bubbling-flask.html) | Lorc | CC BY 3.0 |

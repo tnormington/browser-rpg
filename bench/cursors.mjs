@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const IDS = ['point', 'attack', 'talk', 'trade', 'flight', 'gather', 'forge', 'cook', 'brew', 'tan', 'rune'];
+const IDS = ['point', 'attack', 'talk', 'trade', 'flight', 'gather', 'chop', 'forge', 'cook', 'brew', 'tan', 'rune'];
 const GROUNDS = [['panel', '#141416'], ['grass', '#2f3a28'], ['paving', '#8a8578']];
 
 const src = id => `data:image/png;base64,${readFileSync(join(ROOT, 'assets', 'art', 'cursors', `${id}.png`)).toString('base64')}`;

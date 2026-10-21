@@ -14,6 +14,7 @@ import { bestMount } from './sim/mounts';
 import { applyStress } from './sim/stress';
 import { ITEMS } from './sim/items';
 import { bestFoodSlot } from './sim/consumables';
+import { nodeById } from './sim/gathering';
 import { CursorId, cursorFor } from './cursor';
 import { cursorCss, preloadCursorArt } from './art';
 import { Trace } from './trace';
@@ -201,7 +202,10 @@ function updateCursor(dt: number) {
   sinceCursor = 0;
   // A swing hides the cursor anyway, and the map screen draws no world to pick out of: both stay on the arrow,
   // so the pointer does not come back from a drag still wearing whatever it was over when the drag began.
-  const want = held.size || view.showingMap ? 'point' : cursorFor(view.pickAt(pointerX, pointerY, CLICK_TOLERANCE_PX));
+  const pick = held.size || view.showingMap ? null : view.pickAt(pointerX, pointerY, CLICK_TOLERANCE_PX);
+  // A pick names a node by id alone, and an axe over a tree is not the pickaxe over a rock, so the type is read
+  // out of the state here and cursor.ts stays pure.
+  const want = cursorFor(pick, pick?.k === 'node' ? nodeById(state, pick.id)?.type : undefined);
   if (want === cursorNow) return;
   canvas.style.cursor = cursorCss(cursorNow = want);
 }

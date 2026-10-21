@@ -9,7 +9,8 @@
 //     a bug, and the only one in the repo that nothing else would catch.
 // Run with `npm run verify`.
 import { readFileSync, existsSync } from 'node:fs';
-import { CURSOR_FALLBACKS, CURSOR_FOR, CURSOR_HOTSPOTS, CURSOR_IDS, CURSOR_SIZE, cursorFor } from './cursor';
+import { CURSOR_FALLBACKS, CURSOR_FOR, CURSOR_FOR_NODE, CURSOR_HOTSPOTS, CURSOR_IDS, CURSOR_SIZE, cursorFor } from './cursor';
+import { NODE_TYPES } from './sim/gathering';
 
 let checks = 0;
 const ok = (cond: boolean, what: string) => {
@@ -23,8 +24,18 @@ for (const [kind, id] of Object.entries(CURSOR_FOR)) {
   ok((CURSOR_IDS as readonly string[]).includes(id), `pick kind ${kind} wants cursor ${id}, which is not in CURSOR_IDS`);
 }
 
+// A node's own tool (an axe over a tree, the pick over everything else). Keyed by a node type string, so a typo
+// would not fail to compile — it would just leave a tree wearing the pickaxe, which is the bug this catches.
+for (const [type, id] of Object.entries(CURSOR_FOR_NODE)) {
+  ok(!!NODE_TYPES[type], `CURSOR_FOR_NODE names node type ${type}, which no node in sim/gathering.ts is`);
+  ok((CURSOR_IDS as readonly string[]).includes(id), `node type ${type} wants cursor ${id}, which is not in CURSOR_IDS`);
+}
+ok(cursorFor({ k: 'node', id: 1 }, 'tree') === 'chop', 'a tree should put the axe in hand');
+ok(cursorFor({ k: 'node', id: 1 }, 'copper') === CURSOR_FOR.node, 'a node with no tool of its own should keep the pick');
+ok(cursorFor({ k: 'node', id: 1 }) === CURSOR_FOR.node, 'a node whose type could not be read should keep the pick');
+
 // No orphans: every cursor but the arrow is what some pick turns into.
-const wanted = new Set<string>(Object.values(CURSOR_FOR));
+const wanted = new Set<string>([...Object.values(CURSOR_FOR), ...Object.values(CURSOR_FOR_NODE)]);
 for (const id of CURSOR_IDS) {
   ok(id === 'point' || wanted.has(id), `cursor ${id} is drawn and loaded but no pick ever shows it`);
 }

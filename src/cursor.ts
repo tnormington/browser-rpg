@@ -15,7 +15,7 @@ import type { Interact } from './sim/actions';
 export type Pick = { k: 'enemy'; id: number } | Interact;
 
 /** Every cursor, in the order a reviewer wants to see them: the arrow, then the picks it turns into. */
-export const CURSOR_IDS = ['point', 'attack', 'talk', 'trade', 'flight', 'gather', 'forge', 'cook', 'brew', 'tan', 'rune'] as const;
+export const CURSOR_IDS = ['point', 'attack', 'talk', 'trade', 'flight', 'gather', 'chop', 'forge', 'cook', 'brew', 'tan', 'rune'] as const;
 export type CursorId = typeof CURSOR_IDS[number];
 
 /** The side of every cursor image, in CSS pixels. Chromium ignores a cursor over 128, and under about 32 the painted emblems stop reading. */
@@ -31,7 +31,7 @@ export const CURSOR_SIZE = 44;
  */
 export const CURSOR_HOTSPOTS: Record<CursorId, [number, number]> = {
   point: [5, 5],
-  attack: [22, 22], talk: [22, 22], trade: [22, 22], flight: [22, 22], gather: [22, 22],
+  attack: [22, 22], talk: [22, 22], trade: [22, 22], flight: [22, 22], gather: [22, 22], chop: [22, 22],
   forge: [22, 22], cook: [22, 22], brew: [22, 22], tan: [22, 22], rune: [22, 22],
 };
 
@@ -40,7 +40,7 @@ export const CURSOR_HOTSPOTS: Record<CursorId, [number, number]> = {
  * cursor art at all — the same silence itemArt keeps for a new item with no thumbnail yet.
  */
 export const CURSOR_FALLBACKS: Record<CursorId, string> = {
-  point: 'default', attack: 'crosshair', talk: 'pointer', trade: 'pointer', flight: 'pointer', gather: 'pointer',
+  point: 'default', attack: 'crosshair', talk: 'pointer', trade: 'pointer', flight: 'pointer', gather: 'pointer', chop: 'pointer',
   forge: 'pointer', cook: 'pointer', brew: 'pointer', tan: 'pointer', rune: 'pointer',
 };
 
@@ -58,5 +58,20 @@ export const CURSOR_FOR: Record<Pick['k'], CursorId> = {
   circle: 'rune',
 };
 
-/** The cursor for what is under the pointer; the plain arrow when that is nothing. */
-export const cursorFor = (pick: Pick | null): CursorId => (pick ? CURSOR_FOR[pick.k] : 'point');
+/**
+ * The one pick that is not the same job twice: a gathering node is a rock, a tree, a shoal or a herb patch, and
+ * the tool differs even though the click is the same. Keyed by the node's `type` (sim/gathering.ts NODE_TYPES),
+ * and anything not named here keeps the pick — which is what the ore it was drawn for wants, and a fair enough
+ * stand-in for a shoal or a patch until either is given its own. src/cursor.test.ts checks these are real node
+ * types, so a typo cannot quietly leave a tree wearing the pickaxe.
+ */
+export const CURSOR_FOR_NODE: Record<string, CursorId> = {
+  tree: 'chop',
+};
+
+/**
+ * The cursor for what is under the pointer; the plain arrow when that is nothing. `nodeType` is the type of the
+ * node picked, where the pick is one (main.ts looks it up): without it a node simply falls back to the pick.
+ */
+export const cursorFor = (pick: Pick | null, nodeType?: string): CursorId =>
+  pick ? (pick.k === 'node' && nodeType ? CURSOR_FOR_NODE[nodeType] ?? CURSOR_FOR.node : CURSOR_FOR[pick.k]) : 'point';

@@ -1,4 +1,4 @@
-// The cursor art (HOM-142). Eleven emblems, one per thing a click can land on — src/cursor.ts says which one
+// The cursor art (HOM-142). Twelve emblems, one per thing a click can land on — src/cursor.ts says which one
 // goes over what — built from game-icons.net rather than drawn by the Forge generator the rest of assets/art
 // comes from. A cursor is the one piece of art where generating it is the wrong tool: it is read at 44 pixels
 // over a world that is moving underneath it, so nothing survives but the silhouette, and a painted icon shrunk
@@ -35,6 +35,7 @@ const SOURCES: Record<CursorId, string> = {
   trade: 'delapouite/two-coins',
   flight: 'lorc/feather',
   gather: 'delapouite/war-pick',
+  chop: 'delapouite/hatchet',
   forge: 'lorc/anvil-impact',
   cook: 'delapouite/cooking-pot',
   brew: 'lorc/bubbling-flask',
