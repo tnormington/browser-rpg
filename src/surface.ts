@@ -192,13 +192,30 @@ const SURFACES = {
   /** A cut gem: a fine facet grain, barely there. A gem is read by its colour and its glint, not by its texture. */
   gem: { height: (n) => fbm(n, 16, 2, 24), repeat: 2.6, relief: 0.5, grime: 0.08 },
   /** Skin: pores, and the faintest surface of the lot — a face must not read as orange peel across a square. */
-  skin: { height: (n) => mix(fbm(n, 30, 2, 25), fbm(n, 9, 2, 26), 0.25), repeat: 3, relief: 0.45, grime: 0.07 },
-  /** Hammered metal: shallow dimples, nothing that would read as rust. */
+  skin: { height: (n) => mix(fbm(n, 30, 2, 25), fbm(n, 9, 2, 26), 0.25), repeat: 3, relief: 0.3, grime: 0.07 },
+  /** Hammered metal: shallow dimples, nothing that would read as rust. World iron: an anvil, a hinge, a blade. */
   metal: { height: (n) => fbm(n, 12, 2, 14), repeat: 1.4, relief: 0.7, grime: 0.12 },
-  /** Hide and leather: a fine pebble grain. */
-  hide: { height: (n) => mix(fbm(n, 28, 3, 15), fbm(n, 8, 2, 16), 0.3), repeat: 1.2, relief: 0.9, grime: 0.16 },
+  /**
+   * Forged plate, the metal a player wears. The dishing a hammer leaves, with a finer planishing grain inside it. The
+   * pitch is a hand's width, not a chest's: a breastplate is only a world unit across, so a broader field reads as camo
+   * on it rather than as beaten metal. `relief` is the lowest of any hard surface here, and has to be: plate is the one
+   * class worn at low roughness and high metalness, and a normal map that reads as chipping on matte rock breaks a
+   * polished highlight into veins and comes out as wet marble. What carries a piece is its rims and ridges catching the
+   * key; the grain is only there so the flat between them is not bare. Measured against the alternative: at the relief
+   * `metal` carries, a breastplate came out as blue and orange marbling, because every texel of slope samples a different
+   * part of a vivid aurora sky.
+   */
+  plate: { height: (n) => mix(fbm(n, 10, 3, 28), sharpen(fbm(n, 26, 2, 29), 1.5), 0.3), repeat: 1.25, relief: 0.14, grime: 0.11 },
+  /**
+   * Hide and leather: a fine pebble grain. Relief is a third of what the hard surfaces carry, because this class is worn
+   * on the round -- a cap, a boot shaft, a boar -- and a slope that reads as a chip on a flat rock face swings a whole
+   * stop of shading where it crosses the terminator of a dome.
+   */
+  hide: { height: (n) => mix(fbm(n, 28, 3, 15), fbm(n, 8, 2, 16), 0.3), repeat: 1.9, relief: 0.4, grime: 0.14 },
+  /** Pelt and fleece: clumped strands rather than a grain, so a ruff keeps its mass against the plate beside it. */
+  fur: { height: (n) => sharpen(mix(fbm(n, 7, 3, 30), fbm(n, 20, 2, 31), 0.45), 1.5), repeat: 1, relief: 0.8, grime: 0.2 },
   /** Woven cloth: awnings, banners, a townsman's robe. */
-  cloth: { height: (n) => mix(weave(n, 14), fbm(n, 20, 2, 17), 0.35), repeat: 1.4, relief: 0.6, grime: 0.14 },
+  cloth: { height: (n) => mix(weave(n, 14), fbm(n, 20, 2, 17), 0.35), repeat: 1.4, relief: 0.4, grime: 0.13 },
 } satisfies Record<string, Surface>;
 
 export type SurfaceId = keyof typeof SURFACES;

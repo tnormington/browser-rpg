@@ -17,15 +17,51 @@ import type { Equipment } from './sim/items';
 type WornSlot = 'weapon' | 'head' | 'chest' | 'legs' | 'hands' | 'feet';
 import { Appearance, appearanceOf } from './gear-look';
 import { cappedIntensity } from './glow';
-import { Instance, Prepared, spawn } from './models';
+import { Instance, Prepared, smoothNormals, spawn } from './models';
 import { bakeUV, dress } from './surface';
 import type { Motes } from './fx';
 
 const SKIN = 0xb89a7e;
-const GRIP = 0x2a1d14;
 const UP = new THREE.Vector3(0, 1, 0);
-/** Helmet and pauldron pieces are authored in rig units; these are the offsets from their bone (rig units) that seat them. Tuned by eye. */
-const HELM_LIFT = 0.55, SHOULDER_LIFT = 0.3;
+const WHITE = new THREE.Color(0xffffff);
+/**
+ * Helmet and pauldron pieces are authored in rig units; these are the offsets from their bone (rig units) that seat them.
+ * HELM_LIFT and HELM_FIT are measured rather than tuned by eye: the knight's skull stands 0.528 world units tall from
+ * y 1.468, and the stock helm at its old lift and scale covered only to 1.965, so the crown came through the top of the
+ * bowl (HOM-137). Together these clear the skull by about 40mm on every axis, and because the helm hangs off the same
+ * Head bone the clearance holds through every pose rather than only at the bind.
+ */
+const HELM_LIFT = 0.62, SHOULDER_LIFT = 0.3, HELM_FIT = 1.18;
+
+/**
+ * glb gear is authored in the rig's units, not the world's, so models.ts baked its UVs at the wrong texel size: one world
+ * unit of helm carried nearly two units of UV and the plate grain came out as speckle. The rebake is once per shared
+ * geometry and idempotent -- every instance is the player's, drawn at the same rig scale.
+ */
+const FITTED = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+
+/**
+ * Generated gear geometry, made ready to draw: non-indexed (so a facet carries neither a UV seam nor a shared normal
+ * through its middle), creased, and projected for the surface maps. `smoothNormals` keeps every edge sharper than 45
+ * degrees and rounds off the rest, so how many segments a part is built from is what decides how it reads -- a
+ * sixteen-sided bowl or cuff shades as rolled metal and worked leather, while a six-sided greave, a box slab and a
+ * four-sided spike keep their facets. That is the whole of "hard edges in places, smooth in others": no material says it.
+ */
+function forge(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  // UVs first, while the geometry still shares its vertices: `bakeUV` projects a non-indexed geometry per triangle,
+  // which is right for a merged slab of facets and wrong for a rolled dome, where neighbouring triangles would pick
+  // different axes and the grain would come out as a patchwork. Splitting afterwards carries the UVs along.
+  const n = bakeUV(g);
+  return g.index ? smoothed(n.toNonIndexed()) : smoothed(n);
+}
+const smoothed = (g: THREE.BufferGeometry) => { smoothNormals(g); return g; };
+
+/**
+ * How one part of a piece is finished. Roughness is what makes gear read as metal rather than as a tinted shape: the
+ * shell keeps the item's own finish, the rolled rims and ridges are polished because they are what a wearer rubs bright,
+ * and the straps under them are matte. One roughness over a whole piece is the thing that reads as plastic.
+ */
+type Finish = 'plate' | 'trim' | 'edge' | 'strap' | 'fur' | 'gem' | 'inlay';
 
 /** A faceted spike that curves: `segs` tapering four-sided frusta stacked along an arc. Base at the origin, heading `start` radians off +Y towards +X, turning `bend` more along its length. */
 function curvedSpike(r: number, len: number, start: number, bend: number, segs = 3) {
@@ -49,6 +85,9 @@ function crestFin(h: number, len: number, thick: number) {
 
 interface Mounted { id: string | null; group: THREE.Object3D | null; materials: THREE.Material[] }
 const empty = (): Mounted => ({ id: null, group: null, materials: [] });
+
+/** The finishes one piece is built from, made on demand. `list` is what `unmount` frees, so a build never leaks a material it did not use. */
+interface Palette { get(f: Finish): THREE.MeshStandardMaterial; list: THREE.Material[] }
 
 export interface GearPieces { helmet: Prepared | null; pauldrons: Prepared | null; sword: Prepared | null }
 
@@ -109,13 +148,27 @@ export class PlayerGear {
   }
 
   private part(g: THREE.BufferGeometry, material: THREE.Material, parent: THREE.Object3D, pos: [number, number, number], rot?: [number, number, number]) {
-    const m = new THREE.Mesh(bakeUV(g), material);   // generated gear is authored in world units, so the projection is already to scale
+    const m = new THREE.Mesh(forge(g), material);   // generated gear is authored in world units, so the projection is already to scale
     m.castShadow = m.receiveShadow = true;
     m.userData.own = true;
     m.position.set(...pos);
     if (rot) m.rotation.set(...rot);
     parent.add(m);
     return m;
+  }
+
+  /** A ring standing proud of a shell: a rolled rim, a strap, a brow band. Many-sided, so it shades as a rolled edge rather than a nut. */
+  private band(r0: number, r1: number, h: number, finish: Finish, p: Palette, parent: THREE.Object3D, pos: [number, number, number], rot?: [number, number, number]) {
+    return this.part(new THREE.CylinderGeometry(r0, r1, h, 18, 1, true), p.get(finish), parent, pos, rot);
+  }
+
+  /**
+   * A cut stone, set in a collar: the crest and jewel work a rung-3-and-up piece carries. Flat-shaded and faceted,
+   * because a stone is its facets, and ringed in the polished finish so it reads as set rather than glued on.
+   */
+  private jewel(r: number, p: Palette, parent: THREE.Object3D, pos: [number, number, number], rot?: [number, number, number]) {
+    this.part(new THREE.CylinderGeometry(r * 1.5, r * 1.6, r * 0.55, 8), p.get('edge'), parent, pos, rot);
+    return this.part(new THREE.OctahedronGeometry(r).scale(1, 0.75, 1), p.get('gem'), parent, pos, rot);
   }
 
   /** A cone of base radius `r` and length `len` standing at `pos` and pointing along `dir`. */
@@ -125,35 +178,91 @@ export class PlayerGear {
     return m;
   }
 
-  /** Per-piece material: `trim` is the darker secondary colour, the main tint carries the metal response. Neither glows: only inlays and the blade do, so plate is never lit all over. */
-  private material(ap: Appearance, trim = false): THREE.MeshStandardMaterial {
-    const m = new THREE.MeshStandardMaterial({
-      color: trim ? ap.trim : ap.tint, metalness: trim ? Math.min(ap.metal, 0.6) : ap.metal, roughness: trim ? Math.min(1, ap.rough + 0.15) : ap.rough, flatShading: true,
-    });
-    dress(m, ap.metal > 0.3 ? 'metal' : 'hide');   // plate takes the hammered grain, leather and cloth the pebbled one
+  /**
+   * One finish of a piece. Nothing here is flat-shaded except the cut stone: `forge()` creases the geometry at 45 degrees
+   * instead, so the shape decides where the hard edges fall. Four colours are in play on a piece of plate -- the shell's
+   * tint, the darker trim, a polished edge off the tint, and the strap leather under it all -- which is what keeps a set
+   * from reading as one tinted shape.
+   */
+  private material(ap: Appearance, finish: Finish): THREE.MeshStandardMaterial {
+    const m = new THREE.MeshStandardMaterial({ flatShading: finish === 'gem' });
+    const hide = ap.metal <= 0.3;   // a leather piece takes the pebble grain, a plated one the hammer's
+    let cls = hide ? 'hide' : 'plate';
+    switch (finish) {
+      case 'plate': m.color.setHex(ap.tint); m.metalness = ap.metal; m.roughness = ap.rough; break;
+      case 'trim': m.color.setHex(ap.trim); m.metalness = Math.min(ap.metal, 0.6); m.roughness = Math.min(1, ap.rough + 0.15); break;
+      // the rolled rim, the brow band, the ridge down a greave: worked thin and rubbed bright, so the key light lands on
+      // an edge and nowhere else. On plate this is the whole of the specular read.
+      case 'edge': m.color.setHex(ap.tint).lerp(WHITE, 0.24); m.metalness = Math.max(ap.metal, 0.55); m.roughness = Math.max(0.08, ap.rough * 0.3); break;
+      case 'strap': m.color.setHex(ap.accent!); m.metalness = 0.02; m.roughness = 0.78; cls = 'hide'; break;
+      case 'fur': m.color.setHex(ap.accent!).lerp(WHITE, 0.22); m.metalness = 0; m.roughness = 1; m.side = THREE.DoubleSide; cls = 'fur'; break;
+      // a set stone. It takes the piece's own seam colour and only lights up where that colour is a cold one: an amber in
+      // iron or bronze is a polished stone catching the key, not a new family of emissive (docs/art-direction.md).
+      case 'gem':
+        m.color.setHex(ap.gem!); m.metalness = 0; m.roughness = 0.07; cls = 'gem';
+        if (ap.glow) { m.emissive.setHex(ap.gem!); m.emissiveIntensity = cappedIntensity(ap.gem!, Math.max(0.35, ap.glowI)); }
+        break;
+      // a glowing inlay (vein, seam): the one place the tier's cold emissive lives on generated geometry, capped under the bloom threshold
+      case 'inlay':
+        m.color.setHex(ap.trim); m.metalness = 0.3; m.roughness = 0.4; m.side = THREE.DoubleSide;
+        m.emissive.setHex(ap.glow || 0); m.emissiveIntensity = ap.glow ? cappedIntensity(ap.glow, ap.glowI * 1.8) : 0;
+        return m;   // a light has no surface
+    }
+    dress(m, cls);
     return m;
   }
 
-  /** A glowing inlay (vein, seam): the one place the tier's cold emissive lives on generated geometry, capped under the bloom threshold. */
-  private inlay(ap: Appearance): THREE.MeshStandardMaterial {
-    const m = new THREE.MeshStandardMaterial({ color: ap.trim, metalness: 0.3, roughness: 0.4, flatShading: true, side: THREE.DoubleSide });
-    m.emissive.setHex(ap.glow || 0); m.emissiveIntensity = ap.glow ? cappedIntensity(ap.glow, ap.glowI * 1.8) : 0;
-    return m;
+  /** The finishes a build draws on, made the first time each is asked for and collected so `unmount` can free them. */
+  private palette(ap: Appearance): Palette {
+    const made = new Map<Finish, THREE.MeshStandardMaterial>(), list: THREE.Material[] = [];
+    return {
+      list,
+      get: (f: Finish) => {
+        let m = made.get(f);
+        if (!m) { made.set(f, m = this.material(ap, f)); list.push(m); }
+        return m;
+      },
+    };
+  }
+
+  /**
+   * A glb gear piece, made ready to wear: creased like generated gear (so the bowl of a helm rolls and its folds stay
+   * hard) and re-projected in world units, because models.ts baked these in the rig's and put nearly two tiles of plate
+   * grain in every world unit -- which is what the speckle on the old helm was. Cached per source geometry: every
+   * instance is the player's and is drawn at the same rig scale.
+   */
+  private fitPiece(o: THREE.Object3D) {
+    o.traverse(c => {
+      const mesh = c as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      let g = FITTED.get(mesh.geometry);
+      if (!g) {
+        const uv = bakeUV(mesh.geometry.clone(), 1 / this.k);   // UVs before the split, as in `forge`
+        FITTED.set(mesh.geometry, g = smoothed(uv.index ? uv.toNonIndexed() : uv));
+      }
+      mesh.geometry = g;
+    });
   }
 
   private double(m: THREE.MeshStandardMaterial) { const d = m.clone(); d.side = THREE.DoubleSide; return d; }
 
-  /** Recolour a glb piece's materials by name: `main` names take the tint, `trim` names the trim (and the glow). */
-  private restyle(mats: THREE.Material[], ap: Appearance, main: string[], trim: string[], blade = false) {
+  /**
+   * Recolour a glb piece's materials by name: `main` names take the tint, `trim` names the trim (and the glow). The pack
+   * ships these flat-shaded; worn plate is left smooth so the shell reads as a beaten bowl and the hard edges come from
+   * the rims and ridges built onto it, which is the same rule `forge()` applies to generated gear.
+   */
+  private restyle(mats: THREE.Material[], ap: Appearance, main: string[], trim: string[], cls: 'plate' | 'metal' = 'plate', polish = 1) {
+    const blade = cls === 'metal';
     for (const mat of mats as THREE.MeshStandardMaterial[]) {
       const isMain = main.includes(mat.name), isTrim = trim.includes(mat.name);
-      if (mat.name === 'Brown') { mat.color.setHex(GRIP); mat.metalness = 0; mat.roughness = 0.9; continue; }
+      if (mat.name === 'Brown') { mat.color.setHex(ap.accent!); mat.metalness = 0; mat.roughness = 0.85; continue; } // the grip's leather wrap
       if (!isMain && !isTrim) continue;
       mat.map = null;
-      dress(mat, 'metal');   // the pack's own texture goes; the class's maps (hung by models.ts) go back on
+      dress(mat, cls);   // the pack's own texture goes; the class's maps (hung by models.ts) go back on
       mat.color.setHex(isMain ? ap.tint : ap.trim);
       mat.metalness = isMain ? ap.metal : Math.min(ap.metal, 0.6);
-      mat.roughness = isMain ? ap.rough : Math.min(1, ap.rough + 0.15);
+      mat.roughness = Math.max(0.08, (isMain ? ap.rough : Math.min(1, ap.rough + 0.15)) * polish);
+      mat.flatShading = false;
       if (ap.glow && blade && (isTrim || isMain)) { mat.emissive.setHex(ap.glow); mat.emissiveIntensity = cappedIntensity(ap.glow, isTrim ? ap.glowI : ap.glowI * 0.4); }
       mat.needsUpdate = true;
     }
@@ -188,106 +297,143 @@ export class PlayerGear {
     blade.root.scale.setScalar(ap.scale / hand.getWorldScale(this.tmp).x);
     blade.root.rotation.z = Math.PI * 0.75; // blade forward and up from the fist
     if (ap.width) blade.root.scale.z *= ap.width; // broad adamant, narrow stormiron
-    this.restyle(blade.materials, ap, ['Metal'], ['Gold', 'Red'], true);
+    this.restyle(blade.materials, ap, ['Metal'], ['Gold', 'Red'], 'metal');
+    const mats: THREE.Material[] = [...blade.materials];
+    if (ap.rung >= 3) {
+      // A stone in the pommel of anything above plain steel. The sword slot is fitted to 1.15 units tall with its butt at
+      // the origin, so these are fractions of a blade however far the item's own `scale` stretches it.
+      const p = this.palette(ap);
+      this.jewel(0.05, p, blade.root, [0, 0.05, 0]);
+      mats.push(...p.list);
+    }
     hand.add(blade.root);
-    return { group: blade.root, materials: blade.materials };
+    return { group: blade.root, materials: mats };
   }
 
   private buildHead(id: string) {
-    const ap = appearanceOf(id), g = new THREE.Group(), w = this.world(), mats: THREE.Material[] = [];
-    const main = this.material(ap), trim = this.material(ap, true);
-    mats.push(main, trim);
+    const ap = appearanceOf(id), g = new THREE.Group(), w = this.world(), p = this.palette(ap);
+    const main = p.get('plate'), trim = p.get('trim');
     if (ap.form === 'gutterhook') {
       // a salvaged cap with a gutting hook lashed over the brow: the hook is the silhouette, a single cold glint at its tip
-      const vein = this.inlay(ap);
-      mats.push(vein);
-      this.part(new THREE.SphereGeometry(0.3, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.95, 1.05), main, w, [0, -0.02, 0]);
-      this.part(new THREE.CylinderGeometry(0.31, 0.34, 0.07, 7), trim, w, [0, -0.04, 0]);
-      this.part(new THREE.CylinderGeometry(0.325, 0.325, 0.03, 7), trim, w, [0, 0.12, 0]); // lashing band
+      const vein = p.get('inlay');
+      this.part(new THREE.SphereGeometry(0.3, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.95, 1.05), main, w, [0, -0.02, 0]);
+      this.band(0.31, 0.34, 0.07, 'edge', p, w, [0, -0.04, 0]);
+      this.band(0.325, 0.325, 0.03, 'strap', p, w, [0, 0.12, 0]); // lashing band
       const hook = this.part(curvedSpike(0.05, 0.62, -0.1, 2.9, 5), trim, w, [0, 0.2, 0.22], [0, -Math.PI / 2, 0]); // up from the brow and over, point back down
       hook.scale.setScalar(1);
       this.part(new THREE.OctahedronGeometry(0.06), vein, w, [0, 0.42, 0.02]);
       this.part(new THREE.BoxGeometry(0.5, 0.04, 0.04), vein, w, [0, -0.02, 0.32]); // a narrow eye slit's worth of light across the brim
+    } else if (ap.form === 'crown') {
+      // the one head piece that is not a helm: a five-point circlet over a bare head, its own stone over the brow
+      this.band(0.3, 0.315, 0.13, 'plate', p, w, [0, -0.12, 0]);
+      this.band(0.305, 0.305, 0.028, 'edge', p, w, [0, -0.055, 0]);
+      this.band(0.312, 0.312, 0.028, 'edge', p, w, [0, -0.185, 0]);
+      for (let i = 0; i < 5; i++) {
+        const t = (i / 5) * Math.PI * 2 + Math.PI, lean = i === 0 ? 0 : 0.18;
+        this.spikeOut(trim, w, [Math.sin(t) * 0.3, -0.06, Math.cos(t) * 0.3], [Math.sin(t) * lean, 1, Math.cos(t) * lean], 0.05, i === 0 ? 0.3 : 0.2);
+      }
+      this.jewel(0.06, p, w, [0, -0.05, 0.3], [Math.PI / 2, 0, 0]);
     } else if (ap.rung <= 1 || !this.pieces.helmet) {
-      // leather cap: a low dome and a rolled brim, close to the skull
-      this.part(new THREE.SphereGeometry(0.3, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.85, 1.05), main, w, [0, -0.02, 0]);
-      this.part(new THREE.CylinderGeometry(0.31, 0.32, 0.06, 7), trim, w, [0, -0.04, 0]);
+      // leather cap: a low dome and a rolled brim, close to the skull. Rolled from enough segments to shade as worked
+      // leather rather than as a faceted ball, with the brim the one hard line on it.
+      this.part(new THREE.SphereGeometry(0.3, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.88, 1.05), main, w, [0, -0.02, 0]);
+      this.band(0.31, 0.325, 0.065, 'trim', p, w, [0, -0.04, 0]);
+      this.part(new THREE.BoxGeometry(0.055, 0.1, 0.09), p.get('strap'), w, [0, -0.02, 0.3]); // the brow strap, riveted at the front
     } else {
       const helm = spawn(this.pieces.helmet, true);
+      this.fitPiece(helm.root);
       helm.root.matrixAutoUpdate = true;
-      helm.root.scale.setScalar(ap.rung >= 3 ? 1.1 : 1);
+      helm.root.scale.setScalar(HELM_FIT * (ap.rung >= 3 ? 1.04 : 1));
       this.restyle(helm.materials, ap, ['Grey'], ['DarkGrey']);
-      mats.push(...helm.materials);
+      p.list.push(...helm.materials);
       g.add(helm.root);
       if (ap.form === 'adamant') {
         // a heavy squared helm: brow slab, flat ridge, cheek slabs and a T of jade light. No horns, no crest: the mass is the read.
-        const vein = this.inlay(ap);
-        mats.push(vein);
-        helm.root.scale.setScalar(1.18);
+        const vein = p.get('inlay');
+        helm.root.scale.setScalar(HELM_FIT * 1.06);
         this.part(new THREE.BoxGeometry(0.66, 0.1, 0.52), trim, w, [0, 0.14, 0.06]);
         this.part(new THREE.BoxGeometry(0.2, 0.14, 0.74), main, w, [0, 0.32, -0.02]);
+        this.part(new THREE.BoxGeometry(0.21, 0.035, 0.75), p.get('edge'), w, [0, 0.4, -0.02]); // the ridge's polished crown
         for (const s of [-1, 1]) this.part(new THREE.BoxGeometry(0.09, 0.34, 0.34), trim, w, [s * 0.31, -0.06, 0.04]);
         this.part(new THREE.BoxGeometry(0.34, 0.04, 0.04), vein, w, [0, 0.04, 0.3]);
         this.part(new THREE.BoxGeometry(0.04, 0.22, 0.04), vein, w, [0, -0.07, 0.3]);
+        this.jewel(0.06, p, w, [0, 0.2, 0.26], [Math.PI / 2.4, 0, 0]);
       } else if (ap.form === 'storm') {
         // a lean helm under a fan of backswept spikes and two long cheek barbs: a jagged crown that reads from every side
-        const vein = this.inlay(ap);
-        mats.push(vein);
-        helm.root.scale.setScalar(1.05);
+        const vein = p.get('inlay');
+        helm.root.scale.setScalar(HELM_FIT);
         for (const [x, len, lift] of [[0, 0.8, 0.28], [-0.14, 0.62, 0.24], [0.14, 0.62, 0.24]] as const)
           this.part(curvedSpike(0.06, len, 0.9, 0.4), trim, w, [x, lift, 0.1], [0, Math.PI / 2, 0]);
         for (const s of [-1, 1]) this.part(curvedSpike(0.05, 0.4, 1.2, -0.5), trim, w, [s * 0.3, 0.02, 0.1]).scale.x = s;
         this.part(new THREE.BoxGeometry(0.03, 0.4, 0.04), vein, w, [0, 0.4, 0.2], [0.9, 0, 0]);
         this.part(new THREE.BoxGeometry(0.34, 0.03, 0.04), vein, w, [0, 0.04, 0.3]);
+        this.jewel(0.055, p, w, [0, 0.21, 0.24], [Math.PI / 2.6, 0, 0]);
       } else if (ap.form === 'star') {
         // a clean black helm and one thing over it: a four-point star hung on a stem above the brow, two crossed diamonds around a bright core. Two long blades sweep back off the cheeks.
-        const vein = this.inlay(ap);
-        mats.push(vein);
-        helm.root.scale.setScalar(1.12);
+        const vein = p.get('inlay');
+        helm.root.scale.setScalar(HELM_FIT * 1.02);
         this.part(new THREE.CylinderGeometry(0.02, 0.05, 0.3, 4), trim, w, [0, 0.44, 0]);
         this.part(new THREE.OctahedronGeometry(0.1).scale(0.5, 2.8, 0.5), vein, w, [0, 0.72, 0]);
         this.part(new THREE.OctahedronGeometry(0.1).scale(2.4, 0.5, 0.5), vein, w, [0, 0.72, 0]);
         this.part(new THREE.OctahedronGeometry(0.06), vein, w, [0, 0.72, 0], [0.6, 0.6, 0]);
         for (const s of [-1, 1]) this.part(curvedSpike(0.05, 0.62, 1.5, -0.35), trim, w, [s * 0.3, 0.02, -0.02]).scale.x = s;
         this.part(new THREE.BoxGeometry(0.3, 0.035, 0.04), vein, w, [0, 0.04, 0.3]); // the visor slit
-      } else if (ap.rung >= 3) { // a swept crest along the skull: the silhouette cue from behind
-        const h = ap.rung >= 4 ? 0.5 : 0.28;
-        this.part(crestFin(h, 0.62, ap.rung >= 4 ? 0.07 : 0.05), trim, w, [0, 0.24, -0.02]);
-        const vein = this.inlay(ap);
-        mats.push(vein);
-        this.part(new THREE.BoxGeometry(ap.rung >= 4 ? 0.1 : 0.08, h * 0.7, 0.04), vein, w, [0, 0.24 + h * 0.55, -0.2 * h / 0.5], [0.55, 0, 0]); // vein up the crest's back edge, standing proud of the fin
-        if (ap.rung >= 4) {
-          // aventail: a flared plate over the nape, with a glowing seam down it: the read from behind at play distance
-          const back = new THREE.CylinderGeometry(0.34, 0.46, 0.3, 6, 1, true, Math.PI / 2, Math.PI);
-          const plate = this.double(trim);
-          mats.push(plate);
-          this.part(back, plate, w, [0, -0.24, 0]);
-          this.part(new THREE.BoxGeometry(0.06, 0.28, 0.04), vein, w, [0, -0.24, -0.45]);
-          this.part(new THREE.CylinderGeometry(0.455, 0.465, 0.03, 6, 1, true, Math.PI / 2, Math.PI), vein, w, [0, -0.38, 0]); // hem line
-          // horns: three-piece curved spikes that sweep out and back up
-          for (const s of [-1, 1]) this.part(curvedSpike(0.075, 0.55, 1.1, -0.9), trim, w, [s * 0.26, 0.14, 0], [0, 0, 0]).scale.x = s;
+      } else {
+        // The ladder's own plate helms. Every rung gets the brow it is read by: a band rolled round the widest line of
+        // the bowl, and a nasal hanging off it down the middle of the face, both polished. The bowl stays smooth, so
+        // these two are the only hard lit lines on the helm and the eye slit sits in their shadow.
+        this.band(0.344, 0.348, 0.055, 'edge', p, w, [0, 0.01, 0]);
+        this.part(new THREE.CylinderGeometry(0.055, 0.02, 0.23, 4).rotateY(Math.PI / 4), p.get('edge'), w, [0, -0.1, 0.315]);
+        this.part(crestFin(0.1, 0.56, 0.05), p.get('edge'), w, [0, 0.19, -0.02]);   // a low comb over the crown, so the bowl is not a bare dome
+        if (ap.rung >= 3) { // a swept crest along the skull: the silhouette cue from behind
+          const h = ap.rung >= 4 ? 0.5 : 0.28;
+          this.part(crestFin(h, 0.62, ap.rung >= 4 ? 0.07 : 0.05), trim, w, [0, 0.24, -0.02]);
+          const vein = p.get('inlay');
+          this.part(new THREE.BoxGeometry(ap.rung >= 4 ? 0.1 : 0.08, h * 0.7, 0.04), vein, w, [0, 0.24 + h * 0.55, -0.2 * h / 0.5], [0.55, 0, 0]); // vein up the crest's back edge, standing proud of the fin
+          this.jewel(0.055, p, w, [0, 0.19, 0.2], [Math.PI / 2.6, 0, 0]); // the crest's stone, set at its root over the brow
+          if (ap.rung >= 4) {
+            // aventail: a flared plate over the nape, with a glowing seam down it: the read from behind at play distance
+            const back = new THREE.CylinderGeometry(0.34, 0.46, 0.3, 6, 1, true, Math.PI / 2, Math.PI);
+            const plate = this.double(trim);
+            p.list.push(plate);
+            this.part(back, plate, w, [0, -0.24, 0]);
+            this.part(new THREE.BoxGeometry(0.06, 0.28, 0.04), vein, w, [0, -0.24, -0.45]);
+            this.part(new THREE.CylinderGeometry(0.455, 0.465, 0.03, 6, 1, true, Math.PI / 2, Math.PI), vein, w, [0, -0.38, 0]); // hem line
+            // horns: three-piece curved spikes that sweep out and back up
+            for (const s of [-1, 1]) this.part(curvedSpike(0.075, 0.55, 1.1, -0.9), trim, w, [s * 0.26, 0.14, 0], [0, 0, 0]).scale.x = s;
+          }
         }
       }
     }
     g.add(w);
     this.mount('Head', g, this.at('Head').add(new THREE.Vector3(0, HELM_LIFT, 0)));
-    return { group: g, materials: mats };
+    return { group: g, materials: p.list };
   }
 
   private buildChest(id: string) {
     const ap = appearanceOf(id);
     if (ap.form === 'greywolf') return this.buildHauberk(ap);
     if (ap.rung <= 1 || !this.pieces.pauldrons) return { group: null, materials: [] };
-    const g = new THREE.Group(), w = this.world();
+    const g = new THREE.Group(), w = this.world(), p = this.palette(ap);
     const pads = spawn(this.pieces.pauldrons, true);
+    this.fitPiece(pads.root);
     pads.root.matrixAutoUpdate = true;
     pads.root.scale.setScalar(1 + 0.18 * (ap.rung - 2));
-    this.restyle(pads.materials, ap, ['Grey'], []);
-    const mats: THREE.Material[] = [...pads.materials];
+    // The shoulders are the one part of a worn set that is always turned up at the sky, so they are left half as rough as
+    // the breast under them: the key light picks them out and the torso stays matte. Plate that is one roughness all over
+    // has no shape in a frame lit by a single moon.
+    this.restyle(pads.materials, ap, ['Grey'], [], 'plate', 0.55);
+    p.list.push(...pads.materials);
     g.add(pads.root);
+    // A gorget at the throat and a baldric across the chest, on every plated rung: the head then sits in a ring of metal
+    // rather than on a bare neck, and the strap is the piece's one soft material, so plate never covers a whole torso.
+    // The neck is at +0.09 above this mount and the chest's front face at z +0.25, both measured off the rig.
+    this.band(0.17, 0.25, 0.14, 'plate', p, w, [0, 0.145, 0.01]);
+    this.band(0.176, 0.176, 0.03, 'edge', p, w, [0, 0.21, 0.01]);
+    this.part(new THREE.BoxGeometry(0.075, 0.46, 0.04), p.get('strap'), w, [0.03, -0.08, 0.235], [0, 0, 0.45]);
+    if (ap.rung >= 3) this.jewel(0.055, p, w, [0, 0.15, 0.23], [Math.PI / 2, 0, 0]); // the gorget's stone, under the chin
     if (ap.form === 'adamant' || ap.form === 'storm') {
-      const trim = this.material(ap, true), main = this.material(ap), vein = this.inlay(ap);
-      mats.push(trim, main, vein);
+      const trim = p.get('trim'), main = p.get('plate'), vein = p.get('inlay');
       pads.root.scale.setScalar(ap.form === 'adamant' ? 1.5 : 1.1);
       for (const s of [-1, 1]) {
         if (ap.form === 'adamant') { // square slab over each shoulder, a lit stud in it, and a gorget collar
@@ -303,8 +449,7 @@ export class PlayerGear {
       else for (const z of [0, 1, 2]) this.part(curvedSpike(0.045, 0.4 - z * 0.08, 2.6, 0.3, 2), trim, w, [0, 0.1 - z * 0.3, -0.3]); // dorsal barbs down the spine
     } else if (ap.form === 'star') {
       // each shoulder a fan of three swept pinions with a lit root, and a four-point star set on the back between them (the camera sits behind the player)
-      const trim = this.material(ap, true), main = this.material(ap), vein = this.inlay(ap);
-      mats.push(trim, main, vein);
+      const trim = p.get('trim'), main = p.get('plate'), vein = p.get('inlay');
       pads.root.scale.setScalar(1.35);
       for (const s of [-1, 1]) {
         for (let i = 0; i < 3; i++) this.part(curvedSpike(0.065 - i * 0.012, 0.78 - i * 0.16, 0.45 + i * 0.4, 0.35, 3), trim, w, [s * 0.34, 0.1 - i * 0.03, -0.02 * i]).scale.x = s;
@@ -314,25 +459,25 @@ export class PlayerGear {
       this.part(new THREE.OctahedronGeometry(0.1).scale(0.55, 3.0, 0.55), vein, w, [0, -0.28, -0.34]);
       this.part(new THREE.OctahedronGeometry(0.1).scale(3.0, 0.55, 0.55), vein, w, [0, -0.28, -0.34]);
     } else if (ap.rung >= 3) { // spikes on the shoulders: horizontal read at gathering distance
-      const trim = this.material(ap, true), vein = this.inlay(ap), h = ap.rung >= 4 ? 0.3 : 0.18;
-      mats.push(trim, vein);
+      const trim = p.get('trim'), h = ap.rung >= 4 ? 0.3 : 0.18;
       for (const s of [-1, 1]) {
         this.part(curvedSpike(0.07, h * 1.7, 0.5, 0.5), trim, w, [s * 0.34, 0.08, 0]).scale.x = s;
-        this.part(new THREE.OctahedronGeometry(0.075), vein, w, [s * 0.34, 0.08, 0]); // a lit collar where the spike meets the plate
+        this.part(new THREE.OctahedronGeometry(0.075), p.get('inlay'), w, [s * 0.34, 0.08, 0]); // a lit collar where the spike meets the plate
       }
     }
     g.add(w);
     this.mount('Torso', g, this.at('Torso').add(new THREE.Vector3(0, SHOULDER_LIFT, 0)));
-    return { group: g, materials: mats };
+    return { group: g, materials: p.list };
   }
 
   /** The Greywolf Hauberk: a wolfskin mantle in two flared tiers and a wolf's head on the left shoulder with a cold glint for each eye. */
   private buildHauberk(ap: Appearance) {
-    const g = new THREE.Group(), w = this.world();
-    const fur = this.double(this.material(ap)), dark = this.material(ap, true), eye = this.inlay(ap);
-    const mats: THREE.Material[] = [fur, dark, eye];
-    this.part(new THREE.CylinderGeometry(0.34, 0.5, 0.2, 7, 1, true), fur, w, [0, 0.12, 0]);
-    this.part(new THREE.CylinderGeometry(0.46, 0.64, 0.2, 7, 1, true), fur, w, [0, -0.04, 0]);
+    const g = new THREE.Group(), w = this.world(), p = this.palette(ap);
+    const fur = this.double(p.get('plate')), dark = p.get('trim'), eye = p.get('inlay');
+    p.list.push(fur);
+    this.part(new THREE.CylinderGeometry(0.34, 0.5, 0.2, 14, 1, true), fur, w, [0, 0.12, 0]);
+    this.part(new THREE.CylinderGeometry(0.46, 0.64, 0.2, 14, 1, true), fur, w, [0, -0.04, 0]);
+    this.band(0.345, 0.345, 0.035, 'strap', p, w, [0, 0.2, 0]); // the thong the mantle is drawn up on
     // the head: snout forward and out over the left shoulder, ears up
     this.part(new THREE.ConeGeometry(0.15, 0.4, 5), dark, w, [-0.4, 0.26, 0.2], [Math.PI / 2, 0, 0]);
     this.part(new THREE.BoxGeometry(0.3, 0.2, 0.26), dark, w, [-0.4, 0.28, 0.02]);
@@ -344,28 +489,36 @@ export class PlayerGear {
     this.part(curvedSpike(0.06, 0.34, 0.4, 0.6), dark, w, [0.4, 0.14, 0]);
     g.add(w);
     this.mount('Torso', g, this.at('Torso').add(new THREE.Vector3(0, SHOULDER_LIFT, 0)));
-    return { group: g, materials: mats };
+    return { group: g, materials: p.list };
   }
 
   private buildLegs(id: string) {
     const ap = appearanceOf(id);
     if (ap.rung <= 1) return { group: null, materials: [] };
-    const main = this.material(ap), trim = this.material(ap, true), mats: THREE.Material[] = [main, trim];
+    const p = this.palette(ap), main = p.get('plate'), trim = p.get('trim');
     const root = new THREE.Group();
     for (const side of ['L', 'R']) {
       const shin = `LowerLeg${side}`, end = `LowerLeg${side}_end`;
       if (!this.bind.has(shin) || !this.bind.has(end)) continue;
       const a = this.at(shin), b = this.at(end), len = a.distanceTo(b) / this.k;
       const g = new THREE.Group(), w = this.world();
-      // shin plate: a tapered six-sided shell from knee to ankle; knee cop on top for the higher rungs
-      this.part(new THREE.CylinderGeometry(0.15, 0.11, len * 0.8, 6), main, w, [0, 0, 0]);
-      this.part(new THREE.CylinderGeometry(0.16, 0.16, 0.05, 6), trim, w, [0, -len * 0.4, 0]);
-      if (ap.rung >= 3) this.part(new THREE.OctahedronGeometry(ap.rung >= 4 ? 0.17 : 0.13), trim, w, [0, len * 0.4 + 0.05, 0.05]);
+      // Shin plate: a tapered six-sided shell from knee to ankle, left faceted on purpose (six sides meet at sixty
+      // degrees, past the crease, so the plate keeps its folds where the helm's bowl rolls). Down the front of it runs a
+      // polished ridge and round it two leather bands: the hard lit line and the soft dark one, on every rung. Both are
+      // cut from the same cone as the shell, so they hug it over its whole taper instead of floating off the ankle.
+      const shell = len * 0.8, rAt = (f: number) => 0.13 + (f / shell) * 0.04;   // the shell's radius at a height f off its middle
+      this.part(new THREE.CylinderGeometry(0.15, 0.11, shell, 6), main, w, [0, 0, 0]);
+      this.part(new THREE.CylinderGeometry(0.157, 0.117, shell * 0.98, 3, 1, false, -0.24, 0.48), p.get('edge'), w, [0, 0, 0]);
+      this.band(0.118, 0.126, 0.05, 'edge', p, w, [0, -shell / 2, 0]);   // the rolled rim at the ankle, cut to the shell's own radius there
+      for (const f of [-shell * 0.3, shell * 0.26]) this.band(rAt(f + 0.02) + 0.008, rAt(f - 0.02) + 0.008, 0.042, 'strap', p, w, [0, f, 0]);
+      if (ap.rung >= 3) {
+        this.part(new THREE.OctahedronGeometry(ap.rung >= 4 ? 0.17 : 0.13), trim, w, [0, len * 0.4 + 0.05, 0.05]);
+        this.jewel(0.045, p, w, [0, len * 0.4 + 0.05, 0.05 + (ap.rung >= 4 ? 0.14 : 0.11)], [Math.PI / 2, 0, 0]); // a stone in each knee cop
+      }
       if (ap.rung >= 4) this.part(new THREE.ConeGeometry(0.05, 0.22, 4), trim, w, [0, len * 0.4 + 0.05, 0.2], [Math.PI / 2, 0, 0]);
       if (ap.form === 'adamant') this.part(new THREE.BoxGeometry(0.34, 0.12, 0.3), trim, w, [0, len * 0.4 + 0.1, 0.06]); // a squared knee guard over the cop
       if (ap.form === 'star') { // a lit seam down the front of each shin and a blade trailing off the calf
-        const vein = this.inlay(ap);
-        mats.push(vein);
+        const vein = p.get('inlay');
         this.part(new THREE.BoxGeometry(0.025, len * 0.7, 0.025), vein, w, [0, 0, 0.14]);
         this.part(curvedSpike(0.04, 0.34, 2.6, 0.3, 2), trim, w, [0, -len * 0.1, -0.12]);
       }
@@ -373,17 +526,15 @@ export class PlayerGear {
       g.add(w);
       this.mountPiece(root, shin, g, a.clone().lerp(b, 0.5));
     }
-    return { group: root.userData.pieces ? root : null, materials: mats };
+    return { group: root.userData.pieces ? root : null, materials: p.list };
   }
 
   /** Gloves: the knight's own hands recoloured (they are a mesh of their own, see models.ts), plus a cuff at the wrist, on the Palm bone. Wolfskin swaps the cuff for a flared fur ruff and fringes the fingertips. Sizes are world units: the knight's hand is ~0.2 long. */
   private buildHands(id: string) {
     const ap = appearanceOf(id), moor = ap.form === 'moor', fur = ap.form === 'wolfskin' || moor;
-    const main = this.material(ap), trim = this.material(ap, true), mats: THREE.Material[] = [main, trim];
-    const ruff = fur ? this.double(main) : null;
-    if (ruff) mats.push(ruff);
-    const vein = ap.glow && ap.rung >= 3 ? this.inlay(ap) : null;
-    if (vein) mats.push(vein);
+    const p = this.palette(ap), main = p.get('plate'), trim = p.get('trim');
+    const ruff = fur ? p.get('fur') : null;
+    const vein = ap.glow && ap.rung >= 3 ? p.get('inlay') : null;
     const root = new THREE.Group();
     for (const side of ['L', 'R']) {
       const palm = `Palm${side}`, tip = `Fingers${side}_end`;
@@ -392,37 +543,38 @@ export class PlayerGear {
       const g = new THREE.Group(), w = this.world();
       if (moor) {
         // a deep fleece cuff, taller and wider than wolfskin's, and a horn toggle curling off the back of the hand
-        this.part(new THREE.CylinderGeometry(0.11, 0.2, 0.17, 7, 1, true), ruff!, w, [0, -0.08, 0]);
+        this.part(new THREE.CylinderGeometry(0.11, 0.2, 0.17, 14, 1, true), ruff!, w, [0, -0.08, 0]);
         this.part(curvedSpike(0.03, 0.2, 0.2, 1.4, 3), trim, w, [0, len * 0.15, 0.06], [0, Math.PI / 2, 0]);
       } else if (fur) {
-        this.part(new THREE.CylinderGeometry(0.095, 0.16, 0.12, 7, 1, true), ruff!, w, [0, -0.07, 0]); // flared ruff, widest at the elbow end
+        this.part(new THREE.CylinderGeometry(0.095, 0.16, 0.12, 14, 1, true), ruff!, w, [0, -0.07, 0]); // flared ruff, widest at the elbow end
         for (const x of [-0.04, 0.04]) this.part(new THREE.ConeGeometry(0.035, 0.09, 4), trim, w, [x, len * 1.0, 0], [Math.PI, 0, 0]); // fringe at the fingertips
       } else if (ap.form === 'marsh') {
-        this.part(new THREE.CylinderGeometry(0.1, 0.095, 0.08, 7), trim, w, [0, -0.02, 0]); // a wrapped cuff, with reeds hung from it
+        this.band(0.1, 0.095, 0.08, 'trim', p, w, [0, -0.02, 0]); // a wrapped cuff, with reeds hung from it
         for (let i = 0; i < 8; i++) { const t = (i / 8) * Math.PI * 2; this.part(new THREE.ConeGeometry(0.018, 0.2 + 0.04 * (i % 3), 3), main, w, [Math.sin(t) * 0.1, -0.15, Math.cos(t) * 0.1], [Math.PI + Math.cos(t) * 0.25, 0, -Math.sin(t) * 0.25]); }
       } else if (ap.form === 'thorn') {
-        this.part(new THREE.CylinderGeometry(0.105, 0.1, 0.1, 7), trim, w, [0, -0.04, 0]);
+        this.band(0.105, 0.1, 0.1, 'trim', p, w, [0, -0.04, 0]);
         for (let i = 0; i < 5; i++) { const t = (i / 5) * Math.PI * 2; this.spikeOut(trim, w, [Math.sin(t) * 0.1, -0.04, Math.cos(t) * 0.1], [Math.sin(t), -0.5, Math.cos(t)], 0.04, 0.17); } // thorns round the wrist
         for (const x of [-0.04, 0, 0.04]) this.spikeOut(trim, w, [x, len * 0.35 + 0.02, 0.06], [0, 0.35, 1], 0.022, 0.1); // and on the knuckles
       } else {
-        this.part(new THREE.CylinderGeometry(0.1, 0.095, 0.1, 7), trim, w, [0, -0.04, 0]); // a plain stitched cuff
+        this.band(0.1, 0.095, 0.1, 'strap', p, w, [0, -0.04, 0]); // a plain stitched cuff
       }
-      if (ap.rung >= 2) this.part(new THREE.BoxGeometry(0.13, 0.05, 0.11), trim, w, [0, len * 0.35, 0]); // knuckle band: the tier fallback
-      if (vein) this.part(new THREE.BoxGeometry(0.135, 0.015, 0.115), vein, w, [0, len * 0.35 + 0.03, 0]);
+      if (ap.rung >= 2) { // knuckle band, plated and rubbed bright on its crown: the tier fallback
+        this.part(new THREE.BoxGeometry(0.13, 0.05, 0.11), trim, w, [0, len * 0.35, 0]);
+        this.part(new THREE.BoxGeometry(0.135, 0.018, 0.115), p.get('edge'), w, [0, len * 0.35 + 0.028, 0]);
+      }
+      if (vein) this.part(new THREE.BoxGeometry(0.135, 0.015, 0.115), vein, w, [0, len * 0.35 + 0.04, 0]);
       g.add(w);
       this.mountPiece(root, palm, g, a, dir);
     }
-    return { group: root.userData.pieces ? root : null, materials: mats };
+    return { group: root.userData.pieces ? root : null, materials: p.list };
   }
 
   /** Boots: a shaft over the ankle and a foot with a sole, both on the Foot bone (which sits at ground level, heel). Wolfskin tops the shaft with a flared fur cuff. */
   private buildFeet(id: string) {
     const ap = appearanceOf(id), moor = ap.form === 'moor', fur = ap.form === 'wolfskin' || moor;
-    const main = this.material(ap), trim = this.material(ap, true), mats: THREE.Material[] = [main, trim];
-    const ruff = fur ? this.double(main) : null;
-    if (ruff) mats.push(ruff);
-    const vein = ap.glow && ap.rung >= 3 ? this.inlay(ap) : null;
-    if (vein) mats.push(vein);
+    const p = this.palette(ap), main = p.get('plate'), trim = p.get('trim');
+    const ruff = fur ? p.get('fur') : null;
+    const vein = ap.glow && ap.rung >= 3 ? p.get('inlay') : null;
     const root = new THREE.Group();
     for (const side of ['L', 'R']) {
       const foot = `Foot${side}`, toe = `Foot${side}_end`;
@@ -432,19 +584,23 @@ export class PlayerGear {
       const zUp = new THREE.Vector3(0, 0, 1).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, dir.clone().normalize())).y > 0 ? 1 : -1;
       const g = new THREE.Group(), w = this.world();
       this.part(new THREE.BoxGeometry(0.17, 0.3, 0.09), main, w, [0, 0.07, zUp * 0.055]);
-      this.part(new THREE.BoxGeometry(0.165, 0.32, 0.025), trim, w, [0, 0.07, zUp * 0.0125]); // sole
-      if (ap.rung >= 2) this.part(new THREE.BoxGeometry(0.16, 0.08, 0.09), trim, w, [0, 0.19, zUp * 0.055]); // toe cap: the tier fallback
+      this.part(new THREE.BoxGeometry(0.165, 0.32, 0.025), p.get('strap'), w, [0, 0.07, zUp * 0.0125]); // sole
+      if (ap.rung >= 2) { // toe cap, with its top edge rubbed bright: the tier fallback
+        this.part(new THREE.BoxGeometry(0.16, 0.08, 0.09), trim, w, [0, 0.19, zUp * 0.055]);
+        this.part(new THREE.BoxGeometry(0.168, 0.022, 0.096), p.get('edge'), w, [0, 0.225, zUp * 0.055]);
+      }
       if (vein) this.part(new THREE.BoxGeometry(0.02, 0.2, 0.02), vein, w, [0, 0.1, zUp * 0.1]);
       if (moor) this.part(curvedSpike(0.035, 0.26, 0.1, 0.9, 3), trim, w, [0, 0.2, zUp * 0.09], [0, zUp > 0 ? Math.PI / 2 : -Math.PI / 2, 0]); // a horn toe-cap, curling up off the toe
       g.add(w);
       this.mountPiece(root, foot, g, a, dir);
       const shaft = new THREE.Group(), s = this.world();
-      this.part(new THREE.CylinderGeometry(0.105, 0.12, 0.24, 7), main, s, [0, 0.13, -0.03]);
-      if (moor) this.part(new THREE.CylinderGeometry(0.2, 0.12, 0.15, 7, 1, true), ruff!, s, [0, 0.28, -0.03]); // a deep fleece top, wider than wolfskin's
-      else if (fur) this.part(new THREE.CylinderGeometry(0.17, 0.11, 0.1, 7, 1, true), ruff!, s, [0, 0.27, -0.03]);
-      else this.part(new THREE.CylinderGeometry(0.12, 0.12, 0.035, 7), trim, s, [0, 0.25, -0.03]); // rolled top
+      this.part(new THREE.CylinderGeometry(0.105, 0.12, 0.24, 14), main, s, [0, 0.13, -0.03]);
+      this.band(0.113, 0.113, 0.04, 'strap', p, s, [0, 0.16, -0.03]); // the buckle strap round the shaft
+      if (moor) this.part(new THREE.CylinderGeometry(0.2, 0.12, 0.15, 14, 1, true), ruff!, s, [0, 0.28, -0.03]); // a deep fleece top, wider than wolfskin's
+      else if (fur) this.part(new THREE.CylinderGeometry(0.17, 0.11, 0.1, 14, 1, true), ruff!, s, [0, 0.27, -0.03]);
+      else this.band(0.12, 0.12, 0.035, 'edge', p, s, [0, 0.25, -0.03]); // rolled top
       if (ap.form === 'marsh') {
-        this.part(new THREE.CylinderGeometry(0.122, 0.128, 0.06, 7), trim, s, [0, 0.04, -0.03]); // the mud line round the ankle
+        this.band(0.122, 0.128, 0.06, 'trim', p, s, [0, 0.04, -0.03]); // the mud line round the ankle
         for (let i = 0; i < 8; i++) { const t = (i / 8) * Math.PI * 2; this.part(new THREE.ConeGeometry(0.02, 0.17 + 0.04 * (i % 3), 3), main, s, [Math.sin(t) * 0.12, 0.2, -0.03 + Math.cos(t) * 0.12], [Math.PI + Math.cos(t) * 0.3, 0, -Math.sin(t) * 0.3]); } // reeds hung over the top
       } else if (ap.form === 'thorn') {
         for (let i = 0; i < 5; i++) { const t = (i / 5) * Math.PI * 2 + 0.3; this.spikeOut(trim, s, [Math.sin(t) * 0.12, 0.25, -0.03 + Math.cos(t) * 0.12], [Math.sin(t), 0.7, Math.cos(t)], 0.035, 0.17); } // a crown of thorns round the rim
@@ -453,7 +609,7 @@ export class PlayerGear {
       shaft.add(s);
       this.mountPiece(root, foot, shaft, a);
     }
-    return { group: root.userData.pieces ? root : null, materials: mats };
+    return { group: root.userData.pieces ? root : null, materials: p.list };
   }
   private build(slot: WornSlot, id: string) {
     switch (slot) {

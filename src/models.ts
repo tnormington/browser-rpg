@@ -44,7 +44,7 @@ const surfaceOf = (def: SlotDef, name: string): SurfaceId | undefined =>
 const SKIN = 0xb89a7e;
 export const SLOTS = {
   player: { file: 'knight', height: 2.0, look: { sat: 0.55, light: 1.9, named: { Skin: SKIN, Armor: 0x6a7684, ArmorLegs: 0x6a7684, Boots: 0x2a2622, Hands: SKIN } }, splitLegs: true,
-    surface: { '*': 'metal', Skin: 'skin', Hands: 'skin', Boots: 'hide' },
+    surface: { '*': 'plate', Skin: 'skin', Hands: 'skin', Boots: 'hide' },   // the knight's own armour is worn plate, not world iron
     anim: { idle: 'Idle', move: 'Run', moveSpeed: 6, attack: ['Run_swordAttack', 'swordAttackJump'], upper: ['Run_swordAttack'], death: 'Death', jump: 'Jump', impact: { Run_swordAttack: 0.4, swordAttackJump: 0.62 } } },
   warden: { file: 'wizard', height: 2.1, look: { sat: 0.6, light: 1.6, named: { Skin: SKIN, Clothes: 0x4c3b66, Hat: 0x33283f, Belt: 0x3a2d22, Gold: 0xb8893a } },
     surface: { '*': 'cloth', Skin: 'skin', Face: 'skin', Belt: 'hide', Gold: 'metal' }, anim: { idle: 'Idle', move: 'Walk' } },
@@ -85,8 +85,10 @@ export const SLOTS = {
   forge: { file: 'blacksmith', footprint: 5.2, look: { sat: 0.45, light: 1.0 },
     surface: { Plaster: 'plaster', Wood: 'wood', Wood_Light: 'wood', Wood_Side: 'wood', Stone_Light: 'stone', Stone_Dark: 'stone', RoofTiles_Red: 'roof' } },
   anvil: { file: 'anvil', height: 0.9, look: { sat: 0.3, light: 0.5, named: { MI_Trim_Metal: 0x2a2c33 } }, metal: 0.6, roughness: 0.5, surface: 'metal' },
-  helmet: { file: 'helmet', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794, DarkGrey: 0x4a525c } }, surface: 'metal' },
-  pauldrons: { file: 'pauldrons', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794 } }, surface: 'metal' },
+  // The two worn glb pieces. `raw` keeps the file's own coordinates so they sit on the knight, which also means their UVs
+  // are baked in rig units rather than world ones; gear.ts re-projects them when it mounts them (`fitPiece`).
+  helmet: { file: 'helmet', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794, DarkGrey: 0x4a525c } }, surface: 'plate' },
+  pauldrons: { file: 'pauldrons', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794 } }, surface: 'plate' },
   sword: { file: 'sword', height: 1.15, look: { sat: 1, light: 1, named: {} }, surface: { '*': 'metal', Brown: 'hide' } },
 } satisfies Record<string, SlotDef>;
 export type SlotId = keyof typeof SLOTS;
@@ -172,6 +174,20 @@ export interface Prepared {
 
 const LEG_BONE = /^(UpperLeg|LowerLeg|Foot)/;
 const HAND_BONE = /^(Palm|MiddleHand|Fingers|Thumb)/;
+
+/**
+ * How many units of the file's own space one unit of a mesh's geometry becomes, measured off the bind pose: the size of
+ * the mesh as the loader lays it out, over the size of the numbers in its position buffer. Packs carry this factor in
+ * different places -- the knight's rig hangs under a 100x group and carries more of it in its bind matrices -- so it is
+ * measured rather than read off a matrix. `bakeUV` needs it, or a skinned model's texels come out tens of times the size
+ * of everything else's (HOM-137).
+ */
+function bindScale(m: THREE.Mesh): number {
+  m.geometry.computeBoundingBox();
+  const g = m.geometry.boundingBox!.getSize(new THREE.Vector3()).length();
+  const w = new THREE.Box3().setFromObject(m, true).getSize(new THREE.Vector3()).length();
+  return g > 1e-9 ? w / g : 1;
+}
 
 /**
  * Peel the leg triangles off a skinned mesh into a second mesh that shares its vertex data (a triangle is a leg when the
@@ -283,10 +299,12 @@ async function load(id: SlotId): Promise<Prepared> {
     geometry.computeBoundingBox();
   }
   // UVs for the surface maps (surface.ts), last, so the projection is off the geometry as it will be drawn. A static slot
-  // carries its fit, so it is already in world units; a skinned one is still in the file's units until the wrapper scales it.
+  // carries its fit, so it is already in world units; a skinned one is still in its file's space and that space is not
+  // the geometry's own (see `bindScale`). Taking the fit alone left every skinned model's texels a hundred times too
+  // large, so the grain on a knight, a wolf or a villager was one stretched smear rather than plate, pelt and cloth.
   if (def.surface) {
     if (geometry) bakeUV(geometry);
-    else for (const m of meshes) bakeUV(m.geometry, scale);
+    else for (const m of meshes) bakeUV(m.geometry, scale * bindScale(m));
   }
   return { def, geometry, materials, scene: skinned ? root : undefined, clips, fit: { scale, offset } };
 }
