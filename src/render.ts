@@ -1474,12 +1474,13 @@ export class Renderer {
       else if (ev.t === 'jump') this.playerAnim?.jump(JUMP_AIRTIME);
       else if (ev.t === 'land') {
         this.playerAnim?.touchdown();
-        this.particles.burst(ev.x, 0.15, ev.z, { color: [P.ash], count: 8, speed: 2.2, flat: true, life: 0.35 });
+        this.matter.burst(ev.x, 0.15, ev.z, { color: [P.ash, P.dirt], count: 9, speed: 2.4, flat: true, gravity: 0, drag: 2.5, size: 1.8, life: 0.45, hdr: 0.8, alpha: 0.5 });
       }
       else if (ev.t === 'slam') {
         const hz = ENEMY_TYPES[s.enemies.find(e => e.id === ev.id)?.type ?? '']?.hazard, stone = !!hz && FALLING.has(hz.name) && hz.radius === ev.radius; // the stone landing, not the boss's own slam
-        if (stone) this.particles.burst(ev.x, 0.3, ev.z, { color: [P.ash, P.boulder], count: 36, speed: 6, up: 3, gravity: -9, life: 0.7 });
-        else this.particles.burst(ev.x, 0.3, ev.z, { color: [P.ash, P.bloodLight, P.ember], count: 40, speed: 7, up: 2, life: 0.8 });
+        this.matter.burst(ev.x, 0.2, ev.z, { color: [P.ash, P.dirt], count: 22, speed: ev.radius * 0.9, flat: true, gravity: 0, drag: 2.2, size: 3, life: 0.8, hdr: 0.8, alpha: 0.45 }); // the ground goes up in a ring of dust
+        if (stone) this.matter.burst(ev.x, 0.3, ev.z, { color: [P.ash, P.boulder, P.stone], count: 36, speed: 6, up: 3, gravity: -12, size: 1.4, life: 0.8, hdr: 1 });
+        else this.particles.burst(ev.x, 0.3, ev.z, { color: [P.bloodLight, P.ember], count: 26, speed: 7, up: 2, size: 0.8, life: 0.7 });
         this.rings.pulse(ev.x, 0.15, ev.z, P.blood, ev.radius * 1.15, 0.5, ev.radius * 0.3);
         this.shakeMag = Math.max(this.shakeMag, Math.hypot(ev.x - s.player.x, ev.z - s.player.z) < ev.radius ? 0.35 : 0.2);
       } else if (ev.t === 'interrupt') {
@@ -1537,7 +1538,7 @@ export class Renderer {
         else this.particles.burst(p.x, 1, p.z, { color: [P.arcane, P.arcaneLight], count: 26, speed: 2, up: 4, gravity: -3, life: 1 });
       } else if (ev.t === 'death') {
         this.shakeMag = 0.3;
-        this.particles.burst(s.player.x, 1, s.player.z, { color: [P.blood, P.bloodDark], count: 50, speed: 5, up: 3, life: 1.1 });
+        this.matter.burst(s.player.x, 1, s.player.z, { color: BLOOD, count: 50, speed: 5, up: 3, gravity: -16, drag: 0.4, size: 1.1, life: 1, hdr: 1 });
       }
     }
   }
@@ -1947,7 +1948,11 @@ export class Renderer {
     if (an) {
       const speed = ENEMY_TYPES[a.type].speed, moving = !dead && Math.hypot(a.cx - a.px, a.cz - a.pz) > 1e-3;
       if (dead !== a.dead) { if (dead) an.die(); else an.revive(); }
-      if (!dead && e.swing > a.swing) an.attack();
+      // a bite is `attackCd` away and the sim gives no warning of its own: draw back for it, so the lunge has a wind-up the player can read
+      const def = ENEMY_TYPES[a.type];
+      if (!dead && e.state === 'chase' && !e.cast && e.stagger <= 0 && !def.ranged && !(def.heavy && e.heavyCd <= 0) && e.attackCd > 0
+        && Math.hypot(e.x - this.curr.x, e.z - this.curr.z) <= def.attackRange) an.anticipate(e.attackCd, 0.35);
+      if (!dead && e.swing > a.swing) an.swung();
       lunge = 1; // the swing is a clip or a procedural lunge on the model, never a scale pop
       an.locomotion(moving, speed);
       an.telegraph(e.cast && !dead ? e.cast.kind : null, e.cast ? e.cast.t / e.cast.total : 0);

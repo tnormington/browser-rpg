@@ -115,12 +115,12 @@ const S = {
     await page.keyboard.press('x'); await adv(60); // the press is read on the next tick: let it, so it cannot leak into the next scenario
   },
   async 'hit-player'() {
-    await page.evaluate(() => { stage('boar', 1.8); frame(1.8, 1.2, 5.5, -0.9); const e = window.__e; e.attackCd = 0; });
-    await burst('hit-player', 16, 33, CLIP);
+    await page.evaluate(() => { stage('boar', 1.8); frame(1.8, 1.2, 5.5, -0.9); const e = window.__e; e.attackCd = 0.5; }); // the bite is half a second away: the wind-up shows before it
+    await burst('hit-player', 24, 33, CLIP);
   },
   async 'enemy-lunge'() {
-    await page.evaluate(() => { stage('wolf', 1.8); frame(1.8); window.__e.attackCd = 0; });
-    await burst('enemy-lunge', 16, 40, CLIP);
+    await page.evaluate(() => { stage('wolf', 1.8); frame(1.8); window.__e.attackCd = 0.5; });
+    await burst('enemy-lunge', 24, 33, CLIP);
   },
   async jump() {
     await page.evaluate(() => { stage('boar', 8); frame(8, 1.2, 5.5, -2.5); });
@@ -138,6 +138,7 @@ const S = {
   },
 };
 for (const sc of scenarios) {
+  await adv(1500); // the last scenario's particles and rings expire before this one is staged
   if (sc.startsWith('tell:')) { const [, t, k, ...rest] = sc.split(':'); await tell(t, k, rest.join(':').split(';')); continue; }
   if (sc.startsWith('scrub:')) { const [, w, c, a, b, n] = sc.split(':'); await scrub(w, c, +a, +b, +n); continue; }
   if (sc === 'hit-boar') await S.hit('boar');

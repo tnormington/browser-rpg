@@ -92,6 +92,7 @@ export class Animator {
   private air = 0;      // 0..1: vertical speed while airborne, stretches the body
   private deadT = 0;
   private slide = 0;
+  private coil = LEAD;     // seconds the body spends drawing back before the strike (the wind-up the swing was started with)
   private flip = 1;     // alternates the side of a flinch or a fall
   private phase = Math.random() * 10;
   private time = 0;
@@ -160,6 +161,7 @@ export class Animator {
     if (this.holding) return false;
     this.primed = 0;
     this.strikeIn = ahead;
+    this.coil = Math.max(ahead, LEAD);
     this.lunge = { t: -ahead, dur: 0.34, peak: 0.2, amp: step * (heavy ? 1.4 : 1), dir: 1 };
     const names = this.def.attack?.filter(n => this.clips.has(n));
     if (!names?.length) return true;
@@ -177,6 +179,9 @@ export class Animator {
    * across frames; `swung()` consumes it. Without this the strike pose could only arrive with the damage, with no wind-up.
    */
   anticipate(left: number, windup = 0.4) {
+    // a clip's strike frame is `impact` seconds in: starting earlier than that would land the blow before the damage does
+    const clip = this.def.attack?.find(n => this.clips.has(n)), impact = clip && this.def.impact?.[clip];
+    if (impact) windup = Math.min(windup, impact);
     if (this.holding || this.primed > 0 || left > windup || left <= 0) return;
     this.attack(false, 0.4, left);
     this.primed = 1.5; // seconds to wait for the swing event before treating the raise as abandoned
@@ -278,15 +283,17 @@ export class Animator {
     const fall = fk > 0 ? easeOutBack(fk) : 0, hop = fk > 0 ? 0.3 * Math.sin(Math.PI * Math.min(1, this.deadT / 0.4)) : 0;
     const bob = d.hop && this.moving && !this.holding ? d.hop * Math.abs(Math.sin(this.time * 14 + this.phase)) : 0;
     const squash = 0.2 * ld, stretch = 0.1 * this.air;
+    // anticipation: before the strike the body draws back and sinks, so the lunge that follows has somewhere to come from
+    const pre = this.lunge.t < 0 ? smooth(1 + this.lunge.t / this.coil) * this.lunge.amp / 0.4 : 0;
     const shiver = this.stall > 0 ? (Math.random() - 0.5) * this.stallShiver : 0;
     const slide = this.holding ? -this.slide * (1 - Math.exp(-this.deadT * 7)) : 0; // a killing blow carries the body away from it
     r.position.set(
       (tell ? tell.shake * w * Math.sin(this.time * 70) : 0) + shiver,
       (fk > 0 ? d.lie! * smooth(fk) + hop : 0) + bob - (tell ? tell.sink * w : 0) + (this.seat ? this.seat.y - this.hipY + this.seatBob : 0),
-      lg - 0.3 * h + slide + (this.seat?.z ?? 0));
-    r.rotation.set(0.15 * lg - 0.38 * h - (tell ? tell.lean * w : 0), 0, this.hit.dir * 0.16 * h + this.flip * fall * Math.PI / 2);
+      lg - 0.3 * pre - 0.3 * h + slide + (this.seat?.z ?? 0));
+    r.rotation.set(0.15 * lg - 0.2 * pre - 0.38 * h - (tell ? tell.lean * w : 0), 0, this.hit.dir * 0.16 * h + this.flip * fall * Math.PI / 2);
     const sxz = 1 + squash * 0.6 - stretch * 0.4 + (tell ? tell.swell * w : 0);
-    r.scale.set(sxz, 1 - squash + stretch - 0.06 * h + (tell ? tell.swell * w * 0.5 : 0), sxz);
+    r.scale.set(sxz, 1 - squash + stretch - 0.06 * h - 0.08 * pre +(tell ? tell.swell * w * 0.5 : 0), sxz);
     const bone = (name: string, x: number, y: number, z: number) => {
       const b = this.bones.get(name);
       if (b) b.quaternion.multiply(_q.setFromEuler(_e.set(x, y, z)));
