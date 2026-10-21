@@ -1,4 +1,4 @@
-// The world as data: a list of regions, each with a walkable footprint, its own scenery and its connections to its neighbours.
+﻿// The world as data: a list of regions, each with a walkable footprint, its own scenery and its connections to its neighbours.
 // Everything else in this file (and the flat lists the renderer and sim read) is derived from REGIONS. Routing lives in path.ts.
 // Shared by sim (collision, routing) and renderer (drawing).
 //
@@ -7,10 +7,13 @@
 // up by position (collidersAt / collidersIn), routing builds one grid per zone on demand and evicts (path.ts), and the sim and the
 // renderer skip what is far from the player (sim.ts, world-view.ts).
 
+import { Branch, Road, branchDist, roadDist, roadPoint } from './road';
+export type { Branch, Road } from './road';
+
 export const PLAYER_RADIUS = 0.5;
 
 /** What an obstacle is, for whatever draws it: the sim only ever reads the circle. Absent means a rock (or, in the clearing, whatever it always was). */
-export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'rack' | 'barrow' | 'forge' | 'ruin' | 'circle';
+export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'rack' | 'barrow' | 'forge' | 'ruin' | 'circle' | 'signpost' | 'shrine' | 'wayfire';
 export interface Obstacle { x: number; z: number; r: number; kind?: PropKind }
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 export interface Pt { x: number; z: number }
@@ -74,8 +77,8 @@ export interface Region {
   safe?: { x: number; z: number; r: number }[];
   /** Where this region's enemies stand (world coordinates). Hale's older ones live in data.ts, which keeps their ids. */
   spawns?: { type: string; x: number; z: number }[];
-  /** The line the road runs along, if there is one: down x = `at` when axis is 'z' (a road running north to south), along z = `at` when it is 'x'. Drawing only. */
-  road?: { axis: 'x' | 'z'; at: number };
+  /** The road through the region, if there is one: the line it wanders about and how (sim/road.ts). Its verges, waysides, scatter and drawn dirt all follow it. */
+  road?: Road;
   /** Withering Ground: standing in one of these hurts (sim/hazards.ts), and the renderer draws each with the telegraph circle of a boss's ground mark. World coordinates. */
   hazards?: { x: number; z: number; r: number }[];
   /** Herb patches: gathering nodes (after the region's `spots`) with no collider. `kind` picks the look, `type` the herb (a NODE_TYPES row, herbs.ts). */
@@ -121,6 +124,58 @@ export const SPIRE = { x: 1980, z: 8 };         // 140 x 140; the town is its so
 const at =(o: Pt, lx: number, lz: number) => ({ x: o.x + lx, z: o.z + lz });
 const hash = (n: number) => Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1; // deterministic scatter: no rng state touched
 
+/**
+ * The four long roads between the towns (HOM-134). Each wanders about the straight line it used to be (sim/road.ts), tapering
+ * back onto it at both ends so the gates' corridors, the seams and the towns' ways in are all still met head-on. Everything
+ * that belongs to a road â€” its verges, its waysides, its waymarks, the dirt the renderer lays and the scatter it keeps off â€”
+ * is placed from `roadPoint`, so the whole thing bends together. The camps are not: they keep the bible's own coordinates,
+ * and the road bending up to six units toward one still leaves it well outside anything's reach.
+ */
+const GREYWATER_ROAD: Road = { axis: 'x', at: GREYWATER.z, run: [GREYWATER.x - 400, GREYWATER.x + 410], seed: 0.37 };
+const DUNMERE_ROAD: Road = { axis: 'z', at: DUNMERE.x, run: [100, 948], seed: 1.84 };
+const BARROW_ROAD: Road = { axis: 'x', at: BARROWDOWNS.z, run: [BARROWDOWNS.x - 450, BARROWDOWNS.x + 450], seed: 2.61 };
+const WASTE_ROAD: Road = { axis: 'z', at: CAIRNWASTE.x, run: [CAIRNWASTE.z - 415, CAIRNWASTE.z + 415], seed: 3.42 };
+const ROADS: Record<string, Road> = { greywater: GREYWATER_ROAD, dunmere: DUNMERE_ROAD, barrowdowns: BARROW_ROAD, cairnwaste: WASTE_ROAD };
+
+/**
+ * The forks (HOM-134). Each is a track leaving a road for a waystation with a name of its own, and a signpost at the fork with an
+ * arm each way: the road on to the next town, or the track. Nothing behind a fork is on the golden path, so taking one is a choice
+ * and never a detour the player is made to walk; what is there is a place, a thing to look at, and somebody who knows the country.
+ * The waystations sit well inside their region's floor and clear of every camp, so a traveller can stop at one (see roads.test.ts).
+ */
+export const BRANCHES: Branch[] = [
+  { id: 'weeping', region: 'greywater', at: GREYWATER.x - 215, to: at(GREYWATER, -205, -44), name: 'The Weeping Stone', onward: 'Saltmarrow', onwardDir: 1, mark: 'shrine' },
+  { id: 'drovers', region: 'greywater', at: GREYWATER.x + 136, to: at(GREYWATER, 150, -40), name: "The Drover's Rest", onward: 'Saltmarrow', onwardDir: 1, mark: 'wayfire' },
+  { id: 'drowned', region: 'dunmere', at: DUNMERE.z - 340, to: at(DUNMERE, -48, -340), name: 'The Drowned Stones', onward: 'Thornwick', onwardDir: 1, mark: 'shrine' },
+  { id: 'watcher', region: 'barrowdowns', at: BARROWDOWNS.x - 190, to: at(BARROWDOWNS, -176, 58), name: "The Watcher's Cairn", onward: 'Highmoor', onwardDir: 1, mark: 'wayfire' },
+  { id: 'sunken', region: 'barrowdowns', at: BARROWDOWNS.x + 120, to: at(BARROWDOWNS, 134, -56), name: 'The Sunken Barrow', onward: 'Highmoor', onwardDir: 1, mark: 'shrine' },
+  { id: 'ashwell', region: 'cairnwaste', at: CAIRNWASTE.z - 10, to: at(CAIRNWASTE, -56, -4), name: 'The Ashen Well', onward: 'the Sundered Spire', onwardDir: -1, mark: 'wayfire' },
+];
+export const branchesOf = (region: string): Branch[] => BRANCHES.filter(b => b.region === region);
+export const branchById = (id: string): Branch | undefined => BRANCHES.find(b => b.id === id);
+/** The road a branch leaves. */
+export const roadOf = (b: Branch): Road => ROADS[b.region];
+/** Where a waystation's keeper stands: a pace off its shrine or its fire, on the side the track comes in. */
+export const wayKeeper = (b: Branch): Pt => ({ x: b.to.x + 2.2, z: b.to.z + 1.4 });
+
+/**
+ * Where a fork's signpost stands: beside the road at the fork, on the side the track leaves. Seven and a half units out, which is
+ * past the widest the dirt ever gets (5.8), because a post standing on the travelled line is a post that people walk into.
+ */
+export function forkPost(b: Branch): Pt {
+  const road = roadOf(b), fork = roadPoint(road, b.at);
+  return roadPoint(road, b.at, Math.sign((road.axis === 'x' ? b.to.z - fork.z : b.to.x - fork.x) || 1) * 7.5);
+}
+
+/** What stands at a fork and at the waystation it leads to: the signpost beside the road, the mark at the far end, and its keeper. */
+const wayProps = (b: Branch): Obstacle[] => [
+  { ...forkPost(b), r: 0.4, kind: 'signpost' },
+  { ...b.to, r: 1.5, kind: b.mark },
+  { ...wayKeeper(b), r: 0.55, kind: 'person' },
+];
+/** Every collider a region's forks put on the ground. */
+const wayObstacles = (region: string): Obstacle[] => branchesOf(region).flatMap(wayProps);
+
 /** Greywater Road's camps, by the bible's layout table (section 3.4). Local coordinates. */
 const GREYWATER_SPAWNS = [
   // hog pasture
@@ -151,17 +206,20 @@ const STRAND_SPAWNS = [
 const worldSpawns = (o: Pt, list: readonly (readonly [string, number, number])[]) => list.map(([type, lx, lz]) => ({ type, ...at(o, lx, lz) }));
 
 /**
- * The road's verges: boulders and dead trees along both sides, none within 11 of a camp and none in the strip the road runs
- * down (so a click along it is a straight line), nor near the gates. Deterministic, so ids and saves are stable.
+ * The road's verges: boulders and dead trees along both sides, none within 11 of a camp, none in the strip the road runs down
+ * (they follow its bend, so the strip stays clear wherever it has gone), none across a fork's track and none on an ore vein
+ * (`avoid`: the veins keep their own places, so the bend must give way to them). Deterministic, so ids and saves are stable.
  */
-function verge(o: Pt, spawns: Pt[], extra: Obstacle[], run: { axis: 'x' | 'z'; reach: number; near: number; far: number } = { axis: 'x', reach: 380, near: 12, far: 38 }): { obstacles: Obstacle[]; tall: Obstacle[] } {
+function verge(road: Road, o: Pt, spawns: Pt[], extra: Obstacle[], run: { reach: number; near: number; far: number } = { reach: 380, near: 12, far: 38 }, avoid: Obstacle[] = []): { obstacles: Obstacle[]; tall: Obstacle[] } {
   const obstacles: Obstacle[] = [...extra], tall: Obstacle[] = extra.filter(e => e.r >= 1.8);
+  const origin = road.axis === 'x' ? o.x : o.z, forks = BRANCHES.filter(b => ROADS[b.region] === road);
   for (let k = 0; k < Math.ceil(run.reach * 2 / 5.3); k++) {
     const lx = -run.reach + k * 5.3 + (hash(k * 3 + 1) - 0.5) * 4;
     if (lx > run.reach || hash(k * 17 + 5) < 0.35) continue;
     const lz = (hash(k * 7 + 2) < 0.5 ? -1 : 1) * (run.near + hash(k * 11 + 3) * run.far);
-    const tree = hash(k * 5 + 4) < 0.4, r = tree ? 0.9 : 1.2 + hash(k * 13 + 6) * 1.2, c = run.axis === 'x' ? at(o, lx, lz) : at(o, lz, lx);
-    if (spawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 11) || extra.some(e => Math.hypot(e.x - c.x, e.z - c.z) < e.r + r + 2)) continue;
+    const tree = hash(k * 5 + 4) < 0.4, r = tree ? 0.9 : 1.2 + hash(k * 13 + 6) * 1.2, c = roadPoint(road, origin + lx, lz);
+    if (spawns.some(sp => Math.hypot(sp.x - c.x, sp.z - c.z) < 11) || [...extra, ...avoid].some(e => Math.hypot(e.x - c.x, e.z - c.z) < e.r + r + 2)) continue;
+    if (forks.some(b => branchDist(road, b, c.x, c.z) < r + 3.5)) continue;
     const ob: Obstacle = { x: c.x, z: c.z, r, kind: tree ? 'tree' : 'rock' };
     obstacles.push(ob);
     if (tree || r >= 1.8) tall.push(ob);
@@ -176,7 +234,7 @@ const roadProps: Obstacle[] = [
   { ...at(GREYWATER, 330, -38), r: 3.2 },  // the rock Old Grey lies behind, seen from the road
   { ...at(GREYWATER, 336, -52), r: 2.4 },
 ];
-const road = verge(GREYWATER, roadSpawns, roadProps);
+const road = verge(GREYWATER_ROAD, GREYWATER, roadSpawns, [...roadProps, ...wayObstacles('greywater')]);
 
 /** The town's buildings: the inn (The Gilded Gull) and the houses round the square. */
 const SALT_INN: Obstacle = { ...at(SALTMARROW, -10, -16), r: 4.6, kind: 'inn' };
@@ -250,7 +308,8 @@ const WAYSIDES: [number, 1 | -1, ('copper' | 'tin' | 'iron' | 'coal' | 'tree')[]
 function waysides(): { rocks: RockSpot[]; trees: Obstacle[] } {
   const rocks: RockSpot[] = [], trees: Obstacle[] = [];
   for (const [lx, side, kinds] of WAYSIDES) kinds.forEach((type, i) => {
-    const p = at(GREYWATER, lx + (i - (kinds.length - 1) / 2) * 3.6, side * (9 + (i % 2) * 2));
+    // a pace off the road's edge wherever the road has got to: the stands bend with it, so one is never left standing in the dirt
+    const p = roadPoint(GREYWATER_ROAD, GREYWATER.x + lx + (i - (kinds.length - 1) / 2) * 3.6, side * (9 + (i % 2) * 2));
     if (type === 'tree') trees.push({ ...p, r: 1 }); else rocks.push({ type, ...p, r: 1.2 });
   });
   return { rocks, trees };
@@ -299,13 +358,14 @@ function witheringPatches(spawns: Pt[]): { hazards: { x: number; z: number; r: n
 function fenHerbs(hazards: { x: number; z: number; r: number }[]): HerbSpot[] {
   const out: HerbSpot[] = [];
   for (let j = 0; j < 12; j++) for (let k = 0; k < 3; k++) {
-    const c = at(DUNMERE, (j % 2 ? 1 : -1) * (13 + hash(j * 3 + 1) * 5 + k * 1.8), -390 + j * 68 + k * 2.2 + hash(j + k) * 6);
+    // off the road's edge wherever it has wandered to, so a patch is never left growing in the dirt
+    const c = roadPoint(DUNMERE_ROAD, DUNMERE.z - 390 + j * 68 + k * 2.2 + hash(j + k) * 6, (j % 2 ? 1 : -1) * (13 + hash(j * 3 + 1) * 5 + k * 1.8));
     if (!hazards.some(h => Math.hypot(h.x - c.x, h.z - c.z) < h.r + 1)) out.push({ kind: 'fen', type: 'fenbloom', ...c });
   }
   return out;
 }
 const withering = witheringPatches(dunmereSpawns);
-const fen = verge(DUNMERE, dunmereSpawns, [], { axis: 'z', reach: 410, near: 14, far: 46 });
+const fen = verge(DUNMERE_ROAD, DUNMERE, dunmereSpawns, wayObstacles('dunmere'), { reach: 410, near: 14, far: 46 });
 
 /** The gate in the corridor south of Saltmarrow (the strip x 872 to 878 of Dunmere's footprint): the line the keeper holds. */
 const SALT_GATE: Gate = {
@@ -415,7 +475,7 @@ function barrowMounds(): Obstacle[] {
   return out;
 }
 const BARROW_MOUNDS = barrowMounds();
-const barrowRoad = verge(BARROWDOWNS, barrowSpawns, BARROW_MOUNDS, { axis: 'x', reach: 440, near: 12, far: 38 });
+const barrowRoad = verge(BARROW_ROAD, BARROWDOWNS, barrowSpawns, [...BARROW_MOUNDS, ...wayObstacles('barrowdowns')], { reach: 440, near: 12, far: 38 }, BARROW_ORE);
 
 /**
  * Highmoor's keepers: the Cairn Hold's door (a level gate: Ysolt lets anyone of combat 29 and over down the stair), and the north gate to the Cairnwaste (a writ: Corvin
@@ -518,7 +578,7 @@ function wasteCairns(): Obstacle[] {
   return out;
 }
 const WASTE_CAIRNS = wasteCairns();
-const wasteRoad = verge(CAIRNWASTE, wasteSpawns, WASTE_CAIRNS, { axis: 'z', reach: 410, near: 14, far: 46 });
+const wasteRoad = verge(WASTE_ROAD, CAIRNWASTE, wasteSpawns, [...WASTE_CAIRNS, ...wayObstacles('cairnwaste')], { reach: 410, near: 14, far: 46 }, WASTE_ORE);
 
 /** The Sundered Spire (bible 2.1): the town is the south half, a safe circle of 35 about the square; the ruins fill the north. Local coordinates. */
 const SPIRE_SPAWNS = [
@@ -662,7 +722,7 @@ export const REGIONS: Region[] = [
     ],
     obstacles: road.obstacles, tall: road.tall, trees: [], rocks: [],
     landmarks: { gate: { x: 30, z: 8 }, toll: at(GREYWATER, 60, 0) },
-    road: { axis: 'x', at: GREYWATER.z },
+    road: GREYWATER_ROAD,
     connections: [{ to: 'clearing', at: HALE_GATE }, { to: 'saltmarrow', at: at(GREYWATER, 405, 0) }, { to: 'wayside', at: at(GREYWATER, -350, 0) }],
     spawns: roadSpawns,
   },
@@ -722,7 +782,7 @@ export const REGIONS: Region[] = [
     landmarks: { gate: { x: DUNMERE.x, z: SALT_GATE.at } },
     connections: [{ to: 'saltmarrow', at: { x: DUNMERE.x, z: 76 } }, { to: 'thornwick', at: { x: THORNWICK.x, z: 943 } }],
     spawns: dunmereSpawns,
-    road: { axis: 'z', at: DUNMERE.x },
+    road: DUNMERE_ROAD,
     hazards: withering.hazards,
     herbs: [...withering.herbs, ...fenHerbs(withering.hazards)],
     gates: [SALT_GATE],
@@ -802,7 +862,7 @@ export const REGIONS: Region[] = [
     landmarks: { gate: { x: THORNWICK.x + 73, z: THORNWICK.z } },
     connections: [{ to: 'thornwick', at: { x: THORNWICK.x + 66, z: THORNWICK.z } }, { to: 'highmoor', at: { x: HIGHMOOR.x - 65, z: HIGHMOOR.z } }],
     spawns: barrowSpawns,
-    road: { axis: 'x', at: BARROWDOWNS.z },
+    road: BARROW_ROAD,
   },
   {
     // Highmoor and the Moor (HOM-95). The town is safe ground: a flight master, a graveyard, the trainer, the second stablemaster and the tanning rack (HOM-96). The hard gates
@@ -878,7 +938,7 @@ export const REGIONS: Region[] = [
     landmarks: {},
     connections: [{ to: 'highmoor', at: { x: HIGHMOOR.x + 30, z: CAIRNWASTE.z + 441 } }, { to: 'spire', at: { x: SPIRE.x, z: SPIRE.z + 66 } }],
     spawns: wasteSpawns,
-    road: { axis: 'z', at: CAIRNWASTE.x },
+    road: WASTE_ROAD,
   },
   {
     // The Sundered Spire (HOM-111). The town is safe ground: a flight master, a forge, the rune circle (HOM-112), a provisioner, the Keeper and a graveyard. The Vault's door in the north wall is held by

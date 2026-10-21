@@ -1,7 +1,7 @@
 // Quest tracker (objective, live progress, arrow to the next place to go) and the NPC dialogue panel. Reads GameState only;
 // the one thing it can do is ask the sim to advance the quest.
 import type { GameState } from './sim';
-import { Dialogue, NPCS, TALK_RANGE, activeQuestView, dialogueAt, npcName } from './sim/quest';
+import { Dialogue, TALK_RANGE, activeQuestView, dialogueAt, npcName, speakerById } from './sim/quest';
 import { el } from './dom';
 
 export class QuestUi {
@@ -77,8 +77,8 @@ export class QuestUi {
     }
 
     if (this.open) {
-      const n = NPCS.find(x => x.id === this.who)!;
-      if (p.dead || Math.hypot(p.x - n.x, p.z - n.z) > TALK_RANGE + 2) return this.setOpen(false);
+      const n = speakerById(this.who);
+      if (p.dead || !n || Math.hypot(p.x - n.x, p.z - n.z) > TALK_RANGE + 2) return this.setOpen(false);
       this.renderDialogue();
     }
   }

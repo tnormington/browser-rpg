@@ -11,7 +11,9 @@
 // Looks here are stand-ins made of primitives in the clearing's palette: the 3D Artist dresses them (W2.5).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { HIGHMOOR, LANDMARKS, REGIONS, Gate, Obstacle, Rect, Region, SALTMARROW, SPIRE, THORNWICK } from './sim/world';
+import { HIGHMOOR, LANDMARKS, REGIONS, Gate, Obstacle, Rect, Region, Road, SALTMARROW, SPIRE, THORNWICK, branchById, branchesOf, forkPost } from './sim/world';
+import { branchBounds, branchDist, branchTrack, roadAt, roadDist, roadHalfWidth, roadPoint } from './sim/road';
+import { VILLAGERS } from './sim/villagers';
 import { PROPS, PropId } from './props';
 import { mergeParts } from './creatures';
 import { GROUND_CELL, bakeUV, groundDrift } from './surface';
@@ -263,6 +265,11 @@ export class WorldView {
     const long = isLong(main), inSlab = (o: { x: number; z: number }) => o.x >= rect.x0 && o.x < rect.x1 && (!long || (o.z >= rect.z0 && o.z < rect.z1));
     this.scenery(r.obstacles.filter(inSlab), rect, r, add);
 
+    // the waystation keepers (HOM-134): drawn like a town's people, so they can be clicked and talked to out on the road
+    for (const v of VILLAGERS) if (inSlab(v) && branchById(v.id)?.region === r.id) {
+      this.person(add, v, 0x5a4a3a, 'brim', Math.atan2(branchById(v.id)!.to.x - v.x, branchById(v.id)!.to.z - v.z) + Math.PI, t.picks.npc, v.id);
+    }
+
     // the edge of the world: a wall of boulders where the floor ends and nothing else begins
     this.boundary(floors, rect, r, add);
   }
@@ -275,6 +282,8 @@ export class WorldView {
     const dirt = new THREE.Color(P.dirt).multiplyScalar(1.45), dirtAlt = new THREE.Color(P.dirtAlt).multiplyScalar(1.45), // the road reads as a road in the dark: lighter than the clearing's earth
       sand = new THREE.Color(SAND), stone = new THREE.Color(P.stone);
     const road = r.road ?? null, square = r.safe?.[0], fen = r.id === 'dunmere', wood = r.id === 'thornwick', barrow = r.id === 'barrowdowns', moor = r.id === 'highmoor', waste = r.id === 'cairnwaste', spire = r.id === 'spire';
+    // the forks whose track runs through this slab at all: per vertex, only these are measured
+    const forks = road ? branchesOf(r.id).filter(t => overlaps(branchBounds(road, t, 4), f)) : [];
     if (fen) { a.set(FEN.moss); b.set(FEN.mossAlt); } else if (wood) { a.set(WOOD_FLOOR.litter); b.set(WOOD_FLOOR.litterAlt); }
     else if (barrow) { a.set(BARROW_FLOOR.turf); b.set(BARROW_FLOOR.turfAlt); } else if (moor) { a.set(MOOR_FLOOR.heath); b.set(MOOR_FLOOR.heathAlt); }
     else if (waste) { a.set(WASTE_FLOOR.ash); b.set(WASTE_FLOOR.ashAlt); } else if (spire) { a.set(SPIRE_FLOOR.slate); b.set(SPIRE_FLOOR.slateAlt); }
@@ -295,9 +304,11 @@ export class WorldView {
         c.lerp(char, THREE.MathUtils.clamp((groundDrift(x, z, 6) - 0.62) * 2.2, 0, 0.6));
       }
       if (road) {
-        const off = road.axis === 'x' ? Math.abs(z - road.at) : Math.abs(x - road.at); // distance from the road's centre line
-        const k = THREE.MathUtils.clamp((4.2 - off) / 2.4, 0, 1) + (r.id === 'greywater' && x < 52 ? 0.6 : 0); // the road, and the dirt of Hale's gate yard
-        if (k > 0) c.lerp(dirt.clone().lerp(dirtAlt, j), Math.min(1, k) * (off < 12 ? 1 : 0));
+        // the beaten dirt, wherever the road has wandered to and however wide it is there (sim/road.ts), and the tracks that fork off it
+        const s = road.axis === 'x' ? x : z, off = Math.abs((road.axis === 'x' ? z : x) - roadAt(road, s)), half = roadHalfWidth(road, s);
+        let k = (THREE.MathUtils.clamp((half - off) / 2.4, 0, 1) + (r.id === 'greywater' && x < 52 ? 0.6 : 0)) * (off < 12 ? 1 : 0); // the road, and the dirt of Hale's gate yard
+        for (const t of forks) k = Math.max(k, THREE.MathUtils.clamp((2.4 - branchDist(road, t, x, z)) / 1.8, 0, 1)); // a track is narrower than the road: a rut, not a highway
+        if (k > 0) c.lerp(dirt.clone().lerp(dirtAlt, j), Math.min(1, k));
       } else if (wood) {
         c.lerp(loam, groundDrift(x, z, 3) * 0.35); // loam showing through the litter
         if (square) { const k = THREE.MathUtils.clamp((square.r - Math.hypot(x - square.x, z - square.z)) / 8, 0, 1); if (k > 0) c.lerp(stone.clone().lerp(dirtAlt, j * 0.6), k * 0.8); }
@@ -330,6 +341,7 @@ export class WorldView {
       const h = hash(o.x * 3.1 + o.z * 7.7), ry = h * Math.PI * 2;
       switch (o.kind) {
         case 'person': return;
+        case 'signpost': case 'shrine': case 'wayfire': return; // a fork's own: forkDressing places each turned the way its track goes
         case 'thornoak': placeProp(bag, 'thornoak', o.x, o.z, ry, 0.9 + hash(i + 11) * 0.3); return;
         case 'alembic': placeProp(bag, 'alembic', o.x, o.z, Math.atan2(LANDMARKS.thornSquare.x - o.x, LANDMARKS.thornSquare.z - o.z) - Math.PI / 2); return; // the bench's front (+z in its own frame) faces the square
         case 'rack': return; // the station's collider: highmoorTown draws the racks
@@ -375,7 +387,7 @@ export class WorldView {
         }
       }
     });
-    if (r.road) this.waymarks(bag, rect, mainRect(r), r.road.axis, r.id === 'greywater' ? 100 : 0);
+    if (r.road) { this.waymarks(bag, rect, r.road, r.id === 'greywater' ? 100 : 0); this.forkDressing(bag, rect, r); }
     if (r.id === 'greywater' || r.id === 'saltmarrow') this.roadDressing(bag, rect, r);
     if (r.id === 'dunmere') this.fenDressing(bag, rect, r);
     if (r.id === 'thornwick') this.woodDressing(bag, rect, r);
@@ -386,13 +398,37 @@ export class WorldView {
     this.emit(bag, add, r.id === 'thornwick' ? THORN_PAL : r.id === 'highmoor' ? MOOR_PAL : r.id === 'spire' ? SPIRE_PAL : SALT_PAL);
   }
 
+  /**
+   * A fork and the waystation its track leads to (HOM-134): the signpost beside the road, its top arm pointing down the track and
+   * the other two lying along the road, and the shrine or the traveller's fire at the far end, turned to face whoever walks up.
+   * Each rides with the slab its own point falls in, so the fork is built when the player comes along the road and the waystation
+   * only once they have taken the track.
+   */
+  private forkDressing(bag: Bag, rect: Rect, r: Region) {
+    const road = r.road!, here = (p: { x: number; z: number }) => p.x >= rect.x0 && p.x < rect.x1 && p.z >= rect.z0 && p.z < rect.z1;
+    for (const b of branchesOf(r.id)) {
+      const track = branchTrack(road, b), post = forkPost(b);
+      if (here(post)) placeProp(bag, 'signpost', post.x, post.z, Math.atan2(track[1].x - post.x, track[1].z - post.z));
+      if (here(b.to)) {
+        const back = track[track.length - 2];
+        placeProp(bag, b.mark === 'shrine' ? 'wayshrine' : 'wayfire', b.to.x, b.to.z, Math.atan2(back.x - b.to.x, back.z - b.to.z));
+        bag.pool.push(lampPool(b.to.x, b.to.z, b.mark === 'shrine' ? 5 : 7, 0.26, 0.05, TORCH_LIGHT));
+      }
+    }
+  }
+
+  /** Is a point on (or within `pad` of) one of the region's fork tracks? What every scatter pass asks before it drops something. */
+  private onTrack(r: Region, x: number, z: number, pad: number): boolean {
+    return r.road ? branchesOf(r.id).some(b => branchDist(r.road!, b, x, z) < pad) : false;
+  }
+
   /** A milestone every 80 units down the road, on its verge: a squared post with a board pointing on. How far from home the player is, in a thing they pass. `skip`: nearer than this to the origin Hale's gate has its own. */
-  private waymarks(bag: Bag, rect: Rect, main: Rect, axis: 'x' | 'z', skip: number) {
-    const lo = axis === 'x' ? rect.x0 : rect.z0, hi = axis === 'x' ? rect.x1 : rect.z1, road = axis === 'x' ? (main.z0 + main.z1) / 2 : (main.x0 + main.x1) / 2;
+  private waymarks(bag: Bag, rect: Rect, road: Road, skip: number) {
+    const axis = road.axis, lo = axis === 'x' ? rect.x0 : rect.z0, hi = axis === 'x' ? rect.x1 : rect.z1;
     for (let s = Math.ceil(lo / 80) * 80; s < hi; s += 80) {
       if (s < skip) continue;
-      // on the north verge of an east-west road, the east verge of a north-south one; the board points along the road, on
-      const x = axis === 'x' ? s : road + 6.5, z = axis === 'x' ? road - 6.5 : s, rot = axis === 'x' ? 0 : -Math.PI / 2;
+      // on the north verge of an east-west road, the east verge of a north-south one, wherever the road has wandered to; the board points along the road, on
+      const { x, z } = roadPoint(road, s, axis === 'x' ? -6.5 : 6.5), rot = axis === 'x' ? 0 : -Math.PI / 2;
       bag.stone.push(place(new THREE.BoxGeometry(0.7, 1.6, 0.7), x, 0.8, z), place(new THREE.BoxGeometry(0.9, 0.2, 0.9), x, 1.7, z));
       bag.wood.push(place(new THREE.BoxGeometry(1.5, 0.32, 0.08).translate(0.45, 1.25, 0.38), x, 0, z, rot), place(new THREE.ConeGeometry(0.2, 0.4, 3).rotateZ(-Math.PI / 2).translate(1.4, 1.25, 0.38), x, 0, z, rot));
     }
@@ -408,7 +444,7 @@ export class WorldView {
     for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
       const k = hash(i * 3.7 + j * 12.1 + 7), x = (i + 0.15 + 0.7 * hash(i * 2.7 + j * 4.3)) * CELL, z = (j + 0.15 + 0.7 * hash(j * 3.9 + i * 2.1)) * CELL;
       if (k > 0.52 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
-      if (road && Math.abs((road.axis === 'x' ? z : x) - road.at) < 7) continue;
+      if (road && (roadDist(road, x, z) < 7 || this.onTrack(r, x, z, 3))) continue;
       if (r.id === 'saltmarrow' && x > SALTMARROW.x + 4) continue;   // the beach, the quay and the sea
       if (square && Math.hypot(x - square.x, z - square.z) < square.r + 6) continue;
       if (camps.some(c => Math.hypot(c.x - x, c.z - z) < 5) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + 1.5)) continue;
@@ -424,12 +460,12 @@ export class WorldView {
    * the slab its centre is in, and the same pools are there however the slabs are cut), none on the road, a patch of Withering Ground, a camp or a tree.
    */
   private fenDressing(bag: Bag, rect: Rect, r: Region) {
-    const CELL = 26, road = r.road!.at, camps = r.spawns ?? [];
+    const CELL = 26, road = r.road!, camps = r.spawns ?? [];
     for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
       const k = hash(i * 7.3 + j * 13.1);
       if (k > 0.5) continue;
       const x = (i + 0.2 + 0.6 * hash(i * 3.1 + j)) * CELL, z = (j + 0.2 + 0.6 * hash(j * 5.7 + i)) * CELL, rad = 2.6 + k * 6;
-      if (x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || Math.abs(x - road) < rad + 8) continue;
+      if (x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || roadDist(road, x, z) < rad + 8 || this.onTrack(r, x, z, rad + 3)) continue;
       if (!r.footprint.some(f => inside(f, x, z, rad))) continue;
       if ((r.hazards ?? []).some(h => Math.hypot(h.x - x, h.z - z) < h.r + rad + 1.5) || camps.some(c => Math.hypot(c.x - x, c.z - z) < rad + 6) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + rad + 1)) continue;
       bag.water.push(place(new THREE.CircleGeometry(rad, 14).rotateX(-Math.PI / 2).scale(1, 1, 0.7 + 0.3 * hash(i + j * 2.3)), x, 0.03, z, hash(i * 9.1 + j) * Math.PI));
@@ -437,7 +473,7 @@ export class WorldView {
       for (let n = 0; n < 5; n++) { const a = n * 2.4 + k * 10, d = rad * (0.9 + 0.3 * hash(n + k * 7)); reedClump(bag, x + Math.cos(a) * d, z + Math.sin(a) * d * 0.7, i * 17 + j * 5 + n); }
     }
     // reed beds and snags across the open ground, so the fen is never bare to the horizon: one candidate per 11-unit cell
-    const free = (x: number, z: number, pad: number) => x >= rect.x0 && x < rect.x1 && z >= rect.z0 && z < rect.z1 && Math.abs(x - road) > 6 && r.footprint.some(f => inside(f, x, z, 2))
+    const free = (x: number, z: number, pad: number) => x >= rect.x0 && x < rect.x1 && z >= rect.z0 && z < rect.z1 && roadDist(road, x, z) > 6 && !this.onTrack(r, x, z, 2.5) && r.footprint.some(f => inside(f, x, z, 2))
       && !(r.hazards ?? []).some(h => Math.hypot(h.x - x, h.z - z) < h.r + pad) && !camps.some(c => Math.hypot(c.x - x, c.z - z) < 4) && !r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + pad);
     const SCATTER = 11;
     for (let i = Math.floor(rect.x0 / SCATTER); i <= Math.floor(rect.x1 / SCATTER); i++) for (let j = Math.floor(rect.z0 / SCATTER); j <= Math.floor(rect.z1 / SCATTER); j++) {
@@ -489,10 +525,10 @@ export class WorldView {
    * a camp, a mound or a vein. Thin or low enough that no enemy hides behind it, and with nothing to collide with. The barrows themselves are the sim's obstacles, drawn in `scenery`.
    */
   private barrowDressing(bag: Bag, rect: Rect, r: Region) {
-    const CELL = 12, road = r.road!.at, camps = r.spawns ?? [];
+    const CELL = 12, road = r.road!, camps = r.spawns ?? [];
     for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
       const k = hash(i * 6.1 + j * 10.3 + 2), x = (i + 0.15 + 0.7 * hash(i * 2.9 + j * 1.9)) * CELL, z = (j + 0.15 + 0.7 * hash(j * 5.3 + i * 3.7)) * CELL;
-      if (k > 0.5 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || Math.abs(z - road) < 8 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
+      if (k > 0.5 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || roadDist(road, x, z) < 8 || this.onTrack(r, x, z, 3) || !r.footprint.some(f => inside(f, x, z, 2))) continue;
       if (camps.some(c => Math.hypot(c.x - x, c.z - z) < 6) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + 2.5) || (r.rocks ?? []).some(o => Math.hypot(o.x - x, o.z - z) < 5)) continue;
       const ry = k * 40;
       if (k < 0.14) { // a standing stone, with a shorter one leaning against it
@@ -541,10 +577,10 @@ export class WorldView {
 
   /** The Cairnwaste's open ground: black standing slabs (one leaning on another), bleached snags and scattered black shards in every 12-unit cell, none on the road, a camp, a cairn or a vein. Low or thin enough that no enemy hides behind it. */
   private wasteDressing(bag: Bag, rect: Rect, r: Region) {
-    const CELL = 12, road = r.road!.at, camps = r.spawns ?? [];
+    const CELL = 12, road = r.road!, camps = r.spawns ?? [];
     for (let i = Math.floor(rect.x0 / CELL); i <= Math.floor(rect.x1 / CELL); i++) for (let j = Math.floor(rect.z0 / CELL); j <= Math.floor(rect.z1 / CELL); j++) {
       const k = hash(i * 6.7 + j * 9.1 + 7), x = (i + 0.15 + 0.7 * hash(i * 2.3 + j * 1.3)) * CELL, z = (j + 0.15 + 0.7 * hash(j * 5.9 + i * 3.1)) * CELL;
-      if (k > 0.5 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || Math.abs(x - road) < 8 || !r.footprint.some(f => inside(f, x, z, 2))) continue;
+      if (k > 0.5 || x < rect.x0 || x >= rect.x1 || z < rect.z0 || z >= rect.z1 || roadDist(road, x, z) < 8 || this.onTrack(r, x, z, 3) || !r.footprint.some(f => inside(f, x, z, 2))) continue;
       if (camps.some(c => Math.hypot(c.x - x, c.z - z) < 6) || r.obstacles.some(o => Math.hypot(o.x - x, o.z - z) < o.r + 2.5) || (r.rocks ?? []).some(o => Math.hypot(o.x - x, o.z - z) < 5)) continue;
       const ry = k * 40;
       if (k < 0.16) bag.cairn.push(place(new THREE.BoxGeometry(1.1, 3 + k * 10, 0.6).rotateZ((k - 0.08) * 0.6), x, 1.6, z, ry), place(new THREE.BoxGeometry(0.8, 1.6, 0.5).rotateZ(0.25), x + 1.2, 0.8, z, ry)); // a standing slab, with a shorter one against it

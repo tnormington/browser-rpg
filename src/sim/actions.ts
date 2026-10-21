@@ -3,7 +3,7 @@ import type { GameState } from '../sim';
 import { PLAYER_RADIUS, LANDMARKS, OBSTACLES, clampToWorld } from './world';
 import { beginGather, finishGather, nodeById, strikeGather } from './gathering';
 import { finishCraft, nearestSite, stationSites } from './crafting';
-import { NPCS, npcNear } from './quest';
+import { NPCS, speakerById, speakerNear } from './quest';
 import { vendorById, vendorNear } from './shop';
 import { masterById, masterNear } from './flight';
 import { dismount, finishMount } from './mounts';
@@ -27,7 +27,7 @@ const REACH = 1.5; // gap between the player's edge and the thing's edge that st
 
 /** Where the thing is and how big. */
 function target(s: GameState, it: Interact) {
-  if (it.k === 'npc') return NPCS.find(n => n.id === it.id) ?? NPCS.find(n => n.id === npcNear(s)) ?? NPCS[0];
+  if (it.k === 'npc') return speakerById(it.id ?? '') ?? speakerById(speakerNear(s) ?? '') ?? NPCS[0]; // a giver or a waystation's villager
   if (it.k === 'vendor') return vendorById(it.id ?? '') ?? vendorNear(s) ?? vendorById('hale')!;
   if (it.k === 'flightmaster') return masterById(it.id ?? '') ?? masterNear(s) ?? masterById('hale')!;
   if (it.k === 'forge') { const i = it.site !== undefined && FORGE_RS[it.site] !== undefined ? it.site : nearestSite(s, 'forge'), f = stationSites('forge')[i]; return { x: f.x, z: f.z, r: FORGE_RS[i] }; }

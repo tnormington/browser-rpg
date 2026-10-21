@@ -17,6 +17,7 @@ import {
   GREYWATER, REGIONS, SALTMARROW, THORNWICK, TOWNS, caveDepth, caveWallPoints, clampToWorld, inCave, regionAt, resolveCollisions, sameSideOfDoor,
   DUNGEONS, dungeonAt, dungeonById, mountsAllowed,
 } from './sim/world';
+import { roadDist } from './sim/road';
 import { dungeonOpen } from './sim/dungeon';
 import { route } from './sim/path';
 import { refreshGearStats } from './sim/inventory';
@@ -3520,7 +3521,9 @@ section('HOM-57 the road has a reason: an errand from Hale to Saltmarrow, and or
     `HOM-77: the road carries the whole ladder above copper (${kindsOn('tin')} tin, ${kindsOn('iron')} iron, ${kindsOn('coal')} coal), and keeps copper and trees enough for the errand`);
   const s0 = createState(5701);
   const road = s0.enemies.filter(e => e.region === 'greywater');
-  assert(spots.every(p => Math.abs(p.z - GREYWATER.z) >= 8 && road.every(e => Math.hypot(e.spawnX - p.x, e.spawnZ - p.z) > ENEMY_TYPES[e.type].aggroRadius + 4)), 'every node is off the road and out of every camp\'s aggro: a level-1 walker can stop at it');
+  // HOM-134: the road bends, and the stands bend with it, so "off the road" is measured from where the dirt actually runs
+  const grey = REGIONS.find(r => r.id === 'greywater')!.road!;
+  assert(spots.every(p => roadDist(grey, p.x, p.z) >= 8 && road.every(e => Math.hypot(e.spawnX - p.x, e.spawnZ - p.z) > ENEMY_TYPES[e.type].aggroRadius + 4)), 'every node is off the road and out of every camp\'s aggro: a level-1 walker can stop at it');
   assert(spots.every(p => regionAt(p.x, p.z)?.id === 'greywater' && clampToWorld(p, p.r).x === p.x), 'and on the road\'s floor');
 
   const s = quietState(5702), q4 = () => s.quest.fourth as string;

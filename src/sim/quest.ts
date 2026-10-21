@@ -1,6 +1,7 @@
 // The quest chain that stitches the golden path together, the NPC's dialogue, and the tracker view. Pure sim.
 import type { GameState } from '../sim';
 import { GATES, LANDMARKS, inCave } from './world';
+import { VILLAGERS, villagerById } from './villagers';
 import { ENEMY_TYPES } from './data';
 import { SkillId, grantXp } from './skills';
 import { NODE_TYPES } from './gathering';
@@ -97,11 +98,18 @@ export const REWARD2: { skill: SkillId; xp: number }[] = [
 ];
 
 export const nearNpc = (s: GameState) => Math.hypot(s.player.x - NPC.x, s.player.z - NPC.z) <= TALK_RANGE;
-/** Who the player is within earshot of (the nearest, if two are), or null. */
-export const npcNear = (s: GameState): NpcId | null => {
-  const d = (n: { x: number; z: number }) => Math.hypot(s.player.x - n.x, s.player.z - n.z);
-  return NPCS.filter(n => d(n) <= TALK_RANGE).sort((a, b) => d(a) - d(b))[0]?.id ?? null;
-};
+const byDistance = (s: GameState) => (a: { x: number; z: number }, b: { x: number; z: number }) =>
+  Math.hypot(s.player.x - a.x, s.player.z - a.z) - Math.hypot(s.player.x - b.x, s.player.z - b.z);
+const inEarshot = (s: GameState, n: { x: number; z: number }) => Math.hypot(s.player.x - n.x, s.player.z - n.z) <= TALK_RANGE;
+/** Which quest giver the player is within earshot of (the nearest, if two are), or null. A villager is never one: they move no chain. */
+export const npcNear = (s: GameState): NpcId | null =>
+  NPCS.filter(n => inEarshot(s, n)).sort(byDistance(s))[0]?.id ?? null;
+/** Anyone with something to say the player is within earshot of, givers and the waystations' villagers alike: who the talk key means. */
+export const speakerNear = (s: GameState): string | null =>
+  [...NPCS, ...VILLAGERS].filter(n => inEarshot(s, n)).sort(byDistance(s))[0]?.id ?? null;
+/** Where someone with something to say stands, by id: a giver, or a villager. */
+export const speakerById = (id: string): { id: string; name: string; x: number; z: number; r: number } | undefined =>
+  NPCS.find(n => n.id === id) ?? VILLAGERS.find(v => v.id === id);
 
 export const QUEST3_NAME = 'The Salt Road';
 /** Pell's carters will not take the road while the toll camp stands: the footpads who work it and the captain who runs it. */
@@ -466,8 +474,10 @@ export const DIALOGUE5: Record<Exclude<Quest5Stage, 'locked'>, Dialogue> = {
 export const activeDialogue = (s: GameState): Dialogue =>
   s.quest.stage === 'done' && s.quest.second !== 'locked' ? DIALOGUE2[s.quest.second] : DIALOGUE[s.quest.stage];
 
-/** What a given giver has to say: the Warden's two chains, or the harbourmaster's one (a plain greeting before the road opens). */
+/** What a given giver has to say: the Warden's two chains, or the harbourmaster's one (a plain greeting before the road opens). A villager has lore and one question. */
 export const dialogueAt = (s: GameState, who: string): Dialogue => {
+  const villager = villagerById(who);
+  if (villager) return { lines: villager.lines, options: [{ label: villager.asked, reply: villager.answer }, { label: 'Safe travels.' }] };
   if (who === 'thorn') return s.quest.sixth === 'locked' ? THORN_DIALOGUE : DIALOGUE6[s.quest.sixth];
   if (who === 'high') return s.quest.seventh === 'locked' ? HIGH_DIALOGUE : DIALOGUE7[s.quest.seventh];
   if (who === 'spire') return s.quest.eighth === 'locked' ? SPIRE_DIALOGUE : DIALOGUE8[s.quest.eighth];
@@ -609,7 +619,7 @@ const DIALOGUE4_REPORT: Dialogue = {
   options: [{ label: 'Glad to help.', advance: true, reply: 'The carters will remember this. Come and see me if you want real work.' }],
 };
 
-export const npcName = (who: string) => NPCS.find(n => n.id === who)?.name ?? NPC.name;
+export const npcName = (who: string) => speakerById(who)?.name ?? NPC.name;
 
 /** The mark over the harbourmaster: '!' there is work, '?' waiting for you, grey it is under way, none otherwise. */
 export function harbourMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {

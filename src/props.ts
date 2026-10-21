@@ -168,9 +168,80 @@ function torch(): Prop {
   ], halos: [{ id: 'torch', x: 0, y: 2.52, z: 0 }] };
 }
 
+/**
+ * A signpost at a fork (HOM-134): a squared post under a shingle cap, with three pointed boards on it — one straight ahead
+ * for the track, one each way for the road. Nothing in the game carries letters, so what has to read at a distance is the
+ * shape: three pale arms at three heights, and the only squared timber for a hundred paces. The arm for the track faces +z.
+ */
+function signpost(): Prop {
+  const post = [
+    put(new THREE.BoxGeometry(0.22, 3, 0.22).translate(0, 1.5, 0), 0, 0, 0),
+    put(new THREE.BoxGeometry(0.46, 0.12, 0.46), 0, 3.05, 0),
+    put(new THREE.ConeGeometry(0.36, 0.34, 4), 0, 3.26, 0),
+    ...[-1, 1].map(s => put(new THREE.BoxGeometry(0.12, 0.9, 0.12).rotateX(s * 0.45), 0, 0.46, s * 0.26)), // the braces at the foot
+  ];
+  // each board stands off the post along its own heading, with a point on the far end
+  const boards = ([[0, 2.55], [Math.PI / 2, 2.1], [-Math.PI / 2, 1.65]] as const).flatMap(([a, y]) => [
+    put(new THREE.BoxGeometry(0.08, 0.3, 1.2), Math.sin(a) * 0.72, y, Math.cos(a) * 0.72, 0, a, 0),
+    put(new THREE.ConeGeometry(0.17, 0.34, 3).rotateX(Math.PI / 2), Math.sin(a) * 1.44, y, Math.cos(a) * 1.44, 0, a, 0),
+  ]);
+  return { layers: [
+    { name: 'post', color: TORCH_WOOD, cls: 'wood', parts: post },
+    { name: 'boards', color: 0x9a8f78, cls: 'wood', parts: boards },
+  ] };
+}
+
+/**
+ * A wayshrine at the end of a fork's track: a stepped plinth, a standing slab with a niche cut in it, a votive lamp burning in
+ * the niche and a few stones left by whoever passed. The one lit thing in open country away from a town, so the track is worth
+ * following from the fork at dusk.
+ */
+function wayshrine(): Prop {
+  const stone = [
+    put(new THREE.CylinderGeometry(1.25, 1.4, 0.24, 8), 0, 0.12, 0),
+    put(new THREE.CylinderGeometry(1, 1.1, 0.22, 8), 0, 0.34, 0),
+    put(new THREE.BoxGeometry(1.3, 2.1, 0.45).rotateZ(0.03), 0, 1.5, -0.15),
+    put(new THREE.BoxGeometry(1.6, 0.3, 0.7), 0, 2.62, -0.15),                            // the cap over the niche
+    ...[-1, 1].map(s => put(new THREE.BoxGeometry(0.3, 1.1, 0.4), s * 0.5, 1.4, 0.12)),    // the jambs the niche is between
+  ];
+  const offerings = [[0.95, 0.55], [-1, 0.4], [0.5, 1.05]].map(([x, z], i) => put(new THREE.DodecahedronGeometry(0.26 - i * 0.04), x, 0.2, z));
+  const lamp = [put(new THREE.OctahedronGeometry(0.19), 0, 1.5, 0.05), put(new THREE.OctahedronGeometry(0.11).scale(1, 1.5, 1), 0, 1.74, 0.05)];
+  return { layers: [
+    { name: 'stone', color: 0x6b6b66, cls: 'stone', parts: stone },
+    { name: 'offerings', color: 0x4b525b, cls: 'rock', parts: offerings },
+    { name: 'flame', color: EMBER, cls: 'glow', parts: lamp },
+  ], halos: [{ id: 'ember', x: 0, y: 1.6, z: 0.05, scale: 1.4 }] };
+}
+
+/**
+ * A traveller's fire at the end of a fork's track: a ring of stones round a burning pile of sticks, a pot on a tripod over it, and
+ * a lean-to of poles and hide to sleep under. The warm counterpart of the wayshrine, for the stops that are a camp and not a holy
+ * place. The lean-to is behind the fire (-z), so the prop is turned to face whoever comes up the track.
+ */
+function wayfire(): Prop {
+  const ring = Array.from({ length: 9 }, (_, i) => { const a = i * Math.PI * 2 / 9; return put(new THREE.DodecahedronGeometry(0.3), Math.cos(a) * 0.85, 0.12, Math.sin(a) * 0.85, 0, a, 0, 1, 0.7, 1); });
+  const sticks = Array.from({ length: 5 }, (_, i) => { const a = i * 1.3; return stick(Math.cos(a) * 0.2, 0.05, Math.sin(a) * 0.2, 0.8, 0.07, Math.sin(a) * 0.9, Math.cos(a) * 0.9); });
+  const tripod = Array.from({ length: 3 }, (_, i) => { const a = i * 2.1; return stick(Math.cos(a) * 0.95, 0, Math.sin(a) * 0.95, 2.1, 0.05, Math.sin(a) * -0.45, Math.cos(a) * -0.45); });
+  const pot = [put(new THREE.SphereGeometry(0.3, 7, 5).scale(1, 0.85, 1), 0, 1.15, 0), put(new THREE.CylinderGeometry(0.3, 0.26, 0.1, 7), 0, 1.38, 0)];
+  const frame = [
+    ...[-1, 1].map(s => put(new THREE.CylinderGeometry(0.07, 0.09, 1.9, 5).translate(0, 0.95, 0), s * 1.1, 0, -2.4)),
+    put(new THREE.CylinderGeometry(0.06, 0.06, 2.4, 5).rotateZ(Math.PI / 2), 0, 1.88, -2.4),
+    ...[-1, 1].map(s => put(new THREE.CylinderGeometry(0.05, 0.05, 1.7, 4).rotateX(0.95), s * 1.05, 0.88, -3.1)),
+  ];
+  const hide = [put(new THREE.BoxGeometry(2.5, 0.06, 1.9).rotateX(-0.8), 0, 1.25, -3.05)];
+  const flame = [put(new THREE.OctahedronGeometry(0.28).scale(1, 1.7, 1), 0, 0.55, 0), put(new THREE.OctahedronGeometry(0.16).scale(1, 1.4, 1), 0.08, 0.95, -0.05)];
+  return { layers: [
+    { name: 'ring', color: 0x4b525b, cls: 'rock', parts: ring },
+    { name: 'wood', color: TORCH_WOOD, cls: 'wood', parts: [...sticks, ...tripod, ...frame] },
+    { name: 'pot', color: TORCH_IRON, cls: 'metal', parts: pot },
+    { name: 'hide', color: 0x6d5a44, cls: 'hide', parts: hide },
+    { name: 'flame', color: EMBER, cls: 'glow', parts: flame },
+  ], halos: [{ id: 'torch', x: 0, y: 0.7, z: 0, scale: 1.8 }] };
+}
+
 /** Prop id -> its build. A prop is built per use (cheap: a handful of merged layers) and the renderer shares nothing between uses. */
 export const PROPS = {
   alembic, herbPatchFen: () => herbPatch('fen'), herbPatchThorn: () => herbPatch('thorn'), thornoak, tanningRack,
-  bush: () => bush('green'), bushDry: () => bush('dry'), torch,
+  bush: () => bush('green'), bushDry: () => bush('dry'), torch, signpost, wayshrine, wayfire,
 } satisfies Record<string, () => Prop>;
 export type PropId = keyof typeof PROPS;
