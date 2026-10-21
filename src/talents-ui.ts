@@ -4,6 +4,7 @@
 import type { GameState } from './sim';
 import { TALENTS, TIER_COST, TREES, TREE_IDS, TalentDef, Talents, learnBlocked, prereqMet, spentIn, spentTotal, talentById, talentPoints } from './sim/talents';
 import { el } from './dom';
+import { paintArt, talentArt } from './art';
 
 /** Why a rank cannot be bought, in the player's words. 'unknown' can only come from a bad id, so it needs no line. */
 const WHY: Record<string, string> = {
@@ -40,9 +41,13 @@ export class TalentsUi {
         const rowEl = el(col, `ttier${row.length === 1 ? ' cap' : ''}`);
         for (const def of row) {
           const cell = el(rowEl, 'talent');
-          el(cell, 'tlname', def.name);
-          const rank = el(cell, 'tlrank');
-          const req = def.prereq ? el(cell, 'tlreq', `needs ${talentById(def.prereq)!.name}`) : null;
+          // The node's picture, then its words beside it. A talent with no art drawn keeps the empty square
+          // rather than reflowing the row, so one missing file does not shuffle the tree out of line.
+          paintArt(el(cell, 'tlicon'), talentArt(def.id));
+          const text = el(cell, 'tltext');
+          el(text, 'tlname', def.name);
+          const rank = el(text, 'tlrank');
+          const req = def.prereq ? el(text, 'tlreq', `needs ${talentById(def.prereq)!.name}`) : null;
           cell.addEventListener('click', () => this.actions.learn(def.id));
           this.cells.set(def.id, { root: cell, rank, req });
         }

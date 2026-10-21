@@ -108,6 +108,13 @@ export const ABILITIES: AbilityDef[] = [
     kind: 'heal', unlockLevel: 30, damage: 140, cost: 40, cooldown: 90, range: 0, trainer: { vendor: 'high_trainer', price: 750 } },
 ];
 
+/**
+ * The id an ability's art is filed under (assets/art/abilities/<id>.webp), since an ability is known by its
+ * position in the array and nothing else. Its name, lowercased, spaces to underscores: the bar, the generator
+ * and src/art.test.ts all read it from here, so a renamed ability fails the art check instead of going blank.
+ */
+export const abilityArtId = (a: AbilityDef) => a.name.toLowerCase().replace(/ /g, '_');
+
 /** How long an interrupted enemy is stunned, and what share of its heavy-attack cooldown it keeps (so it cannot slam again at once). */
 export const STAGGER_TIME = 2.2;
 export const STAGGER_HEAVY_KEEP = 0.7;

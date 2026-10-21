@@ -1,6 +1,6 @@
 // HUD: DOM overlay. Reads GameState and sim events; never mutates sim state.
 import { GameState, GameEvent, ResourceNode, Enemy } from './sim';
-import { ABILITIES, AbilityDef, ENEMY_TYPES, GCD, castName } from './sim/data';
+import { ABILITIES, AbilityDef, ENEMY_TYPES, GCD, abilityArtId, castName } from './sim/data';
 import { levelProgress } from './sim/xp';
 import { ITEMS } from './sim/items';
 import { InvAction, countItem } from './sim/inventory';
@@ -31,7 +31,7 @@ import type { AdminAction } from './sim/admin';
 import { SpellbookUi } from './spellbook-ui';
 import { Minimap } from './minimap';
 import { DockWindow, HudWindow, el, dragData, parseDrag } from './dom';
-import { itemArt, paintArt } from './art';
+import { abilityArt, itemArt, paintArt } from './art';
 import { Dock } from './dock';
 import { loadBar, loadBarKeys, saveBar, saveBarKeys } from './storage';
 import { BarEntry, DEFAULT_KEYS, barWorthy, bindKey, bindRefusal, keyLabel, sameEntry, sanitizeBar, sanitizeKeys } from './bar-layout';
@@ -427,11 +427,11 @@ export class Hud {
       const ability = entry?.k === 'ability' ? entry.i : null;
       const a = ability === null ? null : ABILITIES[ability];
       const item = entry?.k === 'item' ? ITEMS[entry.id] : null;
-      const art = entry?.k === 'item' ? itemArt(entry.id) : null;
+      const art = entry?.k === 'item' ? itemArt(entry.id) : a ? abilityArt(abilityArtId(a)) : null;
       slot.key.textContent = keyLabel(this.keys[i]);
       slot.key.title = `Click to set the key for this slot (now: ${this.keys[i] ? keyLabel(this.keys[i]) : 'none'})`;
-      paintArt(slot.root, art); // a consumable wears its thumbnail; an ability wears its glyph
-      slot.icon.textContent = ability !== null ? ICONS[ability] : item && !art ? ITEM_ICON : '';
+      paintArt(slot.root, art); // an ability and a consumable both wear their thumbnail, and fall back to the glyph without one
+      slot.icon.textContent = art ? '' : ability !== null ? ICONS[ability] : item ? ITEM_ICON : '';
       slot.aname.textContent = a?.name ?? item?.name ?? '';
       slot.root.draggable = !!entry;
       slot.root.classList.toggle('empty', !entry);

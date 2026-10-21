@@ -24,6 +24,16 @@ export const ITEM_STYLE = 'single RPG inventory item icon, hand-painted fantasy 
   + 'crisp silhouette, three-quarter view, exactly one object floating dead centre, '
   + BACKDROP + ', nothing else in frame, no ground, no cast shadow, high detail, 2D game asset';
 
+/**
+ * Appended to every ability prompt. The same paint, palette and light as an item, because the two sit side by
+ * side in the action bar and have to read as one set; only "inventory item" becomes "ability icon", and the
+ * three-quarter view is dropped, since half of these are struck straight at the viewer.
+ */
+export const ABILITY_STYLE = 'single RPG ability icon, hand-painted fantasy game art, thick painterly brushwork, '
+  + 'muted earthy palette with cold highlights, strong warm rim light from the upper left, deep shadow on the lower right, '
+  + 'crisp silhouette, one emblem dead centre, '
+  + BACKDROP + ', nothing else in frame, no ground, no cast shadow, high detail, 2D game asset';
+
 /** Appended to every portrait prompt. */
 export const PORTRAIT_STYLE = 'head and shoulders character portrait, hand-painted fantasy game art, thick painterly brushwork, '
   + 'muted earthy palette with cold highlights, strong warm rim light from the upper left, deep shadow on the lower right, '
@@ -201,6 +211,90 @@ export const ITEM_SUBJECTS = {
   ...leatherSet('moorhide', 'moorhide_gloves', 'moorhide_boots'),
 };
 
+// --- the abilities ----------------------------------------------------------------------------
+/**
+ * One phrase per ability, keyed by abilityArtId (its name, lowercased, spaces to underscores).
+ *
+ * An ability is a verb and the model paints nouns, so every one of these is given a thing to be: the weapon the
+ * blow is struck with, the shield the guard is held behind, the ember the heal is. Asked for the deed instead
+ * ("a mighty cleaving strike") it paints the fight - two figures, ground, a sky - which is a picture, not an icon.
+ */
+export const ABILITY_SUBJECTS = {
+  strike: 'a keen steel longsword blade angled across the frame, a single clean white slash of light cutting along its edge',
+  // No "head" and no "face" in either hammer, and that is the whole fix: both came back a horned demon
+  // portrait on every seed, because a head with a face on it is what the model hears. Naming a "block"
+  // instead got a block - a bare iron cube, no hammer at all - so the haft is what is named now, and the
+  // hammer word is said twice.
+  crushing_blow: 'a blacksmith sledgehammer standing upright on its long dark wooden handle, the squared steel hammer at the top of the handle, grey sparks bursting off the steel',
+  serrated_throw: 'a single serrated saw-toothed throwing knife turning in the air, a fine arc of dark red droplets trailing behind it',
+  second_wind: 'a single ember of golden-green healing light, soft and radiant, one curl of pale breath winding around it',
+  cleave: 'a wide crescent sweep of pale white light shaped like the arc of a blade, a broad axe edge riding the inside of the crescent',
+  pummel: 'a single armoured steel gauntlet clenched into a fist, driven forward, a sharp crack of white light bursting off the knuckles',
+  // Four blades in a ring is what this wants to be, and "multiple objects" in the negative fights it the whole
+  // way: one blade bent into the ring is the same read and the model will actually paint it.
+  whirlwind: 'a single curved sword blade bent round into a closed circle of motion, a grey vortex of wind spinning inside the ring',
+  guard: 'a heavy round iron shield seen face on, riveted bands and a domed central boss, a cold pale blue ward light along the rim',
+  bloodthirst: 'a straight steel blade standing point down, dark red blood running up the fuller towards the hilt, one droplet lifting off the tip',
+  shield_bash: 'a heavy round iron shield turned edge on and driven forward rim first, a hard crack of white impact light across the boss',
+  hemorrhage: 'a barbed crimson iron hook torn backwards, a spray of dark red droplets flung off its point',
+  colossus_blow: 'a colossal two-handed stone warhammer standing upright on its long iron-bound handle, the huge cracked grey stone hammer at the top of the handle, hot orange light glowing in the cracks',
+  last_stand: 'a dented iron shield boss with a heart of warm golden light burning in its centre, rays breaking out through the dents',
+};
+
+// --- the talents ------------------------------------------------------------------------------
+/**
+ * One phrase per talent node, keyed by its id in src/sim/talents.ts. These wear ABILITY_STYLE rather than a
+ * style of their own: a talent is the same kind of picture as an ability - one emblem, no figure - and giving
+ * it its own suffix would only be a second copy of that one to drift out of step with.
+ *
+ * A talent is a passive, so there is even less to paint than an ability: most are a number going up. Each is
+ * given the one object the tree would carve for it, and the three trees are kept apart by what they are made
+ * of - Fury is scarred iron and hot red light, Bulwark is plate and cold blue, Hunt is an edge and dark red.
+ * Where a node sharpens an ability the player already has, its emblem is deliberately NOT that ability's
+ * (Whirling is not Cleave's crescent, Bloodthirst's node is not Bloodthirst's blade), or the talent panel
+ * would read as a second copy of the action bar.
+ */
+export const TALENT_SUBJECTS = {
+  // Fury: scarred iron, hot red light.
+  brutality: 'a heavy notched iron axe head alone, its edge scarred and chipped from use, dull hot red light glowing in the notches',
+  overpower: 'a bull skull with heavy curved horns, blackened iron caps banded onto the horn tips, dull red light in the eye sockets',
+  frenzy: 'three overlapping curved claw slashes of pale white light torn fast across the frame, trailing sparks',
+  // An hourglass is the obvious picture for a cooldown and Exsanguinate has the better claim on it, so this
+  // one is the sharpening rather than the waiting.
+  relentless: 'a spinning iron whetstone wheel throwing a wide fan of white sparks from its rim',
+  execute: 'an executioner broad squared axe head hanging edge down, a thin hot line of red light running along its edge',
+  ruin: 'a shattered iron helm split open down the centre, the jagged crack glowing hot orange from within',
+  berserk: 'a snarling horned war mask of blackened iron, mouth wrenched open, burning red light behind the eye slits',
+  unbridled: 'a thick iron chain snapped apart at one link, white hot sparks bursting out of the broken link',
+  bloodthirst: 'a squat dark iron chalice brimming with dark red blood, one heavy drop running down its outside',
+
+  // Bulwark: layered plate, cold blue light.
+  toughened: 'a thick iron pauldron of layered overlapping plates, dented and scarred, cold blue highlight along the top edge',
+  bastion: 'a squat stone fortress tower with an iron banded base and one lit window, cold pale light on its stonework',
+  rally: 'a war horn of banded brass and iron, warm golden light spilling out of its bell',
+  // The stone block this used to stand on came back a pale paving slab filling the frame, which no reroll
+  // moved: the backdrop the style asks for cannot survive a second large object being named beside it.
+  stalwart: 'a single iron shod boot planted flat and square, a hard white shockwave cracking outward from under the heel',
+  counterstrike: 'two crossed iron bracers braced against each other, a hard white spark bursting where they meet',
+  thickskin: 'a hide of thick grey overlapping horned scales filling the frame, cold blue rim light on every ridge',
+  guardian: 'a tall iron kite shield planted point down, a pale blue ward light burning steadily along its rim',
+  // A sprig bound with linen is a pressed specimen, and the model paints those on parchment every time.
+  // Clasped in iron it is an emblem, which is what the rest of the tree is wearing.
+  vigour: 'a sprig of broad leaved green healing herb clasped in a dark iron ring, soft green light rising off the leaves',
+  ironwill: 'a plain heavy iron crown band, unjewelled and battered, cold white light running along its rim',
+
+  // Hunt: an edge, and dark red.
+  serration: 'a curved blade edge seen close, a row of deep saw teeth along it each catching cold light, one dark red droplet hanging',
+  predator: 'a wolf skull in profile with long bared fangs, low amber light burning in its eye socket',
+  whirling: 'a wide open crescent of grey spinning wind, pale white light running along its outer edge',
+  rending: 'three deep parallel claw gouges torn through thick grey hide, dark red welling up inside the cuts',
+  bloodscent: 'a single dark red droplet of blood falling, a faint pale ring of scent light spreading outward around it',
+  carnage: 'a broad double headed axe head alone, both edges notched and darkened, dried dark red caught in the notches',
+  exsanguinate: 'an hourglass of dark iron running dark red blood instead of sand, its upper bulb nearly empty',
+  opportunist: 'a thin curved stiletto dagger slipping in behind a broken iron plate, a cold white glint on its point',
+  hemorrhage: 'a lean skeletal hand clenched shut, dragging a ribbon of dark red blood through the air towards itself',
+};
+
 // --- the faces --------------------------------------------------------------------------------
 /**
  * Everyone the player can walk up to and talk to, by the id the game already knows them by:
@@ -247,12 +341,29 @@ export const PORTRAIT_SUBJECTS = {
  * and no wording talks the model out of a bad roll. Rerolling only those keeps every other picture
  * byte for byte what it was, and keeps the set reproducible from a clean checkout, which rerolling
  * by hand with --seed does not.
+ *
+ * Keyed by `kind/id`, not by id alone: an id is only unique within its kind, and Hemorrhage is both
+ * an ability and a talent. Keyed by id, rerolling one of them silently rerolled the other too.
  */
 export const REROLLS: Record<string, number> = {
-  adamant_chestplate: 1,
-  steel_sword: 1,
-  stormiron_blade: 1,
-  tanned_hide: 1,
-  thorn_leather: 2,
-  vendor_trainer: 2,
+  'items/adamant_chestplate': 1,
+  'items/steel_sword': 1,
+  'items/stormiron_blade': 1,
+  'items/tanned_hide': 1,
+  'items/thorn_leather': 2,
+  'abilities/colossus_blow': 1,
+  'abilities/crushing_blow': 1,
+  'abilities/hemorrhage': 1,
+  'portraits/vendor_trainer': 2,
+  // Light-on-dark backwards: the model painted these on parchment, a brown panel or a pale halo, and
+  // the flood that flattens the backdrop starts at the border and cannot get past a lit pixel.
+  'talents/carnage': 1,
+  'talents/guardian': 1,
+  'talents/hemorrhage': 2,
+  'talents/vigour': 1,
+  // Not what the prompt asked for: a second demon face beside Berserk rather than a split helm, two
+  // plain daggers rather than one slipping behind a plate, and a pair of boots rather than one.
+  'talents/opportunist': 1,
+  'talents/ruin': 1,
+  'talents/stalwart': 1,
 };

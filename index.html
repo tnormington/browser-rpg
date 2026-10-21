@@ -198,7 +198,11 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 /* a tier is a row of two, the capstone a row of one; the mark between rows is what that tier costs to open */
 .ttier{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2);margin-bottom:5px}.ttier.cap{grid-template-columns:1fr}
 .ttiermark{font-size:var(--fs-xs);text-align:center;color:var(--ink-dim);opacity:.55;letter-spacing:.06em;margin-bottom:var(--sp-1)}
-.talent{position:relative;background:var(--iron-lift);border:2px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-2) var(--sp-3);cursor:pointer}
+.talent{position:relative;display:flex;gap:var(--sp-2);align-items:flex-start;background:var(--iron-lift);border:2px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-2) var(--sp-3);cursor:pointer}
+/* the node's picture, square beside its words. background-color, not the `background` shorthand: the shorthand
+   would undo the size and position .art sets at the foot of this sheet (see the note down there) */
+.tlicon{flex:none;width:34px;height:34px;border:1px solid var(--edge-dim);border-radius:var(--r);background-color:var(--iron-glass)}
+.tltext{flex:1;min-width:0}
 .talent:hover{border-color:var(--edge-hi)}
 .talent.taken{border-color:var(--gold)}
 .talent.shut{opacity:.45;cursor:default}.talent.shut:hover{border-color:var(--edge-dim)}

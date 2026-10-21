@@ -1,4 +1,4 @@
-// Draws every item thumbnail and every NPC portrait on the Forge image generator running on this PC (HOM-135).
+// Draws every item thumbnail, every ability and talent icon and every NPC portrait on the Forge image generator running on this PC (HOM-135).
 //
 //   npx tsx scripts/gen-art.ts                       everything that is not drawn yet
 //   npx tsx scripts/gen-art.ts --force               redraw everything
@@ -25,10 +25,12 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { acquireGpuSlot } from '../bench/browser.mjs';
 import { ITEMS } from '../src/sim/items';
+import { ABILITIES, abilityArtId } from '../src/sim/data';
+import { TALENTS } from '../src/sim/talents';
 import { NPCS } from '../src/sim/quest';
 import { VENDORS } from '../src/sim/shop';
 import { FLIGHT_MASTERS } from '../src/sim/flight';
-import { ITEM_STYLE, ITEM_SUBJECTS, NEGATIVE, PORTRAIT_STYLE, PORTRAIT_SUBJECTS, REROLLS } from './art-subjects';
+import { ABILITY_STYLE, ABILITY_SUBJECTS, ITEM_STYLE, ITEM_SUBJECTS, NEGATIVE, PORTRAIT_STYLE, PORTRAIT_SUBJECTS, REROLLS, TALENT_SUBJECTS } from './art-subjects';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CACHE = join(ROOT, '.art-cache');
@@ -41,12 +43,19 @@ const SAMPLER = { sampler_name: 'DPM++ SDE', scheduler: 'Karras', steps: 8, cfg_
 const GEN_SIZE = 1024;                                      // SDXL's native square
 const BACK = [20, 20, 22];                                  // the one charcoal every finished piece sits on
 
-/** The two kinds of art, and the frame each one is cut to. `fill` is how much of the canvas the subject spans. */
+/** The kinds of art, and the frame each one is cut to. `fill` is how much of the canvas the subject spans. */
 const KINDS = {
   items: { subjects: ITEM_SUBJECTS as Record<string, string>, style: ITEM_STYLE, size: 192, fill: 0.84 },
+  // An ability shares the item's frame exactly: the two sit in the same action bar slot, so a sword on the bar
+  // must not be drawn to a different size than the Strike beside it.
+  abilities: { subjects: ABILITY_SUBJECTS as Record<string, string>, style: ABILITY_STYLE, size: 192, fill: 0.84 },
+  // A talent wears the ability's style and the ability's frame: it is the same kind of emblem, and the two are
+  // read side by side when a capstone hands its ability over.
+  talents: { subjects: TALENT_SUBJECTS as Record<string, string>, style: ABILITY_STYLE, size: 192, fill: 0.84 },
   portraits: { subjects: PORTRAIT_SUBJECTS as Record<string, string>, style: PORTRAIT_STYLE, size: 320, fill: 0.96 },
 };
 type Kind = keyof typeof KINDS;
+const KIND_NAMES = Object.keys(KINDS) as Kind[];
 
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(name);
@@ -59,14 +68,16 @@ const seedOffset = Number(value('--seed') ?? 0);
  * Same id, same picture, run after run: the seed is the id, nudged by that id's entry in REROLLS.
  * --seed rerolls the whole set together.
  */
-const seedOf = (id: string) => (([...id].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7) >>> 0)
-  + seedOffset + (REROLLS[id] ?? 0) * 7919) % 2_147_483_647;
+const seedOf = (kind: Kind, id: string) => (([...id].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7) >>> 0)
+  + seedOffset + (REROLLS[`${kind}/${id}`] ?? 0) * 7919) % 2_147_483_647;
 
 /**
- * Every item and every NPC has a subject, and every subject is a real item or NPC. Without this the
+ * Every item, ability, talent and NPC has a subject, and every subject is a real one. Without this the
  * art silently drifts from sim/items.ts the first time someone adds a sword.
  */
 function checkCoverage() {
+  const abilityIds = ABILITIES.map(abilityArtId);
+  const talentIds = TALENTS.map(t => t.id);
   const portraitIds = [
     ...NPCS.map(n => n.id),
     ...VENDORS.map(v => `vendor_${v.id}`),
@@ -75,8 +86,18 @@ function checkCoverage() {
   const problems = [
     ...Object.keys(ITEMS).filter(id => !ITEM_SUBJECTS[id as keyof typeof ITEM_SUBJECTS]).map(id => `item ${id} has no subject in scripts/art-subjects.ts`),
     ...Object.keys(ITEM_SUBJECTS).filter(id => !ITEMS[id]).map(id => `subject ${id} is not an item in src/sim/items.ts`),
+    ...abilityIds.filter(id => !ABILITY_SUBJECTS[id as keyof typeof ABILITY_SUBJECTS]).map(id => `ability ${id} has no subject in scripts/art-subjects.ts`),
+    ...Object.keys(ABILITY_SUBJECTS).filter(id => !abilityIds.includes(id)).map(id => `subject ${id} is not an ability in src/sim/data.ts`),
+    ...talentIds.filter(id => !TALENT_SUBJECTS[id as keyof typeof TALENT_SUBJECTS]).map(id => `talent ${id} has no subject in scripts/art-subjects.ts`),
+    ...Object.keys(TALENT_SUBJECTS).filter(id => !talentIds.includes(id)).map(id => `subject ${id} is not a talent in src/sim/talents.ts`),
     ...portraitIds.filter(id => !PORTRAIT_SUBJECTS[id as keyof typeof PORTRAIT_SUBJECTS]).map(id => `npc ${id} has no portrait subject`),
     ...Object.keys(PORTRAIT_SUBJECTS).filter(id => !portraitIds.includes(id)).map(id => `portrait ${id} is nobody in the game`),
+    // A reroll key that matches no subject is a silent no-op: the picture it was meant to fix stays
+    // on the roll that was wrong.
+    ...Object.keys(REROLLS).filter(key => {
+      const [kind, id] = key.split('/');
+      return !KINDS[kind as Kind]?.subjects[id];
+    }).map(key => `reroll ${key} is not a kind/id with a subject in scripts/art-subjects.ts`),
   ];
   if (problems.length) throw new Error(`gen-art: art and sim data disagree:\n  ${problems.join('\n  ')}`);
 }
@@ -129,7 +150,7 @@ async function draw(kind: Kind, id: string, raw: string) {
   const k = KINDS[kind];
   const j = await post('/sdapi/v1/txt2img', {
     prompt: `${k.subjects[id]}, ${k.style}`, negative_prompt: NEGATIVE,
-    width: GEN_SIZE, height: GEN_SIZE, batch_size: 1, seed: seedOf(id), ...SAMPLER,
+    width: GEN_SIZE, height: GEN_SIZE, batch_size: 1, seed: seedOf(kind, id), ...SAMPLER,
   });
   if (!j.images?.[0]) throw new Error(`gen-art: Forge returned no image for ${kind}/${id}`);
   writeFileSync(raw, Buffer.from(j.images[0], 'base64'));
@@ -141,7 +162,7 @@ const wanted = (kind: Kind) => Object.keys(KINDS[kind].subjects)
   .filter(id => force || !existsSync(join(CACHE, kind, `${id}.png`)));
 
 async function generate() {
-  const todo = (['items', 'portraits'] as Kind[]).flatMap(kind => wanted(kind).map(id => ({ kind, id })));
+  const todo = KIND_NAMES.flatMap(kind => wanted(kind).map(id => ({ kind, id })));
   if (!todo.length) return console.log('gen-art: every subject is already drawn (--force to redraw)');
   console.log(`gen-art: drawing ${todo.length} subject${todo.length > 1 ? 's' : ''} on ${API}`);
   await ensureForge();
@@ -242,7 +263,7 @@ const frameInPage = ([src, size, fill, back]: [string, number, number, number[]]
 });
 
 async function frame() {
-  const jobs = (['items', 'portraits'] as Kind[]).flatMap(kind =>
+  const jobs = KIND_NAMES.flatMap(kind =>
     readdirSync(join(CACHE, kind)).filter(f => f.endsWith('.png'))
       .map(f => ({ kind, id: f.slice(0, -4) }))
       .filter(j => !only || only.includes(j.id)));
@@ -266,7 +287,7 @@ async function frame() {
 }
 
 checkCoverage();
-for (const kind of ['items', 'portraits']) {
+for (const kind of KIND_NAMES) {
   mkdirSync(join(CACHE, kind), { recursive: true });
   mkdirSync(join(OUT, kind), { recursive: true });
 }
