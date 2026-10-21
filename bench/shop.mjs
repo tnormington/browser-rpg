@@ -27,7 +27,7 @@ await page.evaluate(() => {
   const p = window.__debug.sim.player;
   p.hp = p.maxHp = 99999;
   p.inventory[0] = { id: 'boar_hide', qty: 10 }; p.inventory[1] = { id: 'iron_sword', qty: 1 };
-  p.x = -10; p.z = 3; // a few steps west of the merchant
+  p.x = -7.4; p.z = 3; // right beside the merchant at (-5, 3): since HOM-139 a click only acts on what is in reach
 });
 await page.waitForTimeout(300);
 

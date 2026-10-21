@@ -21,7 +21,17 @@ const stand = async (x, z, yaw = 0, ms = 600) => {
   await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp; window.__debug.view.yaw = yaw; }, [x, z, yaw]);
   await page.waitForTimeout(ms);
 };
-const click = async (x, y, z) => {
+/**
+ * Click the thing at (x, y, z), closing the gap to `gap` first without changing which side we are on. Since HOM-139 a
+ * click only acts on what is already in reach (the thing's radius + 0.5 + 1.5), so a shot's wide framing is taken
+ * first and then stepped in from.
+ */
+const click = async (x, y, z, gap = 2.4) => {
+  await page.evaluate(([x, z, gap]) => {
+    const p = window.__debug.sim.player, d = Math.hypot(p.x - x, p.z - z) || 1;
+    p.x = x + ((p.x - x) / d) * gap; p.z = z + ((p.z - z) / d) * gap;
+  }, [x, z, gap]);
+  await page.waitForTimeout(400);
   const p = await page.evaluate(([x, y, z]) => window.__debug.view.project(x, y, z), [x, y, z]);
   await page.mouse.click(p.x, p.y);
 };
@@ -37,7 +47,7 @@ await sim(() => { for (const e of window.__debug.sim.enemies) { e.state = 'dead'
 const garden = await sim(() => window.__debug.sim.nodes.filter(n => n.type === 'marrowleaf')[0]);
 await stand(garden.x - 5, garden.z + 5, -Math.PI / 4); // the patch is north-east of here: yaw -PI/4 looks that way
 await page.screenshot({ path: join(shots, 'herbs-garden.png') });
-await click(garden.x, 0.4, garden.z);
+await click(garden.x, 0.4, garden.z, 2.6); // a herb patch is radius 1: 2.6 is inside its reach
 await page.waitForTimeout(9000);
 const herb = await count('marrowleaf');
 if (herb < 1) fail(`clicking a Marrowleaf patch picked nothing (bag holds ${herb})`);
@@ -47,7 +57,7 @@ await page.screenshot({ path: join(shots, 'herbs-picked.png') });
 const al = await sim(() => window.__debug.world.LANDMARKS.alembic);
 await sim(() => { const s = window.__debug.sim, inv = s.player.inventory, i = inv.findIndex(x => x === null); inv[i] = { id: 'vial', qty: 5 }; });
 await stand(al.x - 5, al.z + 5, -Math.PI / 4);
-await click(al.x, 1.5, al.z);
+await click(al.x, 1.5, al.z, 2.8); // the alembic is radius 1.3: 2.8 is inside its reach
 await page.waitForTimeout(2500);
 const open = await page.locator('.forgepanel', { hasText: 'Healing Draught' }).first().isVisible().catch(() => false);
 if (!open) fail('clicking the alembic did not open its recipe list');

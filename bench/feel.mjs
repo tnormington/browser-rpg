@@ -49,16 +49,18 @@ await sim(() => { const { sim } = window.__debug; sim.player.x = 0; sim.player.z
 const npc = await page.evaluate(() => { const v = window.__debug.view; return v.project(window.__debug.sim.player.x, 0, 0); });
 // put the wolf on top of the Warden on screen: click the Warden's body, an enemy standing right behind him must not win
 const { NPCX, NPCZ } = await sim(() => ({ NPCX: window.__debug.view.npcGroup.position.x, NPCZ: window.__debug.view.npcGroup.position.z }));
-await page.evaluate(([x, z]) => { const { sim, view } = window.__debug; sim.player.x = x; sim.player.z = z + 8; view.yaw = 0; sim.targetId = null; const e = sim.enemies.find(e => e.type === 'wolf'); e.x = x + 1.2; e.z = z - 0.5; }, [NPCX, NPCZ]);
+// stood in reach of him: since HOM-139 a click only acts on what you can already touch
+await page.evaluate(([x, z]) => { const { sim, view } = window.__debug; sim.player.x = x; sim.player.z = z + 2.4; view.yaw = 0; sim.targetId = null; const e = sim.enemies.find(e => e.type === 'wolf'); e.x = x + 1.2; e.z = z - 0.5; }, [NPCX, NPCZ]);
 await wait(500);
 const w = await page.evaluate(([x, z]) => window.__debug.view.project(x, 1.0, z), [NPCX, NPCZ]);
 await page.screenshot({ path: join(out, 'npc-with-wolf-beside.png') });
 await page.mouse.click(w.x, w.y);
-await wait(200);
+await wait(400);
 const hasTarget = await sim(() => window.__debug.sim.targetId);
-check('clicking the Warden (wolf standing beside him) talks, not targets', hasTarget === null);
+const talking = await page.locator('.dialogue').isVisible().catch(() => false);
+check('clicking the Warden (wolf standing beside him) talks, not targets', hasTarget === null && talking);
 
-// --- jump (fresh page: the Warden click above left the player walking to him) ---
+// --- jump (fresh page: the Warden click above left his dialogue open) ---
 await page.reload();
 await page.waitForFunction(() => window.__debug, null, { timeout: 60000 });
 await page.evaluate(() => window.__debug.view.modelsReady);

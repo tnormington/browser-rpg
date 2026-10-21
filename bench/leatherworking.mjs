@@ -22,7 +22,17 @@ const stand = async (x, z, yaw = 0, ms = 700) => {
   await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp; window.__debug.view.yaw = yaw; }, [x, z, yaw]);
   await page.waitForTimeout(ms);
 };
-const click = async (x, y, z) => {
+/**
+ * Click the thing at (x, y, z), closing the gap to `gap` first without changing which side we are on. Since HOM-139 a
+ * click only acts on what is already in reach (the thing's radius + 0.5 + 1.5), so a shot's wide framing is taken
+ * first and then stepped in from.
+ */
+const click = async (x, y, z, gap = 2.4) => {
+  await page.evaluate(([x, z, gap]) => {
+    const p = window.__debug.sim.player, d = Math.hypot(p.x - x, p.z - z) || 1;
+    p.x = x + ((p.x - x) / d) * gap; p.z = z + ((p.z - z) / d) * gap;
+  }, [x, z, gap]);
+  await page.waitForTimeout(400);
   const p = await page.evaluate(([x, y, z]) => window.__debug.view.project(x, y, z), [x, y, z]);
   await page.mouse.click(p.x, p.y);
 };
@@ -40,7 +50,7 @@ const L = await sim(() => window.__debug.world.LANDMARKS);
 await sim(() => { const inv = window.__debug.sim.player.inventory; inv[0] = { id: 'boar_hide', qty: 5 }; });
 await stand(L.rack.x - 4, L.rack.z + 5, -Math.PI / 2.4);
 await page.screenshot({ path: join(shots, 'leather-rack.png') });
-await click(L.rack.x, 1.4, L.rack.z);
+await click(L.rack.x, 1.4, L.rack.z, 3); // the rack is radius 1.6: 3 is inside its reach
 await page.waitForTimeout(2500);
 if (!await page.locator('.forgepanel', { hasText: 'Tan Boar Hide' }).first().isVisible().catch(() => false)) fail('clicking the tanning rack did not open its recipe list');
 await page.screenshot({ path: join(shots, 'leather-panel.png') });

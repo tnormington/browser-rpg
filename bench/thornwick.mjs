@@ -20,6 +20,8 @@ const fail = msg => { console.error(`FAIL: ${msg}`); process.exitCode = 1; };
 const sim = (fn, arg) => page.evaluate(fn, arg);
 const at = (x, y, z) => page.evaluate(([x, y, z]) => window.__debug.view.project(x, y, z), [x, y, z]);
 /** Put the player at (x, z) with the camera `yaw` (0 looks north, PI south, -PI/2 east), health full, and let the sim and a frame settle. */
+/** How close to stand to click somebody: since HOM-139 a click only acts on what is already in reach (r 0.7 + 0.5 + 1.5). */
+const TOUCH = 2.4;
 const stand = async (x, z, yaw = 0, ms = 500) => {
   await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp; window.__debug.view.yaw = yaw; }, [x, z, yaw]);
   await page.waitForTimeout(ms);
@@ -87,7 +89,7 @@ await page.screenshot({ path: join(shots, 'thorn-road-end.png') });
 await stand(878, 960, Math.PI, 700);
 await page.screenshot({ path: join(shots, 'thorn-town.png') });
 const reeve = await at(867, 1.2, 984);
-await stand(867, 984 + 8, 0, 600);
+await stand(867, 984 + TOUCH, 0, 600);
 const reevePt = await at(867, 1.2, 984);
 await page.mouse.click(reevePt.x, reevePt.y);
 await page.waitForSelector('.dialogue', { state: 'visible', timeout: 8000 }).catch(() => fail('clicking the reeve did not open a dialogue'));
@@ -99,7 +101,7 @@ await page.waitForTimeout(500);
 void reeve;
 
 // the provisioner
-await stand(859, 996 + 8, 0, 600);
+await stand(859, 996 + TOUCH, 0, 600);
 const edda = await at(859, 1.2, 996);
 await page.mouse.click(edda.x, edda.y);
 await page.waitForSelector('.shoppanel:visible', { timeout: 8000 }).catch(() => fail('clicking the provisioner did not open the shop'));
@@ -113,7 +115,7 @@ await page.waitForTimeout(500);
 
 // the flight master: found by walking up, then clickable, and Saltmarrow (found on an earlier walk, here by the sim) is on its list
 await sim(() => { const f = window.__debug.sim.found; if (!f.includes('saltmarrow')) f.push('saltmarrow'); });
-await stand(885, 956 + 9, 0, 600);
+await stand(885, 956 + TOUCH, 0, 600);
 const found = await sim(() => window.__debug.sim.found.join());
 if (!found.includes('thornwick')) fail(`walking up to the flight master did not find Thornwick: found = ${found}`);
 const fm = await at(885, 1.5, 956);

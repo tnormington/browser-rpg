@@ -49,7 +49,7 @@ for (const [width, height] of SIZES) {
   await key('KeyK'); await shot('6-skills'); await closeAll();
   await page.evaluate(() => { const d = window.__debug, p = d.sim.player, f = d.world.LANDMARKS.forge; p.x = f.x - 3; p.z = f.z; d.step(); d.step(); d.sim.interact = { k: 'forge' }; });
   await shot('7-forge'); await closeAll();
-  await page.evaluate(() => { const d = window.__debug; d.sim.player.x = -10; d.sim.player.z = 3; d.step(); });
+  await page.evaluate(() => { const d = window.__debug; d.sim.player.x = -7.4; d.sim.player.z = 3; d.step(); }); // beside the merchant: a click only acts in reach (HOM-139)
   const at = await page.evaluate(() => window.__debug.view.project(-5, 1.2, 3));
   await page.mouse.click(at.x, at.y);
   await page.waitForSelector('.shoppanel', { state: 'visible', timeout: 6000 }).catch(() => console.error('shop did not open'));

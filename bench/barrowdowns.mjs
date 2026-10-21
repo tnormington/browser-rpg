@@ -24,6 +24,19 @@ const stand = async (x, z, yaw = 0, ms = 500) => {
   await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp; window.__debug.view.yaw = yaw; }, [x, z, yaw]);
   await page.waitForTimeout(ms);
 };
+/**
+ * Close the gap to `gap` of (x, z) without changing which side we are on, and give back where (x, y, z) lands on
+ * screen. Since HOM-139 a click only acts on what is already in reach (the thing's radius + 0.5 + 1.5), so the wide
+ * framing a shot wants is taken first and then stepped in from.
+ */
+const reach = async (x, y, z, gap = 2.4) => {
+  await page.evaluate(([x, z, gap]) => {
+    const p = window.__debug.sim.player, d = Math.hypot(p.x - x, p.z - z) || 1;
+    p.x = x + ((p.x - x) / d) * gap; p.z = z + ((p.z - z) / d) * gap;
+  }, [x, z, gap]);
+  await page.waitForTimeout(400);
+  return at(x, y, z);
+};
 const setLevel = level => page.evaluate(level => {
   const p = window.__debug.sim.player;
   p.combat.level = level; p.combat.xp = Math.round(100 * level ** 2.3); // the sim reads `level`
@@ -74,7 +87,7 @@ await stand(stand0.x - 4, stand0.z + (stand0.z > Z ? -4 : 4), stand0.z > Z ? Mat
 await page.screenshot({ path: join(shots, 'barrow-stormiron-near.png') });
 // a Mining-40 hand mines it by clicking
 await sim(() => { const p = window.__debug.sim.player; p.skills.mining.level = 40; p.skills.mining.xp = 40000; });
-const vein = await at(stand0.x, 1, stand0.z);
+const vein = await reach(stand0.x, 1, stand0.z, 2.8); // an ore rock is radius 1.2: 2.8 is inside its reach
 await page.mouse.click(vein.x, vein.y);
 await page.waitForTimeout(1500);
 const acting = await sim(() => window.__debug.sim.player.action?.k ?? null);
@@ -116,7 +129,7 @@ const fmPos = await sim(() => window.__debug.world.LANDMARKS.flightHigh);
 await stand(fmPos.x + 9, fmPos.z, Math.PI / 2, 600);
 const found = await sim(() => window.__debug.sim.found.join());
 if (!found.includes('highmoor')) fail(`walking up to the flight master did not find Highmoor: found = ${found}`);
-const fm = await at(fmPos.x, 1.5, fmPos.z);
+const fm = await reach(fmPos.x, 1.5, fmPos.z);
 await page.mouse.click(fm.x, fm.y);
 await page.waitForSelector('.shoppanel:visible', { timeout: 8000 }).catch(() => fail('clicking the flight master did not open the flights'));
 await page.waitForTimeout(400);

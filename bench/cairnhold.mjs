@@ -30,6 +30,19 @@ const stand = async (x, z, look = null, ms = 500) => {
   }, [x, z, look]);
   await page.waitForTimeout(ms);
 };
+/**
+ * Close the gap to `gap` of (x, z) without changing which side we are on, and give back where (x, y, z) lands on
+ * screen. Since HOM-139 a click only acts on what is already in reach (the thing's radius + 0.5 + 1.5), so the wide
+ * framing a shot wants is taken first and then stepped in from.
+ */
+const reach = async (x, y, z, gap = 2.4) => {
+  await page.evaluate(([x, z, gap]) => {
+    const p = window.__debug.sim.player, d = Math.hypot(p.x - x, p.z - z) || 1;
+    p.x = x + ((p.x - x) / d) * gap; p.z = z + ((p.z - z) / d) * gap;
+  }, [x, z, gap]);
+  await page.waitForTimeout(400);
+  return at(x, y, z);
+};
 /** Combat level with exactly its XP (sim/xp.ts's curve), so a kill's XP does not carry the player past it. */
 const setLevel = level => page.evaluate(level => {
   let points = 0, xp = 0;
@@ -84,7 +97,7 @@ await stand(sw.x + 7, sw.z + 8, sw, 700);
 const q0 = await sim(() => window.__debug.sim.quest.seventh);
 if (q0 !== 'offer') fail(`with the Rotroot handed in the Steward's chain is "${q0}", not on offer`);
 await shot('steward');
-const sp = await at(sw.x, 1.4, sw.z);
+const sp = await reach(sw.x, 1.4, sw.z);
 await page.mouse.click(sp.x, sp.y);
 await page.waitForSelector('.dialogue:visible', { timeout: 8000 }).catch(() => fail('clicking the Steward did not open the talk'));
 await page.waitForTimeout(400);
@@ -129,7 +142,7 @@ await shot('corvin-open');
 const vd = LM.highVendor;
 await stand(vd.x + 6, vd.z + 7, vd, 600);
 await sim(() => { const inv = window.__debug.sim.player.inventory; inv[0] = { id: 'iron_sword', qty: 1 }; });
-const vp = await at(vd.x, 1.4, vd.z);
+const vp = await reach(vd.x, 1.4, vd.z);
 await page.mouse.click(vp.x, vp.y);
 await page.waitForSelector('.shoppanel:visible', { timeout: 8000 }).catch(() => fail('clicking the provisioner did not open the shop'));
 await page.waitForTimeout(400);
@@ -191,7 +204,7 @@ if (gh.count !== 6) fail(`${gh.count} Ghostcap patches in the world, not 6`);
 await sim(() => { const p = window.__debug.sim.player; p.skills.herbalism.level = 34; p.skills.herbalism.xp = 99999; });
 await stand(gh.near.x + 3, gh.near.z + 3, gh.near, 700);
 await shot('ghostcap');
-const gp = await at(gh.near.x, 0.6, gh.near.z);
+const gp = await reach(gh.near.x, 0.6, gh.near.z, 2.6); // a herb patch is radius 1: 2.6 is inside its reach
 await page.mouse.click(gp.x, gp.y);
 await page.waitForTimeout(1200);
 const acting = await sim(() => window.__debug.sim.player.action?.k ?? null);

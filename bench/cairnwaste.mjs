@@ -24,6 +24,19 @@ const stand = async (x, z, yaw = 0, ms = 500) => {
   await page.evaluate(([x, z, yaw]) => { const s = window.__debug.sim, p = s.player, v = window.__debug.view; s.interact = null; p.x = x; p.z = z; p.hp = p.maxHp; v.yaw = yaw; v.weather.set('clear', true); v.skyClock = 0; }, [x, z, yaw]); // a clear morning, so every shot is judged in the same light
   await page.waitForTimeout(ms);
 };
+/**
+ * Close the gap to `gap` of (x, z) without changing which side we are on, and give back where (x, y, z) lands on
+ * screen. Since HOM-139 a click only acts on what is already in reach (the thing's radius + 0.5 + 1.5), so the wide
+ * framing a shot wants is taken first and then stepped in from.
+ */
+const reach = async (x, y, z, gap = 2.4) => {
+  await page.evaluate(([x, z, gap]) => {
+    const p = window.__debug.sim.player, d = Math.hypot(p.x - x, p.z - z) || 1;
+    p.x = x + ((p.x - x) / d) * gap; p.z = z + ((p.z - z) / d) * gap;
+  }, [x, z, gap]);
+  await page.waitForTimeout(400);
+  return at(x, y, z);
+};
 const setLevel = level => page.evaluate(level => {
   const p = window.__debug.sim.player;
   p.combat.level = level; p.combat.xp = Math.round(100 * level ** 2.3); // the sim reads `level`
@@ -74,7 +87,7 @@ const sp = { x: stand0.x + (stand0.x > CX ? -5 : 5), z: stand0.z + 4 };
 await stand(sp.x, sp.z, facing(sp.x, sp.z, stand0.x, stand0.z), 700);
 await page.screenshot({ path: join(shots, 'waste-starmetal-near.png') });
 await sim(() => { const p = window.__debug.sim.player; p.skills.mining.level = 52; p.skills.mining.xp = 150000; });
-const vein = await at(stand0.x, 1, stand0.z);
+const vein = await reach(stand0.x, 1, stand0.z, 2.8); // an ore rock is radius 1.2: 2.8 is inside its reach
 await page.mouse.click(vein.x, vein.y);
 await page.waitForTimeout(1500);
 if ((await sim(() => window.__debug.sim.player.action?.k ?? null)) !== 'gather') fail(`a click on the starmetal vein did not start a gather: ${JSON.stringify(await sim(() => { const s = window.__debug.sim; return { interact: s.interact, at: [s.player.x, s.player.z], node: s.nodes.filter(n => n.type === 'starmetal')[0] }; }))} click at ${JSON.stringify(vein)} msg "${await msg()}"`);
@@ -134,7 +147,7 @@ await sim(() => { const f = window.__debug.sim.found; if (!f.includes('highmoor'
 const fmPos = W.L.flightSpire;
 await stand(fmPos.x - 9, fmPos.z, -Math.PI / 2, 600);
 if (!(await sim(() => window.__debug.sim.found.join()))?.includes('spire')) fail('walking up to the flight master did not find the Spire');
-const fm = await at(fmPos.x, 1.5, fmPos.z);
+const fm = await reach(fmPos.x, 1.5, fmPos.z);
 await page.mouse.click(fm.x, fm.y);
 await page.waitForSelector('.shoppanel:visible', { timeout: 8000 }).catch(() => fail('clicking the flight master did not open the flights'));
 await page.waitForTimeout(400);
@@ -148,7 +161,7 @@ const kp = W.L.spireKeeper;
 await sim(() => { const q = window.__debug.sim.quest; q.stage = 'done'; q.second = 'cleared'; q.third = 'cleared'; q.fifth = 'cleared'; q.sixth = 'cleared'; q.seventh = 'cleared'; });
 await stand(kp.x + 8, kp.z + 5, facing(kp.x + 8, kp.z + 5, kp.x, kp.z), 800);
 await page.screenshot({ path: join(shots, 'spire-keeper-mark.png') });
-const kpp = await at(kp.x, 1.2, kp.z);
+const kpp = await reach(kp.x, 1.2, kp.z);
 await page.mouse.click(kpp.x, kpp.y);
 await page.waitForSelector('.dialogue', { state: 'visible', timeout: 8000 }).catch(() => fail('clicking the Keeper did not open a dialogue'));
 const title = await page.locator('.dialogue .ptitle').innerText().catch(() => '');
@@ -157,12 +170,12 @@ if ((await sim(() => window.__debug.sim.quest.eighth)) !== 'offer') fail('with t
 await page.screenshot({ path: join(shots, 'spire-keeper-dialogue.png') });
 await page.keyboard.press('Escape');
 
-// 8. the forge: a click walks the player over and opens its recipe list, with the starmetal on it
+// 8. the forge: stood at, a click opens its recipe list, with the starmetal on it
 const fg = W.L.forgeSpire;
 await sim(() => { const p = window.__debug.sim.player; p.skills.smithing.level = 54; p.skills.smithing.xp = 200000; });
 await stand(fg.x + 12, fg.z + 6, Math.PI / 2 + 0.4, 800);
 await page.screenshot({ path: join(shots, 'spire-forge.png') });
-const fgp = await at(fg.x, 1.2, fg.z);
+const fgp = await reach(fg.x, 1.2, fg.z, 4); // the forge hut is radius 2.6: 4 is inside its reach
 await page.mouse.click(fgp.x, fgp.y);
 await page.waitForSelector('.forgepanel:visible', { timeout: 8000 }).catch(() => fail('clicking the Spire\'s forge did not open the forge'));
 const forgeRows = await page.locator('.forgepanel:visible .recipe').allInnerTexts();
