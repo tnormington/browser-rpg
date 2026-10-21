@@ -3,6 +3,7 @@
 import type { GameState } from './sim';
 import { Dialogue, TALK_RANGE, activeQuestView, dialogueAt, npcName, speakerById } from './sim/quest';
 import { el } from './dom';
+import { faceRow, setFace } from './art';
 
 export class QuestUi {
   private tracker: HTMLElement;
@@ -13,6 +14,7 @@ export class QuestUi {
   private navText: HTMLElement;
   private panel: HTMLElement;
   private titleEl: HTMLElement;
+  private face: HTMLElement;
   private who = 'hale';
   private text: HTMLElement;
   private opts: HTMLElement;
@@ -35,8 +37,10 @@ export class QuestUi {
     this.panel = el(dock, 'panel dialogue');
     this.titleEl = el(this.panel, 'ptitle');
     el(this.titleEl, 'dhint', 'Esc to close');
-    this.text = el(this.panel, 'dtext');
-    this.opts = el(this.panel, 'dopts');
+    const { face, body } = faceRow(this.panel); // the speaker's portrait, with their lines beside it
+    this.face = face;
+    this.text = el(body, 'dtext');
+    this.opts = el(body, 'dopts');
     this.panel.style.display = 'none';
   }
 
@@ -52,6 +56,7 @@ export class QuestUi {
       this.who = who;
       this.dialogue = dialogueAt(s, who);
       this.titleEl.firstChild?.nodeType === Node.TEXT_NODE ? (this.titleEl.firstChild.textContent = npcName(who)) : this.titleEl.prepend(npcName(who));
+      setFace(this.face, who); // a quest giver's portrait is their plain id; a waystation villager has none
     }
   }
 

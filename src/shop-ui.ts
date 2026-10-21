@@ -9,12 +9,14 @@ import { hasRoom } from './sim/inventory';
 import { SKILL_IDS, totalLevel } from './sim/skills';
 import { damagedGear, durabilityOf, repairCost } from './sim/durability';
 import { actionButton, el, titleRow } from './dom';
+import { faceRow, setFace } from './art';
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 
 export class ShopUi {
   private panel: HTMLElement;
   private titleEl: HTMLElement;
+  private face: HTMLElement;
   private vendor: Vendor = VENDORS[0];
   private goldEl: HTMLElement;
   private hint: HTMLElement;
@@ -25,8 +27,10 @@ export class ShopUi {
   constructor(root: HTMLElement, private buy: (item: string, qty: number) => void, private learn: (slot: number) => void, private repair: () => void, private buyMount: (id: string) => void) {
     this.panel = el(root, 'panel shoppanel');
     this.titleEl = titleRow(this.panel, '', () => this.setOpen(false));
-    this.goldEl = el(this.panel, 'shopgold');
-    this.hint = el(this.panel, 'shophint');
+    const { face, body } = faceRow(this.panel); // the merchant's own face, over what they are asking for
+    this.face = face;
+    this.goldEl = el(body, 'shopgold');
+    this.hint = el(body, 'shophint');
     this.list = el(this.panel, 'recipes');
     this.panel.style.display = 'none';
   }
@@ -38,6 +42,7 @@ export class ShopUi {
     this.open = on;
     if (on && vendor) this.vendor = vendorById(vendor) ?? this.vendor;
     this.titleEl.firstChild?.nodeType === Node.TEXT_NODE ? (this.titleEl.firstChild.textContent = this.vendor.name) : this.titleEl.prepend(this.vendor.name);
+    setFace(this.face, `vendor_${this.vendor.id}`);
     this.hint.textContent = mountsSoldBy(this.vendor.id).length ? 'Mounts are bought here with gold, once you meet what each one asks. Press Z to ride.' : taughtBy(this.vendor.id).length ? 'Abilities are bought here with gold, once you have the level.' : 'Right-click an item in your bag to sell it.';
     this.panel.style.display = on ? 'block' : 'none';
     this.sig = '';

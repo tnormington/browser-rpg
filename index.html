@@ -26,6 +26,7 @@
              .btn       every button. + .pri (the action you came for: Make, Buy, Learn)  + .sm  + .block (full width, left)  + .off (cannot be used now)
              .chrome    iron chrome for a fixed surface (unit frame, tracker).  .pop  the same for a floating layer (tooltip, context menu, help)
              .bar       a gauge: set --bar-h and --fill (a token below); .fill moves, .label sits on it; .thin is the slim world-space gauge
+             .art       generated art worn as an element's face (an item's thumbnail on a slot, an NPC's portrait in a .face); .facerow is a panel's portrait beside its .facebody
      The legacy hook names (.rbtn .mbtn .psort .dopt) stay on the markup for the benches; they carry no style of their own.
      Game-meaning colours stay literal where they carry meaning: the bar fills (--fill-*), floater and log colours, banner and hurt glows, tier colours (from the sim). */
 :root{
@@ -277,6 +278,19 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .maphint{position:absolute;bottom:22px;left:0;right:0;text-align:center;color:var(--ink-dim)}
 .maptown{position:absolute;left:0;top:0;white-space:nowrap;font-size:var(--fs-xl);font-weight:bold;color:var(--spark);text-shadow:0 0 4px #000,0 2px 4px #000,0 0 10px #000}.maptown.lost{color:var(--ink-dim);font-weight:normal}.maptown.mapyou{color:var(--arcane);font-size:var(--fs-lg)}
 .ridebar{--fill:var(--gold);position:absolute;top:86px;left:50%;width:280px;margin-left:-140px}.ridebar .ridefill{width:0}
+
+/* ---- the generated art (HOM-135) ---- */
+/* .art is a piece of art worn as an element's whole face: a slot (bag, equipment, action bar) wears its item's thumbnail, a .face wears an NPC's
+   portrait. Art is square with the subject centred in it, so cover fits a square slot exactly and only trims a wider box. A label printed over
+   art takes the panel's own veil behind it, so a name still reads against a light-painted subject.
+   This block comes last on purpose: every surface that wears art (.cell, .slot) sets `background:` further up, and the shorthand would put the
+   size and the position back to auto and 0 0 -- which paints the art at its own 192px, anchored to the slot's top-left corner. */
+.art{background-size:cover;background-position:center}
+.cell.art .iname,.cell.art .eqlabel,.slot.art .aname{background:var(--iron-veil)}
+.facerow{display:flex;gap:var(--sp-5);margin-bottom:var(--sp-3)}
+.facebody{flex:1;min-width:0}
+.face{flex:none;width:64px;height:64px;border:1px solid var(--edge);border-radius:var(--r)} /* no portrait: the panel hides it and the column takes the width */
+.dialogue .face{width:112px;height:112px} /* the one panel where you are looking at them, not at their stock */
 </style>
 </head>
 <body>

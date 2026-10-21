@@ -31,6 +31,7 @@ import type { AdminAction } from './sim/admin';
 import { SpellbookUi } from './spellbook-ui';
 import { Minimap } from './minimap';
 import { DockWindow, HudWindow, el, dragData, parseDrag } from './dom';
+import { itemArt, paintArt } from './art';
 import { Dock } from './dock';
 import { loadBar, loadBarKeys, saveBar, saveBarKeys } from './storage';
 import { BarEntry, DEFAULT_KEYS, barWorthy, bindKey, bindRefusal, keyLabel, sameEntry, sanitizeBar, sanitizeKeys } from './bar-layout';
@@ -84,7 +85,7 @@ function lockedWhy(a: AbilityDef, level: number): string {
 }
 
 const ICONS =['⚔', '🔨', '🗡', '❤', '🌀', '✊', '🌪', '🛡', '🫀', '🔰', '🩸', '💥', '🏰'];
-/** The face a consumable wears on the bar: the bag draws its food the same way. */
+/** The face a consumable with no thumbnail wears on the bar: the bag draws its food the same way. */
 const ITEM_ICON = '🍖';
 /** How many slots the bar has: one per key it ships with. */
 const SLOT_COUNT = DEFAULT_KEYS.length;
@@ -426,9 +427,11 @@ export class Hud {
       const ability = entry?.k === 'ability' ? entry.i : null;
       const a = ability === null ? null : ABILITIES[ability];
       const item = entry?.k === 'item' ? ITEMS[entry.id] : null;
+      const art = entry?.k === 'item' ? itemArt(entry.id) : null;
       slot.key.textContent = keyLabel(this.keys[i]);
       slot.key.title = `Click to set the key for this slot (now: ${this.keys[i] ? keyLabel(this.keys[i]) : 'none'})`;
-      slot.icon.textContent = ability !== null ? ICONS[ability] : item ? ITEM_ICON : '';
+      paintArt(slot.root, art); // a consumable wears its thumbnail; an ability wears its glyph
+      slot.icon.textContent = ability !== null ? ICONS[ability] : item && !art ? ITEM_ICON : '';
       slot.aname.textContent = a?.name ?? item?.name ?? '';
       slot.root.draggable = !!entry;
       slot.root.classList.toggle('empty', !entry);

@@ -4,6 +4,7 @@ import type { GameState } from './sim';
 import { TOWNS } from './sim/world';
 import { FLIGHT_REACH, destinationsFrom, masterById } from './sim/flight';
 import { actionButton, el, titleRow } from './dom';
+import { faceRow, setFace } from './art';
 
 const secs = (n: number) => `${Math.round(n)} s`;
 
@@ -11,6 +12,7 @@ const secs = (n: number) => `${Math.round(n)} s`;
 export class FlightUi {
   private panel: HTMLElement;
   private titleEl: HTMLElement;
+  private face: HTMLElement;
   private goldEl: HTMLElement;
   private list: HTMLElement;
   private town = 'hale';
@@ -20,8 +22,10 @@ export class FlightUi {
   constructor(root: HTMLElement, private fly: (to: string) => void) {
     this.panel = el(root, 'panel shoppanel');
     this.titleEl = titleRow(this.panel, '', () => this.setOpen(false));
-    this.goldEl = el(this.panel, 'shopgold');
-    el(this.panel, 'shophint', 'You can only fly to a town you have walked to.');
+    const { face, body } = faceRow(this.panel); // the master's own face, over what the ride costs
+    this.face = face;
+    this.goldEl = el(body, 'shopgold');
+    el(body, 'shophint', 'You can only fly to a town you have walked to.');
     this.list = el(this.panel, 'recipes');
     this.panel.style.display = 'none';
   }
@@ -34,6 +38,7 @@ export class FlightUi {
     if (on && town) this.town = town;
     const name = `${masterById(this.town)?.name ?? 'Flight master'} - Flights`;
     this.titleEl.firstChild?.nodeType === Node.TEXT_NODE ? (this.titleEl.firstChild.textContent = name) : this.titleEl.prepend(name);
+    setFace(this.face, `flight_${this.town}`);
     this.panel.style.display = on ? 'block' : 'none';
     this.sig = '';
   }
