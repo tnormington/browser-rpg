@@ -53,15 +53,16 @@ export const TELLS: Record<string, TellPose> = {
  * are the posture the whole job is done in (a herb patch is picked bent over it), while `lean`, `sink` and `step` are
  * spent on the blow itself and unwound through the raise. `drive` is the share of the beat spent coming down on it.
  */
-export interface GatherPose { up: ArmDirs; down: ArmDirs; stoop: number; squat: number; lean: number; sink: number; step: number; drive: number }
+export interface GatherPose { up: ArmDirs; down: ArmDirs; stoop: number; squat: number; lean: number; sink: number; step: number; drive: number; twist?: number }
 /**
- * Keyed by the sim's gathering skill. A pick is driven down two-handed from over the head and an axe swung across from
- * the right shoulder, both hard and short. Fishing only works the rod held out over the water, and a herb is picked
- * from a stoop, close to the ground: neither is a blow, so both ride the same machine with almost nothing in it.
+ * Keyed by the sim's gathering skill. A pick and an axe are both swung off the right shoulder, the body turned into the
+ * raise (`twist`) and unwinding through the blow, so the arc travels diagonally across the body instead of dropping
+ * straight down it. Fishing only works the rod held out over the water, and a herb is picked from a stoop, close to the
+ * ground: neither is a blow, so both ride the same machine with almost nothing in it.
  */
 export const GATHERS: Record<string, GatherPose> = {
-  mining: { up: { L: [0.18, 1, -0.3], R: [-0.18, 1, -0.3] }, down: { L: [0.22, -0.95, 0.5], R: [-0.22, -0.95, 0.5] }, stoop: 0.1, squat: 0.05, lean: 0.45, sink: 0.16, step: 0.22, drive: 0.22 },
-  woodcutting: { up: { L: [-0.4, 0.95, -0.2], R: [-0.6, 0.85, -0.18] }, down: { L: [0.45, -0.8, 0.6], R: [0.22, -0.9, 0.5] }, stoop: 0.08, squat: 0.04, lean: 0.35, sink: 0.12, step: 0.2, drive: 0.2 },
+  mining: { up: { L: [-0.1, 0.72, -0.5], R: [-0.5, 0.78, -0.5] }, down: { L: [0.1, -0.44, 0.84], R: [-0.2, -0.46, 0.8] }, stoop: 0.12, squat: 0.05, lean: 0.24, sink: 0.1, step: 0.14, drive: 0.38, twist: 0.4 },
+  woodcutting: { up: { L: [-0.4, 0.95, -0.2], R: [-0.6, 0.85, -0.18] }, down: { L: [0.45, -0.8, 0.6], R: [0.22, -0.9, 0.5] }, stoop: 0.08, squat: 0.04, lean: 0.35, sink: 0.12, step: 0.2, drive: 0.32, twist: 0.3 },
   fishing: { up: { L: [0.24, 0.3, 0.9], R: [-0.22, 0.38, 0.88] }, down: { L: [0.26, -0.12, 0.95], R: [-0.24, -0.04, 0.96] }, stoop: 0.06, squat: 0, lean: 0.07, sink: 0.02, step: 0, drive: 0.35 },
   herbalism: { up: { L: [0.3, -0.45, 0.85], R: [-0.25, -0.5, 0.82] }, down: { L: [0.28, -0.88, 0.45], R: [-0.22, -0.9, 0.42] }, stoop: 0.55, squat: 0.18, lean: 0.14, sink: 0.05, step: 0, drive: 0.4 },
 };
@@ -346,13 +347,19 @@ export class Animator {
    */
   private work(g: GatherPose) {
     const rise = Math.max(0.05, 1 - g.drive);
-    // 1 at the top of the raise, 0 as the blow lands: eased out of the follow-through, then driven back down accelerating
-    const mix = this.workK < rise ? smooth(this.workK / rise) : 1 - Math.pow((this.workK - rise) / g.drive, 2);
+    // 1 at the top of the raise, 0 as the blow lands: eased out of the follow-through, then thrown back down accelerating.
+    // The raise is held off for the first quarter of its own time and the drive leaves the top already moving, so what rest
+    // there is in the beat is spent in the bite, where the tool has just stopped dead, and not at the top of the swing,
+    // where standing still reads as a pause rather than as a swing.
+    const x = (this.workK - rise) / g.drive;
+    const mix = this.workK < rise ? smooth(Math.max(0, this.workK / rise - 0.25) / 0.75) : 1 - (0.35 * x + 0.65 * x * x);
     const blow = 1 - mix, fold = g.stoop + g.lean * blow - 0.3 * g.lean * mix;
     this.root.position.y -= g.squat + g.sink * blow;
     this.root.position.z += g.step * blow;
     this.bend(fold * 0.6);
-    this.turn('Torso', fold * 0.4, 0, 0); // the idle animates the Torso, so this one is an offset the clip writes over
+    // the idle animates the Torso, so this one is an offset the clip writes over. The turn is wound up with the raise and
+    // spent on the blow, which is what carries the head of the tool across the body rather than straight down it
+    this.turn('Torso', fold * 0.4, -(g.twist ?? 0) * mix, 0);
     for (const side of ['L', 'R'] as const) {
       const a = g.up[side], b = g.down[side];
       if (!a || !b) continue;

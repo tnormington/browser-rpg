@@ -22,6 +22,8 @@ import { bakeUV, dress } from './surface';
 import type { Motes } from './fx';
 
 const SKIN = 0xb89a7e;
+/** A gathering tool is nobody's gear: it has no item, no tier and no appearance, so its two finishes are fixed here. */
+const HAFT = 0x6a5235, TOOL_IRON = 0x8e949c;
 const UP = new THREE.Vector3(0, 1, 0);
 const WHITE = new THREE.Color(0xffffff);
 /**
@@ -101,6 +103,9 @@ export class PlayerGear {
   private slots: Record<WornSlot, Mounted> = { weapon: empty(), head: empty(), chest: empty(), legs: empty(), hands: empty(), feet: empty() };
   private bodyMats = new Map<string, THREE.MeshStandardMaterial>();
   private motes = { weapon: 0, head: 0, chest: 0, legs: 0, hands: 0, feet: 0 };
+  /** Gathering tools, built the first time their skill is worked and kept in the fist, hidden: there are three of them. */
+  private tools = new Map<string, THREE.Object3D>();
+  private held: string | null = null;
   private tmp = new THREE.Vector3();
 
   /** Call at the bind pose, before the Animator exists. */
@@ -308,6 +313,67 @@ export class PlayerGear {
     }
     hand.add(blade.root);
     return { group: blade.root, materials: mats };
+  }
+
+  /**
+   * The tool a gathering skill is worked with, held in the same fist as the sword and authored the way the sword model
+   * is: haft along +Y with the grip at the origin, in world units (the knight is 2.0 tall), scaled into bone space on
+   * mount. Herbalism has none: a herb is pulled by hand.
+   */
+  private buildTool(skill: string, hand: THREE.Object3D) {
+    const g = new THREE.Group();
+    g.scale.setScalar(1 / hand.getWorldScale(this.tmp).x);
+    // A quarter turn back from where the sword's blade points puts the haft out along the arm's own line; the rest of the
+    // turn cocks the head back off it, so the swing drives the head past the hands instead of hiding it behind them.
+    g.rotation.z = -Math.PI / 4 + 0.45;
+    const wood = new THREE.MeshStandardMaterial({ color: HAFT, metalness: 0.02, roughness: 0.82 });
+    const iron = new THREE.MeshStandardMaterial({ color: TOOL_IRON, metalness: 0.7, roughness: 0.42 });
+    dress(wood, 'wood');
+    dress(iron, 'metal');
+    const haft = (len: number) => this.part(new THREE.CylinderGeometry(0.03, 0.038, len, 8).translate(0, len / 2, 0), wood, g, [0, 0, 0]);
+    if (skill === 'fishing') {
+      // a rod, not a tool with a head: long, whippy and tapered to nothing, with a cork grip at the butt
+      this.part(new THREE.CylinderGeometry(0.007, 0.026, 1.8, 6).translate(0, 0.9, 0), wood, g, [0, 0, 0]);
+      this.part(new THREE.CylinderGeometry(0.042, 0.042, 0.22, 8).translate(0, 0.1, 0), iron, g, [0, 0, 0]);
+    } else if (skill === 'woodcutting') {
+      // a felling axe: one bit, swung edge-on, so the blade's plane is the plane the arc travels in
+      haft(0.62);
+      this.part(new THREE.CylinderGeometry(0.05, 0.05, 0.11, 6).translate(0, 0.6, 0), iron, g, [0, 0, 0]);
+      const s = new THREE.Shape();
+      s.moveTo(0, -0.12); s.lineTo(0.22, -0.18); s.lineTo(0.28, 0); s.lineTo(0.22, 0.18); s.lineTo(0, 0.12);
+      const bit = new THREE.ExtrudeGeometry(s, { depth: 0.05, bevelEnabled: false }).translate(0, 0, -0.025).rotateY(-Math.PI / 2);
+      this.part(bit.translate(0, 0.6, 0.045), iron, g, [0, 0, 0]);
+    } else {
+      // a pick: a long spike forward and a short blunt poll back, the head crossing the haft in the swing's own plane
+      haft(0.66);
+      this.part(new THREE.CylinderGeometry(0.048, 0.048, 0.1, 6).translate(0, 0.64, 0), iron, g, [0, 0, 0]);
+      this.part(new THREE.CylinderGeometry(0.008, 0.045, 0.36, 4).translate(0, 0.18, 0).rotateX(Math.PI / 2 + 0.22).translate(0, 0.64, 0), iron, g, [0, 0, 0]);
+      this.part(new THREE.CylinderGeometry(0.03, 0.046, 0.2, 4).translate(0, 0.1, 0).rotateX(-Math.PI / 2 + 0.22).translate(0, 0.64, 0), iron, g, [0, 0, 0]);
+    }
+    hand.add(g);
+    return g;
+  }
+
+  /**
+   * Put the gathering tool for `skill` in the right hand, or take it away with null. The sword is stowed while a tool is
+   * out: nobody swings a pick with a drawn blade in the same fist. Each tool is built once and kept.
+   */
+  hold(skill: string | null) {
+    const want = skill && skill !== 'herbalism' ? skill : null;
+    const hand = this.bones.get('MiddleHandR');
+    if (!hand) return;
+    if (want !== this.held) {
+      const prev = this.held && this.tools.get(this.held);
+      if (prev) prev.visible = false;
+      this.held = want;
+      if (want) {
+        let tool = this.tools.get(want);
+        if (!tool) this.tools.set(want, tool = this.buildTool(want, hand));
+        tool.visible = true;
+      }
+    }
+    const sword = this.slots.weapon.group;
+    if (sword) sword.visible = !this.held;   // set every frame: sync() rebuilds the slot without knowing a tool is out
   }
 
   private buildHead(id: string) {

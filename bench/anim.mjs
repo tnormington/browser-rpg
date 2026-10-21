@@ -91,12 +91,14 @@ const gather = async (type, which) => {
     d.step(); d.view.snapshot(s); d.view.snapshot(s);
     s.interact = { k: 'node', id: n.id }; // updateInteract turns the player to it and begins the gather on the next tick
     d.step();
-    // the game's own orbit camera, swung round to the player's south: square on to a swing that travels west to east, so the
-    // whole arc is across the frame rather than into it. A fixed debugCam would sit under the ground on half this world's nodes
-    d.view.debugCam = null; d.view.yaw = Math.PI; d.view.pitch = 0.32; d.view.distance = 6.5;
+    // the game's own orbit camera, swung a quarter turn off whichever way the player ended up facing and pulled in close:
+    // square on to the swing, so the whole arc travels across the frame rather than into it, and framed on the player's
+    // chest (which the orbit camera does for us, wherever the ground under him stands)
+    // ...from the player's right, the hand the tool is in: from his left the body stands in front of the whole swing
+    d.view.debugCam = null; d.view.yaw = Math.atan2(n.x - p.x, n.z - p.z) - Math.PI / 2; d.view.pitch = 0.16; d.view.distance = 3.6;
   }, [type, which]);
   await adv(300);
-  await burst(`gather-${type}`, 24, 70, CLIP);
+  await burst(`gather-${type}-${which}`, 24, 70, CLIP);
 };
 // tell:<type>:<kind>:<json>[;<json>...]  hold a wind-up with TELLS[kind].bones set to each json in turn (tuning arm raises)
 const tell = async (type, kind, variants) => {

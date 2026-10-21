@@ -1800,12 +1800,13 @@ export class Renderer {
     }
     const pa = this.playerAnim, pl = s.player;
     this.player.rotation.y = pl.facing;
+    // working a node: the swing rides the sim's own strike beat, so the pick lands with the sound and the chips
+    const act = pl.action?.k === 'gather' ? pl.action : null, work = act && nodeById(s, act.nodeId);
+    const workSkill = work ? NODE_TYPES[work.type].skill : null;
     if (pa) {
       if (pl.dead !== this.playerWasDead) { if (pl.dead) pa.die(); else pa.revive(); this.playerWasDead = pl.dead; }
       pa.locomotion(pl.moving && !pl.dead, 6);
-      // working a node: the swing rides the sim's own strike beat, so the pick lands with the sound and the chips
-      const act = pl.action?.k === 'gather' ? pl.action : null, work = act && nodeById(s, act.nodeId);
-      pa.gather(work ? NODE_TYPES[work.type].skill : null, act ? (act.t % GATHER_STRIKE) / GATHER_STRIKE : 0);
+      pa.gather(workSkill, act ? (act.t % GATHER_STRIKE) / GATHER_STRIKE : 0);
       for (const rig of this.mounts.values()) if (rig.root.visible) { rig.update(dtFx, pl.moving && !pl.dead); pa.rideBob(rig.bob); }
       pa.update(dtFx);
       pa.airborne(pl.airborne ? pl.vy : 0);
@@ -1826,7 +1827,10 @@ export class Renderer {
     this.drawWithering(x, z, nowMs);
     this.drawDrops(s);
     this.drawNodes(s);
-    if (this.gear) this.gear.sync(s.player.equipment, dtFx, this.motes);
+    if (this.gear) {
+      this.gear.sync(s.player.equipment, dtFx, this.motes);
+      this.gear.hold(workSkill); // after sync: a slot rebuilt this frame does not know a tool is out in place of the sword
+    }
     else { // primitive fallback until (or unless) the knight model loads
       const w = s.player.equipment.weapon;
       this.weapon.visible = !!w;
