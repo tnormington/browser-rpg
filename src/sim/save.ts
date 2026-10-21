@@ -5,7 +5,8 @@ import { GameState, createState } from '../sim';
 import { SKILL_IDS, SkillId } from './skills';
 import { levelForXp } from './xp';
 import { INVENTORY_SIZE, refreshGearStats } from './inventory';
-import { EQUIP_SLOTS, ITEMS } from './items';
+import { EQUIP_SLOTS, EquipSlot, ITEMS } from './items';
+import { enchantById } from './enchants';
 import { refreshPlayerStats } from './combat';
 import { BUFFS } from './consumables';
 import { ABILITIES, MAX_DURABILITY, PLAYER_SPAWN } from './data';
@@ -21,7 +22,7 @@ export const SAVE_VERSION = 1;
 /** Nothing is further than this from the origin: the world is a few thousand units across at most (Saltmarrow ends near x = 970). */
 const WORLD_LIMIT = 10000;
 /** Skills added after the first save format: a save without them starts them at 0 xp. */
-const LATE_SKILLS: SkillId[] = ['fishing', 'cooking', 'herbalism', 'alchemy', 'leatherworking'];
+const LATE_SKILLS: SkillId[] = ['fishing', 'cooking', 'herbalism', 'alchemy', 'leatherworking', 'enchanting'];
 /**
  * Items that were renamed rather than retired, by their old id. The mithril rung became steel in HOM-81 at the same stats and the same
  * recipe shape, so a character who was wearing it keeps wearing it instead of having their save refused. Ore and bars have no steel
@@ -45,6 +46,7 @@ interface SaveFile {
     inventory: ({ id: string; qty: number } | null)[];
     equipment: Record<string, string | null>;
     durability?: Record<string, number>; // points left on worn-down gear, by item id; absent in saves from before durability: everything loads whole
+    enchants?: Record<string, string>;   // slot enchants, by slot; absent in saves from before the rune circle: nothing is enchanted
     talents?: Record<string, number>; // absent in saves from before the trees: nobody had spent a point
     learned?: string[];               // trainer abilities bought; absent in saves from before the trainer
     mounts?: string[];                // mounts owned, by id; absent in saves from before the stablemaster
@@ -76,6 +78,7 @@ export function serialize(s: GameState): string {
       inventory: p.inventory.map(st => st && { id: st.id, qty: st.qty }),
       equipment: { ...p.equipment },
       durability: { ...p.durability },
+      enchants: { ...p.enchants } as Record<string, string>,
       talents: { ...p.talents },
       gold: p.gold,
       buffs: p.buffs.map(b => ({ id: b.id, left: b.left })),
@@ -140,6 +143,14 @@ export function deserialize(raw: string): GameState | null {
         const id = itemId(raw);
         if (!ITEMS[id]?.slot) throw new Error('bad durability');
         p.durability[id] = num(n, 0, MAX_DURABILITY, `durability.${id}`);
+      }
+    }
+    // enchants: each must be a real one that goes on the slot it is saved against (it need not be worn: the enchant belongs to the slot)
+    if (fp.enchants !== undefined) {
+      if (!isObj(fp.enchants)) return null;
+      for (const [slot, id] of Object.entries(fp.enchants)) {
+        if (!EQUIP_SLOTS.includes(slot as EquipSlot) || typeof id !== 'string' || !enchantById(id)?.slots.includes(slot as EquipSlot)) throw new Error('bad enchant');
+        p.enchants[slot as EquipSlot] = id;
       }
     }
     // talents: validated against the level, so a hand-edited save cannot buy a tier it never paid for

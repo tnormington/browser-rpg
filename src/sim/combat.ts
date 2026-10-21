@@ -212,7 +212,7 @@ function updateAutoAttack(s: GameState, dt: number) {
  */
 function rollDamage(s: GameState, base: number, power: number, bonus: number, target: Enemy, mult = 1) {
   const p = s.player, fx = p.talentFx;
-  const crit = rand(s) < CRIT_CHANCE + fx.crit;
+  const crit = rand(s) < CRIT_CHANCE + fx.crit + p.stats.crit;
   const amount = Math.max(1, Math.round((base + bonus) * power * mult * fx.damage
     * (wounded(p) ? fx.lowHpDamage : 1) * (target.bleed ? fx.bleedHunter : 1)
     * (0.9 + 0.2 * rand(s)) * (crit ? CRIT_MULT + fx.critMult : 1)));
@@ -370,7 +370,7 @@ function staggerEnemy(s: GameState, e: Enemy) {
 
 export function updatePlayerCombat(s: GameState, dt: number) {
   const p = s.player;
-  p.energy = Math.min(p.maxEnergy, p.energy + ENERGY_REGEN * dt);
+  p.energy = Math.min(p.maxEnergy, p.energy + (ENERGY_REGEN + p.stats.energyRegen) * dt);
   p.cast = Math.max(0, p.cast - dt);
   if (p.root && (p.root.left -= dt) <= 0) p.root = null; // the net frays through
   p.outOfCombat += dt;
@@ -567,7 +567,8 @@ function updateRanged(s: GameState, e: Enemy, dt: number) {
   } else if (d > r.range * 0.9) {
     stepToward(e, p.x, p.z, def.speed, dt, r.range * 0.8);
   }
-  // ...and otherwise it stands where it is, in melee or not, and keeps shooting
+  // ...and otherwise it stands where it is, in melee or not, and keeps shooting. A caster with a heavy (`holds`) answers anyone who has come inside its radius with that first
+  if (def.heavy && r.holds && e.heavyCd <= 0 && d <= def.heavy.radius) return startCast(s, e, 'heavy', def.heavy.windup);
   if (d <= r.range && e.attackCd <= 0) startCast(s, e, 'bolt', r.windup);
 }
 
@@ -631,7 +632,7 @@ export function updateEnemies(s: GameState, dt: number) {
         startGroundCast(s, e);
       } else if (def.net && e.netCd <= 0 && !p.root && dp <= def.net.range && clearLine(e, p)) { // you got close: it throws for your feet (one net at a time)
         startCast(s, e, 'net', def.net.windup);
-      } else if (def.ranged && !def.heavy) {
+      } else if (def.ranged && (!def.heavy || def.ranged.holds)) {
         updateRanged(s, e, dt);
       } else if (def.ranged && dp > def.attackRange + THROW_GAP && dp <= def.ranged.range && e.attackCd <= 0 && clearLine(e, p)) {
         startCast(s, e, 'bolt', def.ranged.windup); // a melee fighter that also throws (Captain Marrow): at a player who stands off; one who stays in reach is hit, not shot

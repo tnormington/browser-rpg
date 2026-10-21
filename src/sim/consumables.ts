@@ -20,9 +20,9 @@ export const BUFFS: Record<string, BuffDef> = {
 export const buffedDamage = (p: Player, amount: number) =>
   Math.max(1, Math.round(p.buffs.reduce((n, b) => n * (BUFFS[b.id]?.damageTaken ?? 1), amount)));
 
-/** Max health at the player's level with every buff and Bastion on it: the one place that is worked out (combat's stat refresh reads it too). */
+/** Max health at the player's level with every buff, Bastion and Vitality enchant on it: the one place that is worked out (combat's stat refresh reads it too). */
 export const maxHpOf = (p: Player) =>
-  Math.round(maxHpForLevel(p.combat.level) * p.talentFx.maxHp * (1 + p.buffs.reduce((n, b) => n + (BUFFS[b.id]?.maxHp ?? 0), 0)));
+  Math.round(maxHpForLevel(p.combat.level) * p.talentFx.maxHp * (1 + p.stats.hpFrac + p.buffs.reduce((n, b) => n + (BUFFS[b.id]?.maxHp ?? 0), 0)));
 
 /** A buff or a talent rank changed: max health follows, and what it adds arrives (and leaves) with it. */
 export function resizeHp(p: Player) {

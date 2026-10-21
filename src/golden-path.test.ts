@@ -628,7 +628,7 @@ function grindCombat(s: GameState, level: number) {
 section('M3 skills: parallel tracks on the RuneScape curve');
 {
   const s = createState(1);
-  assert(SKILL_IDS.length === 9 && ['combat', 'mining', 'woodcutting', 'smithing', 'fishing', 'cooking', 'herbalism', 'alchemy', 'leatherworking'].every(k => SKILLS[k as never]), 'skills: Combat, Mining, Woodcutting, Smithing, Fishing, Cooking, Herbalism, Alchemy, Leatherworking');
+  assert(SKILL_IDS.length === 10 && ['combat', 'mining', 'woodcutting', 'smithing', 'fishing', 'cooking', 'herbalism', 'alchemy', 'leatherworking', 'enchanting'].every(k => SKILLS[k as never]), 'skills: Combat, Mining, Woodcutting, Smithing, Fishing, Cooking, Herbalism, Alchemy, Leatherworking, Enchanting');
   assert(SKILL_IDS.every(k => s.player.skills[k].level === 1 && s.player.skills[k].xp === 0), 'every skill starts at level 1, 0 xp');
   assert(s.player.skills.combat === s.player.combat, 'combat skill is the same track combat code reads');
   grantXp(s, 'mining', 100, 0, 0);
@@ -1959,9 +1959,9 @@ section('HOM-15 enemy mechanic: the ground mark punishes standing still');
   }
   assert(castName(ENEMY_TYPES.ogre, 'heavy') === 'Boulder Slam' && castName(seer, 'ground') === 'Withering Ground' && castName(seer, 'bolt') === 'Hex Bolt' && castName(ENEMY_TYPES.boar, 'ground') === 'Wild Boar',
     'castName gives the right name for every kind of wind-up and never throws, for any enemy');
-  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'ashen_colossus,barrow_lord,bog_witch,bogfather,cairn_king,captain_marrow,mother_mire,rotroot_mother,seer,spire_warden,stonehorn,thorn_warden,tide_hag,warden', 'only the Seer, the Warden, (HOM-46) the Tide Hag and (HOM-63) the Bog Witch, Bogfather, Mother Mire Thorn Warden and (HOM-64) Captain Marrow and (HOM-75) the Rotroot Mother and (HOM-95) the Barrow Lord and Stonehorn and (HOM-99) the Cairn King and (HOM-111) the Ashen Colossus and the Spire Warden mark the ground');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.hazard).map(([k]) => k).sort().join() === 'archmage_vael,ashen_colossus,barrow_lord,bog_witch,bogfather,cairn_king,captain_marrow,mother_mire,rotroot_mother,seer,spire_warden,stonehorn,thorn_warden,tide_hag,warden', 'only the Seer, the Warden, (HOM-46) the Tide Hag and (HOM-63) the Bog Witch, Bogfather, Mother Mire Thorn Warden and (HOM-64) Captain Marrow and (HOM-75) the Rotroot Mother and (HOM-95) the Barrow Lord and Stonehorn and (HOM-99) the Cairn King and (HOM-111) the Ashen Colossus and the Spire Warden and (HOM-112) Archmage Vael mark the ground');
   assert(Object.values(ENEMY_TYPES).every(d => !d.look || ['wolf', 'hexer', 'brute', 'boar', 'pup'].includes(d.look.model)), 'every cave look reuses a model that is already loaded: no new art');
-  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 45 && ['boar', 'wolf', 'brute', 'pup', 'hexer'].every(k => !ENEMY_TYPES[k].look), 'the five cave enemies, (HOM-46) the ten of the road and the Strand and (HOM-63) the ten of the fens and the Thornwood and (HOM-64) Captain Marrow and (HOM-75) the Rotroot Mother and (HOM-95) the nine of the Barrowdowns and the Moor and (HOM-99) the Cairn King and (HOM-111) the eight of the Cairnwaste and the Spire say how to draw themselves, and the original five rigs do not');
+  assert(Object.entries(ENEMY_TYPES).filter(([, d]) => d.look).length === 46 && ['boar', 'wolf', 'brute', 'pup', 'hexer'].every(k => !ENEMY_TYPES[k].look), 'the five cave enemies, (HOM-46) the ten of the road and the Strand and (HOM-63) the ten of the fens and the Thornwood and (HOM-64) Captain Marrow and (HOM-75) the Rotroot Mother and (HOM-95) the nine of the Barrowdowns and the Moor and (HOM-99) the Cairn King and (HOM-111) the eight of the Cairnwaste and the Spire and (HOM-112) Archmage Vael say how to draw themselves, and the original five rigs do not');
 }
 
 // ---------------------------------------------------------------------------
@@ -3820,8 +3820,8 @@ section('HOM-64 dungeons as data: the Hollow is the first, the Drowned Grotto th
 {
   const hollow = dungeonById('hollow'), grotto = dungeonById('grotto');
   const isOpen = (s: GameState) => dungeonOpen(s, grotto);
-  assert(DUNGEONS.length === 4 && hollow.rooms.map(r => r.name).join() === 'throat,hollow,neck,hall' && grotto.rooms.map(r => r.name).join() === 'gangway,galley,hold', 'two dungeons: the Hollow is the four rooms it always was, the Grotto is three, the Rotroot (HOM-75) the third and the Cairn Hold (HOM-99) the fourth');
-  assert(CAVE_ROOMS.length === 13 && CAVE_ROOMS.every(r => DUNGEONS.some(d => d.id === r.dungeon)) && REGIONS.filter(r => r.cave).every(r => !!r.dungeon), 'every cave room belongs to a dungeon, and the flat list is all of them');
+  assert(DUNGEONS.length === 5 && hollow.rooms.map(r => r.name).join() === 'throat,hollow,neck,hall' && grotto.rooms.map(r => r.name).join() === 'gangway,galley,hold', 'two dungeons: the Hollow is the four rooms it always was, the Grotto is three, the Rotroot (HOM-75) the third, the Cairn Hold (HOM-99) the fourth and the Vault (HOM-112) the fifth');
+  assert(CAVE_ROOMS.length === 16 && CAVE_ROOMS.every(r => DUNGEONS.some(d => d.id === r.dungeon)) && REGIONS.filter(r => r.cave).every(r => !!r.dungeon), 'every cave room belongs to a dungeon, and the flat list is all of them');
   assert(grotto.parent === 'saltmarrow' && grotto.rooms.every(r => r.rect.x0 >= SALTMARROW.x - 70 && r.rect.x1 <= SALTMARROW.x + 30), 'the Grotto sits in Saltmarrow\'s frame');
   const mid = (r: { x0: number; x1: number; z0: number; z1: number }) => ({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2 });
   assert(grotto.rooms.every(r => dungeonAt(mid(r.rect).x, mid(r.rect).z) === grotto && inCave(mid(r.rect).x, mid(r.rect).z)) && dungeonAt(-18, -80) === hollow && dungeonAt(0, 8) === null && dungeonAt(SALTMARROW.x - 25, SALTMARROW.z) === null, 'a point is in the dungeon whose floor it is on, and nowhere in a town');

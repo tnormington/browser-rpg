@@ -10,7 +10,7 @@
 export const PLAYER_RADIUS = 0.5;
 
 /** What an obstacle is, for whatever draws it: the sim only ever reads the circle. Absent means a rock (or, in the clearing, whatever it always was). */
-export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'rack' | 'barrow' | 'forge' | 'ruin';
+export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'rack' | 'barrow' | 'forge' | 'ruin' | 'circle';
 export interface Obstacle { x: number; z: number; r: number; kind?: PropKind }
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 export interface Pt { x: number; z: number }
@@ -539,17 +539,31 @@ const spireLandmarks = {
   spireVendor: { ...at(SPIRE, 14, 26), r: 0.7 },
   /** The forge: the top of the metal ladder is smelted here, a few paces from the road in (the second forge in the world). */
   forgeSpire: at(SPIRE, -26, 38),
+  /** The rune circle: the enchanter's station (HOM-112), across the square from the forge. */
+  circle: at(SPIRE, 26, 38),
 };
 const SPIRE_FORGE: Obstacle = { ...spireLandmarks.forgeSpire, r: 2.6, kind: 'forge' };
+const SPIRE_CIRCLE: Obstacle = { ...spireLandmarks.circle, r: 1.8, kind: 'circle' };
 const SPIRE_HOUSES: Obstacle[] = [[-36, 48], [34, 44], [-30, 4], [30, 6]].map(([lx, lz]) => ({ ...at(SPIRE, lx, lz), r: 3.1, kind: 'house' as const }));
 const graveSpire: Pt = at(SPIRE, -56, 58);
 const SPIRE_HEADSTONES = headstones(graveSpire);
-/** The Vault's door (HOM-112 builds what is behind it): a corridor through the north wall, held by a keeper, shut until the Vault is built. Combat 38 and the Keeper's seal (Q7) are what it will ask. */
+/** The Vault's door: a corridor through the north wall, held by a keeper (HOM-112 built what is behind it). Combat 38 and the Keeper's seal (Q7) are what it asks. */
 const SPIRE_GATES: Gate[] = [
   { id: 'vault', axis: 'z', at: SPIRE.z - 76, span: [SPIRE.x - 3, SPIRE.x + 3], from: 1, combat: 38, keeper: 'Wardkeeper Osric Thale', post: { x: SPIRE.x - 1.8, z: SPIRE.z - 73 }, need: 'sealed',
-    refuse: 'The Vault is not for anyone under combat level 38. What is shut in it has waited since the Spire fell: it can wait for you to be ready.',
-    closed: 'The Vault door is sealed, and the seal is mine to keep. The Keeper has read as far as the third ward, and no further. Whatever is behind it has not opened it from within, and nobody is going in until we know why.' },
+    refuse: 'The Vault door opens for no one the Keeper has not read the seal for, and not for anyone under combat level 38. What is shut in it has waited since the Spire fell: it can wait for you to be ready.' },
 ];
+/**
+ * The Sundered Vault (bible 1.2, HOM-112): three rooms behind Thale's door, in the Spire's frame (local coordinates). The gate's line is z -76 and its corridor ends at -84; the stair goes down from there,
+ * and the archive and the sanctum step west and east of it so that each pair of rooms overlaps by a doorway and no more, as the Cairn Hold's do. The sanctum is the biggest room in the game and is
+ * built for a boss who fights from across it: forty wide, thirty-six deep, with four standing stones to break his line.
+ */
+const VAULT_DOOR = at(SPIRE, 0, -83);
+const ARCHIVE_DOOR = at(SPIRE, 0, -99);
+const SANCTUM_DOOR = at(SPIRE, 0, -125);
+const ARCHIVE_STONES: Obstacle[] = [[-28, -108], [-15, -105], [-27, -120], [-13, -119]].map(([lx, lz]) => ({ ...at(SPIRE, lx, lz), r: 1.5 }));
+const SANCTUM_STONES: Obstacle[] = [[5, -136], [27, -136], [5, -148], [27, -148]].map(([lx, lz]) => ({ ...at(SPIRE, lx, lz), r: 1.7 }));
+/** The sanctum's warded floor: three scars of cold rune that drain whoever stands on them (Withering Ground, sim/hazards.ts), the second of Vael's two hazards beside his Rune Storm. Clear of the doorway, the stones and his post. */
+const SANCTUM_WARDS = [[8, -131], [29, -142], [16, -141]].map(([lx, lz]) => ({ ...at(SPIRE, lx, lz), r: 3 }));
 /** The ruins: broken columns, stub walls and fallen drums across the north half, outside the town's circle, none on a camp, the Vault's corridor or one another. */
 function spireRuins(): Obstacle[] {
   const out: Obstacle[] = [], sq = spireLandmarks.spireSquare;
@@ -867,24 +881,48 @@ export const REGIONS: Region[] = [
     road: { axis: 'z', at: CAIRNWASTE.x },
   },
   {
-    // The Sundered Spire (HOM-111). The town is safe ground: a flight master, a forge, a provisioner, the Keeper and a graveyard (enchanting's rune circle is HOM-112's, and so is the Vault: the
-    // door in the north wall is held by its keeper and shut until it is built). The ruins hold the town's enemies, 36 to 40.
+    // The Sundered Spire (HOM-111). The town is safe ground: a flight master, a forge, the rune circle (HOM-112), a provisioner, the Keeper and a graveyard. The Vault's door in the north wall is held by
+    // its keeper, who opens it to the Keeper's seal (Q7). The ruins hold the town's enemies, 36 to 40.
     id: 'spire', name: 'The Sundered Spire', cave: false, zone: 'spire',
     footprint: [
       { x0: SPIRE.x - 70, x1: SPIRE.x + 70, z0: SPIRE.z - 70, z1: SPIRE.z + 70 },
       ...SPIRE_GATES.map(g => ({ x0: g.span[0], x1: g.span[1], z0: g.at - 8, z1: SPIRE.z - 66 })),
     ],
     obstacles: [
-      ...SPIRE_HOUSES, SPIRE_FORGE, ...SPIRE_RUINS, ...SPIRE_HEADSTONES, { ...spireLandmarks.flightSpire, kind: 'person' }, { ...spireLandmarks.spireKeeper, kind: 'person' }, { ...spireLandmarks.spireVendor, kind: 'person' },
+      ...SPIRE_HOUSES, SPIRE_FORGE, SPIRE_CIRCLE, ...SPIRE_RUINS, ...SPIRE_HEADSTONES, { ...spireLandmarks.flightSpire, kind: 'person' }, { ...spireLandmarks.spireKeeper, kind: 'person' }, { ...spireLandmarks.spireVendor, kind: 'person' },
       ...SPIRE_GATES.map(g => ({ ...g.post, r: 0.55, kind: 'person' as const })),
     ],
     tall: [...SPIRE_HOUSES, SPIRE_FORGE, ...SPIRE_RUINS.filter(o => o.r >= 1.5)],
     trees: [], rocks: [],
     landmarks: { ...spireLandmarks, gate: { x: SPIRE.x, z: SPIRE.z + 66 } },
-    connections: [{ to: 'cairnwaste', at: { x: SPIRE.x, z: SPIRE.z + 66 } }],
+    connections: [{ to: 'cairnwaste', at: { x: SPIRE.x, z: SPIRE.z + 66 } }, { to: 'sealstair', at: VAULT_DOOR }],
     safe: [{ ...spireLandmarks.spireSquare, r: 35 }, { ...graveSpire, r: GRAVE_SAFE_R }],
     spawns: spireSpawns,
     gates: SPIRE_GATES,
+  },
+  {
+    // The Sundered Vault (HOM-112), after everything else so no older node or enemy id moves. Its own routing zone at the cave's fine cell, like the Cairn Hold's. The stair holds a Rune Golem, the archive two
+    // adepts and two more golems, the sanctum Archmage Vael. The door is Thale's gate (combat 38, the Keeper's seal), not a dungeon gate: he holds the corridor the stair opens off.
+    id: 'sealstair', name: 'The Sealed Stair', cave: true, dungeon: 'vault', zone: 'vault', cell: 0.25,
+    footprint: [rectAt(SPIRE, -4, 4, -100, -82)],
+    obstacles: [], tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'spire', at: VAULT_DOOR }, { to: 'archive', at: ARCHIVE_DOOR }],
+    spawns: worldSpawns(SPIRE, [['rune_golem', 0, -92]]),
+  },
+  {
+    id: 'archive', name: 'The Archive', cave: true, dungeon: 'vault', zone: 'vault', cell: 0.25,
+    footprint: [rectAt(SPIRE, -36, 4, -126, -98)],
+    obstacles: ARCHIVE_STONES, tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'sealstair', at: ARCHIVE_DOOR }, { to: 'sanctum', at: SANCTUM_DOOR }],
+    spawns: worldSpawns(SPIRE, [['spire_adept', -30, -112], ['spire_adept', -11, -121], ['rune_golem', -21, -112], ['rune_golem', -31, -122]]),
+  },
+  {
+    id: 'sanctum', name: "The Archmage's Sanctum", cave: true, dungeon: 'vault', zone: 'vault', cell: 0.25,
+    footprint: [rectAt(SPIRE, -4, 36, -160, -124)],
+    obstacles: SANCTUM_STONES, tall: [], trees: [], rocks: [], landmarks: {},
+    connections: [{ to: 'archive', at: SANCTUM_DOOR }],
+    spawns: worldSpawns(SPIRE, [['archmage_vael', 16, -150]]),
+    hazards: SANCTUM_WARDS,
   },
 ];
 // the hollow's and hall's standing stones are tall (they break sight lines)
@@ -1052,6 +1090,9 @@ const DUNGEON_DEFS: Omit<Dungeon, 'rooms'>[] = [
   // no `gate`: Ysolt's line across the corridor (HIGH_GATES) is the door, and a dungeon gate would be a second one to keep in step with it
   { id: 'cairnhold', name: 'The Cairn Hold', parent: 'highmoor', fade: { from: HIGHMOOR.z - 84, to: HIGHMOOR.z - 96 },
     rock: rectAt(HIGHMOOR, -50, -2, -152, -84) },
+  // no `gate` either: Thale's line across the corridor (SPIRE_GATES) is the door
+  { id: 'vault', name: 'The Sundered Vault', parent: 'spire', fade: { from: SPIRE.z - 84, to: SPIRE.z - 96 },
+    rock: rectAt(SPIRE, -40, 40, -164, -84) },
 ];
 
 export const DUNGEONS: Dungeon[] = DUNGEON_DEFS.map(d => ({ ...d, rooms: caves.filter(r => r.dungeon === d.id).map(r => ({ name: r.id, rect: r.footprint[0] })) }));

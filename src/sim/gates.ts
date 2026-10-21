@@ -4,6 +4,7 @@
 import type { GameState } from '../sim';
 import { GATES, PLAYER_RADIUS } from './world';
 import { TICK_DT } from './data';
+import { sealRead } from './quest';
 
 /** Seconds between the keeper's repeats while the player leans on the line. */
 const TELL_EVERY = 2.5;
@@ -12,7 +13,7 @@ const toldAt = new WeakMap<GameState, Map<string, number>>();
 /** What each gate's `need` asks for besides the level. A key with no entry here never opens: a typo fails shut, not open. */
 const GATE_NEEDS: Record<string, (s: GameState) => boolean> = {
   writ: s => s.quest.seventh === 'cleared', // Corvin's: the Steward has signed it (the bible's Q6)
-  sealed: s => s.quest.eighth === 'cleared', // the Vault's: the Keeper has read the seal (the bible's Q7)
+  sealed: sealRead, // the Vault's: the Keeper has read the seal (the bible's Q7), and the door stays open through the chain's last two stages
 };
 
 /** Does this player pass this gate? Under the level, or with the way shut, or without what it asks for, no. */

@@ -1,6 +1,6 @@
 import { REGIONS } from './sim/world';
 
-/** Every cave room (Hollow, Grotto, Rotroot, Cairn Hold) shares one bed: no cave region has an entry above. */
+/** Every cave room (Hollow, Grotto, Rotroot, Cairn Hold, Vault) shares one bed: no cave region has an entry above. */
 const CAVE_BED = { file: 'cave-ambience', vol: 0.4 };
 /** Looping beds by region id (a region with no entry is silent), and the level each plays at. */
 const AMBIENCE: Record<string, { file: string; vol: number }> = {

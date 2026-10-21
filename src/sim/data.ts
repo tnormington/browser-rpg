@@ -140,8 +140,9 @@ export interface EnemyDef {
    * It closes to firing range and then holds the ground it is standing on. It never retreats from melee: a shooter you
    * have run down stands and fights (see `net` for the one exception).
    * With a `heavy` as well it is a melee fighter that throws instead: it fights in reach, and throws only at a player standing off.
+   * `holds` turns that round: a caster who keeps to his ground and shoots whoever is in range, and whose `heavy` is a nova for whoever has come inside its radius (Archmage Vael).
    */
-  ranged?: { name: string; range: number; windup: number };
+  ranged?: { name: string; range: number; windup: number; holds?: boolean };
   /**
    * The one way a shooter makes distance. Within `range` of the player it plants its feet for `windup`, then holds them
    * where they stand for `duration` seconds and backs off until it has a `retreat`-unit gap. Interruptible, needs a line
@@ -413,6 +414,16 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     heavy: { name: "Warden's Verdict", windup: 1.7, every: 9, first: 3, damage: 605, radius: 5.8 },
     hazard: { name: 'Sundering Rune', windup: 1.3, every: 8, first: 5, damage: 265, radius: 3.2, range: 14 },
     look: { model: 'brute', scale: 1.5, tint: 0x6a5a8a } },
+  // The Sundered Vault (levels 38 to 41, section 3.4, HOM-112): its trash is the ruins' own (Rune Golem, Spire Adept), the Archmage is the bible's row, HP, hit, swing, heavy / ground and XP as written. He is the
+  // first boss who fights from across the room: the Arc Barrage at anyone inside eighteen paces (he closes to sixteen and holds there, and never gives ground), the Rune Storm marked under you (keep moving),
+  // the Sundering Nova for whoever has come in to melee him (Pummel it, or step out), and the sanctum's warded floor (world.ts) is his second ground. The row's numbers are the bible's and are NOT checked by the
+  // designer's bot (a melee probe): see the Vael section of docs/world-design.md for what the bench makes of them.
+  archmage_vael: { name: 'Archmage Vael', level: 41, hp: 39915, damage: 81, attackInterval: 2.8, speed: 4.2,
+    aggroRadius: 14, leash: 28, attackRange: 6, radius: 1.3, xp: 610, respawn: 600,
+    heavy: { name: 'Sundering Nova', windup: 1.8, every: 10, first: 5, damage: 650, radius: 6 },
+    hazard: { name: 'Rune Storm', windup: 1.5, every: 7, first: 6, damage: 285, radius: 3.5, range: 20 },
+    ranged: { name: 'Arc Barrage', range: 18, windup: 1.0, holds: true },
+    look: { model: 'hexer', scale: 1.6, tint: 0x6a5aa8 } },
 };
 
 /**

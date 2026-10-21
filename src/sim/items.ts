@@ -2,6 +2,7 @@
 import { BARE_SWING } from './data';
 import { FISH, SEA_SALT, cookedId, pieId } from './fish';
 import { HERBS, POTION_PREMIUM, VIAL, VIAL_VALUE } from './herbs';
+import { Enchants, enchantFx } from './enchants';
 
 export type EquipSlot = 'weapon' | 'head' | 'chest' | 'legs' | 'hands' | 'feet';
 // `hands` and `feet` are the leatherworker's: the smith makes the other four (bible 3.2)
@@ -82,6 +83,8 @@ export const ITEMS: Record<string, ItemDef> = {
   starmetal_ore: { name: 'Starmetal Ore', stack: 50, dropWeight: 0, tier: 0, value: 52, desc: 'Black, heavy ore flecked with cold white light, from the stands along the Cairnwaste road. It smelts into starmetal with five parts coal, at the Spire\'s forge.' },
   starmetal_bar: { name: 'Starmetal Bar', stack: 50, dropWeight: 0, tier: 0, value: 140, desc: 'Indigo-black and very cold. The last metal there is: armour and a blade are smithed from it.' },
   crown_shard: { name: 'Crown Shard', stack: 50, dropWeight: 0, tier: 0, value: 100, desc: "A splinter of the Cairn King's crown, grey and cold. Folded round starmetal, it makes a blade nothing else at the forge can." },
+  // enchanting (bible 2.2, HOM-112): what a piece of gear is worth ground down at the Spire's rune circle (sim/enchanting.ts), and what a slot enchant is paid for in. Archmage Vael drops it by the handful
+  arcane_dust: { name: 'Arcane Dust', stack: 500, dropWeight: 0, tier: 0, value: 2, desc: "Cold, faintly glowing grit. Gear ground down at the Spire's rune circle leaves it, and a slot enchant is paid for with it." },
   [SEA_SALT]: { name: 'Sea Salt', stack: 50, dropWeight: 0, tier: 0, value: 2, desc: 'Coarse grey salt from the Saltmarrow pans. A pie wants a pinch.' },
   ...fishItems(),
   ...herbItems(),
@@ -344,6 +347,9 @@ export const DROP_TABLES: Record<string, DropTable> = {
   // the Cairn King's named piece (6.1: a boss's is 1 in 10 a kill, the one roll) and, since HOM-111, the Crown shard Crownbreaker is folded round: 35 % a kill like every other boss's shard, on the same roll.
   // There is no pity counter yet (the bible's 30-kill guarantee is its own card).
   cairn_king: { rolls: 1, nothing: 55, entries: [{ id: 'kings_crown', weight: 10 }, { id: 'crown_shard', weight: 35 }] },
+  // Archmage Vael (HOM-112): the last boss pays in the reagent, a reliable 30 to 60 dust on each of two rolls, and nothing else: no equippable has a look drawn for it, so there is no named piece yet (6.2 lists none), and
+  // no blade above Crownbreaker for a shard to open. The Vault is the one place dust is dropped rather than ground out of gear.
+  archmage_vael: { rolls: 2, nothing: 0, entries: [{ id: 'arcane_dust', qty: [30, 60], weight: 1 }] },
 };
 
 export interface DerivedStats {
@@ -351,6 +357,10 @@ export interface DerivedStats {
   armor: number;
   reduction: number;    // fraction of incoming damage removed, 0..MAX_REDUCTION
   swingInterval: number; // seconds between auto-attack swings: the weapon's speed, or BARE_SWING bare-handed
+  /** What the slot enchants add (sim/enchants.ts): crit chance, energy a second, and the share of max health. Armour is folded into `armor`. */
+  crit: number;
+  energyRegen: number;
+  hpFrac: number;
 }
 
 export const ARMOR_K = 40;        // reduction = armor / (armor + ARMOR_K)
@@ -364,10 +374,11 @@ export type Durability = Record<string, number>;
 
 /**
  * THE derived-stat calculation. Combat reads only this; M3's smithed weapon is just another
- * ITEMS entry equipped in the weapon slot. A broken piece (`durability` at 0) is worn but gives nothing.
+ * ITEMS entry equipped in the weapon slot. A broken piece (`durability` at 0) is worn but gives nothing, and neither does what is enchanted onto it.
  */
-export function deriveStats(equipment: Equipment, durability: Durability = {}): DerivedStats {
-  let weaponDamage = 0, armor = 0, swingInterval = BARE_SWING;
+export function deriveStats(equipment: Equipment, durability: Durability = {}, enchants: Enchants = {}): DerivedStats {
+  const fx = enchantFx(equipment, durability, enchants);
+  let weaponDamage = 0, armor = fx.armor, swingInterval = BARE_SWING;
   for (const slot of EQUIP_SLOTS) {
     const id = equipment[slot];
     const st = id && durability[id] !== 0 ? ITEMS[id]?.stats : undefined;
@@ -376,7 +387,7 @@ export function deriveStats(equipment: Equipment, durability: Durability = {}): 
     armor += st.armor ?? 0;
     if (st.speed) swingInterval = st.speed;
   }
-  return { weaponDamage, armor, reduction: Math.min(MAX_REDUCTION, armor / (armor + ARMOR_K)), swingInterval };
+  return { weaponDamage, armor, reduction: Math.min(MAX_REDUCTION, armor / (armor + ARMOR_K)), swingInterval, crit: fx.crit, energyRegen: fx.energyRegen, hpFrac: fx.hpFrac };
 }
 
 /** Human-readable stat lines for tooltips. */

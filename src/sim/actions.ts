@@ -15,13 +15,14 @@ export type Action =
   | { k: 'flight'; from: string; to: string; t: number; duration: number }; // the ride: flight.ts runs it, and the player is out of everyone's reach until it lands
 
 /** `npc` and `vendor` name who (a click on them knows); without one, the nearest in earshot is meant (the E key). */
-export type Interact = { k: 'node'; id: number } | { k: 'forge'; site?: number } | { k: 'range' } | { k: 'alembic' } | { k: 'rack' } | { k: 'npc'; id?: string } | { k: 'vendor'; id?: string } | { k: 'flightmaster'; id?: string };
+export type Interact = { k: 'node'; id: number } | { k: 'forge'; site?: number } | { k: 'range' } | { k: 'alembic' } | { k: 'rack' } | { k: 'circle' } | { k: 'npc'; id?: string } | { k: 'vendor'; id?: string } | { k: 'flightmaster'; id?: string };
 
 /** Each forge's own radius, in `stationSites('forge')` order: the building is a collider (world.ts). */
 const FORGE_RS = stationSites('forge').map(f => OBSTACLES.find(o => o.x === f.x && o.z === f.z)!.r);
 const RANGE_R = 0.9; // the hearth is a prop, not a collider: this is only how close counts as touching it
 const ALEMBIC_R = 1.3; // the bench is a collider of this radius (world.ts)
 const RACK_R = 1.6; // the tanning rack is a collider of this radius (world.ts)
+const CIRCLE_R = 1.8; // the rune circle is a collider of this radius (world.ts)
 const REACH = 1.5; // gap between the player's edge and the thing's edge that still counts as touching
 
 /** Where the thing is and how big. */
@@ -33,6 +34,7 @@ function target(s: GameState, it: Interact) {
   if (it.k === 'range') return { x: LANDMARKS.range.x, z: LANDMARKS.range.z, r: RANGE_R };
   if (it.k === 'alembic') return { x: LANDMARKS.alembic.x, z: LANDMARKS.alembic.z, r: ALEMBIC_R };
   if (it.k === 'rack') return { x: LANDMARKS.rack.x, z: LANDMARKS.rack.z, r: RACK_R };
+  if (it.k === 'circle') return { x: LANDMARKS.circle.x, z: LANDMARKS.circle.z, r: CIRCLE_R };
   const n = nodeById(s, it.id);
   return n && { x: n.x, z: n.z, r: n.r };
 }
@@ -68,6 +70,7 @@ export function updateInteract(s: GameState) {
   else if (it.k === 'range') s.events.push({ t: 'range' });
   else if (it.k === 'alembic') s.events.push({ t: 'alembic' });
   else if (it.k === 'rack') s.events.push({ t: 'rack' });
+  else if (it.k === 'circle') s.events.push({ t: 'circle' });
   else if (it.k === 'npc') s.events.push({ t: 'npc', who: (t as { id: string }).id });
   else if (it.k === 'vendor') s.events.push({ t: 'shop', vendor: (t as { id: string }).id });
   else if (it.k === 'flightmaster') s.events.push({ t: 'flightmaster', town: (t as { id: string }).id });

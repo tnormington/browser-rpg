@@ -9,7 +9,7 @@ import { addItem, countItem, hasRoom, removeItem } from './inventory';
 import { FISH, SEA_SALT, cookedId, pieId } from './fish';
 import { HERBS, VIAL } from './herbs';
 
-/** Where a recipe is made. The forge, the range, the alembic and the rack are built; the rest are named by the bible (2.2) for the skills still to come. */
+/** Where a recipe is made. The forge, the range, the alembic and the rack have recipes; the rune circle (enchanting, sim/enchanting.ts) has none: it grinds gear and sets enchants. */
 export type Station = 'forge' | 'range' | 'alembic' | 'rack' | 'circle';
 
 export interface Recipe {
@@ -174,6 +174,7 @@ export const STATIONS: Partial<Record<Station, { at: Pt; also?: Pt[]; name: stri
   range: { at: LANDMARKS.range, name: 'cooking range' },
   alembic: { at: LANDMARKS.alembic, name: 'alembic' },
   rack: { at: LANDMARKS.rack, name: 'tanning rack' },
+  circle: { at: LANDMARKS.circle, name: 'rune circle' },
 };
 export const stationOf = (r: Recipe): Station => r.station ?? 'forge';
 

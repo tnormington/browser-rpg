@@ -2,7 +2,9 @@
 // Rules live in src/sim/*; this file owns state shape and the fixed-step driver.
 
 import { XpTrack } from './sim/xp';
-import { DerivedStats, Durability, Equipment, deriveStats, emptyEquipment } from './sim/items';
+import { DerivedStats, Durability, Equipment, EquipSlot, deriveStats, emptyEquipment } from './sim/items';
+import type { Enchants } from './sim/enchants';
+import { EnchantAction, applyEnchantAction } from './sim/enchanting';
 import { Inventory, InvAction, applyInvAction, newInventory } from './sim/inventory';
 import { GroundDrop, updateDrops } from './sim/loot';
 import { SkillId, Skills, newSkills } from './sim/skills';
@@ -98,7 +100,8 @@ export interface Player {
   gold: number;            // currency: sold for, spent at the merchant. Not a bag item, so it never takes a slot
   equipment: Equipment;
   durability: Durability;  // points left on worn-down gear, by item id (sim/durability.ts); absent = whole
-  stats: DerivedStats;     // always deriveStats(equipment, durability); combat reads this, never the items
+  enchants: Enchants;      // slot enchants (sim/enchants.ts): they belong to the slot, so they stay when the item changes
+  stats: DerivedStats;     // always deriveStats(equipment, durability, enchants); combat reads this, never the items
   talents: Talents;        // ranks bought, by talent id
   talentFx: TalentEffects; // always deriveTalents(talents); combat reads this, never the ranks
   /** A meal being eaten: heals `rate` a second for `left` more seconds, and a hit ends it. `pending` is healing not yet reported as one number. */
@@ -146,6 +149,8 @@ export type GameEvent =
   | { t: 'range' }                                      // ...or the cooking range
   | { t: 'alembic' }                                    // ...or Thornwick's alembic
   | { t: 'rack' }                                       // ...or Highmoor's tanning rack
+  | { t: 'circle' }                                     // ...or the Spire's rune circle: open the enchanting panel
+  | { t: 'enchanted'; slot: EquipSlot; id: string }     // a slot enchant was set (ENCHANTS id)
   | { t: 'crafted'; item: string; qty: number; skill: SkillId }
   | { t: 'use'; item: string }                          // an item was eaten or drunk (one is gone from the bag)
   | { t: 'eatbreak' }                                   // a hit spoiled the meal being eaten
@@ -202,6 +207,7 @@ export interface Input {
   pickup: number | null;                        // ground-drop id clicked this tick: walk to it
   inv: InvAction[];                             // inventory/equipment actions this tick
   shop?: ShopAction[];                          // sell/buy requests this tick (optional like the others added after the first callers)
+  enchant?: EnchantAction[];                    // disenchant / enchant requests this tick, at the rune circle
   interact: Interact | null;                    // node or forge clicked this tick: walk there and use it
   craft: { recipe: string; count: number } | null; // forge recipe chosen this tick
   questAdvance: boolean | 'road';               // the advancing dialogue option was chosen this tick
@@ -228,7 +234,7 @@ export function createState(seed = 1): GameState {
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
       gcd: 0, cd: ABILITIES.map(() => 0), learned: [], mounts: [], mounted: false, unlocked: 1, queued: null, queuedOff: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
-      skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), durability: {}, stats: deriveStats(emptyEquipment()),
+      skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), durability: {}, enchants: {}, stats: deriveStats(emptyEquipment()),
       talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [], root: null,
     },
     moveTarget: null,
@@ -279,6 +285,7 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     else if (input.clickTarget) s.moveTarget = clampToWorld(input.clickTarget);
     for (const a of input.inv) applyInvAction(s, a);
     for (const a of input.shop ?? []) applyShopAction(s, a);
+    for (const a of input.enchant ?? []) applyEnchantAction(s, a);
     if (input.pickup !== null) {
       const d = s.drops.find(x => x.id === input.pickup);
       if (d) s.moveTarget = clampToWorld(d);

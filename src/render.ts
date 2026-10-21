@@ -2,8 +2,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
+import { floorLift, roomIndices } from './floor-stack';
 import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, dungeonAt, inCave, regionAt } from './sim/world';
-import { ABILITIES, ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE } from './sim/data';
+import { ABILITIES, ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE, SPAWNS } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { NODE_TYPES } from './sim/gathering';
 import { HARBOURMASTER, HIGH_STEWARD, NPC, SPIRE_KEEPER, THORN_REEVE, harbourMarker as harbourMarkOf, keeperMarker as keeperMarkOf, npcMarker as markerOf, reeveMarker as reeveMarkOf, stewardMarker as stewardMarkOf } from './sim/quest';
@@ -80,8 +81,8 @@ const mesh = (g: THREE.BufferGeometry, color: number, cls: MatClass, shadow: 'ca
 
 /** The ground hazards that are a thing falling (not a cloud or a burst): their mark draws a stone dropping into the ring from FALL_HEIGHT. */
 const FALLING = new Set(['Falling Stone', 'Falling Rock']), FALL_HEIGHT = 5;
-/** How far each cave room's floor sits above the last. The ground marks (boss circles, drop rings) draw at 0.06-0.08, so the whole stack must stay under that: at 0.02 a thirteenth room was at 0.26 and the Rotroot's and the Hold's circles were buried. */
-const FLOOR_STEP = 0.004, RUNE_Y = 0.055;
+/** Where the cave floors lift and what they must stay under: see floor-stack.ts. RUNE_Y is the dressing's own height, under the ground marks. */
+const RUNE_Y = 0.055;
 // Directional light sits at a fixed offset from its shadow target and follows the player, so the shadow frustum stays tight.
 const SUN_OFFSET = new THREE.Vector3(-38, 36, 26); // ~37 degrees: long silhouettes, but shadow bands stay short enough not to swallow the combat arena
 const SHADOW_EXTENT = 28, SHADOW_MAP = 2048;
@@ -151,9 +152,17 @@ const CAIRN = {
   floor: 0x2c2c34, floorAlt: 0x383842, wall: new THREE.Color(0.85, 0.88, 1),
   fog: new THREE.Color(0x07080c), light: { color: 0xa8b4e0, intensity: 110, distance: 20, y: 4.8 },
 };
-const FLOORS: Record<string, [number, number]> = { hollow: [P.caveFloor, P.caveFloorAlt], grotto: [GROTTO.floor, GROTTO.floorAlt], rotroot: [ROTROOT.floor, ROTROOT.floorAlt], cairnhold: [CAIRN.floor, CAIRN.floorAlt] };
+/**
+ * The Sundered Vault (HOM-112): the Spire's school cellars, dressed stone gone violet in the dark. A stand-in look until the 3D Artist's: cut slate flagstone, a cold violet lamplight in each room, and rune
+ * light on the floor of the sanctum. Its own dark, with no green and no blue-grey in it: the Archmage's rooms are the one place that is lit by what is in them.
+ */
+const VAULT = {
+  floor: 0x26242f, floorAlt: 0x322f40, wall: new THREE.Color(0.8, 0.74, 1),
+  fog: new THREE.Color(0x09070f), light: { color: 0xa090ff, intensity: 120, distance: 22, y: 5 },
+};
+const FLOORS: Record<string, [number, number]> = { hollow: [P.caveFloor, P.caveFloorAlt], grotto: [GROTTO.floor, GROTTO.floorAlt], rotroot: [ROTROOT.floor, ROTROOT.floorAlt], cairnhold: [CAIRN.floor, CAIRN.floorAlt], vault: [VAULT.floor, VAULT.floorAlt] };
 /** Per-dungeon rock tint and air; the Hollow is the default and falls through. */
-const DUNGEON_LOOK: Record<string, { wall: THREE.Color; fog: THREE.Color }> = { grotto: GROTTO, rotroot: ROTROOT, cairnhold: CAIRN };
+const DUNGEON_LOOK: Record<string, { wall: THREE.Color; fog: THREE.Color }> = { grotto: GROTTO, rotroot: ROTROOT, cairnhold: CAIRN, vault: VAULT };
 
 /**
  * Arcane crystal clusters: the cold emissive accents the art direction asks for (docs/art-direction.md), small bright shapes against large
@@ -251,6 +260,7 @@ export class Renderer {
   private rangeParts: THREE.Object3D[] = [];
   private alembicPick!: THREE.Mesh;
   private rackPick!: THREE.Mesh;
+  private circlePick!: THREE.Mesh;
   private npcParts: THREE.Object3D[] = [];
   private vendorParts: THREE.Object3D[] = [];
   private flightParts: THREE.Mesh[] = [];
@@ -533,6 +543,11 @@ export class Renderer {
     this.rackPick.position.set(rack.x, 1.4, rack.z);
     this.rackPick.rotation.y = 0.5;
     this.scene.add(this.rackPick);
+    // ...and the Spire's rune circle (drawn by the town: world-view.ts): a low disc to click, and the standing stones round it
+    const circle = LANDMARKS.circle;
+    this.circlePick = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 1.6, 12), new THREE.MeshBasicMaterial({ visible: false }));
+    this.circlePick.position.set(circle.x, 0.8, circle.z);
+    this.scene.add(this.circlePick);
 
     // cave mouth: the sim's four flank colliders, rock heaped over them and across the top; the way in is the gap between
     for (const o of CAVE_MOUTH) this.caveRocks.push(add(mesh(new THREE.DodecahedronGeometry(o.r * 1.4), P.slate, 'rock'), o.x, o.r * 0.9, o.z) as THREE.Mesh);
@@ -611,6 +626,25 @@ export class Renderer {
     this.buildGrotto();
     this.buildRotroot();
     this.buildCairnHold();
+    this.buildVault();
+  }
+
+  /**
+   * The Vault's dressing, a stand-in until the 3D Artist's: a cold violet light in each room, and in the sanctum a dais of rune under the Archmage's post, two rings and a spoke of ticks, laid flat under
+   * the ground marks (RUNE_Y) so none of his circles is ever buried by the dressing.
+   */
+  private buildVault() {
+    const rooms = CAVE_ROOMS.filter(r => r.dungeon === 'vault'), rune: THREE.BufferGeometry[] = [];
+    for (const { rect: r, name } of rooms) {
+      const l = new THREE.PointLight(VAULT.light.color, VAULT.light.intensity * (name === 'sanctum' ? 1.3 : 1), VAULT.light.distance);
+      l.position.set((r.x0 + r.x1) / 2, VAULT.light.y, (r.z0 + r.z1) / 2);
+      this.scene.add(l);
+      if (name !== 'sanctum') continue;
+      const vael = SPAWNS.find(sp => sp.type === 'archmage_vael')!;
+      for (const [rad, tube] of [[7, 0.07], [3.6, 0.06]]) rune.push(new THREE.RingGeometry(rad - tube, rad + tube, 40).rotateX(-Math.PI / 2).translate(vael.x, RUNE_Y, vael.z));
+      for (let i = 0; i < 16; i++) rune.push(new THREE.PlaneGeometry(0.2, 0.5).rotateX(-Math.PI / 2).rotateY(i * Math.PI / 8).translate(vael.x + Math.sin(i * Math.PI / 8) * 5.3, RUNE_Y, vael.z + Math.cos(i * Math.PI / 8) * 5.3));
+    }
+    this.scene.add(mesh(mergeGeometries(rune)!, 0xb8a8ff, 'glow', 'none'));
   }
 
   /**
@@ -760,11 +794,12 @@ export class Renderer {
   /** The cave floor: the rooms tinted per vertex like the outdoor ground, each room a hair above the last so overlaps do not shimmer. One draw. */
   private tintedFloor() {
     const a = new THREE.Color(), b = new THREE.Color(), c = new THREE.Color();
+    const nth = roomIndices(CAVE_ROOMS.map(r => r.dungeon)); // the lift counts within a dungeon: a stack across all of them buries the last boss's circle (floor-stack.ts)
     const rooms = CAVE_ROOMS.map(({ rect: r, dungeon }, i) => {
       a.setHex(FLOORS[dungeon][0]); b.setHex(FLOORS[dungeon][1]);
       const w = r.x1 - r.x0, d = r.z1 - r.z0;
       const g = new THREE.PlaneGeometry(w, d, Math.max(1, Math.round(w / 3)), Math.max(1, Math.round(d / 3))).rotateX(-Math.PI / 2)
-        .translate((r.x0 + r.x1) / 2, FLOOR_STEP * (i + 1), (r.z0 + r.z1) / 2);
+        .translate((r.x0 + r.x1) / 2, floorLift(nth[i]), (r.z0 + r.z1) / 2);
       const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
       for (let v = 0; v < pos.count; v++) {
         c.copy(a).lerp(b, Math.abs(Math.sin(pos.getX(v) * 12.9898 + pos.getZ(v) * 78.233 + i * 977) * 43758.5453) % 1);
@@ -1527,6 +1562,13 @@ export class Renderer {
     this.raycaster.setFromCamera(
       new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
     return this.raycaster.intersectObject(this.rackPick, false).length > 0;
+  }
+
+  /** True when the click lands on the rune circle in the Spire. */
+  pickCircle(clientX: number, clientY: number): boolean {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    return this.raycaster.intersectObject(this.circlePick, false).length > 0;
   }
 
   /** Ground-drop id under a screen position, or null. Drops are generous to click. */

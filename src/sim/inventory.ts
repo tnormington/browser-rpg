@@ -2,7 +2,7 @@
 import type { GameState } from '../sim';
 import { EQUIP_SLOTS, ITEMS, deriveStats } from './items';
 import type { EquipSlot, ItemDef } from './items';
-import { useItem } from './consumables';
+import { resizeHp, useItem } from './consumables';
 
 export const INVENTORY_SIZE = 28;
 export interface ItemStack { id: string; qty: number }
@@ -100,7 +100,13 @@ function moveSlot(inv: Inventory, from: number, to: number) {
 }
 
 export function refreshGearStats(s: GameState) {
-  Object.assign(s.player.stats, deriveStats(s.player.equipment, s.player.durability));
+  Object.assign(s.player.stats, deriveStats(s.player.equipment, s.player.durability, s.player.enchants));
+}
+
+/** A change of what is worn or set on it: the stats follow, and so does max health (a Vitality chest is worn or taken off). Not for a death, which must not hand a dying player a hit point. */
+export function regear(s: GameState) {
+  refreshGearStats(s);
+  resizeHp(s.player);
 }
 
 export function applyInvAction(s: GameState, act: InvAction) {
@@ -113,7 +119,7 @@ export function applyInvAction(s: GameState, act: InvAction) {
     if (!id) return;
     if (addItem(inv, id, 1) > 0) return void s.events.push({ t: 'invfull' });
     p.equipment[act.slot] = null;
-    return refreshGearStats(s);
+    return regear(s);
   }
   if (!validSlot(act.slot)) return;
   const st = inv[act.slot];
@@ -135,5 +141,5 @@ export function applyInvAction(s: GameState, act: InvAction) {
   const worn = p.equipment[slot];
   p.equipment[slot] = st.id;
   inv[act.slot] = worn ? { id: worn, qty: 1 } : null;
-  refreshGearStats(s);
+  regear(s);
 }

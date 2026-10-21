@@ -31,8 +31,9 @@ export type Quest7Stage = 'locked' | 'offer' | 'hunt' | 'report' | 'cleared';
 /**
  * The bible's Q7, The Sundered Seal: the Spire's Keeper, once the writ is signed (they have walked the Cairnwaste to be here); it is what the Vault's door will ask for (HOM-112) and pays 1,800 combat XP.
  * The Q2 shape, not the Q3 to Q6 one: the ruins' lesser wards first (`hunt`), then the Warden alone (`warden`: it only counts once the wards are down), then the Keeper.
+ * `cleared` is the seal read and the Vault's door open (HOM-112): the chain goes on from there to the end of the game, Archmage Vael slain (`closing`) and the Keeper told (`done`).
  */
-export type Quest8Stage = 'locked' | 'offer' | 'hunt' | 'warden' | 'report' | 'cleared';
+export type Quest8Stage = 'locked' | 'offer' | 'hunt' | 'warden' | 'report' | 'cleared' | 'closing' | 'done';
 export interface QuestState { stage: QuestStage; kills: Record<string, number>; second: Quest2Stage; third: Quest3Stage; fourth: Quest4Stage; fifth: Quest5Stage; sixth: Quest6Stage; seventh: Quest7Stage; eighth: Quest8Stage }
 export const QUEST_STAGES: QuestStage[] = ['offer', 'hunt', 'report1', 'forge', 'brute', 'report2', 'done'];
 export const QUEST2_STAGES: Quest2Stage[] = ['locked', 'offer', 'delve', 'armour', 'warden', 'report', 'cleared'];
@@ -41,7 +42,9 @@ export const QUEST4_STAGES: Quest4Stage[] = ['offer', 'carry', 'report', 'cleare
 export const QUEST5_STAGES: Quest5Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
 export const QUEST6_STAGES: Quest6Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
 export const QUEST7_STAGES: Quest7Stage[] = ['locked', 'offer', 'hunt', 'report', 'cleared'];
-export const QUEST8_STAGES: Quest8Stage[] = ['locked', 'offer', 'hunt', 'warden', 'report', 'cleared'];
+export const QUEST8_STAGES: Quest8Stage[] = ['locked', 'offer', 'hunt', 'warden', 'report', 'cleared', 'closing', 'done'];
+/** True once the seal has been read (the Vault's door opens at this stage, and stays open through the two that follow). */
+export const sealRead = (s: GameState) => QUEST8_STAGES.indexOf(s.quest.eighth) >= QUEST8_STAGES.indexOf('cleared');
 
 /** True once the first quest has got as far as `stage`. */
 export const questReached = (s: GameState, stage: QuestStage) => QUEST_STAGES.indexOf(s.quest.stage) >= QUEST_STAGES.indexOf(stage);
@@ -131,7 +134,10 @@ export const QUEST8_NAME = 'The Sundered Seal';
 /** The ruins' lesser wards, which the Keeper wants silenced before the Warden is faced: the adepts, the hounds that came out of the broken seal and the golems that still walk its rounds. */
 export const SEAL_GOALS: Record<string, number> = { spire_adept: 4, void_hound: 3, rune_golem: 2 };
 export const RECOMMENDED_COMBAT_8 = 36;
+export const RECOMMENDED_COMBAT_VAEL = 40; // the sanctum's own: Vael is 41, and the Vault's door asks 38
 export const REWARD8: { skill: SkillId; xp: number }[] = [{ skill: 'combat', xp: 1800 }];
+/** What the Keeper pays when Vael is dead (HOM-112): the last combat XP the chains give, and a lift toward the first enchant (Enchanting 36 is 24,815 XP). */
+export const REWARD8B: { skill: SkillId; xp: number }[] = [{ skill: 'combat', xp: 2400 }, { skill: 'enchanting', xp: 3000 }];
 const haveGoods = (s: GameState) => ERRAND_GOODS.every(g => countItem(s.player.inventory, g.item) >= g.n);
 
 /** Inventory plus what is worn: a piece you put on has not stopped being yours. */
@@ -201,6 +207,9 @@ export function questOnKill(s: GameState, type: string) {
   } else if (q.eighth === 'warden' && type === 'spire_warden') { // the Warden only counts once the lesser wards are down, as the Hollow Warden's did once the steel was on
     q.eighth = 'report';
     questEvent(s, 'stage', 8);
+  } else if (q.eighth === 'cleared' && type === 'archmage_vael') { // the Vault only counts once the seal is read: the door does not open before
+    q.eighth = 'closing';
+    questEvent(s, 'stage', 8);
   }
 }
 
@@ -254,6 +263,10 @@ export function advanceQuest(s: GameState, what: boolean | 'road' = true) {
     else if (q.eighth === 'report') {
       q.eighth = 'cleared';
       for (const r of REWARD8) if (grantXp(s, r.skill, r.xp, SPIRE_KEEPER.x, SPIRE_KEEPER.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
+      questEvent(s, 'complete', 8);
+    } else if (q.eighth === 'closing') {
+      q.eighth = 'done';
+      for (const r of REWARD8B) if (grantXp(s, r.skill, r.xp, SPIRE_KEEPER.x, SPIRE_KEEPER.z) > 0 && r.skill === 'combat') refreshPlayerStats(s, true);
       questEvent(s, 'complete', 8);
     }
     return;
@@ -563,10 +576,21 @@ const DIALOGUE8: Record<Exclude<Quest8Stage, 'locked'>, Dialogue> = {
   },
   report: {
     lines: ['The Warden is down? Then the last word is spoken, and I can read the seal from end to end.', 'Take this: it is what the school paid its keepers, and it is yours now.'],
-    options: [{ label: 'Thank you.', advance: true, reply: 'I have read it, and I will tell you what it says, though you will not like it: it is not a lock, it is a promise. Whatever Vael promised, he is keeping it. Wardkeeper Thale holds the door, and he will not open it until we know what the promise was. Come back when he says it is time.' }],
+    options: [{ label: 'Thank you.', advance: true, reply: 'I have read it, and I will tell you what it says, though you will not like it: it is not a lock, it is a promise. Whatever Vael promised, he is keeping it. Wardkeeper Thale holds the door, and I have told him to let you through: you are the first in eleven years to have earned it.' }],
   },
   cleared: {
-    lines: ['The seal is read and the ruins are quiet. The Vault door stays shut for now: Wardkeeper Thale holds it, on the north road out of the ruins, and he will say when.'],
+    lines: [
+      'The seal is read, and Thale will open the door to you: it is on the north road out of the ruins, past where the Warden stood.',
+      'Vael is down there still. The first room is the stair, the second the archive where his adepts and golems keep the rounds, and the last is his sanctum. He fights from across the room: arcs at anyone within eighteen paces, a rune marked under your feet, a nova for anyone who closes with him. The stones in the sanctum are there to be stood behind, and the floor is warded. Do not stand still on it.',
+    ],
+    options: [{ label: 'I will end it.' }],
+  },
+  closing: {
+    lines: ['It is quiet. For the first time in eleven years the seal has stopped saying anything at all.', 'The Vault is yours, and the school\'s last wage with it. Take it.'],
+    options: [{ label: 'It is over.', advance: true, reply: 'It is over, for the school. The Spire is a town now, and not a ruin; the ledger is closed, and I will keep the book. If you want to do something with the rest of what you have found, the rune circle is south of the forge, across the square. It was built to be used.' }],
+  },
+  done: {
+    lines: ['The Vault is open and empty, and the seal reads nothing. Whatever Vael promised, he kept, and so did you.', 'The rune circle is across the square from the forge. Gear you no longer need is dust there, and dust is worth more than it sounds.'],
     options: [{ label: 'Farewell.' }],
   },
 };
@@ -605,8 +629,8 @@ export const reeveMarker = (s: GameState) => chainMark(s.quest.sixth);
 /** The mark over Highmoor's Steward. */
 export const stewardMarker = (s: GameState) => chainMark(s.quest.seventh);
 
-/** The mark over the Spire's Keeper. */
-export const keeperMarker = (s: GameState) => chainMark(s.quest.eighth);
+/** The mark over the Spire's Keeper: '?' once Vael is dead and the last hand-in waits, grey while the Vault is open and he is not. */
+export const keeperMarker = (s: GameState) => s.quest.eighth === 'closing' ? 'ready' : s.quest.eighth === 'cleared' ? 'wait' : chainMark(s.quest.eighth);
 
 /** Which marker floats over the Warden: '!' he has something to offer, '?' he is waiting for you, grey he is not, none for nothing left to say. */
 export function npcMarker(s: GameState): 'offer' | 'ready' | 'wait' | null {
@@ -881,7 +905,7 @@ function sealView(s: GameState): QuestView {
   const talk = (what: string) => ({ text: `${what} (click or press V)`, done: false });
   const target = { x: SPIRE_KEEPER.x, z: SPIRE_KEEPER.z, label: SPIRE_KEEPER.name }, thale = GATES.find(g => g.id === 'vault')!;
   const v = (lines: QuestLine[], t: QuestView['target'], ready = false): QuestView =>
-    ({ title: QUEST8_NAME, lines, target: t, ready, stageNo, progress: q.eighth === 'cleared' ? '' : `(${stageNo}/${total})` });
+    ({ title: QUEST8_NAME, lines, target: t, ready, stageNo, progress: sealRead(s) ? '' : `(${stageNo}/${total})` });
   const goals = Object.entries(SEAL_GOALS).map(([t, n]) => ({ text: `${PLURAL[t]} slain: ${Math.min(n, q.kills[t] ?? 0)}/${n}`, done: (q.kills[t] ?? 0) >= n }));
   const advice = lvl < RECOMMENDED_COMBAT_8 ? [{ text: `Recommended Combat ${RECOMMENDED_COMBAT_8} (you are ${lvl})`, done: false }] : [];
   switch (q.eighth) {
@@ -891,7 +915,11 @@ function sealView(s: GameState): QuestView {
     }
     case 'warden': return v([...goals, { text: 'Slay the Spire Warden (the head of the ruins, south of the Vault corridor)', done: false }, ...advice], enemyTarget(s, 'spire_warden'));
     case 'report': return v([{ text: 'The Spire Warden is slain', done: true }, talk(`Return to ${SPIRE_KEEPER.name} for your reward`)], target, true);
-    case 'cleared': return v([{ text: 'Quest complete. The seal is read.', done: true }, { text: 'Wardkeeper Thale holds the Vault door (the north wall of the Spire)', done: false }], { x: thale.post.x, z: thale.post.z, label: thale.keeper });
+    case 'cleared': return v([{ text: 'The seal is read. Wardkeeper Thale will open the Vault door (the north wall of the Spire)', done: true },
+      { text: 'Slay Archmage Vael (the Vault: down the stair, through the archive, in the sanctum)', done: false }, ...(lvl < RECOMMENDED_COMBAT_VAEL ? [{ text: `Recommended Combat ${RECOMMENDED_COMBAT_VAEL} (you are ${lvl})`, done: false }] : [])],
+      s.player.z < thale.at ? enemyTarget(s, 'archmage_vael') : { x: thale.post.x, z: thale.post.z, label: thale.keeper });
+    case 'closing': return v([{ text: 'Archmage Vael is slain', done: true }, talk(`Return to ${SPIRE_KEEPER.name} for your reward`)], target, true);
+    case 'done': return v([{ text: 'Quest complete. The Vault is quiet and the seal reads nothing.', done: true }], null);
     default: return v([talk(`Speak to ${SPIRE_KEEPER.name} in the Spire`)], target, true); // offer
   }
 }

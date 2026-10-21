@@ -3,6 +3,7 @@ import { Renderer } from './render';
 import { Hud } from './hud';
 import type { InvAction } from './sim/inventory';
 import type { ShopAction } from './sim/shop';
+import type { EnchantAction } from './sim/enchanting';
 import type { AdminAction } from './sim/admin';
 import type { Interact } from './sim';
 import type { WeatherKind } from './weather';
@@ -29,6 +30,7 @@ const view = new Renderer(document.body, state, loadQuality());
 if (trace) (window as any).__frameTrace = trace, trace.attach(view.renderer);
 const pendingInv: InvAction[] = [];
 const pendingShop: ShopAction[] = [];
+const pendingEnchant: EnchantAction[] = [];
 const pendingAdmin: AdminAction[] = [];
 let pendingCraft: { recipe: string; count: number } | null = null;
 let pendingAdvance: boolean | 'road' = false;
@@ -51,6 +53,7 @@ const hud = new Hud((x, y, z) => view.showingMap ? null : view.project(x, y, z),
   repair: () => { pendingShop.push({ k: 'repair' }); saveDirty = true; },
   buyMount: id => { pendingShop.push({ k: 'mount', id }); saveDirty = true; },
   craft: (recipe, count) => { pendingCraft = { recipe, count }; },
+  enchant: a => { pendingEnchant.push(a); saveDirty = true; },
   questAdvance: what => { pendingAdvance = what; },
   quality: toggle => {
     if (toggle) { view.setQuality(view.quality === 'high' ? 'low' : 'high'); saveQuality(view.quality); }
@@ -167,6 +170,7 @@ addEventListener('mouseup', e => {
       else if (view.pickRange(e.clientX, e.clientY)) pendingInteract = { k: 'range' };
       else if (view.pickAlembic(e.clientX, e.clientY)) pendingInteract = { k: 'alembic' };
       else if (view.pickRack(e.clientX, e.clientY)) pendingInteract = { k: 'rack' };
+      else if (view.pickCircle(e.clientX, e.clientY)) pendingInteract = { k: 'circle' };
       else {
         pendingEnemy = view.pickEnemy(e.clientX, e.clientY, CLICK_TOLERANCE_PX);
         const near = pendingEnemy === null ? view.pickNode(e.clientX, e.clientY, CLICK_TOLERANCE_PX) : null;
@@ -205,6 +209,7 @@ function readInput(): Input {
     pickup: pendingPickup,
     inv: pendingInv.splice(0),
     shop: pendingShop.splice(0),
+    enchant: pendingEnchant.splice(0),
     admin: pendingAdmin.splice(0),
     interact: pendingInteract,
     craft: pendingCraft,

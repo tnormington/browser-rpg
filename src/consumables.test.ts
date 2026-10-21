@@ -96,7 +96,7 @@ section('HOM-48 cooking: a recipe names its station');
   stand(s, LANDMARKS.forge);
   tick(s, { craft: { recipe: cookedId(FISH[0]), count: 3 } });
   assert(failOf(s)?.reason === 'range' && failOf(s)?.station === 'cooking range' && s.player.action === null, 'at the forge you cannot cook: the range is where it is done');
-  assert(!nearStation(s, 'range') && !nearStation(s, 'alembic') && nearStation(s, 'forge') && STATIONS.circle === undefined && !nearStation(s, 'circle') && !nearStation(s, 'rack'), 'near a station means near that station; an unbuilt one is never near');
+  assert(!nearStation(s, 'range') && !nearStation(s, 'alembic') && nearStation(s, 'forge') && STATIONS.circle !== undefined && !nearStation(s, 'circle') && !nearStation(s, 'rack'), 'near a station means near that station: the rune circle (HOM-112) is built, in the Spire, and a forge in Hale is nowhere near it');
   stand(s, LANDMARKS.range, 2);
   tick(s, { craft: { recipe: cookedId(FISH[0]), count: 3 } });
   run(s, 12);

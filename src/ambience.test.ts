@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { REGIONS } from './sim/world';
 import { bedFor } from './ambience';
 
-const SILENT_ON_PURPOSE = new Set<string>([]);   // the Vault goes here until HOM-112 builds it and gives it a bed
+const SILENT_ON_PURPOSE = new Set<string>([]);   // nothing is silent: the Vault's three rooms (HOM-112) are cave regions and share the cave bed
 
 let checks = 0;
 for (const r of REGIONS) {

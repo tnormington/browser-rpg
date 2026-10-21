@@ -19,6 +19,9 @@ import { InventoryUi } from './inventory-ui';
 import { SkillsUi } from './skills-ui';
 import { TalentsUi } from './talents-ui';
 import { ForgeUi } from './forge-ui';
+import { EnchantUi } from './enchant-ui';
+import { enchantById } from './sim/enchants';
+import type { EnchantAction } from './sim/enchanting';
 import { ShopUi } from './shop-ui';
 import { FlightUi, MapUi, MapView } from './flight-ui';
 import { QuestUi } from './quest-ui';
@@ -39,6 +42,7 @@ export interface HudActions {
   talent: (id: string) => void;
   talentReset: () => void;
   craft: (recipe: string, count: number) => void;
+  enchant: (a: EnchantAction) => void;
   sell: (slot: number, qty: number) => void;
   buy: (item: string, qty: number) => void;
   fly: (to: string) => void;
@@ -188,6 +192,7 @@ export class Hud {
   private rangeUi: ForgeUi;
   private alembicUi: ForgeUi;
   private rackUi: ForgeUi;
+  private enchantUi: EnchantUi;
   private shopUi: ShopUi;
   private flightUi: FlightUi;
   private mapUi: MapUi;
@@ -275,16 +280,17 @@ export class Hud {
     this.rangeUi = new ForgeUi(dock, 'range', 'Cooking Range', craft);
     this.alembicUi = new ForgeUi(dock, 'alembic', 'Alembic', craft);
     this.rackUi = new ForgeUi(dock, 'rack', 'Tanning Rack', craft);
+    this.enchantUi = new EnchantUi(dock, actions.enchant);
     this.castBar = bar(this.root, 'castbar');
     this.questUi = new QuestUi(rail, dock, actions.questAdvance);
     this.bookUi = new SpellbookUi(dock, () => this.bar, a => this.keyForAbility(a), a => this.assign(this.slotOfAbility(a), null));
     if (actions.admin) this.adminUi = new AdminUi(this.root, dock, actions.admin);
     this.menuUi = new MenuUi(this.root, actions);
-    this.windows = [this.mapUi, this.menuUi, this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi,
+    this.windows = [this.mapUi, this.menuUi, this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi, this.enchantUi,
       this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char,
       ...(this.adminUi ? [this.adminUi] : [])];
     // every window the dock lays out: all of them but the map (a screen of its own) and the help (a veil over everything)
-    this.dockWindows = [this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi,
+    this.dockWindows = [this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi, this.enchantUi,
       this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char,
       ...(this.adminUi ? [this.adminUi] : [])];
     this.renderBar();
@@ -528,8 +534,14 @@ export class Hud {
         this.note(ev.sold ? `Sold ${name} for ${ev.gold} gold` : `Bought ${name} for ${ev.gold} gold`, 'log-loot');
       } else if (ev.t === 'forge' || ev.t === 'range' || ev.t === 'alembic' || ev.t === 'rack') {
         ({ forge: this.forgeUi, range: this.rangeUi, alembic: this.alembicUi, rack: this.rackUi })[ev.t].setOpen(true);
+      } else if (ev.t === 'circle') {
+        this.enchantUi.setOpen(true);
+      } else if (ev.t === 'enchanted') {
+        const text = `${enchantById(ev.id)!.name} set on your ${ev.slot === 'weapon' ? 'weapon' : ev.slot}: ${enchantById(ev.id)!.desc}`;
+        this.float(enchantById(ev.id)!.name, 'loot', s.player.x, 3.0, s.player.z);
+        this.note(text, 'log-loot');
       } else if (ev.t === 'crafted') {
-        const text = `${SKILLS[ev.skill].made} ${ev.qty > 1 ? ev.qty + 'x ' : ''}${ITEMS[ev.item].name}`;
+        const text =`${SKILLS[ev.skill].made} ${ev.qty > 1 ? ev.qty + 'x ' : ''}${ITEMS[ev.item].name}`;
         this.float(text, 'loot', s.player.x, 3.0, s.player.z);
         this.note(text, 'log-loot');
       } else if (ev.t === 'use') {
@@ -806,6 +818,7 @@ export class Hud {
     this.rangeUi.update(s);
     this.alembicUi.update(s);
     this.rackUi.update(s);
+    this.enchantUi.update(s);
     this.shopUi.update(s);
     this.flightUi.update(s);
     this.dock.settle(this.dockWindows);

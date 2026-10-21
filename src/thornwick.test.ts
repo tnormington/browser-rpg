@@ -168,7 +168,8 @@ section('the gate on Thornwick\'s east edge: combat 22, and the Barrowdowns behi
 section('Withering Ground: standing still hurts');
 {
   const roadDist = (p: { x: number }) => Math.abs(p.x - DUNMERE.x);
-  assert(WITHERING.length >= 14 && WITHERING.every(h => regionAt(h.x, h.z)?.id === 'dunmere' && roadDist(h) - h.r >= 10), `${WITHERING.length} patches of Withering Ground, all in the fens and none within ten of the road`);
+  const fen = WITHERING.filter(h => regionAt(h.x, h.z)?.id !== 'sanctum'); // the three scars on the sanctum's floor (HOM-112) are Archmage Vael's, not the fens'
+  assert(fen.length >= 14 && fen.every(h => regionAt(h.x, h.z)?.id === 'dunmere' && roadDist(h) - h.r >= 10) && WITHERING.length - fen.length === 3, `${fen.length} patches of Withering Ground, all in the fens and none within ten of the road, and the sanctum's three`);
   assert(regionById('dunmere').spawns!.every(sp => WITHERING.every(h => dist(sp, h) > h.r + 10)), 'none lies on a camp');
   const h = WITHERING[3], s = quiet(18);
   s.player.x = h.x; s.player.z = h.z;

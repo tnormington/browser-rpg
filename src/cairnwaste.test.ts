@@ -261,8 +261,8 @@ section('Q7, The Sundered Seal: the Keeper, the ruins, the Warden, the hand-in')
   assert((s.quest.eighth as string) === 'report' && keeperMarker(s) === 'ready' && activeQuestView(s).ready, 'the Warden makes it a hand-in');
   const xp0 = s.player.combat.xp;
   tick(s, { questAdvance: true });
-  assert((s.quest.eighth as string) === 'cleared' && REWARD8[0].xp === 1800 && s.player.combat.xp - xp0 === 1800 && keeperMarker(s) === null, 'handing in pays 1,800 combat XP: 300 over the Moor Writ\'s, as each chain has been');
-  assert(activeQuestView(s).target?.label === VAULT.keeper && dialogueAt(s, 'spire').options.every(o => !o.advance), 'and the tracker\'s next mark is the Vault\'s keeper, at the door that is still shut');
+  assert((s.quest.eighth as string) === 'cleared' && REWARD8[0].xp === 1800 && s.player.combat.xp - xp0 === 1800 && keeperMarker(s) === 'wait', 'handing in pays 1,800 combat XP: 300 over the Moor Writ\'s, as each chain has been (and the Keeper waits, now, for Vael: HOM-112)');
+  assert(activeQuestView(s).target?.label === VAULT.keeper && dialogueAt(s, 'spire').options.every(o => !o.advance), 'and the tracker\'s next mark is the Vault\'s keeper, at a door that now opens');
   const rt = deserialize(serialize(s))!;
   assert((rt.quest.eighth as string) === 'cleared' && rt.quest.kills.void_hound === SEAL_GOALS.void_hound, 'the chain survives a save and load');
   const old = JSON.parse(serialize(s)); delete old.quest.eighth;
@@ -275,9 +275,9 @@ section('Q7, The Sundered Seal: the Keeper, the ruins, the Warden, the hand-in')
 }
 
 // ---------------------------------------------------------------------------
-section('the Vault\'s door: held, shut, and honest about it');
+section('the Vault\'s door: held until the seal is read, and open after it (HOM-112 built what is behind it)');
 {
-  assert(VAULT.combat === 38 && VAULT.need === 'sealed' && !!VAULT.closed && VAULT.from === 1 && VAULT.keeper === 'Wardkeeper Osric Thale', 'the Vault\'s door asks combat 38 and the Keeper\'s seal (Q7), and says it is shut');
+  assert(VAULT.combat === 38 && VAULT.need === 'sealed' && !VAULT.closed && VAULT.from === 1 && VAULT.keeper === 'Wardkeeper Osric Thale', 'the Vault\'s door asks combat 38 and the Keeper\'s seal (Q7), and is no longer shut for good');
   const gap = VAULT.at - (SPIRE.z - 70);
   assert(gap < 0 && VAULT.at === SPIRE.z - 76, 'the keeper holds the line in the corridor six units past the town\'s floor, so there is no way round it');
   const walkNorth = (level: number, seal: boolean) => {
@@ -290,8 +290,8 @@ section('the Vault\'s door: held, shut, and honest about it');
   };
   const low = walkNorth(30, false), mid = walkNorth(40, false), full = walkNorth(40, true);
   assert(low.said?.text === VAULT.refuse && low.s.player.z > VAULT.at, 'at 30 the Wardkeeper says the Vault is not for anyone under 38');
-  assert(mid.said?.text === VAULT.closed && mid.s.player.z > VAULT.at, 'at 40, with the seal unread, he says it is shut');
-  assert(full.said?.text === VAULT.closed && full.s.player.z > VAULT.at, 'and at 40 with the seal read it is still shut: nothing is built behind it yet (the Vault is HOM-112)');
+  assert(mid.said?.text === VAULT.refuse && mid.s.player.z > VAULT.at, 'at 40, with the seal unread, he holds the door and his line says the seal as well as the level');
+  assert(!full.said && full.s.player.z < VAULT.at - 6, 'and at 40 with the seal read he says nothing and lets them through');
   const wall = () => { const s = quiet(40); s.player.x = VAULT.span[0] - 12; s.player.z = VAULT.at + 4; run(s, 3, { dirX: 0, dirZ: -1 }); return s.player.z; };
   assert(wall() > VAULT.at + 1, 'and the wall either side holds');
 }

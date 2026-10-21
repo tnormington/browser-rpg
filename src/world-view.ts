@@ -304,6 +304,7 @@ export class WorldView {
         case 'alembic': placeProp(bag, 'alembic', o.x, o.z, Math.atan2(LANDMARKS.thornSquare.x - o.x, LANDMARKS.thornSquare.z - o.z) - Math.PI / 2); return; // the bench's front (+z in its own frame) faces the square
         case 'rack': return; // the station's collider: highmoorTown draws the racks
         case 'forge': return; // the station's collider: render.ts draws the forge
+        case 'circle': return; // the station's collider: spireTown draws the rune circle
         case 'ruin': // the wastes' cairns are heaps of black stone, the Spire's ruins broken marble columns
           if (r.id === 'spire') this.brokenColumn(bag, o, ry, i); else this.blackCairn(bag, o, ry);
           return;
@@ -530,6 +531,12 @@ export class WorldView {
     for (let n = 0; n < 5; n++) { const a = n * 1.26 + 0.3; bag.marble.push(place(new THREE.BoxGeometry(0.9, 1.1 + (n % 2) * 0.8, 0.8), sq.x + Math.cos(a) * 2.1, 5.4 + (n % 2) * 0.4, sq.z + Math.sin(a) * 2.1, -a)); } // the broken rim
     bag.marble.push(place(new THREE.CylinderGeometry(2.1, 2.3, 3.2, 10).rotateZ(Math.PI / 2 - 0.1), sq.x + 6.5, 1.5, sq.z + 2.6, 0.5)); // the top, fallen on its side
     for (let n = 0, z = SPIRE.z + 66; z > sq.z + 6; n++, z -= 13) lampPost(bag, SPIRE.x + (n % 2 ? 4.4 : -4.4), z, 0, 5.5);
+    // the rune circle (enchanting, HOM-112): a low dais of pale marble, two rings and a ring of ticks of cold rune light on it, and six short standing stones round the edge. A stand-in until the 3D Artist's
+    const rc = LANDMARKS.circle;
+    bag.marble.push(place(new THREE.CylinderGeometry(2.4, 2.5, 0.2, 18), rc.x, 0.1, rc.z));
+    for (const [rad, tube] of [[2.1, 0.06], [1.2, 0.05]]) bag.glow.push(place(new THREE.RingGeometry(rad - tube, rad + tube, 32).rotateX(-Math.PI / 2), rc.x, 0.22, rc.z));
+    for (let n = 0; n < 8; n++) { const a = n * Math.PI / 4; bag.glow.push(place(new THREE.PlaneGeometry(0.16, 0.42).rotateX(-Math.PI / 2), rc.x + Math.sin(a) * 1.65, 0.22, rc.z + Math.cos(a) * 1.65, a)); }
+    for (let n = 0; n < 6; n++) { const a = n * Math.PI / 3 + 0.3; bag.marble.push(place(new THREE.BoxGeometry(0.5, 1.4 + (n % 2) * 0.5, 0.4), rc.x + Math.sin(a) * 2.9, 0.8 + (n % 2) * 0.25, rc.z + Math.cos(a) * 2.9, a)); }
     this.emit(bag, add, SPIRE_PAL);
   }
 
