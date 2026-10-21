@@ -38,10 +38,11 @@ async function shoot(name, x, z, { cam = 16, h = 11 } = {}) {
   await page.screenshot({ path: join(out, `${name}.png`) });
 }
 
-// grass (Hale), road verge, beach, fen, wood litter, barrow turf, moor heath
+// grass (Hale), road verge, beach, fen, wood litter, barrow turf, moor heath, waste ash, spire slate
 const SPOTS = [
   ['hale', 0, 14], ['road', 436, 20], ['strand', 930, 40],
   ['fen', 875, 400], ['wood', 905, 1040], ['barrow', 1400, 1030], ['moor', 1945, 1030],
+  ['waste', 1980, 485], ['spire', 1980, 44],
 ];
 for (const [name, x, z] of SPOTS) {
   await shoot(`${name}-near`, x, z, { cam: 9, h: 5 });

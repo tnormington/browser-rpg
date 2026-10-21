@@ -161,9 +161,14 @@ const SURFACES = {
    * what real ground has and a small one cannot — the tufted mat, hummocks and hollows a stride across, and the odd
    * stone or bare scuff, sparse enough that no two square yards of the world look alike. Kept the faintest of the lot on
    * grime: the ground is tinted per vertex as well, and the two must not fight.
+   *
+   * Weighted toward the hummocks, not the mat: ground seen from the game's camera is read as lumps with a grain on them,
+   * and a field that is mostly grain is sandpaper however wide the tile is. `relief` is low for the same reason the tile
+   * is wide — the slope the normal map carries is per texel, and this surface's texels are four times the width of any
+   * other's, so the figure that gave the old two-unit tile its depth would give this one a crust.
    */
-  ground: { size: 512, repeat: 0.11, relief: 1.1, grime: 0.15,
-    height: (n) => mix(mix(fbm(n, 105, 2, 1), fbm(n, 7, 3, 2), 0.3), chips(fbm(n, 30, 2, 27), 0.74), 0.12) },
+  ground: { size: 512, repeat: 0.11, relief: 0.45, grime: 0.15,
+    height: (n) => mix(mix(fbm(n, 6, 4, 2), fbm(n, 64, 2, 1), 0.32), chips(fbm(n, 22, 2, 27), 0.78), 0.1) },
   /** Trodden earth: coarser than grass, with scuffs and small stones. */
   dirt: { height: (n) => mix(fbm(n, 14, 3, 3), sharpen(fbm(n, 30, 2, 4), 3), 0.3), repeat: 0.5, relief: 1.3, grime: 0.2 },
   /** Raw rock: chipped planes, hard-edged. */
