@@ -35,16 +35,28 @@ export type ArmDirs = { L?: [number, number, number]; R?: [number, number, numbe
  * A tell held for the length of a wind-up. `arms` are directions the arms point at full wind. Plus how far the body
  * leans back and sinks, how much it swells, and how hard it trembles.
  */
-export interface TellPose { arms: ArmDirs; lean: number; sink: number; swell: number; shake: number }
+export interface TellPose {
+  arms: ArmDirs; lean: number; sink: number; swell: number; shake: number;
+  /** Fraction of its height the body is crushed down by at full wind (the others grow; a low blow is the one that shrinks). */
+  squat?: number;
+  /** Radians the body rolls onto its side: toward +z-roll is the left shoulder dropping. */
+  roll?: number;
+  /** The body drags grit along the ground as it winds: the renderer lays the dust, since it knows where the enemy stands. */
+  scrape?: boolean;
+}
 /**
  * Keyed by the sim's cast kind. Heavy: both fists high over the head. Bolt: the casting hand thrown up and back.
  * Ground: both hands raised and spread, calling the mark down. Net: both arms out wide, the mesh gathered to throw.
+ * Sweep: the one tell that goes DOWN. Every other wind-up gets taller (arms up, chest back, a swell); this one folds the
+ * body to half height, chest forward over the knees and one arm trailing out behind at shin level, so from the side the
+ * silhouette is the lowest in the game, with nothing above the shoulders. That reads as "under the feet" before it reads as anything else.
  */
 export const TELLS: Record<string, TellPose> = {
   heavy: { arms: { L: [0.35, 1, -0.45], R: [-0.35, 1, -0.45] }, lean: 0.3, sink: 0.12, swell: 0.12, shake: 0.03 },
   bolt: { arms: { R: [-0.3, 1, -0.5], L: [0.25, 0.3, 1] }, lean: 0.2, sink: 0.04, swell: 0.06, shake: 0.015 },
   ground: { arms: { R: [-0.3, 1, -0.5], L: [0.3, 1, -0.5] }, lean: 0.15, sink: 0.02, swell: 0.08, shake: 0.02 },
   net: { arms: { L: [0.85, 0.25, 0.5], R: [-0.85, 0.25, 0.5] }, lean: 0.25, sink: 0.1, swell: 0.05, shake: 0.02 },
+  sweep: { arms: { R: [-1, -0.75, -0.75], L: [0.3, -0.9, 0.2] }, lean: -0.45, sink: 0.2, swell: 0.08, shake: 0.008, squat: 0.34, roll: 0.22, scrape: true },
 };
 
 /**
@@ -83,6 +95,9 @@ const UPPER_BODY = /Abdomen|Torso|Neck|Head|Shoulder|Arm|Palm|Hand|Finger|Thumb/
 const FADE = 0.18;
 const TWIST_END = 0.85; // clip time at which the swing's hip turn has unwound
 export const LEAD = 0.06;
+const LAND_FADE = 0.08; // seconds the jump clip takes to give way to locomotion on touchdown (the usual FADE is 0.18)
+const DOUBLE_TUMBLE = 0.46; // seconds the double jump's somersault takes at most (it is shortened to fit a low one)
+const HOP_FALL = 9.5; // how fast a plain hop is falling when it lands (u/s): a touchdown at this speed is weight 1
 
 const smooth = (a: number) => a * a * (3 - 2 * a);
 /** 0 -> 1 at `peak` (a fraction of the pulse) -> 0, eased: the shape of a flinch or a lunge. */
@@ -112,6 +127,8 @@ export class Animator {
   private land = idle(0.3, 0.25);
   private twist: Pulse = { t: TWIST_END, dur: TWIST_END, peak: 0, amp: 0, dir: 1 };
   private air = 0;      // 0..1: vertical speed while airborne, stretches the body
+  private fall = 0;     // the fastest this hop has dropped (world units/s): how hard the touchdown lands
+  private tumble = { t: 0, dur: 0 }; // the double jump's somersault: runs 0..dur, idle once t >= dur
   private deadT = 0;
   private slide = 0;
   private coil = LEAD;     // seconds the body spends drawing back before the strike (the wind-up the swing was started with)
@@ -246,17 +263,37 @@ export class Animator {
   }
 
   /**
+   * The second takeoff, in mid-air with nothing under the feet: a hard crouch into the push (the same squash a landing
+   * has, run backwards), then a forward somersault about the hips over `dur` seconds, ending upright so the descent
+   * and the touchdown are the ordinary ones. `left` is the air time still to come: the jump clip (which was stretched over
+   * the first hop and would run out mid-air, dropping the rig into its idle) is picked up from its airborne half and
+   * stretched over what is left, so it ends as the sim lands.
+   */
+  doubleJump(left: number) {
+    if (this.holding) return;
+    this.tumble = { t: 0, dur: Math.max(0.2, Math.min(DOUBLE_TUMBLE, left * 0.8)) };
+    this.land = { t: 0, dur: 0.1, peak: 0.25, amp: 0.45, dir: 1 };
+    const c = this.def.jump && this.actions.get(this.def.jump);
+    if (c) this.play(this.def.jump!, { once: true, fade: 0.08, start: c.getClip().duration * 0.3, speed: c.getClip().duration * 0.7 / left });
+  }
+
+  /**
    * Touchdown: a squash that springs back, and the jump clip hands back to locomotion. Short and shallow on purpose --
    * the hop is only about half a second, and a long recovery under it is what made a quick jump still feel heavy.
+   * How deep it goes is how fast the body was falling: a hop is the baseline, a drop off a rock lands harder, and a short
+   * step down barely registers. Returns that weight (1 = a hop) so the dust and the camera can be sized to it.
    */
-  touchdown(weight = 1) {
-    this.air = 0;
-    this.land = { t: 0, dur: 0.17, peak: 0.3, amp: weight * 0.6, dir: 1 };
-    if (this.def.jump && this.current === this.actions.get(this.def.jump) && !this.holding) { this.oneShot = false; this.loop(); }
+  touchdown(): number {
+    const weight = Math.min(1.7, Math.max(0.35, this.fall / HOP_FALL));
+    this.air = 0; this.fall = 0; this.tumble.t = this.tumble.dur;
+    this.land = { t: 0, dur: 0.12 + 0.05 * weight, peak: 0.3, amp: weight * 0.6, dir: 1 };
+    // a quick hand-back: the jump clip ends arms-out, and at the default fade the leap's flung arms and the run's legs share the body for a fifth of a second
+    if (this.def.jump && this.current === this.actions.get(this.def.jump) && !this.holding) { this.oneShot = false; this.loop(0, LAND_FADE); }
+    return weight;
   }
 
   /** Per-frame airborne state: vertical speed stretches the body. */
-  airborne(vy: number) { this.air = Math.min(1, Math.abs(vy) / 8); }
+  airborne(vy: number) { this.air = Math.min(1, Math.abs(vy) / 8); this.fall = vy === 0 ? 0 : Math.max(this.fall, -vy); } // the sim reports 0 whenever it is on the ground
 
   /** The wind-up tell, per frame: `kind` is the sim's cast kind (null = not winding up), `k` 0..1 through the wind-up. */
   telegraph(kind: string | null, k: number) { this.windKind = kind; this.wind = kind ? k : 0; }
@@ -295,7 +332,7 @@ export class Animator {
     if (l && l.isRunning() && l.time >= l.getClip().duration - 0.12) { l.fadeOut(0.12); this.layer = null; }
     this.time += dt;
     this.primed = Math.max(0, this.primed - dt);
-    for (const p of [this.hit, this.lunge, this.land, this.twist]) p.t = Math.min(p.dur, p.t + dt);
+    for (const p of [this.hit, this.lunge, this.land, this.twist, this.tumble]) p.t = Math.min(p.dur, p.t + dt);
     if (this.holding) this.deadT += dt;
     this.applyPose();
   }
@@ -308,6 +345,8 @@ export class Animator {
     const r = this.root, d = this.def;
     const h = level(this.hit), lg = level(this.lunge), ld = level(this.land);
     const tell = this.windKind ? TELLS[this.windKind] : undefined, w = tell ? smooth(Math.min(1, this.wind)) : 0;
+    // a beast has no arms to trail and no hips to fold: crushed to half height and rolled over it reads as dying, so it only ducks its head into the low tell
+    const folds = this.bones.has('UpperArmL') ? 1 : 0;
     // the fallen (no death clip): roll onto one side with a little overshoot, hopping up as it goes
     const fk = d.lie !== undefined && !this.hasDeathClip && this.holding ? Math.min(1, this.deadT / 0.5) : 0;
     const fall = fk > 0 ? easeOutBack(fk) : 0, hop = fk > 0 ? 0.3 * Math.sin(Math.PI * Math.min(1, this.deadT / 0.4)) : 0;
@@ -317,13 +356,16 @@ export class Animator {
     const pre = this.lunge.t < 0 ? smooth(1 + this.lunge.t / this.coil) * this.lunge.amp / 0.4 : 0;
     const shiver = this.stall > 0 ? (Math.random() - 0.5) * this.stallShiver : 0;
     const slide = this.holding ? -this.slide * (1 - Math.exp(-this.deadT * 7)) : 0; // a killing blow carries the body away from it
+    // the double jump's somersault: quick off the push, easing to upright; the roll is about the hips, so the body turns in place instead of swinging round the feet
+    const tk = this.tumble.t < this.tumble.dur ? this.tumble.t / this.tumble.dur : 1;
+    const flipA = tk < 1 ? 2 * Math.PI * (1 - (1 - tk) ** 2.2) : 0, tuck = tk < 1 ? Math.sin(Math.PI * tk) : 0;
     r.position.set(
       (tell ? tell.shake * w * Math.sin(this.time * 70) : 0) + shiver,
-      (fk > 0 ? d.lie! * smooth(fk) + hop : 0) + bob - (tell ? tell.sink * w : 0) + (this.seat ? this.seat.y - this.hipY + this.seatBob : 0),
-      lg - 0.3 * pre - 0.3 * h + slide + (this.seat?.z ?? 0));
-    r.rotation.set(0.15 * lg - 0.2 * pre - 0.38 * h - (tell ? tell.lean * w : 0), 0, this.hit.dir * 0.16 * h + this.flip * fall * Math.PI / 2);
-    const sxz = 1 + squash * 0.6 - stretch * 0.4 + (tell ? tell.swell * w : 0);
-    r.scale.set(sxz, 1 - squash + stretch - 0.06 * h - 0.08 * pre +(tell ? tell.swell * w * 0.5 : 0), sxz);
+      (fk > 0 ? d.lie! * smooth(fk) + hop : 0) + bob - (tell ? tell.sink * w : 0) + (this.seat ? this.seat.y - this.hipY + this.seatBob : 0) + this.hipY * (1 - Math.cos(flipA)),
+      lg - 0.3 * pre - 0.3 * h + slide + (this.seat?.z ?? 0) - this.hipY * Math.sin(flipA));
+    r.rotation.set(0.15 * lg - 0.2 * pre - 0.38 * h - (tell ? tell.lean * w : 0) + flipA, 0, this.hit.dir * 0.16 * h + this.flip * fall * Math.PI / 2 + (tell?.roll ? tell.roll * w * folds : 0));
+    const sxz = 1 + squash * 0.6 - stretch * 0.4 + (tell ? tell.swell * w : 0) + 0.06 * tuck;
+    r.scale.set(sxz, 1 - squash + stretch - 0.06 * h - 0.08 * pre + (tell ? tell.swell * w * 0.5 - (tell.squat ?? 0) * w * (0.35 + 0.65 * folds) : 0) - 0.14 * tuck, sxz);
     if (this.twist.t < TWIST_END) { // the swing's hip turn: wound back while the weapon is up, then through the blow and unwinding
       const t = this.twist.t, hit = this.twist.peak;
       const spin = (t < hit ? -0.3 + 0.7 * smooth(Math.max(0, t - hit + 0.22) / 0.22) : 0.4 * (1 - smooth((t - hit) / (TWIST_END - hit)))) * this.twist.amp;
@@ -434,10 +476,10 @@ export class Animator {
     this.layer = act;
   }
 
-  private loop(speed = 0) {
+  private loop(speed = 0, fade?: number) {
     const name = this.moving && !this.seat ? this.def.move : this.def.idle;
     const scale = this.moving && this.def.moveSpeed && speed > 0 ? speed / this.def.moveSpeed : 1;
-    this.play(name, { once: false, speed: scale });
+    this.play(name, { once: false, speed: scale, fade });
   }
 
   private play(name: string, o: { once: boolean; start?: number; hold?: boolean; fade?: number; speed?: number }) {

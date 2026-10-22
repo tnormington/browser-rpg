@@ -1,7 +1,8 @@
 // Motion contact sheets: serves the existing dist/ (run `npm run build` first), stages one combat moment through the real
 // sim + renderer path, and screenshots a burst of frames across it.
 //   node bench/anim.mjs <out-name> <scenario> [scenario ...]    -> bench/shots/<out-name>/<scenario>-<n>.png
-// scenarios: swing hit-boar hit-wolf hit-brute hit-player death-wolf death-boar jump telegraph-brute telegraph-hexer enemy-lunge
+// scenarios: swing hit-boar hit-wolf hit-brute hit-player death-wolf death-boar jump double-jump telegraph-brute telegraph-hexer enemy-lunge
+//   windup:<type>:<kind>   a wind-up (heavy bolt ground net sweep) ramped 0 -> 1 on that enemy, side-on
 //   gather:<node type>[:<which>]   work a node of that type (copper, tree, silverfin, marrowleaf): one skill's gathering motion
 import { preview } from 'vite';
 import { launchBrowser } from './browser.mjs';
@@ -46,14 +47,18 @@ await page.addScriptTag({ content: `
 await page.clock.install();
 await page.clock.pauseAt(new Date(Date.now() + 2000));
 const adv = ms => page.clock.runFor(ms);
-await adv(1000); // let the loop run under the fake clock before the first staging
+// the loop's accumulator starts behind by however long the page has been up, so the sim does not tick at all until the fake
+// clock has caught up with it (a key pressed before then goes nowhere, which is how `jump` once shot 14 frames of a standing player)
+await adv(15000);
+await page.keyboard.press('Escape'); // the help card is a modal: while it is up, Space is not a jump
 const shots = [];
-const burst = async (label, n, gapMs, clip) => {
+const burst = async (label, n, gapMs, clip, onFrame) => {
   shots.push(label);
   for (let i = 0; i < n; i++) {
     await new Promise(r => setTimeout(r, 60)); // real time: lets the compositor present the frame the paused clock just drew
     await page.screenshot({ path: join(out, `${label}-${String(i).padStart(2, '0')}.jpg`), type: 'jpeg', quality: 80, clip });
     if (process.env.PROBE) console.error(label, i, JSON.stringify(await page.evaluate(process.env.PROBE))); // PROBE='expr' logs a page expression per frame
+    await onFrame?.(i); // a keypress timed to a frame of the burst
     await adv(gapMs);
   }
 };
@@ -114,6 +119,20 @@ const tell = async (type, kind, variants) => {
   }
   shots.push(`tell-${type}-${kind}`);
 };
+// windup:<type>:<kind>  a wind-up of that cast kind ramped from 0 to 1 over the burst, side-on (the angle a player reads a tell from). The cast is
+// shown to the renderer only, never put on the sim's enemy, so a kind the sim has not learned yet (the sweep) can be drawn before it is priced:
+// a cast the sim does not know would be run as a bolt, and the sim would look for a bolt the enemy does not have.
+const windup = async (type, kind) => {
+  await page.evaluate(([type, kind]) => {
+    stage(type, 2.6); const e0 = window.__e, p0 = window.__debug.sim.player, v = window.__debug.view;
+    v.debugCam = { pos: [e0.x - 0.5, 1.3, p0.z + 6.5], at: [e0.x - 0.5, 1.0, e0.z] };
+    e0.attackCd = 99; e0.heavyCd = 99;
+    window.__cast = { kind, t: 0, total: 1000 };
+    if (!v.__drawActor) { v.__drawActor = v.drawActor; v.drawActor = function (e, ...rest) { return v.__drawActor.call(this, e === window.__e && window.__cast ? new Proxy(e, { get: (t, k) => k === 'cast' ? window.__cast : t[k] }) : e, ...rest); }; }
+  }, [type, kind]);
+  await burst(`windup-${type}-${kind}`, 10, 90, { x: 130, y: 20, width: 700, height: 500 }, async i => { await page.evaluate(k => { window.__cast.t = k * 1000; window.__e.attackCd = 99; }, (i + 1) / 9); });
+  await page.evaluate(() => { window.__cast = null; });
+};
 // CLIP='x,y,w,h' crops tighter (the contact sheets shrink frames to 450 px; a spray is a few pixels there); KEEP=1 leaves the full-size frames beside the sheet
 const CLIP = process.env.CLIP ? Object.fromEntries(['x', 'y', 'width', 'height'].map((k, i) => [k, +process.env.CLIP.split(',')[i]])) : { x: 180, y: 60, width: 600, height: 400 };
 const S = {
@@ -154,6 +173,21 @@ const S = {
     await burst('jump', 14, 60, CLIP);
     await page.keyboard.up('Space');
   },
+  // land: one hop, close and side-on, the frames packed round the touchdown
+  async land() {
+    await page.evaluate(() => { stage('boar', 12); frame(12, 1.0, 5.5, -6); });
+    await adv(300);
+    await page.keyboard.down('Space'); await adv(40); await page.keyboard.up('Space');
+    await adv(380); // up and over: the burst opens a frame before the sim lands it
+    await burst('land', 12, 30, CLIP);
+  },
+  // double-jump: a hop, then a fresh press at `at` ms into it (Agility lifted past the unlock). Side-on, so the arc and the tuck read together.
+  async 'double-jump'(at = 5) {
+    await page.evaluate(() => { stage('boar', 12); window.__debug.sim.player.skills.agility.level = 30; frame(12, 1.7, 9, -4); });
+    await adv(300);
+    await page.keyboard.down('Space'); await adv(40); await page.keyboard.up('Space');
+    await burst('double-jump', 20, 40, CLIP, async i => { if (i === at) { await page.keyboard.down('Space'); await adv(40); await page.keyboard.up('Space'); } });
+  },
   async telegraph(type, h = 1.4) {
     await page.evaluate(([t, h]) => {
       const gap = t === 'hexer' ? 4 : 2.6; stage(t, gap); frame(gap, h, t === 'hexer' ? 6 : 7);
@@ -165,6 +199,7 @@ const S = {
 for (const sc of scenarios) {
   await adv(1500); // the last scenario's particles and rings expire before this one is staged
   if (sc.startsWith('gather:')) { const [, t, i] = sc.split(':'); await gather(t, +(i ?? 0)); continue; }
+  if (sc.startsWith('windup:')) { const [, t, k] = sc.split(':'); await windup(t, k); continue; }
   if (sc.startsWith('tell:')) { const [, t, k, ...rest] = sc.split(':'); await tell(t, k, rest.join(':').split(';')); continue; }
   if (sc.startsWith('scrub:')) { const [, w, c, a, b, n] = sc.split(':'); await scrub(w, c, +a, +b, +n); continue; }
   if (sc === 'hit-boar') await S.hit('boar');

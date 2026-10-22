@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
 import { floorLift, roomIndices } from './floor-stack';
 import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, dungeonAt, inCave, regionAt } from './sim/world';
-import { ABILITIES, ENEMY_TYPES, AUTO_RANGE, SPAWNS } from './sim/data';
+import { ABILITIES, ENEMY_TYPES, AUTO_RANGE, SPAWNS, GRAVITY, FALL_GRAVITY } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { GATHER_STRIKE, NODE_TYPES, nodeById } from './sim/gathering';
 import { HARBOURMASTER, HIGH_STEWARD, NPC, SPIRE_KEEPER, THORN_REEVE, harbourMarker as harbourMarkOf, keeperMarker as keeperMarkOf, npcMarker as markerOf, reeveMarker as reeveMarkOf, stewardMarker as stewardMarkOf } from './sim/quest';
@@ -15,13 +15,13 @@ import { PostStack, Quality } from './post';
 import { Weather } from './weather';
 import { SkyDome, Rain } from './sky';
 import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
-import { Animator, LEAD } from './anim';
+import { Animator, LEAD, TELLS } from './anim';
 import { SILHOUETTES, Silhouette, mergeParts } from './creatures';
 import { PROPS, PropId } from './props';
 import { PlayerGear } from './gear';
 import { MountRig, MOUNT_LOOKS, mountLookId } from './mount';
 import { FOOT_SPEED, bestMount, moveSpeed } from './sim/mounts';
-import { ROLL_SPEED, ROLL_TIME, SPRINT_SPEED } from './sim/agility';
+import { ROLL_SPEED, ROLL_TIME, SPRINT_SPEED, canDoubleJump } from './sim/agility';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { HaloSpot, haloMesh, tickHalos } from './halo';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
@@ -275,6 +275,7 @@ export class Renderer {
   private witherMarks = new Map<number, NonNullable<Actor['tele']>>();
   private selection: THREE.Mesh;
   private shakeMag = 0;
+  private doubleReadyT = 0; // paces the trickle of light that says the double jump is still unspent
   /** A shove on the camera along the blow (world units), decaying fast: the view is carried with the hit, not just jittered. */
   private kick = { x: 0, z: 0 };
   /** Effects waiting on a strike pose that is still on its way (see Animator.strikeIn). */
@@ -1509,6 +1510,14 @@ export class Renderer {
         }
       }
       else if (ev.t === 'swing' && this.playerAnim) { this.playerAnim.swung(); this.slashes.swipe(s.player.x, s.player.z, s.player.facing); } // auto-attack: raises no 'cast', the hit follows this tick
+      else if (ev.t === 'jump' && ev.double) {
+        // the one takeoff with nothing to push against: the body crouches into it and rolls, and the air gives for an instant, a disc of
+        // arcane light snapping out under the feet and gone. That flash is also how the player learns the second jump is spent
+        const p = s.player, top = p.y + (p.vy * p.vy) / (2 * GRAVITY);
+        this.playerAnim?.doubleJump(p.vy / GRAVITY + Math.sqrt((2 * top) / FALL_GRAVITY)); // the air time still to come, from here
+        this.rings.pulse(p.x, p.y + 0.05, p.z, P.arcaneLight, 1.3, 0.22, 0.25, 0.9); // hdr 0.9: at the default it blooms to a white bar from the side
+        this.particles.burst(p.x, p.y + 0.1, p.z, { color: [P.arcaneLight, P.ash], count: 10, speed: 2.4, up: -1.2, gravity: -2, size: 0.7, life: 0.35 });
+      }
       else if (ev.t === 'jump') this.playerAnim?.jump(ev.airtime); // the clip is stretched over the hop actually taken: Agility makes it a longer one
       else if (ev.t === 'roll') {
         // no roll clip in the pack, so the roll is told by the ground: a kick of dirt where it starts and a low streak of it along the way
@@ -1517,8 +1526,10 @@ export class Renderer {
         this.after(ROLL_TIME, () => this.matter.burst(s.player.x, 0.2, s.player.z, { color: [P.ash, P.dirt], count: 8, speed: 2.4, flat: true, gravity: 0, drag: 3, size: 1.4, life: 0.35, hdr: 0.6, alpha: 0.45 }));
       }
       else if (ev.t === 'land') {
-        this.playerAnim?.touchdown();
-        this.matter.burst(ev.x, 0.15, ev.z, { color: [P.ash, P.dirt], count: 9, speed: 2.4, flat: true, gravity: 0, drag: 2.5, size: 1.8, life: 0.45, hdr: 0.8, alpha: 0.5 });
+        // the dust and the camera are sized to how hard it came down, which is the same number the squash is: a hop is 1, a drop off a rock is more
+        const w = this.playerAnim?.touchdown() ?? 1, y = s.player.y + 0.15;
+        this.matter.burst(ev.x, y, ev.z, { color: [P.ash, P.dirt], count: Math.round(9 * w), speed: 2.4 * Math.sqrt(w), flat: true, gravity: 0, drag: 2.5, size: 1.8, life: 0.45, hdr: 0.8, alpha: 0.5 });
+        if (w > 1.25) this.shakeMag = Math.max(this.shakeMag, 0.06 * (w - 1.25) / 0.45);
       }
       else if (ev.t === 'slam') {
         const hz = ENEMY_TYPES[s.enemies.find(e => e.id === ev.id)?.type ?? '']?.hazard, stone = !!hz && FALLING.has(hz.name) && hz.radius === ev.radius; // the stone landing, not the boss's own slam
@@ -1768,7 +1779,7 @@ export class Renderer {
    * the pointer can never promise something the press would not deliver.
    *
    * Precedence, most specific first: an enemy under the position itself, then the NPC, flight master, node,
-   * vendor and the five stations (all exact), and only then the forgiving picks — a near miss takes the enemy,
+   * vendor and the five stations (all exact), and only then the forgiving picks â€” a near miss takes the enemy,
    * else the node, but never something that was really aimed at elsewhere. `tolerance` is how many pixels of
    * near miss still count; 0 leaves the forgiving pass out.
    */
@@ -1885,6 +1896,12 @@ export class Renderer {
       for (const rig of this.mounts.values()) if (rig.root.visible) { rig.update(dtFx, pl.moving && !pl.dead); pa.rideBob(rig.bob); }
       pa.update(dtFx);
       pa.airborne(pl.airborne ? pl.vy : 0);
+      // the second jump is still in hand: a thin trickle of arcane light falls from the feet for as long as it is, and stops the moment it is spent
+      this.doubleReadyT += dtFx;
+      if (pl.airborne && !pl.airJumped && !pl.dead && canDoubleJump(pl) && this.doubleReadyT > 0.06) {
+        this.doubleReadyT = 0;
+        this.particles.burst(x, pl.y + 0.08, z, { color: P.arcaneLight, count: 1, speed: 0.35, gravity: -0.5, size: 0.55, life: 0.4, hdr: 1.4 });
+      }
       // auto-attack's swing timer is the sim's, so the wind-up can start early enough that the strike lands on the beat
       const tgt = pl.autoAttack && !pl.dead && s.targetId !== null ? s.enemies.find(e => e.id === s.targetId) : undefined;
       if (tgt && Math.hypot(tgt.x - pl.x, tgt.z - pl.z) <= AUTO_RANGE) pa.anticipate(pl.swing);
@@ -2038,6 +2055,11 @@ export class Renderer {
       lunge = 1; // the swing is a clip or a procedural lunge on the model, never a scale pop
       an.locomotion(moving, speed);
       an.telegraph(e.cast && !dead ? e.cast.kind : null, e.cast ? e.cast.t / e.cast.total : 0);
+      // a low wind-up scrapes the ground it is about to take the legs from: grit streams flat out along the floor, thicker as it winds
+      if (e.cast && !dead && TELLS[e.cast.kind]?.scrape && Math.random() < dt * 22 * (e.cast.t / e.cast.total)) {
+        const [fx, fz] = [Math.sin(e.facing), Math.cos(e.facing)], side = (Math.random() - 0.5) * 1.6;
+        this.matter.burst(e.x + fx * 0.9 + fz * side, 0.12, e.z + fz * 0.9 - fx * side, { color: [P.ash, P.dirt], count: 2, speed: 1.6, dir: [fx, fz], cone: 0.5, flat: true, gravity: 0, drag: 2.2, size: 1.3, life: 0.5, hdr: 0.8, alpha: 0.5 });
+      }
       an.update(dt);
       // every animated rig topples or plays its death, holds, then shrinks away
       if (an.hasDeath) { fall = false; shrink = e.deadFor < 1 ? 1 : Math.max(0.05, 2 - e.deadFor); }
