@@ -2203,6 +2203,8 @@ export class Renderer {
     const wind = e.cast && !dead ? e.cast.t / e.cast.total : 0;
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / (90 - 50 * wind));
     if (wind > 0 && !an) { g.scale.multiplyScalar(1 + 0.12 * wind); if (a.model) a.model.rotation.x = -0.3 * wind; } // primitives (models not yet loaded) keep the old swell
+    // an Echo's slam is on a row the actor was not built from: a boar that respawns as an Echo keeps its body, so the circle is made the first time it winds one
+    if (e.cast?.kind === 'heavy' && !dead) a.tele ??= this.makeTele(defOf(e).heavy!.radius);
     if (a.tele) {
       a.tele.root.visible = e.cast?.kind === 'heavy' && !dead;
       a.tele.root.position.set(g.position.x, 0.08, g.position.z);

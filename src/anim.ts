@@ -46,6 +46,8 @@ export interface TellPose {
   arms: ArmDirs; lean: number; sink: number; swell: number; shake: number;
   /** Fraction of its height the body is crushed down by at full wind (the others grow; a low blow is the one that shrinks). */
   squat?: number;
+  /** Extra lean, for a rig with no arms to raise: a beast's whole tell is its body, so it rears further than a body that has fists over its head to say the rest. */
+  rear?: number;
   /** Radians the body rolls onto its side: toward +z-roll is the left shoulder dropping. */
   roll?: number;
   /** The body drags grit along the ground as it winds: the renderer lays the dust, since it knows where the enemy stands. */
@@ -64,7 +66,7 @@ export interface TellPose {
  * silhouette is the lowest in the game, with nothing above the shoulders. That reads as "under the feet" before it reads as anything else.
  */
 export const TELLS: Record<string, TellPose> = {
-  heavy: { arms: { L: [0.35, 1, -0.45], R: [-0.35, 1, -0.45] }, lean: 0.3, sink: 0.12, swell: 0.12, shake: 0.03 },
+  heavy: { arms: { L: [0.35, 1, -0.45], R: [-0.35, 1, -0.45] }, lean: 0.3, sink: 0.12, swell: 0.12, shake: 0.03, rear: 0.25 },
   bolt: { arms: { R: [-0.3, 1, -0.5], L: [0.25, 0.3, 1] }, lean: 0.2, sink: 0.04, swell: 0.06, shake: 0.015 },
   ground: { arms: { R: [-0.3, 1, -0.5], L: [0.3, 1, -0.5] }, lean: 0.15, sink: 0.02, swell: 0.08, shake: 0.02 },
   net: { arms: { L: [0.85, 0.25, 0.5], R: [-0.85, 0.25, 0.5] }, lean: 0.25, sink: 0.1, swell: 0.05, shake: 0.02 },
@@ -411,7 +413,7 @@ export class Animator {
       (tell ? tell.shake * w * Math.sin(this.time * 70) : 0) + shiver,
       (fk > 0 ? d.lie! * smooth(fk) + hop : 0) + bob - (tell ? tell.sink * w : 0) + (this.seat ? this.seat.y - this.hipY + this.seatBob : 0) + pivot * (1 - Math.cos(flipA)),
       lg - 0.3 * pre - 0.3 * h + slide + (this.seat?.z ?? 0) - pivot * Math.sin(flipA));
-    r.rotation.set(0.15 * lg - 0.2 * pre - 0.38 * h - (tell ? tell.lean * w : 0) + flipA, 0, this.hit.dir * 0.16 * h + this.flip * fall * Math.PI / 2 + (tell?.roll ? tell.roll * w * folds : 0));
+    r.rotation.set(0.15 * lg - 0.2 * pre - 0.38 * h - (tell ? (tell.lean + (tell.rear ?? 0) * (1 - folds)) * w : 0) + flipA, 0, this.hit.dir * 0.16 * h + this.flip * fall * Math.PI / 2 + (tell?.roll ? tell.roll * w * folds : 0));
     r.scale.set(sxz, sy, sxz);
     if (this.twist.t < TWIST_END) { // the swing's hip turn: wound back while the weapon is up, then through the blow and unwinding
       const t = this.twist.t, hit = this.twist.peak;
