@@ -1,4 +1,4 @@
-﻿// Headless verification: drives the sim with synthetic input. Run with `npm run verify`.
+// Headless verification: drives the sim with synthetic input. Run with `npm run verify`.
 // Exits non-zero on the first failed assertion. Extended every milestone.
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState, Enemy } from './sim';
 import { addItem, countItem, removeItem, INVENTORY_SIZE } from './sim/inventory';
@@ -1889,9 +1889,14 @@ section('HOM-158 the chests: placement, reward, opening once, and the save');
 {
   assert(CHESTS.length <= CHEST_TOTAL && new Set(CHESTS.map(c => c.id)).size === CHESTS.length, `chest ids are unique (${CHESTS.length} placed of the ${CHEST_TOTAL} planned)`);
   assert(PLACES.length === 14 && new Set(PLACES.flatMap(p => p.regions)).size === PLACES.flatMap(p => p.regions).length && PLACES.flatMap(p => p.regions).every(id => REGIONS.some(r => r.id === id)), 'fourteen places, each region in exactly one, every one a real region');
-  assert(CHESTS.every(c => placeById(c.place) && c.floor === 0 && c.tier === 'stash'), 'what is placed so far is stashes on the ground: a cache needs a step and a hoard a rooftop, and the world has no prop with a top to give them');
-  const perPlace: Record<string, number> = { hale: 1, hollow: 1, greywater: 2, saltmarrow: 1, grotto: 1, dunmere: 2, thornwick: 1, rotroot: 1, barrowdowns: 2, highmoor: 1, cairnhold: 1, cairnwaste: 2, spire: 1, vault: 1 };
-  assert(PLACES.every(p => chestsIn(p.id).length === perPlace[p.id]) && CHESTS.length === 18, '18 stashes, the per-place counts of 7.1');
+  const perchOf = (c: ChestDef) => COLLIDERS.find(o => o.top !== undefined && o.x === c.x && o.z === c.z);
+  assert(CHESTS.every(c => placeById(c.place) && (c.tier === 'stash' ? c.floor === 0 && !perchOf(c) : perchOf(c)?.top === c.floor && c.floor > 0)), 'a stash stands on the ground, and a cache or a hoard stands on the top of a prop that has one');
+  // 7.1's table (stash / cache / hoard), as placed. Seven are still to come: Hale's cache and hoard and the five dungeons' caches, in regions render.ts draws itself, which cannot show a top
+  const plan: Record<string, [number, number, number]> = { hale: [1, 0, 0], hollow: [1, 0, 0], greywater: [2, 1, 1], saltmarrow: [1, 2, 2], grotto: [1, 0, 0], dunmere: [2, 1, 1], thornwick: [1, 2, 2], rotroot: [1, 0, 0], barrowdowns: [2, 1, 2], highmoor: [1, 2, 2], cairnhold: [1, 0, 0], cairnwaste: [2, 1, 2], spire: [1, 1, 2], vault: [1, 0, 0] };
+  const tally = (place: string) => (['stash', 'cache', 'hoard'] as const).map(t => chestsIn(place).filter(c => c.tier === t).length);
+  assert(PLACES.every(p => tally(p.id).join() === plan[p.id].join()) && CHESTS.length === 43, '18 stashes, 11 caches and 14 hoards, the per-place counts of 7.1 (43 of 50 placed)');
+  const count = (t: ChestDef['tier']) => CHESTS.filter(c => c.tier === t).length;
+  assert(17 - count('cache') === 6 && 15 - count('hoard') === 1 && count('stash') === 18, 'which leaves 6 caches and 1 hoard of 7.1 to place: Hale\'s two and the five dungeons\' caches');
 
   const s0 = createState(1);
   const spawns = s0.enemies.map(e => ({ x: e.spawnX, z: e.spawnZ }));
@@ -1900,16 +1905,21 @@ section('HOM-158 the chests: placement, reward, opening once, and the save');
   for (const c of CHESTS) {
     const place = placeById(c.place)!, cave = inCave(c.x, c.z);
     const home = REGIONS.filter(r => place.regions.includes(r.id)).some(r => r.footprint.some(f => c.x >= f.x0 && c.x <= f.x1 && c.z >= f.z0 && c.z <= f.z1));
-    const solid = near(c, COLLIDERS), dSpawn = near(c, spawns);
-    const clear = clampToWorld({ x: c.x, z: c.z });
+    // a stash is found behind something: 2 to 4 u from a solid. A cache or a hoard is found on something, so what is solid to it is every other prop, and the prop it stands on
+    // (r from the middle, where it stands) is kept a walk-round clear of all of them: at least 1.8 rim to rim, and a cache's whole step outside every safe circle
+    const perch = perchOf(c), r = perch?.r ?? 0;
+    const solid = near(c, COLLIDERS.filter(o => o !== perch)), dSpawn = near(c, spawns);
+    const clear = clampToWorld({ x: c.x, z: c.z }, r + (perch ? 0.6 : PLAYER_RADIUS));
     const roadRegion = REGIONS.find(r => r.road && place.regions.includes(r.id));
     const offRoad = roadRegion?.road ? roadDist(roadRegion.road, c.x, c.z) : null;
-    const ok = home && solid >= 1.8 && solid <= 4.5 && clear.x === c.x && clear.z === c.z && near(c, SAFE_ZONES) > 0 && near(c, bosses) >= 14
+    const apart = perch ? solid >= r + 1.8 : solid >= 1.8 && solid <= 4.5;
+    const ok = home && apart && clear.x === c.x && clear.z === c.z && (c.tier === 'hoard' || near(c, SAFE_ZONES) > r) && near(c, bosses) >= 14 + r
       && dSpawn >= (cave ? 8 : 16) && (offRoad === null || (offRoad >= 15 && offRoad <= 60));
-    assert(ok, `${c.id}: in its place, 2 to 4 u from something solid (${solid.toFixed(1)}), ${dSpawn.toFixed(0)} u from a spawn, off the road ${offRoad === null ? 'n/a' : offRoad.toFixed(0)}, outside every safe circle, 14 u from a boss`);
+    assert(ok, `${c.id}: in its place, ${perch ? `on a ${c.floor} u top with ${(solid - r).toFixed(1)} u to the nearest prop` : `2 to 4 u from something solid (${solid.toFixed(1)})`}, ${dSpawn.toFixed(0)} u from a spawn, off the road ${offRoad === null ? 'n/a' : offRoad.toFixed(0)}, ${c.tier === 'hoard' ? 'a hoard may stand in a safe circle' : 'outside every safe circle'}, 14 u from a boss`);
   }
-  const open = CHESTS.filter(c => !inCave(c.x, c.z));
-  assert(open.every((a, i) => open.every((b, j) => i === j || a.place !== b.place || Math.hypot(a.x - b.x, a.z - b.z) >= 100)), 'no two chests of one place in open country are closer than 100 u');
+  // 100 u between two of a road's, which is what the long roads have room for; a town's 140 x 140 floor holds up to five, so there it is 35
+  const open = CHESTS.filter(c => !inCave(c.x, c.z)), onRoad = (place: string) => REGIONS.some(r => r.road && placeById(place)!.regions.includes(r.id));
+  assert(open.every((a, i) => open.every((b, j) => i === j || a.place !== b.place || Math.hypot(a.x - b.x, a.z - b.z) >= (onRoad(a.place) ? 100 : 35))), 'no two chests of one place in open country are closer than 100 u along a road, or 35 u in a town');
   const rooms = CHESTS.filter(c => inCave(c.x, c.z)).map(c => CAVE_ROOMS.findIndex(r => c.x >= r.rect.x0 && c.x <= r.rect.x1 && c.z >= r.rect.z0 && c.z <= r.rect.z1));
   assert(rooms.every(r => r >= 0) && new Set(rooms).size === rooms.length, 'a dungeon holds at most one chest to a room');
 
@@ -1934,10 +1944,10 @@ section('HOM-158 the chests: placement, reward, opening once, and the save');
   const got = openChest(s, c0.id);
   assert(got.ok && got.gold === chestReward('stash', 20, 1).gold && s.player.gold === got.gold && got.xp === 0 && isOpened(s.player, c0.id), `within reach it opens and pays ${got.ok ? got.gold : '?'} gold`);
   const ev = s.events.find(e => e.t === 'chest');
-  assert(ev?.t === 'chest' && ev.id === c0.id && ev.tier === 'stash' && ev.place === 'greywater' && ev.opened === 1 && ev.total === 2 && ev.gold === s.player.gold, 'the chest event says what it paid and the count of its place (1 / 2)');
+  assert(ev?.t === 'chest' && ev.id === c0.id && ev.tier === 'stash' && ev.place === 'greywater' && ev.opened === 1 && ev.total === 4 && ev.gold === s.player.gold, 'the chest event says what it paid and the count of its place (1 / 4: a stash, a cache, a hoard and another stash)');
   s.events.length = 0;
   assert(JSON.stringify(openChest(s, c0.id)) === JSON.stringify({ ok: false, why: 'opened' }) && s.player.gold === got.gold && !hasEvent(s, () => true) && chestCount(s.player).opened === 1, 'opening it twice pays once');
-  assert(chestCount(s.player, 'greywater').opened === 1 && chestCount(s.player, 'dunmere').opened === 0 && chestCount(s.player).opened === 1 && chestCount(s.player).total === CHESTS.length, 'the counters: one of two in Greywater, none in Dunmere, one of all');
+  assert(chestCount(s.player, 'greywater').opened === 1 && chestCount(s.player, 'dunmere').opened === 0 && chestCount(s.player).opened === 1 && chestCount(s.player).total === CHESTS.length, 'the counters: one of four in Greywater, none in Dunmere, one of all');
   const dead = quietState(1602); dead.player.x = c0.x; dead.player.z = c0.z; dead.player.dead = true;
   assert(JSON.stringify(openChest(dead, c0.id)) === JSON.stringify({ ok: false, why: 'dead' }), 'the dead open nothing');
 

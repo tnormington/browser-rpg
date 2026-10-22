@@ -3,10 +3,11 @@
 // and nothing else, because every item in the game sells for its `value` and a chest of items would compete with every other source at once.
 // Pure sim, like every other action: the renderer draws what CHESTS says and the E key calls openChest.
 //
-// What is placed so far is the 18 stashes, which need nothing but the legs to find. A cache needs a step to hop and a hoard a rooftop to reach
-// with the double jump, and the world has no prop with a top yet (world.ts: Obstacle.top is only a field): they are placed when their
-// props are, because a chest declared at a tier its route cannot honour is a lie in the journal.
+// What is placed so far is the 18 stashes, which need nothing but the legs to find, and the 11 caches and 14 hoards on the steps and rooftops of perches.ts.
+// A chest declared at a tier its route cannot honour is a lie in the journal, so src/reach.test.ts holds every declared tier to the route it needs (reach.ts).
+// Still to place are 7 of the 50: Hale's cache and hoard and the five dungeons' caches, all in regions render.ts draws itself, which cannot show a top yet.
 import type { GameState, Player } from '../sim';
+import { PERCHES } from './perches';
 import { grantXp } from './skills';
 import { xpForLevel } from './xp';
 import { MAX_GOLD } from './shop';
@@ -85,6 +86,8 @@ export const CHESTS: ChestDef[] = [
   { id: 'cairnwaste-stash-2', place: 'cairnwaste', tier: 'stash', x: 1996, z: 791, floor: 0 },
   { id: 'spire-stash-1', place: 'spire', tier: 'stash', x: 2037, z: -55, floor: 0 },
   { id: 'vault-stash-1', place: 'vault', tier: 'stash', x: 1967, z: -92, floor: 0 },
+  // a cache stands on a step and a hoard on a rooftop (perches.ts); the chest is where its perch is, on its top
+  ...PERCHES.map((p): ChestDef => ({ id: p.chest, place: placeOfRegion(p.region)!.id, tier: p.tier, x: p.x, z: p.z, floor: p.top })),
 ];
 
 export const chestById = (id: string): ChestDef | undefined => CHESTS.find(c => c.id === id);

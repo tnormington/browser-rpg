@@ -9,6 +9,7 @@
 
 import { Branch, Road, branchDist, roadDist, roadPoint } from './road';
 export type { Branch, Road } from './road';
+import { PERCHES } from './perches';
 
 export const PLAYER_RADIUS = 0.5;
 
@@ -1026,6 +1027,14 @@ export function nearestTown(x: number, z: number, found: readonly string[] = TOW
 }
 
 export const regionById = (id: string): Region => REGIONS.find(r => r.id === id)!;
+
+// The props the cache and hoard chests stand on (perches.ts): rocks with a top, joined to their region's obstacles last, so no older prop moves in its list. A rooftop is
+// as tall as it looks and breaks a line of sight like any other tall thing; a step is knee-high and does not.
+for (const p of PERCHES) {
+  const o: Obstacle = { x: p.x, z: p.z, r: p.r, kind: 'rock', top: p.top }, r = regionById(p.region);
+  r.obstacles.push(o);
+  if (p.tier === 'hoard') r.tall.push(o);
+}
 
 // --- Flat views of the regions: what the renderer and the sim read. -----------------------------------------------------------
 
