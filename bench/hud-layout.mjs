@@ -193,7 +193,33 @@ for (const [width, height] of SIZES) {
     });
     return fails;
   }, MIN_SLOT);
-  await page.close();
+  // HOM-157: the map screen's chest ledger, with every town found (the most it ever says), stays inside the window, clear of the map's title and hint, and, as it
+  // sits when the pointer is not on it, clear of every town's name and of "You are here". Below 1100px it folds to its head and opens on hover: the open one is held to the window too.
+  const mapFails = await page.evaluate(async () => {
+    const d = window.__debug, s = d.sim, p = s.player;
+    s.targetId = null; p.autoAttack = false; p.inCombat = false; p.outOfCombat = 99;
+    for (const e of s.enemies) { e.state = 'dead'; e.respawnIn = 1e9; e.deadFor = 99; e.cast = null; }
+    s.found = ['hale', 'saltmarrow', 'thornwick', 'highmoor', 'spire']; p.x = 5; p.z = 5; d.step();
+    dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ' }));
+    await new Promise(r => setTimeout(r, 500));
+    return !!document.querySelector('.mapledger')?.offsetParent ? [] : ['the map screen did not open, or its chest ledger is not showing'];
+  });
+  const ledgerFails = async (state, names) => page.evaluate(({ state, names }) => {
+    const fails = [], b = document.querySelector('.mapledger').getBoundingClientRect();
+    const text = e => { const r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect(); }; // the text itself: some boxes run the window's width
+    const hit = t => b.left < t.right && t.left < b.right && b.top < t.bottom && t.top < b.bottom;
+    if (b.bottom > innerHeight || b.right > innerWidth || b.top < 0 || b.left < 0) fails.push(`the ${state} chest ledger runs off the window: ` + JSON.stringify(b));
+    for (const sel of ['.maptitle', '.maphint']) if (hit(text(document.querySelector(sel)))) fails.push(`the ${state} chest ledger prints over ${sel}`);
+    if (names) for (const e of document.querySelectorAll('.maptown')) if (e.offsetParent !== null && e.textContent && hit(text(e))) fails.push(`the ${state} chest ledger covers the map's "${e.textContent}"`);
+    return fails;
+  }, { state, names });
+  if (!mapFails.length) {
+    mapFails.push(...await ledgerFails('resting', true));
+    await page.hover('.mapledger');
+    mapFails.push(...await ledgerFails('open', false));
+    await page.evaluate(() => dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ' })));
+  }  await page.close();
+  for (const m of mapFails) { console.error(`FAIL ${width}x${height}: ${m}`); failed++; }
   for (const m of barFails) { console.error(`FAIL ${width}x${height}: ${m}`); failed++; }
   for (const m of restFails) { console.error(`FAIL ${width}x${height}: ${m}`); failed++; }
   for (const m of panelFails) { console.error(`FAIL ${width}x${height}: ${m}`); failed++; }

@@ -5,6 +5,8 @@ import { TOWNS } from './sim/world';
 import { FLIGHT_REACH, destinationsFrom, masterById } from './sim/flight';
 import { actionButton, el, titleRow } from './dom';
 import { faceRow, setFace } from './art';
+import { chestLedger } from './chest-ledger';
+import { CHEST_TOTAL, chestCount } from './sim/chests';
 
 const secs = (n: number) => `${Math.round(n)} s`;
 
@@ -80,6 +82,8 @@ export class MapUi {
   private screen: HTMLElement;
   private labels = new Map<string, HTMLElement>();
   private you: HTMLElement;
+  private ledger: HTMLElement;
+  private ledgerSig = '';
   private ride: HTMLElement;
   private rideTitle: HTMLElement;
   private rideFill: HTMLElement;
@@ -91,6 +95,8 @@ export class MapUi {
     el(this.screen, 'maphint', 'J or Esc to close');
     for (const t of TOWNS) this.labels.set(t.id, el(this.screen, 'maptown'));
     this.you = el(this.screen, 'maptown mapyou', 'You are here');
+    // the hidden chests, a row per place: the one home of the count, and only on this screen, so it is looked up and never printed over the game (HOM-157)
+    this.ledger = el(this.screen, 'chrome mapledger');
     this.screen.style.display = 'none';
 
     this.ride = el(root, 'ridelayer');
@@ -128,8 +134,23 @@ export class MapUi {
       lab.style.display = at ? 'block' : 'none';
       if (at) lab.style.transform = `translate(${at.x}px, ${at.y}px) translate(-50%, -100%)`;
     }
+    this.updateLedger(s);
     const me = this.view.projectYou();
     this.you.style.display = me ? 'block' : 'none';
     if (me) this.you.style.transform = `translate(${me.x}px, ${me.y}px) translate(-50%, 4px)`; // below the pin: the town's own name sits above its beacon
+  }
+
+  private updateLedger(s: GameState) {
+    const rows = chestLedger(s), sig = JSON.stringify(rows);
+    if (sig === this.ledgerSig) return;
+    this.ledgerSig = sig;
+    this.ledger.textContent = '';
+    const head = el(this.ledger, 'ledgerhead', 'Hidden chests');
+    el(head, 'ledgertotal', `${chestCount(s.player).opened} of ${CHEST_TOTAL} found`);
+    for (const r of rows) {
+      const row = el(this.ledger, `ledgerrow${r.name ? '' : ' lost'}${r.done ? ' done' : ''}${r.here ? ' here' : ''}`);
+      el(row, 'ledgername', r.name ?? '???');
+      if (r.name) el(row, 'ledgercount', `${r.opened} of ${r.total}${r.done ? ' \u2726' : ''}`);
+    }
   }
 }

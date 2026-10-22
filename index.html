@@ -306,6 +306,14 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .maptitle{top:22px;letter-spacing:.2em}.ridetitle{top:40px;letter-spacing:.12em}
 .maphint{position:absolute;bottom:22px;left:0;right:0;text-align:center;color:var(--ink-dim)}
 .maptown{position:absolute;left:0;top:0;white-space:nowrap;font-size:var(--fs-xl);font-weight:bold;color:var(--spark);text-shadow:0 0 4px #000,0 2px 4px #000,0 0 10px #000}.maptown.lost{color:var(--ink-dim);font-weight:normal}.maptown.mapyou{color:var(--arcane);font-size:var(--fs-lg)}
+/* the hidden-chest ledger: left of the map between the title and the hint, a row per place, its total on the head. Bounded by the window and scrolls inside itself; the layer is pointer-events:none, so the wheel and the hover need it back.
+   Under 1100px wide the map reaches under it (Hale's label sits at x=167 at 800), so it folds to its head and the rows open on hover: the count is looked up, and the map keeps its own names. */
+.mapledger{position:absolute;left:var(--gutter);top:72px;width:230px;box-sizing:border-box;max-height:calc(100% - 72px - 56px);pointer-events:auto;text-shadow:none;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--edge-hi) transparent}
+.ledgerhead{display:flex;justify-content:space-between;align-items:baseline;gap:var(--sp-4);font-size:var(--fs-lg);font-weight:bold;color:var(--gold);letter-spacing:.05em;margin-bottom:var(--sp-3);padding-bottom:var(--sp-2);border-bottom:1px solid var(--edge-dim)}
+.ledgertotal{font-size:var(--fs-sm);font-weight:normal;letter-spacing:0;color:var(--ink-dim)}
+.ledgerrow{display:flex;justify-content:space-between;gap:var(--sp-4);padding:var(--sp-1) 0}.ledgercount{color:var(--ink-dim);white-space:nowrap}
+.ledgerrow.lost{color:var(--ink-dim)}.ledgerrow.here .ledgername{color:var(--arcane)}.ledgerrow.done .ledgercount{color:var(--gold-hi)}
+@media (max-width:1100px){.mapledger:not(:hover) .ledgerrow{display:none}.mapledger:not(:hover) .ledgerhead{margin-bottom:0;padding-bottom:0;border-bottom:0}}
 .ridebar{--fill:var(--gold);position:absolute;top:86px;left:50%;width:280px;margin-left:-140px}.ridebar .ridefill{width:0}
 
 /* ---- the generated art (HOM-135) ---- */

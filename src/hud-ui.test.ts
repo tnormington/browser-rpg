@@ -8,6 +8,8 @@ import { BUFFS, FOOD_TIME, applyBuff } from './sim/consumables';
 import { ABILITIES, STAGGER_TIME } from './sim/data';
 import { enemyStatuses, playerStatuses } from './sim/status';
 import { BarLayout, defaultBar, sanitizeBar } from './bar-layout';
+import { chestLedger } from './chest-ledger';
+import { PLACES, chestCount, chestsIn, placeById } from './sim/chests';
 
 let checks = 0;
 function assert(cond: unknown, msg: string): asserts cond {
@@ -142,4 +144,28 @@ section('Saved bar layout: a longer bar keeps what the player arranged (HOM-104)
   assert(idx(sanitizeBar([0, 0, 99, -1, 1.5], 13, 13)).slice(0, 5).join() === '0,,,,', 'a repeat, an unknown ability or a non-integer is dropped from its slot');
 }
 
-console.log(`\nAll ${checks} inventory-sort, unit-frame and bar-layout checks passed.`);
+section('The map screen\'s chest ledger (HOM-157)');
+{
+  const s = createState();
+  const row = (id: string) => chestLedger(s).find(r => r.id === id)!;
+  const inPlace = (id: string) => { const c = chestsIn(id)[0]; s.player.x = c.x; s.player.z = c.z; };
+  s.player.x = 5; s.player.z = 5; // Hale's square, where a new game starts
+  assert(chestLedger(s).length === PLACES.length, 'one row for every place');
+  assert(row('hale').name === placeById('hale')!.name && row('hale').opened === 0 && row('hale').total === chestsIn('hale').length, 'the place the player stands in is named, with its count, from the first minute');
+  assert(row('barrowdowns').name === null && row('barrowdowns').total === 0, 'a place never walked reads ??? with no count: neither its name nor how much is in it is given away');
+  inPlace('barrowdowns');
+  assert(row('barrowdowns').name !== null && row('barrowdowns').here && row('hale').here === false, 'standing in a place earns its name, and marks it as here');
+  s.player.chests.push(chestsIn('barrowdowns')[0].id);
+  inPlace('hale'); // walked away again
+  assert(row('barrowdowns').name !== null && row('barrowdowns').opened === 1 && !row('barrowdowns').here, 'a place with a chest opened in it stays named after the player leaves');
+  assert(row('cairnwaste').name === null, 'and the places beside it stay ???');
+  assert(row('highmoor').name === null, 'a town the player has not found does not name its place');
+  s.found.push('highmoor');
+  assert(row('highmoor').name !== null && row('highmoor').opened === 0, 'a flight master found in a place names it');
+  for (const c of chestsIn('barrowdowns')) s.player.chests.push(c.id);
+  s.player.chests = [...new Set(s.player.chests)];
+  assert(row('barrowdowns').done && row('barrowdowns').opened === row('barrowdowns').total && !row('highmoor').done, 'the last chest of a place marks it done, and only that place');
+  assert(chestLedger(s).reduce((n, r) => n + r.opened, 0) === chestCount(s.player).opened, 'the rows add up to the journal\'s total: both read player.chests');
+}
+
+console.log(`\nAll ${checks} inventory-sort, unit-frame, bar-layout and chest-ledger checks passed.`);

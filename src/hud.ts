@@ -568,7 +568,13 @@ export class Hud {
       } else if (ev.t === 'chest') {
         // the count is the whole reward for looking: "Greywater Road 1 / 2". The Agility lamp announces itself as the xp event that follows
         this.float(`+${ev.gold} gold`, 'loot', ev.x, 1.2, ev.z);
-        this.note(`You open a hidden chest: ${ev.gold} gold${ev.xp ? `, ${ev.xp} Agility XP` : ''}. ${placeById(ev.place)!.name}: ${ev.opened} of ${ev.total} found.`, 'log-loot');
+        const place = placeById(ev.place)!.name, reward = `${ev.gold} gold${ev.xp ? `, ${ev.xp} Agility XP` : ''}`;
+        if (ev.opened < ev.total) this.note(`You open a hidden chest: ${reward}. ${place}: ${ev.opened} of ${ev.total} found.`, 'log-loot');
+        else { // the set completing is the payoff the count is for: the unlock banner and a quest-coloured line, where the third chest only gets the loot line
+          this.note(`You open the last hidden chest in ${place}: ${reward}. All ${ev.total} found.`, 'log-quest');
+          this.popBanner(this.unlockBanner, place.toUpperCase());
+          this.unlockBanner.dataset.sub = `All ${ev.total} hidden chests found`;
+        }
       } else if (ev.t === 'forge' || ev.t === 'range' || ev.t === 'alembic' || ev.t === 'rack') {
         ({ forge: this.forgeUi, range: this.rangeUi, alembic: this.alembicUi, rack: this.rackUi })[ev.t].setOpen(true);
       } else if (ev.t === 'circle') {
