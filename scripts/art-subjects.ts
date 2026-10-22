@@ -227,6 +227,23 @@ export const ITEM_SUBJECTS = {
   // and cannot get past a lit pixel, so the flame is asked for small and contained and the glow round it is refused by name.
   // And "standing upright" is a place: asked for that, the model plants it in a cairn of stones, the same mistake a named
   // light is. Hung at an angle with no foot to stand on, it is an object again.
+  // The top of the ladder (HOM-176/185). Echo is a teal seam in dark metal; the starmetal wording is borrowed so the bar reads as the next rung up.
+  echo_shard: 'a jagged splinter of dark glassy grey stone, a cold teal light burning down the fracture',
+  echo_bar: `${BAR}, ${METALS.starmetal}, a bright cold teal seam of light running across the top`,
+  echo_leather: `${LEATHER}, blackened leather, one thin teal stitched seam`,
+  echohide_gloves: `${FORMS.gloves}, cut and stitched from blackened hide, a seam of teal stitching, small dark shards set round each cuff`,
+  echohide_boots: `${FORMS.boots}, cut and stitched from blackened hide, a seam of teal stitching, a ring of small dark shards round each rim`,
+  echo_mark: 'a single small round dark iron token, a worn edge, three short notches struck into its face, a faint cold teal light in the notches',
+  // The seven blades are one ladder: one long blade each, upright, in the hue its 3D model wears, climbing teal to blue to violet to magenta and ending black.
+  // Each has the one feature gear.ts gave it, so the seven read as the same family at 40px by colour and by that feature alone.
+  echo_blade_1: 'a straight dark steel longsword standing upright, blade point up, one jagged stone shard clamped across the crossguard, a seam of cold teal light down the blade',
+  echo_blade_2: 'a straight dark steel longsword standing upright, blade point up, three short notches cut in a column down the flat each shorter than the last, cold blue light in the notches',
+  echo_blade_3: 'a longsword standing upright, blade point up, the blade split down its whole length into two halves hanging slightly apart, deep indigo light between them',
+  echo_blade_4: 'a dark violet steel longsword standing upright, blade point up, a row of small shard teeth along one edge, a crescent guard curling upward',
+  echo_blade_5: 'a purple steel longsword standing upright, blade point up, pale stone feathers fanned out from the crossguard like wings, a thin ring of small glowing shards turning round the blade',
+  echo_blade_6: 'one long faceted translucent magenta crystal blade standing upright, point up, grown round a dark hilt, two smaller crystals branching off its side, no steel',
+  echo_blade_7: 'a longsword standing upright, blade point up, black to the edge, pale lilac light along its edge, two faint translucent copies of the blade trailing behind it',
+
   torch: 'a hand-held wooden torch floating at a slight angle, a short ash stake bound with one iron band, a pitch-soaked rag head burning with a small contained orange flame, no stand, no base, no stones, no rocks, no glow, no halo, no sparks, no smoke',
 };
 
@@ -265,6 +282,13 @@ export const ABILITY_SUBJECTS = {
   // came back a sword, and worn armour came back the knight wearing it - a whole figure, which is the one
   // thing this style has no room for. So it is light, the way Cleave's crescent is: shape, not object.
   charge: 'a single hard white chevron of light driving forward, shaped like an arrowhead, long pale speed lines trailing back from its point',
+  // The six past level 48 (HOM-176/185). Each is a thing, not a deed, and none repeats an older icon's object: Guard keeps the round shield, Cleave the crescent, Whirlwind the ring of blade.
+  rampart: 'a lowered iron portcullis grille with thick spiked bars, a pale blue ward light running along every bar',
+  reaping_blow: 'a great curved iron reaper scythe blade swung across the frame, a long streak of white light along its edge, a trace of dark red at the tip',
+  shockwave: 'three thick concentric rings of pale white shock light expanding outward from one point, jagged cracks of grey stone radiating through them',
+  echo_surge: 'a single glowing cold teal crystal shard floating, rings of teal light pulsing outward from it, faint translucent copies of the shard trailing behind',
+  bloodbath: 'a wide spinning ring of dark red blood flung outward in a circle, a steel blade edge at its centre, droplets flying off',
+  final_reckoning: 'a huge black greatsword raised point up, blazing white-gold light pouring down the whole blade, bright sparks flying off the edge',
 };
 
 // --- the talents ------------------------------------------------------------------------------
@@ -319,6 +343,23 @@ export const TALENT_SUBJECTS = {
   exsanguinate: 'an hourglass of dark iron running dark red blood instead of sand, its upper bulb nearly empty',
   opportunist: 'a thin curved stiletto dagger slipping in behind a broken iron plate, a cold white glint on its point',
   hemorrhage: 'a lean skeletal hand clenched shut, dragging a ribbon of dark red blood through the air towards itself',
+
+  // Tier 5 (HOM-176/185): the same three materials, one emblem a node, none of them an ability's own picture.
+  annihilator: 'a heavy iron anvil split in two halves by a single blow, hot red light pouring out of the split',
+  momentum: 'a heavy iron gear wheel spinning fast, hot red motion streaks trailing off its teeth',
+  savagery: 'a spiked iron knuckle-duster, hot red light along the spikes',
+  warcry: 'a battle drum of stretched hide bound with iron hoops, a ring of hot red light pulsing out from the drum skin',
+  cull: 'a short curved iron harvesting sickle, a dull red edge, one dark red drop hanging from the tip',
+  triumph: 'a laurel wreath of dark iron leaves, soft green-gold light glowing between the leaves',
+  steadfast: 'a thick iron gate bar slotted across two iron brackets, cold blue light along its length',
+  concussion: 'a heavy iron bell struck mid-swing, pale white ripples of sound spreading out from its rim',
+  adrenaline: 'a human heart caged in dark iron bands, cold blue light pulsing through the gaps',
+  deflection: 'a small round steel buckler with a single arrow glancing off its face, a white spark at the point of contact',
+  openveins: 'a single curved hooked skinning knife, thin dark red streams unspooling from its edge',
+  farreach: 'a long slim iron spear fully extended, a pale ring of cold light at its far point',
+  lifeblood: 'a single dark red blood drop with a small green sprout curling up from its top, soft green light',
+  predatoreye: 'a single amber slit-pupilled predator eye set in a dark iron ring, one thin dark red vein across it',
+  rupture: 'a cracked dark red iron sphere bursting open along its seams, blood spraying out of the splits',
 };
 
 // --- the faces --------------------------------------------------------------------------------
