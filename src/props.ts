@@ -239,8 +239,63 @@ function wayfire(): Prop {
   ], halos: [{ id: 'torch', x: 0, y: 0.7, z: 0, scale: 1.8 }] };
 }
 
+const IRON_DARK = 0x2e3036, CHEST_WOOD = 0x3a3027, CHEST_SPENT = 0x2a2520, TROVE = 0x6fb8d8, TROVE_GOLD = 0x8a7a50;
+
+/**
+ * A treasure chest (HOM-152), in the three states a player has to tell apart from across a clearing. Front (the hasp) faces +z, feet at y 0,
+ * about 1.1 wide and 0.6 high closed. It is deliberately a dull, low, near-rock-coloured box: a hidden chest is found by its one cold
+ * glint (the lock plate, plus a pinprick `trove` halo), which reads at the edge of sight as "something is there" and not as "a chest is there".
+ *   closed: lid down, a single lit lock plate.            open: lid up, a cold glow and a heap of goods spilling out: the loud one, and only once opened.
+ *   spent:  lid thrown flat back, the inside black, no light and no goods, wood greyed: from afar it is the one dark, open mouth in a clearing.
+ */
+function chest(state: 'closed' | 'open' | 'spent'): Prop {
+  const spent = state === 'spent', up = state !== 'closed';
+  const body = [
+    put(new THREE.BoxGeometry(1.1, 0.42, 0.7), 0, 0.21, 0),
+    ...[-0.36, 0.36].map(x => put(new THREE.BoxGeometry(0.1, 0.46, 0.76), x, 0.22, 0)), // the iron straps round the body
+  ];
+  // the lid is a half-round of faceted wood, hinged at the back edge: opening it swings it about (0, 0.42, -0.35)
+  const lidAngle = state === 'closed' ? 0 : spent ? -2.3 : -1.75;
+  const half = (len: number, r: number) => new THREE.CylinderGeometry(r, r, len, 6, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).scale(1, 0.75, 1);
+  const hinge = (g: THREE.BufferGeometry) => put(g.translate(0, 0, 0.35), 0, 0.42, -0.35, lidAngle, 0, 0);
+  const lid = [hinge(half(1.12, 0.36))];
+  const straps = [-0.36, 0.36].map(x => hinge(half(0.1, 0.385).translate(x, 0, 0)));
+  const layers: PropLayer[] = [
+    { name: 'wood', color: spent ? CHEST_SPENT : CHEST_WOOD, cls: 'wood', parts: [body[0], ...lid] },
+    { name: 'iron', color: IRON_DARK, cls: 'metal', parts: [...body.slice(1), ...straps, put(new THREE.BoxGeometry(0.2, 0.2, 0.06), 0, 0.4, 0.37)] },
+  ];
+  const halos: HaloSpot[] = [];
+  if (up) layers.push({ name: 'inside', color: 0x0c0d10, cls: 'wood', parts: [put(new THREE.BoxGeometry(0.96, 0.04, 0.56), 0, 0.43, 0)] }); // the dark of the open mouth
+  if (state === 'closed') {
+    layers.push({ name: 'lock', color: TROVE, cls: 'glow', parts: [put(new THREE.OctahedronGeometry(0.05), 0, 0.4, 0.41)] });
+    halos.push({ id: 'trove', x: 0, y: 0.42, z: 0.4, scale: 0.8 });
+  } else if (state === 'open') {
+    layers.push({ name: 'goods', color: TROVE_GOLD, cls: 'metal', parts: [lump(-0.2, 0.46, 0.05, 0.16, 0.6), lump(0.18, 0.47, -0.08, 0.14, 0.6), lump(0.02, 0.5, 0.1, 0.12, 0.7), put(new THREE.OctahedronGeometry(0.1), 0.34, 0.5, 0.1)] });
+    layers.push({ name: 'gleam', color: TROVE, cls: 'glow', parts: [put(new THREE.OctahedronGeometry(0.09), 0, 0.58, 0), put(new THREE.OctahedronGeometry(0.06), -0.3, 0.52, -0.1)] });
+    halos.push({ id: 'trove', x: 0, y: 0.6, z: 0, scale: 2.2 });
+  }
+  return { layers, halos };
+}
+
+/**
+ * The look of a rock you can stand on (HOM-152): its top is a flat, pale, worn cap, drawn at the height the sim lets you land at. The cue is
+ * the silhouette first (every unclimbable rock is a faceted dome with a point, this one is cut off flat: a table, not a lump), the tone
+ * second (lichen-pale on the one surface you can reach, so it reads in dusk, rain and fog where a hue would not) and a few chipped, pale
+ * foot-holds along the lip third. No glow and no halo: a quest marker asks to be seen, this only has to be noticed by someone who is looking.
+ * Unit radius, its top face at y 0; the placer scales it to the obstacle's radius and lifts it to the top height.
+ */
+function ledge(): Prop {
+  const slab = [put(new THREE.CylinderGeometry(1, 1.06, 0.2, 7).translate(0, -0.1, 0), 0, 0, 0)];
+  const chips = Array.from({ length: 6 }, (_, i) => { const a = i * Math.PI * 2 / 6 + 0.3; return put(new THREE.BoxGeometry(0.26, 0.1, 0.18), Math.cos(a) * 0.93, 0.02, Math.sin(a) * 0.93, 0, -a, 0); });
+  return { layers: [
+    { name: 'cap', color: 0x8c9892, cls: 'stone', parts: slab },
+    { name: 'chips', color: 0xa8b2ac, cls: 'stone', parts: chips },
+  ] };
+}
+
 /** Prop id -> its build. A prop is built per use (cheap: a handful of merged layers) and the renderer shares nothing between uses. */
 export const PROPS = {
+  chest: () => chest('closed'), chestOpen: () => chest('open'), chestSpent: () => chest('spent'), ledge,
   alembic, herbPatchFen: () => herbPatch('fen'), herbPatchThorn: () => herbPatch('thorn'), thornoak, tanningRack,
   bush: () => bush('green'), bushDry: () => bush('dry'), torch, signpost, wayshrine, wayfire,
 } satisfies Record<string, () => Prop>;

@@ -1,4 +1,4 @@
-// The glow round a light: the lit air about a flame, which no amount of emissive on the flame itself can draw.
+﻿// The glow round a light: the lit air about a flame, which no amount of emissive on the flame itself can draw.
 //
 // An emitter's own material is held under the bloom threshold (glow.ts), so its colour survives tone mapping instead of
 // clipping to a white hole. That is right for the lamp and leaves it a flat shape with nothing coming off it. The halo is
@@ -25,7 +25,8 @@ export const HALOS = {
   crystal: { color: 0x2f7fe0, radius: 1.5, strength: 0.45, flicker: 0.06 },
   fungus: { color: 0x9ae07a, radius: 1.0, strength: 0.45, flicker: 0.05 },
   glass: { color: 0x58d8c8, radius: 1.6, strength: 0.55, flicker: 0.08 },       // the Grotto's drowned lanterns
-} satisfies Record<string, HaloKind>;
+  trove: { color: 0x6fb8d8, radius: 0.7, strength: 0.5, flicker: 0.04 },        // a hidden chest's pinprick: a cold glint at the edge of sight, small enough to be "something" and not "a chest"
+}satisfies Record<string, HaloKind>;
 export type HaloId = keyof typeof HALOS;
 
 /** One halo standing somewhere: a kind, a point in whatever frame its mesh is built in, and a size multiplier. */

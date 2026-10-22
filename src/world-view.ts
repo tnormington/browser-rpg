@@ -74,6 +74,8 @@ function headstone(o: Obstacle, ry: number, i: number): THREE.BufferGeometry[] {
   return [place(new THREE.BoxGeometry(0.8, 1.2, 0.22).rotateZ(lean), o.x, 0.6, o.z, ry), place(new THREE.CylinderGeometry(0.4, 0.4, 0.22, 8).rotateX(Math.PI / 2).rotateZ(lean), o.x - lean * 0.6, 1.2, o.z, ry)];
 }
 
+/** An obstacle the sim has given a top to land on (`top`: its height, world units). The sim's Obstacle does not carry it yet; until it does nothing is drawn as standable. */
+type Climbable = Obstacle & { top?: number };
 type Bag = Record<'rock' | 'bark' | 'wall' | 'roof' | 'wood' | 'glow' | 'stone' | 'hull' | 'sign' | 'pool' | 'water' | 'reed' | 'bone' | 'brush' | 'thorn' | 'cloth' | 'turf' | 'dark' | 'jamb' | 'heather' | 'cairn' | 'marble' | 'rune', THREE.BufferGeometry[]> & {
   /** Placed copies of props.ts props, by `prop:layer`: one draw per layer however many there are. */
   props: Map<string, { color: number; cls: string; geoms: THREE.BufferGeometry[] }>;
@@ -94,16 +96,16 @@ function propLayers(id: PropId) {
   }
   return layers;
 }
-function placeProp(bag: Bag, id: PropId, x: number, z: number, rot = 0, scale = 1) {
+function placeProp(bag: Bag, id: PropId, x: number, z: number, rot = 0, scale = 1, y = 0) {
   for (const l of propLayers(id)) {
     const key = `${id}:${l.name}`;
     let entry = bag.props.get(key);
     if (!entry) bag.props.set(key, entry = { color: l.color, cls: l.cls, geoms: [] });
-    entry.geoms.push(place(l.geo.clone(), x, 0, z, rot, scale));
+    entry.geoms.push(place(l.geo.clone(), x, y, z, rot, scale));
   }
   for (const h of propHalos.get(id)!) { // the prop's own flames, turned and scaled with it
     const [hx, hz] = rotXZ(h.x * scale, h.z * scale, rot);
-    bag.halos.push({ id: h.id, x: x + hx, y: h.y * scale, z: z + hz, scale: scale * (h.scale ?? 1) });
+    bag.halos.push({ id: h.id, x: x + hx, y: y + h.y * scale, z: z + hz, scale: scale * (h.scale ?? 1) });
   }
 }
 
@@ -334,11 +336,24 @@ export class WorldView {
     return m;
   }
 
+  /**
+   * A rock the player can land on (HOM-152): a squat, blunt-sided block cut off flat at the height the sim gives it (`top`), under a pale worn cap
+   * (props.ts `ledge`). Where every other rock is a dome that comes to a point, this is a table: that is the whole grammar, and it reads in the
+   * dark and the rain because it is a silhouette and a tone, not a colour or a light.
+   */
+  private standableRock(bag: Bag, o: Obstacle, top: number, ry: number, i: number) {
+    const r = o.r * (1.1 + hash(i + 3) * 0.2);
+    bag.rock.push(place(new THREE.CylinderGeometry(r * 0.82, r, top, 7).translate(0, top / 2, 0), o.x, 0, o.z, ry));
+    placeProp(bag, 'ledge', o.x, o.z, ry, r * 0.82, top);
+  }
+
   /** Obstacles by what they are, merged into one draw per material; the road's waymarks ride with the slab they stand in. */
   private scenery(obs: Obstacle[], rect: Rect, r: Region, add: (o: THREE.Object3D) => void) {
     const bag = newBag();
     obs.forEach((o, i) => {
-      const h = hash(o.x * 3.1 + o.z * 7.7), ry = h * Math.PI * 2;
+      const h = hash(o.x * 3.1 + o.z * 7.7), ry = h * Math.PI * 2, top = (o as Climbable).top;
+      if (top !== undefined && (o.kind === 'rock' || o.kind === undefined)) { this.standableRock(bag, o, top, ry, i); return; }
+      if (top !== undefined && o.kind === 'crate') placeProp(bag, 'ledge', o.x, o.z, ry, 0.6, 1.17); // a crate's top is fixed: its cap sits on the slats
       switch (o.kind) {
         case 'person': return;
         case 'signpost': case 'shrine': case 'wayfire': return; // a fork's own: forkDressing places each turned the way its track goes
