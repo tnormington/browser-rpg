@@ -139,11 +139,11 @@ export function anchoredHp(def: EnemyDef): number {
  */
 export interface Tell { name: string; windup: number; every: number; first: number; radius: number }
 /** 56 to 69: the Seer's mark, a circle fixed under the player that a moving player is long gone from. */
-export const ECHO_MARK: Tell & { from: number; share: number; range: number } = { from: 56, share: 0.15, name: 'Withering Ground', windup: 1.2, every: 8, first: 2.5, radius: 3, range: 14 };
+export const ECHO_MARK: Tell & { from: number; share: number; stake: number; range: number } = { from: 56, share: 0.15, stake: 1.6, name: 'Withering Ground', windup: 1.2, every: 8, first: 2.5, radius: 3, range: 14 };
 /** 70 to 83, on every melee row: the Ogre's slam, read the telegraph (Pummel it, or step out). `first` keeps it off the sweep's 5 s, so the two do not land on one beat. */
-export const ECHO_SLAM: Tell & { from: number; share: number } = { from: 70, share: 0.3, name: 'Boulder Slam', windup: 1.7, every: 12, first: 7, radius: 5 };
+export const ECHO_SLAM: Tell & { from: number; share: number; stake: number } = { from: 70, share: 0.3, stake: 2.2, name: 'Boulder Slam', windup: 1.7, every: 12, first: 7, radius: 5 };
 /** 84 to 99: each trash row arrives with a mate, at 3.4's pair discount. A row that already comes in a group (a camp, a pair) is its own pair, and does not get a second. */
-export const ECHO_PAIR = { from: 84, hp: 0.85, hit: 0.7 };
+export const ECHO_PAIR = { from: 84, hp: 0.85, hit: 0.7, xp: 0.88 };
 
 /** Seconds from an enemy waking to the player's first blow (the bench's bot: it is walking at the enemy as the enemy comes at it). A fight's enemy-side window is this plus the time to kill. */
 export const ECHO_LEAD = 0.5;
@@ -193,23 +193,26 @@ const rows = new WeakMap<EnemyDef, Map<number, EnemyDef>>();
 /**
  * The authored row as it stands at Echo level `level`: HP and hit by the two ratios (every hit alike: the swing, the heavy, the ground mark, the sweep and a ranged bolt keep their share of
  * the player's health), XP by `enemyXp`, and the tell ladder's rung laid on a trash row. Everything else (rig, speeds, leash, respawn) is the original's. Memoised: the row is read every tick.
+ * `staked` is whether an ignored tell hits for its stake (Standard and Hard) or only for its share (Easy: the ladder is a dividend and not a demand, section 3.10).
  */
-export function echoRow(def: EnemyDef, level: number): EnemyDef {
+export function echoRow(def: EnemyDef, level: number, staked = true): EnemyDef {
   const E = Math.max(ECHO_MIN_LEVEL, Math.min(ECHO_MAX_LEVEL, Math.round(level)));
   let byLevel = rows.get(def);
   if (!byLevel) rows.set(def, byLevel = new Map());
-  let row = byLevel.get(E);
-  if (!row) byLevel.set(E, row = buildRow(def, E));
+  const key = staked ? E : -E;
+  let row = byLevel.get(key);
+  if (!row) byLevel.set(key, row = buildRow(def, E, staked));
   return row;
 }
 
-function buildRow(def: EnemyDef, E: number): EnemyDef {
+function buildRow(def: EnemyDef, E: number, staked: boolean): EnemyDef {
   const role = roleOf(def), b = def.level;
   const row: EnemyDef = { ...def, level: E, hp: Math.round(anchoredHp(def) * hpRatio(b, E)), xp: enemyXp(E, role) };
   scaleHits(row, def, damageRatio(b, E));
-  if (role === 'trash') addTells(row, E);
+  if (role === 'trash') addTells(row, E, staked);
   if (isPaired(def, E)) { // after the tells are sized: the discount is on the whole of the member, so a tell stays worth the same share of it
     row.hp = Math.round(row.hp * ECHO_PAIR.hp);
+    row.xp = Math.round(row.xp * ECHO_PAIR.xp);
     scaleHits(row, row, ECHO_PAIR.hit);
   }
   return row;
@@ -229,7 +232,7 @@ function scaleHits(row: EnemyDef, from: EnemyDef, by: number) {
  * time it lands, and the swings and the row's own casts are cut by the rest: the cost is linear in them, so one factor `k` solves it. Rows that have a mark of their own (the casters) keep it, and
  * a row that shoots does not slam.
  */
-function addTells(row: EnemyDef, E: number) {
+function addTells(row: EnemyDef, E: number, staked: boolean) {
   const mark = E >= ECHO_MARK.from && !row.hazard, slam = E >= ECHO_SLAM.from && !row.heavy && !row.ranged;
   if (!mark && !slam) return;
   const C = unansweredFight(row).total;
@@ -242,8 +245,8 @@ function addTells(row: EnemyDef, E: number) {
   const k = (C - (withTells - without)) / without;
   const tells = add(C);
   scaleHits(row, row, k);
-  if (mark) row.hazard = { ...tells.hazard!, damage: Math.round(tells.hazard!.damage) };
-  if (slam) row.heavy = { ...tells.heavy!, damage: Math.round(tells.heavy!.damage) };
+  if (mark) row.hazard = { ...tells.hazard!, damage: Math.round(tells.hazard!.damage * (staked ? ECHO_MARK.stake : 1)) };
+  if (slam) row.heavy = { ...tells.heavy!, damage: Math.round(tells.heavy!.damage * (staked ? ECHO_SLAM.stake : 1)) };
 }
 
 // ---------- the respawn rule ----------
@@ -276,7 +279,7 @@ export function dress(s: GameState, e: Enemy): boolean {
     if (!leader || leader.echo === null || level === null || !isPaired(base, level)) return false;
   }
   e.echo = level;
-  e.row = level === null ? null : echoRow(base, level);
+  e.row = level === null ? null : echoRow(base, level, (echoOffset(s) ?? 0) >= 0); // Easy is the one setting that does not demand the tells
   e.maxHp = (e.row ?? base).hp;
   if (!mate && level !== null && isPaired(base, level)) callMate(s, e);
   return true;

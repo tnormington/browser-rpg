@@ -174,18 +174,30 @@ section('the tell ladder, as data: a mark from 56, a slam on every melee row fro
   assert(melee.every(id => echoRow(T[id], 70).heavy?.name === ECHO_SLAM.name && echoRow(T[id], 69).heavy === undefined), `every one of the ${melee.length} melee trash rows slams from 70`);}
 
 // ---------------------------------------------------------------------------
-section('the tells take their share out of the swings: what a player who answers nothing pays does not move');
+section('the tells take their share out of the swings: what a player who answers nothing pays does not move (on Easy), and costs its stake on the rest (HOM-181)');
 {
-  // the cost counted by `unansweredFight` against what the row would cost with no ladder: the same, to the rounding, at every rung and for every kind of row
+  // the cost counted by `unansweredFight` against what the row would cost with no ladder: the same, to the rounding, at every rung and for every kind of row. That is the ladder as 3.6 sized it,
+  // which is what Easy is (`staked` false): a dividend for the player who answers and no demand on the one who does not
   const trash = Object.keys(T).filter(id => ROLES[id] === 'trash');
   let worst = 0, worstId = '';
   for (const id of trash) for (const E of [42, 56, 60, 70, 80]) {
-    const base = echoRow(T[id], 42), r = echoRow(T[id], E), scaleBy = damageRatio(T[id].level, E) / damageRatio(T[id].level, 42);
+    const base = echoRow(T[id], 42, false), r = echoRow(T[id], E, false), scaleBy = damageRatio(T[id].level, E) / damageRatio(T[id].level, 42);
     const was = unansweredFight(base).total * scaleBy, now = unansweredFight(r).total;
     if (Math.abs(now / was - 1) > worst) { worst = Math.abs(now / was - 1); worstId = `${id} at ${E}`; }
   }
-  assert(worst < 0.02, `all ${trash.length} trash rows at 56, 60, 70 and 80 cost what they cost at 42 to within ${(100 * worst).toFixed(1)} % (${worstId}, by the enemy's own schedule)`);
-  const r = echoRow(T.rune_golem, 80), whole = unansweredFight(r).total, landed = unansweredFight(r).landed;
+  assert(worst < 0.02, `all ${trash.length} trash rows at 56, 60, 70 and 80 cost what they cost at 42 to within ${(100 * worst).toFixed(1)} % on Easy (${worstId}, by the enemy's own schedule)`);
+  // ...and on Standard and Hard the swings are the same and an ignored tell hits for its stake: the player who answers pays what he paid, the one who does not pays the stake on every landing
+  assert(ECHO_MARK.stake === 1.6 && ECHO_SLAM.stake === 2.2, 'the stakes are 1.6 on the mark and 2.2 on the slam (section 3.10)');
+  let worstSwing = 0, worstStake = 0, tells = 0;
+  for (const id of trash) for (const E of [60, 70, 80]) {
+    const plain = echoRow(T[id], E, false), staked = echoRow(T[id], E, true);
+    worstSwing = Math.max(worstSwing, Math.abs(staked.damage / plain.damage - 1));
+    if (!T[id].hazard && plain.hazard?.name === ECHO_MARK.name) { tells++; worstStake = Math.max(worstStake, Math.abs(staked.hazard!.damage - plain.hazard.damage * ECHO_MARK.stake)); }
+    if (!T[id].heavy && plain.heavy?.name === ECHO_SLAM.name) { tells++; worstStake = Math.max(worstStake, Math.abs(staked.heavy!.damage - plain.heavy.damage * ECHO_SLAM.stake)); }
+  }
+  assert(worstSwing < 0.01 && worstStake <= 2 && tells > 50, `a staked row has the same swings as an unstaked one (within ${(100 * worstSwing).toFixed(1)} %) and each of the ${tells} tells the ladder lays hits for its stake (within ${worstStake.toFixed(1)} of a point of damage, the rounding)`);
+  assert(echoRow(T.rune_golem, 42, true) === echoRow(T.rune_golem, 42) && echoRow(T.rune_golem, 70, false) !== echoRow(T.rune_golem, 70) && echoRow(T.rune_golem, 70, false) === echoRow(T.rune_golem, 70, false), 'each of the two is built once, and Standard is the default');
+  const r = echoRow(T.rune_golem, 80, false), whole = unansweredFight(r).total, landed = unansweredFight(r).landed;
   assert(Math.abs(r.hazard!.damage * landed.hazard / whole - ECHO_MARK.share * landed.hazard) < 0.01 && Math.abs(r.heavy!.damage * landed.heavy / whole - ECHO_SLAM.share * landed.heavy) < 0.01,
     `a landing is worth its share of the fight: the mark ${(100 * r.hazard!.damage / whole).toFixed(0)} % and the slam ${(100 * r.heavy!.damage / whole).toFixed(0)} %, ${landed.hazard} marks and ${landed.heavy} slam in a fight (the document's 15 and 30)`);
   // ...so the swings (and the row's own casts) take up the rest. A cast already displaces swings, so the document's "cut" is a cut only where the tells land more often than they displace:
@@ -196,15 +208,22 @@ section('the tells take their share out of the swings: what a player who answers
 }
 
 // ---------------------------------------------------------------------------
-/** What a policy loses and takes, on the real sim at one decision a tick, over `n` seeds. `E` is an Echo of that level; null is the template at its own level (its HP the model's, its numbers the authored ones). */
-function measure(type: string, E: number | null, policy: Policy, n: number) {
+/** Easy's row at an equal level: the ladder with no stake on it, on the enemy and on the mate it called (which is dressed again, as Standard's, when it stands up, so it is stood up here). */
+function unstake(s: GameState, e: Enemy, E: number) {
+  for (const x of s.enemies) {
+    if (x !== e && x.mateOf !== e.id) continue;
+    x.row = echoRow(T[e.type], E, false); x.maxHp = x.hp = x.row.hp;
+    Object.assign(x, { state: 'idle', respawnIn: 0, deadFor: 0, x: x.spawnX, z: x.spawnZ, attackCd: 0 });
+  }
+}/** What a policy loses and takes, on the real sim at one decision a tick, over `n` seeds. `E` is an Echo of that level; null is the template at its own level (its HP the model's, its numbers the authored ones). */
+function measure(type: string, E: number | null, policy: Policy, n: number, staked = true) {
   const def = T[type], b = def.level, ttk: number[] = [], loss: number[] = [];
   let died = 0;
   for (let seed = 1; seed <= n; seed++) {
     const level = E ?? b;
     const a = arena(seed, type, level, weaponLine(level), E === null ? armourLine(b) : echoArmour(E), (s, e) => {
       if (E === null) { e.row = { ...def, hp: Math.round(anchoredHp(def)) }; e.maxHp = e.row.hp; } // the template: the row as the model would have built it
-      else { s.quest.eighth = 'done'; s.player.echo = 0; dress(s, e); }
+      else { s.quest.eighth = 'done'; s.player.echo = 0; dress(s, e); if (!staked) unstake(s, e, E); }
     });
     const f = fight(a, policy);
     if (f.died) died++;
@@ -225,7 +244,7 @@ withoutProcs(() => {
     const base = measure(id, null, policy, n);
     assert(base.died === 0, `${T[id].name}: the template at level ${T[id].level} is a fight that is won (${base.ttk.toFixed(1)} s, ${base.loss.toFixed(0)} % of health)`);
     for (const E of [42, 60, 80, 99]) {
-      const m = measure(id, E, policy, n), pair = isPaired(T[id], E);
+      const m = measure(id, E, policy, n, !trash), pair = isPaired(T[id], E); // a trash row is measured as Easy lays it: the pace model's cost, with the stake off
       const bodies = pair ? 2 * ECHO_PAIR.hp : 1;
       const wantTtk = trash ? bodies * ECHO_TTK : base.ttk * (mult * (ECHO_TTK + 1) - 1) / (mult * (ttkTemplate(T[id].level) + 1) - 1);
       const wantLoss = base.loss * (pair ? 3 * ECHO_PAIR.hp * ECHO_PAIR.hit : 1);
@@ -238,10 +257,38 @@ withoutProcs(() => {
   assert(ref.loss < none.loss - 5, `a golem at 80 costs ${ref.loss.toFixed(0)} % to a player who answers it and ${none.loss.toFixed(0)} % to one who does not`);
   const ref42 = measure('rune_golem', 42, REFERENCE, 16), none42 = measure('rune_golem', 42, ANSWERS_NOTHING, 16);
   assert(none.loss - ref.loss > none42.loss - ref42.loss, `...and the ladder is what widens it: ${(none.loss - ref.loss).toFixed(0)} points at 80 against ${(none42.loss - ref42.loss).toFixed(0)} at 42, where the sweep is all there is to answer`);
-  // a shooter, a camp member and a caster with a mark of their own: the rungs cost them nothing either
+  // a shooter, a camp member and a caster with a mark of their own: on Easy the rungs cost them nothing either
   for (const id of ['footpad', 'drowned_sailor', 'grave_hound', 'tide_hag']) {
-    const lo = measure(id, 42, ANSWERS_NOTHING, 10), hi = measure(id, 80, ANSWERS_NOTHING, 10);
-    assert(Math.abs(hi.loss - lo.loss) <= 4, `${T[id].name}: ${lo.loss.toFixed(1)} % at 42 and ${hi.loss.toFixed(1)} % at 80, with the rungs between`);
+    const lo = measure(id, 42, ANSWERS_NOTHING, 10, false), hi = measure(id, 80, ANSWERS_NOTHING, 10, false);
+    assert(Math.abs(hi.loss - lo.loss) <= 4, `${T[id].name}: ${lo.loss.toFixed(1)} % at 42 and ${hi.loss.toFixed(1)} % at 80 on Easy, with the rungs between`);
+  }
+});
+
+section('HOM-181: the ladder is a demand on Standard and Hard, and a dividend on Easy');
+withoutProcs(() => {
+  // 1. a player who answers nothing pays more than the pace model says, by the stake, and one who answers pays what he paid (3.6's 21 % at 60 and 15 % at 80); Easy is the old rule
+  const g = (E: number, p: Policy, staked = true) => measure('rune_golem', E, p, 16, staked);
+  for (const [E, lo, hi, answers] of [[60, 32, 40, [18, 25]], [80, 42, 52, [11, 20]]] as const) {
+    const none = g(E, ANSWERS_NOTHING), ref = g(E, REFERENCE), easy = g(E, ANSWERS_NOTHING, false);
+    assert(none.loss >= lo && none.loss <= hi && ref.loss >= answers[0] && ref.loss <= answers[1] && none.died === 0 && Math.abs(easy.loss - 30) <= 4,
+      `a golem at ${E}: ${none.loss.toFixed(1)} % to a player who answers nothing (${lo} to ${hi}), ${ref.loss.toFixed(1)} % to one who answers (${answers[0]} to ${answers[1]}, as it was), and ${easy.loss.toFixed(1)} % on Easy (the pace model's 30)`);
+  }
+  // ...and the setting is what picks the row: Easy lays the plain ladder, Standard and Hard the staked one
+  const dressed = (d: -3 | 0 | 3) => defOf(stand(world(70, d), 'rune_golem'));
+  assert(dressed(-3) === echoRow(T.rune_golem, 67, false) && dressed(0) === echoRow(T.rune_golem, 70, true) && dressed(3) === echoRow(T.rune_golem, 73, true),
+    'Easy dresses a respawn in the plain ladder and Standard and Hard in the staked one');
+  // 4. a shooter: answering a mark no longer costs more than ignoring it (it cost 19.0 % against 18.0 % at 60, and bought two seconds)
+  for (const E of [60, 75]) {
+    const none = measure('footpad', E, ANSWERS_NOTHING, 12), ref = measure('footpad', E, REFERENCE, 12);
+    assert(ref.loss < none.loss - 1.5 && ref.ttk <= none.ttk, `a footpad at ${E}: ${ref.loss.toFixed(1)} % and ${ref.ttk.toFixed(1)} s to a player who answers its mark, ${none.loss.toFixed(1)} % and ${none.ttk.toFixed(1)} s to one who does not`);
+  }
+  // 3. a pair is neutral on the clock: a kill in a pair pays ECHO_PAIR.xp of a single, and the time per kill (fight and the rest to full: 5 s, then 3 % a second) falls by about that much
+  const rest = (loss: number) => 5 + loss / 3, loop = (m: { ttk: number; loss: number }) => m.ttk + rest(m.loss);
+  for (const id of ['rune_golem', 'footpad']) {
+    const one = measure(id, 83, REFERENCE, 12), two = measure(id, 84, REFERENCE, 12);
+    const perKill = loop(two) / 2 / loop(one), xpHour = enemyXp(84, 'trash') * ECHO_PAIR.xp / (enemyXp(83, 'trash') * perKill);
+    assert(isPaired(T[id], 84) && !isPaired(T[id], 83) && Math.abs(xpHour / (enemyXp(84, 'trash') / enemyXp(83, 'trash')) - 1) < 0.1,
+      `${T[id].name}: a kill is ${(100 * perKill).toFixed(0)} % of the time at 84 and pays ${ECHO_PAIR.xp} of the XP, so the hour is ${(100 * xpHour / (enemyXp(84, 'trash') / enemyXp(83, 'trash'))).toFixed(0)} % of the one before it (the model's: 100, within 10)`);
   }
 });
 
@@ -367,7 +414,7 @@ section('check 6: the ratios are held');
   };
   for (const L of [50, 60, 70, 80, 90]) {
     const std = pays(L, 0), hard = pays(L, 3), easy = pays(L, -3);
-    assert(std === Math.round(enemyXp(L, 'trash') * xpParity(L, L)) && Math.abs(hard / std - 1.49) <= 0.03 && Math.abs(easy / std - 0.65) <= 0.03, `level ${L}: Standard pays ${std}, Hard ${(hard / std).toFixed(2)}x (1.49 ± 0.03), Easy ${(easy / std).toFixed(2)}x (0.65 ± 0.03)`);
+    assert(std === Math.round(enemyXp(L, 'trash') * (isPaired(T.rune_golem, L) ? ECHO_PAIR.xp : 1) * xpParity(L, L)) && Math.abs(hard / std - 1.49) <= 0.03 && Math.abs(easy / std - 0.65) <= 0.03, `level ${L}: Standard pays ${std}, Hard ${(hard / std).toFixed(2)}x (1.49 ± 0.03), Easy ${(easy / std).toFixed(2)}x (0.65 ± 0.03)`);
   }
 }
 
