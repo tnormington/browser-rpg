@@ -7,7 +7,7 @@
 // and B is a dodge-roll paid out of the same meter. None of them touch a damage number -- Agility is about your feet.
 import type { GameState, Player } from '../sim';
 import { grantXp } from './skills';
-import { MAX_LEVEL } from './xp';
+import { MAX_LEVEL, xpForLevel } from './xp';
 import { GRAVITY, JUMP_VELOCITY } from './data';
 
 export const SPRINT_SPEED = 9;        // u/s with shift held, against foot speed's 6 and the first mount's 10: a horse is still the faster way to travel
@@ -21,7 +21,15 @@ export const SPRINT_DRAIN = 20;       // stamina a second of sprinting: five sec
  */
 export const STAMINA_REFILL = 6;
 export const WINDED_UNTIL = 0.3;      // run the meter dry and sprint is locked out until it is back to this much of full: without a floor, sprint flickers on and off a tick at a time at zero
-export const SPRINT_XP_PER_UNIT = 2;  // XP for a unit of ground covered at a sprint: level 10 in about three minutes of running, 50 in an afternoon, and 99 out of reach, which is the shape the ore ladder has
+/**
+ * XP for a unit of ground covered at a sprint (HOM-189, docs/action-layer.md 10). It is set from the double jump: Agility 25 is 7,842 XP,
+ * which at 8 is 980 units of sprinting, the Greywater Road end to end and a bit over (at 2 it was 3,921 units, five laps). Sprint, rest
+ * for the breath, sprint again, never walking, on the real curve (the refill makes the floor the same for any rhythm): level 10 in half a
+ * minute, 25 in three, 50 in 33 minutes and 99 in 62 hours, which is still out of reach (the best rock, starmetal at 1,550 XP a 6.5 s swing,
+ * mines 99 in about fifteen). The old promise, "50 in an afternoon", is retired: one payment per unit against a curve that costs a tenth
+ * more a level cannot hold both ends, and the end that matters is 25.
+ */
+export const SPRINT_XP_PER_UNIT = 8;
 export const SPRINT_XP_EVERY = 30;    // ...paid in stretches of this many units, so the floaters come every three seconds or so rather than every tick
 
 /** The meter at the player's Agility level. Derived, never stored: it cannot go stale. */
@@ -91,6 +99,17 @@ export const DOUBLE_JUMP_CEILING = 2.9; // a press higher than this does nothing
 export const DOUBLE_JUMP_COST = 40;     // stamina, against a roll's 45 and a meter of 220 at the level it unlocks
 export const canDoubleJump = (p: Player, rise = 0) =>
   p.skills.agility.level >= DOUBLE_JUMP_LEVEL && p.stamina >= DOUBLE_JUMP_COST && rise <= DOUBLE_JUMP_CEILING;
+/**
+ * How far off the double jump is, for the one place that tells a player it exists (docs/action-layer.md 10.3): the levels and the XP
+ * still to earn, and the ground that XP is worth at a sprint, because "980 units of running" is a distance a person can picture and an
+ * XP figure is not. It is the most that is left: a chest's lamp pays part of it too. `null` once they have it.
+ */
+export function doubleJumpAway(p: Player): { levels: number; xp: number; ground: number } | null {
+  const { level, xp } = p.skills.agility;
+  if (level >= DOUBLE_JUMP_LEVEL) return null;
+  const owed = xpForLevel(DOUBLE_JUMP_LEVEL) - xp;
+  return { levels: DOUBLE_JUMP_LEVEL - level, xp: owed, ground: Math.ceil(owed / SPRINT_XP_PER_UNIT) };
+}
 /** The vertical speed that peaks at DOUBLE_JUMP_APEX from `rise` units above the floor (rising is at GRAVITY, so the apex is v^2 / 2g). */
 export const doubleJumpVelocity = (rise: number) => Math.sqrt(2 * GRAVITY * (DOUBLE_JUMP_APEX - rise));
 

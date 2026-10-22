@@ -136,14 +136,14 @@ section('Sprinting is what trains it');
   const ground = dist(s.player, from), earned = s.player.skills.agility.xp;
   assert(near(ground, SPRINT_SPEED * 4, 0.1), 'four seconds of sprinting covers thirty-six units of ground');
   assert(paid.length === 1 && paid[0] === SPRINT_XP_EVERY * SPRINT_XP_PER_UNIT, 'XP arrives in whole stretches, not a crumb a tick');
-  assert(near(earned + s.player.sprinted * SPRINT_XP_PER_UNIT, ground * SPRINT_XP_PER_UNIT, 0.1), 'every unit of it is worth two XP, paid or still owed');
+  assert(near(earned + s.player.sprinted * SPRINT_XP_PER_UNIT, ground * SPRINT_XP_PER_UNIT, 0.1), `every unit of it is worth ${SPRINT_XP_PER_UNIT} XP, paid or still owed`);
 
   const walk = quiet();
   run(walk, 4, { dirX: 1 });
   assert(walk.player.skills.agility.xp === 0 && walk.player.sprinted === 0, 'walking the same ground trains nothing: only a sprint counts');
 
-  // the meter at Agility 1 is 45 units of ground, so a run and a half pays the 83 XP level 2 asks for: the first level
-  // is under a minute of sprinting and getting your breath back, and the curve takes over from there
+  // the meter at Agility 1 is 45 units of ground, 360 XP at 8 a unit, against the 83 level 2 asks for: the first level
+  // is the first run, and the curve takes over from there
   const lvl = atLevel(1);
   for (let n = 0; n < 2; n++) {
     sprintSeconds(lvl);

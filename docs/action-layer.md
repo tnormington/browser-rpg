@@ -14,7 +14,7 @@ What the jump answers, what Agility unlocks, and what is in the chests (HOM-150)
 | 1. Is "roll = emergency, costs breath; jump = economical, tighter window" right? | **Half.** Breath binds the roll only below **Agility 17**, and no tell that exists today comes fast enough to spend it. The honest division is *the roll buys safety against everything and moves you five units; the jump buys safety against two things and keeps you where you are.* | Numbers in 1.1 to 1.3. The "tighter window" half is true up to Agility 22 and false after it, by design. |
 | 1. The fifth `CastKind` | **`'sweep'`.** Wind-up 0.9 s, a ring of reach + 5.5 u, a pair 0.9 s apart on elites and rares, a single on trash. 23 enemy types, from level 10, none in a pack, none in a dungeon. Damage is derived so that eating every sweep costs what the swings it displaces cost. | 2. |
 | 2. Is the net jumpable? | **Yes.** Same clearance as the sweep (1.1 u above the floor). | It already telegraphs, it is already a ground-level thing, and it is the cheapest reason to jump in the game. 3. |
-| 3. The double jump | **Agility 25, 40 breath, a fixed apex of 3.2 u above the floor you took off from** (not Agility-scaled, not a share of the first jump). | 25 is 12 minutes of unbroken sprinting. A fixed apex is what makes the reach rule hold. 4. |
+| 3. The double jump | **Agility 25, 40 breath, a fixed apex of 3.2 u above the floor you took off from** (not Agility-scaled, not a share of the first jump). | 25 was 12 minutes of unbroken sprinting and is now **3 (HOM-189, 10)**: the level stayed and the training rate came up to it. A fixed apex is what makes the reach rule hold. 4. |
 | 4. The reach rule | **Reach is gated on three discrete capabilities and nothing else.** Standable tops are 0.4 to 1.0 u (a hop) or 2.5 to 2.8 u (a double jump) above the floor beside them; **nothing is standable between 1.0 and 2.5 or above 2.8**; gaps are 2.5 u or less. **`JUMP_LIFT` stays**, but it may only ever scale *time in the air*, never *reach*. **The roll is not a reach capability: it covers 4.8 u and a sprinting hop at Agility 1 covers 4.98.** | 5. |
 | 5. The chests | **50, never respawning: 18 stashes (need nothing), 17 caches (need a hop), 15 hoards (need the double jump), in 9 open places and 5 dungeons.** They pay coin, Agility XP and four lanterns, and **no combat XP, no gear and no item the ladder produces.** Payouts are indexed on *the player's* level at the moment of opening, so parity cannot decay them. A counter ("Greywater 2 / 4") and a final lantern say when it is done. | 7. |
 | 6. The anti-kite rule | **Reach is measured rim-to-rim for both sides; a player on a rooftop (top 2.0 or more) is out of the fight and every enemy resets; a mounted player cannot perch.** | 6. |
@@ -174,6 +174,8 @@ The window is the hop's (0.238 s at Agility 1 to 0.479 at 99), against a 12 to 1
 
 ### 4.1 The level: 25
 
+> **Superseded in its numbers by 10 (HOM-189).** The level, 25, stands. The minutes below are at the old 2 XP a unit and are now a quarter of what is written; the premise that carried them, that a quarter of a player's walking is sprinted, did not survive the first board playtest.
+
 The file says it itself (`agility.ts`): *level 10 in about three minutes of running, 50 in an afternoon, and 99 out of reach.* I checked it against the real curve (`xp.ts`) with a bot that sprints whenever it can and stops when winded, which is what the meter allows (the refill is a share of the meter, so recovery from empty to 30 % is 1.8 s at any level):
 
 | Agility | XP | Minutes of continuous sprinting |
@@ -332,7 +334,7 @@ The two facts the card names decide this, and so does a third it did not: **ever
 | **A find** | | | 3 of the 15: a lantern |
 
 - **L is the player's combat level at the moment they open it**, not the region's. `0.6 L + 3` is the expected sale value of a kill's drops at level L (3.1 and the headless check in 8.4 of world-design; the mean kill, with elites and bosses in, is 1.51 times it), so a stash or cache pays a third of a mean kill's gold (about 5 gold at level 10, 11 at 30) and a hoard two thirds (15 at level 20, 27 at 40). That is all of the money this adds: **557 gold over all fifty, 371 of it through combat 31, which is 8 % of the 4,650 the climb to 30 pays** (7 of world-design: 4,400 to 4,900), and it leaves most of the 500 to 1,000 by which the sinks exceed income where it was. If the board wants chests richer in coin, the knob is the three multipliers, and every extra 0.5 x (0.6 L + 3) on every chest costs about 425 gold over the game. I priced it low on purpose: gold is the one currency the economy is short of by design, and the rest of what is in a chest is not gold.
-- **Agility XP is paid as a share of the level the player is on, capped.** "Half a level" is half of the XP from this level to the next, at the level they are *when they open it*, and **a lamp never pays more than 10,000 XP** (the span of level 50 is 10,612, about 11 minutes of sprinting at the ~15 XP/s the meter allows). So the same cache is worth 274 XP at Agility 20 and 1,974 at 40, and a player who comes back at 60 gets a hoard's 10,000 rather than 28,546. Over all 50 it is **at most 23.5 levels' worth (17 half-levels and 15 whole ones), and the cap bites a hoard from Agility 50**. It is the one thing a chest gives that sprinting does not give faster, and it is the reward for the capability the chest tested, which is the card's "reasons to explore other than quests and skills": a hoard pays the skill it asked for.
+- **Agility XP is paid as a share of the level the player is on, capped.** "Half a level" is half of the XP from this level to the next, at the level they are *when they open it*, and **a lamp never pays more than 10,000 XP** (the span of level 50 is 10,612, about 11 minutes of sprinting at the ~15 XP/s the meter allowed at 2 XP a unit; since HOM-189 it is 72 XP/s and about two and a half minutes, 10). So the same cache is worth 274 XP at Agility 20 and 1,974 at 40, and a player who comes back at 60 gets a hoard's 10,000 rather than 28,546. Over all 50 it is **at most 23.5 levels' worth (17 half-levels and 15 whole ones), and the cap bites a hoard from Agility 50**. It is the one thing a chest gives that sprinting does not give faster, and it is the reward for the capability the chest tested, which is the card's "reasons to explore other than quests and skills": a hoard pays the skill it asked for.
 - **The finds: four lanterns, an off-hand item whose only stat is light.** The torch (HOM-148) is the one item in the game whose stat is light and not damage or armour, which makes a lantern the one equippable that adds nothing to the gear ladder: it takes the off hand, it does nothing in a fight, and it lights the dark further. TORCH_REACH is 26.
 
   | Lantern | Light | `tier` | Where |
@@ -430,7 +432,7 @@ These are assertions in `src/golden-path.test.ts` (or a sibling that joins `npm 
 
 1. **Whether 238 ms is a fair window.** Seven ticks is a number; whether a person who has watched a bar for 0.5 s lands a key inside it nine times in ten is not, and the first sweep in the game (the Marsh Hog, level 10) is where it first matters. **Lever: `SWEEP_CLEAR`**, 1.0 gives 0.282 s. The bench's `--dodge hop` with `--dodge-rate` tells how a *bot* that misses some does; it cannot tell how a person does.
 2. **Whether people read a pair as a rhythm or as noise.** Two rings 0.9 s apart on every elite is the thing I am least sure of; the pair gap (0.9) is the lever, and the fallback is *singles on elites and pairs on rares only*, which costs the jump its place in the elite fights and leaves it in the ten rares.
-3. **The share of their walking that players sprint.** 25 is "an hour after Hale" only if a quarter of the walking is sprinted. If almost nobody holds Shift outside a fight the unlock is a thing most players never see; **the lever is the threshold** (20 is 7 minutes) and the answer is a telemetry count, not a tuning decision.
+3. **The share of their walking that players sprint.** 25 is "an hour after Hale" only if a quarter of the walking is sprinted. If almost nobody holds Shift outside a fight the unlock is a thing most players never see; **the lever is the threshold** (20 is 7 minutes) and the answer is a telemetry count, not a tuning decision. *(HOM-189: the board's first playtest never reached it. The lever pulled was the rate, not the threshold; see 10.)*
 4. **Chest density.** The four long roads (3,380 u) carry 18 of the 50, one per half a minute of walking; whether that reads as treasure everywhere or as too few is a playtest's call. The count is data, not code; the 12-in-50 hoards are the part that costs the most to place.
 5. **What `light` buys outdoors since HOM-149 brightened the world.** A lantern is *meant* to be a cosmetic with a modest cave perk; if light does nothing out of doors it is a trophy, which is acceptable for the three and thin for the Surveyor's.
 6. **The rooftop reset's feel**: a player who climbs one to escape a chase and watches every enemy turn and walk home may read it as a bug. The 2 s grace is the lever.
@@ -439,3 +441,50 @@ These are assertions in `src/golden-path.test.ts` (or a sibling that joins `npm 
 9. **The roll's cost in position (about 0.6 s of swings) and a walk-out's (1.4 s)** are arithmetic on the enemy's speed and the leash, not a measurement; the bench's `--dodge` counters will give the real figure.
 
 **Existing numbers this changes**, so nothing is surprised: `JUMP_VELOCITY`'s and `JUMP_LIFT`'s comments (5.4); `data.ts`'s `CastKind`; `castName`; nothing in `ENEMY_TYPES` moves except the 23 rows gaining a `sweep`; no `damage`, `hp` or `attackInterval` changes. `XP_PARITY` is untouched and chests do not read it.
+
+---
+
+## 10. Agility 25 has to be reachable by playing (HOM-189)
+
+The board reported: *"I cannot perform a double jump at localhost:5173."* It is not broken (a probe at `8ac3036`: Agility 24, no second jump; 25 and up, peak 3.20 and the double spent). The defect is that 25 could not be reached: at 2 XP a unit it was **12.3 minutes of sprinting and resting and never walking, 3,921 u of ground, five laps of the Greywater Road**. 4.1 priced that as "the first hour after Hale" on the premise that a quarter of a player's walking is sprinted, and 9.3 named the premise as the thing I could not verify. The playtest verified it the wrong way round. And it is load-bearing: **all 15 hoards** are behind the second jump (the reach test proves none opens on one jump, even at Agility 99).
+
+### 10.1 The training rate: one number, and nothing else pays
+
+The floor is the same for any rhythm of sprint and rest: a second of sprint costs 20 breath and the refill puts back `max / 6` a second, so the share of time spent running is `max / (max + 120)`, 45 % at Agility 1 and 83 % at 99. The rows below are that floor on the real curve (checked against the sim: a bot that sprints and rests reaches 25 in 3.1 minutes and 990 u at 8 a unit).
+
+| XP per unit | Agility 10 | **25** | 50 | 99 |
+| --- | --- | --- | --- | --- |
+| 2 (was) | 2.1 min | **12.3 min, 3,921 u** | 2.2 h | 247 h |
+| 4 | 1.1 min | 6.2 min, 1,966 u | 1.1 h | 123 h |
+| 6 | 0.7 min | 4.1 min, 1,312 u | 45 min | 82 h |
+| **8 (now)** | **0.5 min** | **3.1 min, 983 u** | **33 min** | **62 h** |
+
+**8**, because 7,842 XP at 8 is **983 u: the Greywater Road end to end (800 u) and a bit**. That is a distance a person can picture and one that every player covers, sprinting however little, before the first mount (combat 20, 10 u/s) ends their sprinting for good. 99 is still out of reach (62 hours of unbroken sprinting; the best rock, starmetal, mines it in about 15), so that half of the constant's old comment holds. **The other half does not: "50 in an afternoon" is retired.** One payment per unit against a curve that costs a tenth more a level cannot hold both ends, and I held the end that matters. Agility 50 is now 33 minutes at the floor; what it buys is mild (a 345 meter, a net's hold cut by a quarter, a hop 27 % higher), so I judged cheap levels past 25 harmless, and the lever to pull if not is the constant.
+
+The candidates that are not a rate, with their numbers:
+
+- **XP for a jump** costs nothing to press: a hop is 0.55 s in the air, so a mashed key is 109 hops a minute, and to be worth anything against sprinting's 30 to 50 XP a second (rests included) it would have to pay 20 or more a hop. A farm, and it rewards a held Space. **Rejected.**
+- **XP for a double jump** is behind the gate it would have to train toward. **Rejected** for 25; if it ever pays it is for using it, and it costs 40 breath, which already caps it.
+- **XP for a roll** is paid in breath, and 45 breath of rolling covers 4.8 u where 45 breath of sprinting covers 20: priced by ground it is four times worse than the thing it would join, priced flat it is a free farm against empty air. **Rejected.**
+- **XP for a landing, by fall height**: the world is flat and the tallest drop is a hoard's 2.8 u, thirty-odd places in the game. Climbing a step and jumping off it is a 1.3 s loop. **Rejected.**
+- **A flat payment for reaching a hoard** is what the lamp already is (a full level, half for a cache), paid once and only after the second jump exists. It cannot train toward the gate. It stays as the reward it is.
+
+So **sprint stays the only source**, and the card's other candidates are answered by it being cheaper to run than it was.
+
+### 10.2 The gate stays at 25
+
+The question was whether lowering it would make a hoard a cache-level reach. It would not: every hoard is unreachable on one jump at *every* level (`reach.test.ts`, 99 included), so the gate is the second jump's own level and moving it only moves when the second jump arrives. I kept 25 anyway. Under it the unlock vanishes into the skill's first screen of levels (20 is 1.9 minutes, 15 is under a minute: 4.1's argument, which the new rate sharpens), and 25 at 983 u is still done well before the mount. Nothing that quotes the number moves: `TIERS.hoard.needs`, the journal's words, `reach.test.ts`, `DOUBLE_JUMP_COST`, the apex and the ceiling.
+
+### 10.3 How a player ever finds out
+
+Three moments, in the order a player meets them. The surface is the UI Designer's; the rule is that these are the moments and this is what each says.
+
+1. **The sight.** The first time the player is near an unopened hoard with Agility under 25. Hale's watchtower is at (2, 26), on the starting square, so for everyone this is the first minute of the game. It says what the journal row says (7.4: *needs a second jump, Agility 25*) and **how far off it is**, from `doubleJumpAway(player)`: levels, XP, and the ground that XP is worth at a sprint. A new character reads "24 levels, 983 u of sprinting"; at Agility 20 it is 5 levels and 422 u. It has to say that **sprinting is what trains it** (Shift), because the unlock is a skill a player will not otherwise connect to a key.
+2. **The way.** Every sprint stretch already floats an Agility XP number (240 a stretch at Agility 1), and a level is a longer meter. No new rule; it is the moment the second jump's requirement turns from a sentence into a bar the player is filling.
+3. **The arrival.** The `levelup` event with `skill === 'agility'` and `level === DOUBLE_JUMP_LEVEL`: once, and it says what the key does (*press Space again in the air; 40 breath*). The admin panel's jump to 25 raises the same event.
+
+### 10.4 What this moves, and what I could not verify
+
+- **Chest lamps are a smaller share of a run**: a hoard at Agility 25 pays 898 XP, 12 seconds of sprinting where it was 50. A lamp is still a level, and 4.1's "the one thing a chest gives that sprinting does not give faster" is no longer true; the multipliers (0.5 and 1) are the lever if the board wants chests to matter to Agility again. `LAMP_CAP` and the 23.5 levels over all fifty are unchanged.
+- **Floaters get bigger**: a stretch pays 240 XP at Agility 1 (it was 60). Game Engineer's floater and the bar's fill see only larger numbers; nothing in the sim reads them.
+- **Not verified, in order of consequence:** (1) how much of their time players actually sprint: 983 u is 3.1 minutes at the floor and I guess half an hour to an hour of play, but I have no count; `player.sprinted` resets every stretch, so a lifetime ground counter is the telemetry that would settle it. (2) Whether 3 minutes of floor reads as earned: the reward is a mechanic the board has to go and find, and I cannot tell from a test whether it lands as a discovery or as a chore. (3) Whether a 33-minute Agility 50 cheapens the skill.

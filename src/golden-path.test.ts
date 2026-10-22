@@ -33,7 +33,7 @@ import {
 import { appearanceOf, ITEM_LOOKS, TIER_LOOKS, TIER5_COLOR, TIER6_COLOR, TIER7_COLOR, TIER8_COLOR } from './gear-look';
 import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
-import { DOUBLE_JUMP_APEX, DOUBLE_JUMP_CEILING, DOUBLE_JUMP_COST, DOUBLE_JUMP_LEVEL, maxStamina } from './sim/agility';
+import { DOUBLE_JUMP_APEX, DOUBLE_JUMP_CEILING, DOUBLE_JUMP_COST, DOUBLE_JUMP_LEVEL, SPRINT_SPEED, SPRINT_XP_PER_UNIT, doubleJumpAway, maxStamina } from './sim/agility';
 import { CHESTS, CHEST_R, CHEST_TOTAL, LAMP_CAP, PLACES, chestCount, chestReward, chestsIn, isOpened, openChest, placeById, type ChestDef } from './sim/chests';
 import { clearLine } from './sim/sight';
 import { playerStatuses } from './sim/status';
@@ -1951,6 +1951,30 @@ section('HOM-166 anti-kite: a step is not a free fight either way, and a rooftop
   high.player.y = 3.0; high.player.vy = 0.1; high.player.airborne = true; // above DOUBLE_JUMP_CEILING: a press does nothing and is not spent
   tick(high, { jump: true });
   assert(!high.player.airJumped && !hasEvent(high, e => e.t === 'jump'), 'a press above 2.9 above the floor does nothing, and does not spend the double jump');
+}
+{
+  // HOM-189, docs/action-layer.md 10: the double jump has to be reachable by playing. Agility 25 is a thousand units of sprinting, not four thousand
+  const run = quietState(1550), p = run.player;
+  let secs = 0, ground = 0, leg = 0, last = { x: p.x, z: p.z };
+  const away0 = doubleJumpAway(p)!;
+  // the floor of the training rate: sprint until the meter is dry, stand until sprint is allowed again, repeat; a new heading each rest so the ground is never a wall
+  while (p.skills.agility.level < DOUBLE_JUMP_LEVEL && secs < 20 * 60) {
+    const sprinting = !p.winded && p.stamina > 0;
+    tick(run, sprinting ? { dirX: Math.cos(leg), dirZ: Math.sin(leg), sprint: true } : {});
+    if (!sprinting && p.stamina >= maxStamina(p) * 0.3) leg += 2.1;
+    ground += Math.hypot(p.x - last.x, p.z - last.z); last = { x: p.x, z: p.z };
+    secs += TICK_DT;
+  }
+  assert(p.skills.agility.level === DOUBLE_JUMP_LEVEL, `sprint-and-wait reaches Agility ${DOUBLE_JUMP_LEVEL} (${(secs / 60).toFixed(1)} min, ${Math.round(ground)} u)`);
+  assert(secs <= 3.5 * 60 && ground <= 1100 && ground >= 0.8 * xpForLevel(DOUBLE_JUMP_LEVEL) / SPRINT_XP_PER_UNIT, `...in under three and a half minutes and about ${Math.round(xpForLevel(DOUBLE_JUMP_LEVEL) / SPRINT_XP_PER_UNIT)} u of ground: the Greywater Road once and a bit (800 u), not five laps of it`);
+  assert(away0.levels === DOUBLE_JUMP_LEVEL - 1 && away0.xp === xpForLevel(DOUBLE_JUMP_LEVEL) && away0.ground === Math.ceil(away0.xp / SPRINT_XP_PER_UNIT), `a new character is ${away0.levels} levels, ${away0.xp} XP and ${away0.ground} u of sprinting from it`);
+  assert(doubleJumpAway(p) === null, 'and once they have it there is nothing left to say');
+  const part = quietState(1551);
+  grantXp(part, 'agility', xpForLevel(DOUBLE_JUMP_LEVEL) - 100, 0, 0);
+  assert(doubleJumpAway(part.player)!.xp === 100 && doubleJumpAway(part.player)!.levels === 1 && doubleJumpAway(part.player)!.ground === Math.ceil(100 / SPRINT_XP_PER_UNIT), 'a hundred XP short is one level, a hundred XP, and that much ground at a sprint');
+  // the other end of the ladder, which the rate must not have brought within reach: 99 at the floor is days of unbroken sprinting
+  const hoursTo99 = xpForLevel(99) / (SPRINT_XP_PER_UNIT * SPRINT_SPEED) / 3600;
+  assert(hoursTo99 >= 40, `Agility 99 is still out of reach: ${hoursTo99.toFixed(0)} hours of sprinting even at the meter-free ceiling of ${SPRINT_XP_PER_UNIT * SPRINT_SPEED} XP a second`);
 }
 {
   // the arcs the windows in docs/action-layer.md 2.3 were worked out on: the step is the exact parabola, so JUMP_HEIGHT is the peak (Euler lost 0.15 of it)

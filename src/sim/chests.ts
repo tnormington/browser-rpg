@@ -22,7 +22,7 @@ export const TIERS: Record<ChestTier, { coin: number; lamp: number; needs: strin
   cache: { coin: 0.5, lamp: 0.5, needs: 'a hop onto a step' },
   hoard: { coin: 1, lamp: 1, needs: `a second jump, Agility ${DOUBLE_JUMP_LEVEL}` },
 };
-/** A lamp never pays more than this: the span of level 50 is 10,612, about eleven minutes of sprinting, so the cap bites a hoard from Agility 50. */
+/** A lamp never pays more than this: the span of level 50 is 10,612, about two and a half minutes of sprinting at 72 XP a second, so the cap bites a hoard from Agility 50. */
 export const LAMP_CAP = 10_000;
 /** The chest is a 0.8 u prop with no top: you stand beside it, it is not something to climb. */
 export const CHEST_R = 0.4;
