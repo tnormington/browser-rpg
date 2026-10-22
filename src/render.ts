@@ -32,27 +32,29 @@ import { GROUND_CELL, bakeUV, dress, groundDrift, hasSurface } from './surface';
 import type { Pick } from './cursor';
 
 /**
- * Every colour in the scene, in one place. Desaturated, cold and narrow: the world sits in a tight dark band so that
- * saturation is spent on exactly three things: fire (forge, gold), blood (enemies, damage) and arcane light (quest, magic).
+ * Every colour in the scene, in one place. Moonlit rather than drained (HOM-149): the terrain keeps its hues at a value
+ * you can actually read, instead of sitting in a near-black band, so the world is still night and still cold but a green
+ * reads as green. Saturation is still *spent* on fire (forge, gold), blood (enemies, damage) and arcane light (quest,
+ * magic): those stay the brightest, most saturated things in the frame, and nothing here may catch them up.
  */
 const PALETTE = {
-  // terrain: drained grey-green, ash, cold slate
-  grass: 0x3a4336, grassAlt: 0x465040, beyond: 0x181d17, dirt: 0x58574f, dirtAlt: 0x4a4b45,
-  slate: 0x4b525b, slateDark: 0x3a4048, boulder: 0x454b53, cave: 0x040405, caveFloor: 0x2a2e36, caveFloorAlt: 0x333842, caveWall: 0x343a44,
-  stone: 0x5d6169, stoneDark: 0x3d4046, anvil: 0x1b1c20,
-  bark: 0x4a3b2e, pine: 0x35493a,
+  // terrain: moonlit green, earth, cold slate
+  grass: 0x465a3b, grassAlt: 0x556a47, beyond: 0x2a3326, dirt: 0x6a6555, dirtAlt: 0x59574c,
+  slate: 0x626e7c, slateDark: 0x4b545f, boulder: 0x5a616b, cave: 0x040405, caveFloor: 0x3a404b, caveFloorAlt: 0x454c59, caveWall: 0x454d59,
+  stone: 0x767b85, stoneDark: 0x51555d, anvil: 0x1b1c20,
+  bark: 0x614c39, pine: 0x416b4a,
   // ore: the flecks are the one warm, light accent on a rock so a node reads at distance
-  ironRock: 0x6a7078, coalRock: 0x2f3036, ironFleck: 0xd9803c, coalFleck: 0x5a5d70, spent: 0x2e2f33,
+  ironRock: 0x828893, coalRock: 0x3c3e46, ironFleck: 0xd9803c, coalFleck: 0x5a5d70, spent: 0x3c3e44,
   // actors
-  player: 0x7a8794, skin: 0xc4a584, bone: 0xd9ceb2, steel: 0xb8bcc4,
-  boar: 0x78553f, wolf: 0x9a9a92, brute: 0x7a3030,
-  robe: 0x62497a, hood: 0x40314f, staffWood: 0x4a3b2e,
+  player: 0x93a1b0, skin: 0xc4a584, bone: 0xd9ceb2, steel: 0xb8bcc4,
+  boar: 0x8d6349, wolf: 0xa8a89f, brute: 0x923a3a,
+  robe: 0x76578f, hood: 0x513e63, staffWood: 0x614c39,
   // the three saturated families
   fire: 0xff6a1a, ember: 0xffb040, gold: 0xffc84a, forgeLight: 0xff7a2a,
   blood: 0xd02424, bloodDark: 0x701010, bloodLight: 0xff7a5a,
   arcane: 0x6ad8ff, arcaneLight: 0xc4efff, violet: 0xb070ff, heal: 0x5affd0,
   // atmosphere
-  moon: 0xa9b8cc, rim: 0x6d8aa8, skyZenith: 0x101a33, skyMid: 0x172536, horizon: 0x222c38, skyGround: 0x0c0f13, hemiSky: 0x4a5a74, hemiGround: 0x161b22,
+  moon: 0xc3d2e4, rim: 0x7fa0c0, skyZenith: 0x1a2b50, skyMid: 0x27405a, horizon: 0x3a4e62, skyGround: 0x161c24, hemiSky: 0x7390b4, hemiGround: 0x303a30,
   ash: 0xa8a49a, smoke: [0xbbbbbb, 0x888888] as number[],
 } as const;
 const P = PALETTE;
@@ -108,11 +110,12 @@ const SHADOW_EXTENT = 28, SHADOW_MAP = 2048;
  */
 const HOSTILE_TINT = 0x2c0e08;
 const RING_OPACITY = 0.42;
-const FOG = { near: 6, far: 42 };
+/** How far the eye carries on a clear night (HOM-149: was 6..42, a wall of haze at the edge of the combat arena). `clear` in weather.ts mirrors it; the rest only take distance away. */
+const FOG = { near: 12, far: 85 };
 /** Actors past this camera distance are not drawn or animated. Strictly beyond FOG.far, where fog is already 100%: nothing still meant to be visible is culled. */
 const FOG_CULL = FOG.far + 8;
 /** The fens' air: lifted and green-grey, a long open view. The Thornwood's: a dark green close about the player, the opposite of the fens. */
-const FEN_AIR = { color: new THREE.Color(0x48645a) }, WOOD_AIR = { color: new THREE.Color(0x2c4636) };
+const FEN_AIR = { color: new THREE.Color(0x5c8073) }, WOOD_AIR = { color: new THREE.Color(0x3d6349) };
 /** Withering Ground's circle: a sick yellow-green edge over a murkier fill, nowhere near the red of a mark that is about to land. */
 const WITHER_EDGE = 0xb4c85a, WITHER_FILL = 0x5f7228;
 /** The Warden's arcane gem floats just above his right fist (glTF loading strips the dot from "Fist.R"), carried by the bone. */
@@ -126,12 +129,12 @@ const FORGE_LIGHT = { intensity: 100, distance: 28, y: 1.2 };
  * black; a cold lantern the player carries and the braziers that burn down there are what is left.
  */
 const CAVE_LIGHT = {
-  sun: 0.03, rim: 0.05, hemi: 0.6, env: 0.2, sky: 0,
-  fog: { color: 0x05070b, near: 3, far: 32 },
-  lantern: { color: 0x8fb0e0, intensity: 65, distance: 18, y: 4.2 },
+  sun: 0.05, rim: 0.08, hemi: 0.95, env: 0.35, sky: 0,
+  fog: { color: 0x0b1018, near: 5, far: 55 },
+  lantern: { color: 0x8fb0e0, intensity: 85, distance: 22, y: 4.2 },
 };
 /** Daylight values the cave lighting fades from (what the constructor sets up). */
-const DAY = { sun: 4.4, rim: 1.5, hemi: 0.4, env: 0.4, sky: 1 };
+const DAY = { sun: 4.4, rim: 1.8, hemi: 0.85, env: 0.85, sky: 1 };
 /**
  * A lit torch in the off hand (HOM-148). Three things, and they are three because one is not enough: the flame throws a real warm
  * light that follows the player wherever they are, `hemi` and `env` lift what the cave's dark leaves of the room, and the fog is
@@ -157,32 +160,32 @@ const BRAZIERS = [{ x: -16.4, z: -38, s: 0.8 }, { x: -30.8, z: -60, s: 1, light:
  * ship's own ribs and cargo, and cold green-teal lantern light: a different dark from the Hollow's blue one. A real light in each room.
  */
 const GROTTO = {
-  floor: 0x26403f, floorAlt: 0x305250, wall: new THREE.Color(0.78, 1, 0.95), water: 0x2f6e74, timber: 0x6a5a48, lantern: 0x58d8c8,
-  fog: new THREE.Color(0x04100f), light: { color: 0x58d8c8, intensity: 150, distance: 22, y: 5.2 },
+  floor: 0x33544f, floorAlt: 0x3f6764, wall: new THREE.Color(0.78, 1, 0.95), water: 0x3a848b, timber: 0x7c6b56, lantern: 0x58d8c8,
+  fog: new THREE.Color(0x0a1d1b), light: { color: 0x58d8c8, intensity: 150, distance: 22, y: 5.2 },
 };
 /**
  * The Rotroot (bible 1.2): the Thornwood's roots grown through a hollow, fungal and organic. Dark loam floor, root-brown walls, great roots arching
  * overhead, and the only light is a cold sickly green-violet from the fungus. No water; the Grotto's turned about.
  */
 const ROTROOT = {
-  floor: 0x2a2a1e, floorAlt: 0x363322, wall: new THREE.Color(1, 0.72, 0.5), root: 0x4a3a2a, fungus: 0x9ae07a,
-  fog: new THREE.Color(0x0a0a06), light: { color: 0x8fd878, intensity: 120, distance: 20, y: 4.6 },
+  floor: 0x3a3a2a, floorAlt: 0x47442e, wall: new THREE.Color(1, 0.72, 0.5), root: 0x5e4a36, fungus: 0x9ae07a,
+  fog: new THREE.Color(0x15150d), light: { color: 0x8fd878, intensity: 120, distance: 20, y: 4.6 },
 };
 /**
  * The Cairn Hold (bible 1.2): a barrow's passage grave, dry and cold. A stand-in look until the 3D Artist's (HOM-99 ships the rooms): grey-violet flagstone, pale cut stone for walls, a cold
  * lamplight in each room and nothing else. It is a different dark from the other three: no green in it.
  */
 const CAIRN = {
-  floor: 0x2c2c34, floorAlt: 0x383842, wall: new THREE.Color(0.85, 0.88, 1),
-  fog: new THREE.Color(0x07080c), light: { color: 0xa8b4e0, intensity: 110, distance: 20, y: 4.8 },
+  floor: 0x3c3c46, floorAlt: 0x4a4a56, wall: new THREE.Color(0.85, 0.88, 1),
+  fog: new THREE.Color(0x0f1118), light: { color: 0xa8b4e0, intensity: 110, distance: 20, y: 4.8 },
 };
 /**
  * The Sundered Vault (HOM-112): the Spire's school cellars, dressed stone gone violet in the dark. A stand-in look until the 3D Artist's: cut slate flagstone, a cold violet lamplight in each room, and rune
  * light on the floor of the sanctum. Its own dark, with no green and no blue-grey in it: the Archmage's rooms are the one place that is lit by what is in them.
  */
 const VAULT = {
-  floor: 0x26242f, floorAlt: 0x322f40, wall: new THREE.Color(0.8, 0.74, 1),
-  fog: new THREE.Color(0x09070f), light: { color: 0xa090ff, intensity: 120, distance: 24, y: 3.9 },
+  floor: 0x35323f, floorAlt: 0x423e52, wall: new THREE.Color(0.8, 0.74, 1),
+  fog: new THREE.Color(0x12101c), light: { color: 0xa090ff, intensity: 120, distance: 24, y: 3.9 },
 };
 const FLOORS: Record<string, [number, number]> = { hollow: [P.caveFloor, P.caveFloorAlt], grotto: [GROTTO.floor, GROTTO.floorAlt], rotroot: [ROTROOT.floor, ROTROOT.floorAlt], cairnhold: [CAIRN.floor, CAIRN.floorAlt], vault: [VAULT.floor, VAULT.floorAlt] };
 /** Per-dungeon rock tint and air; the Hollow is the default and falls through. */
@@ -352,7 +355,7 @@ export class Renderer {
   /** How much of the rain and the wind reaches the player where they stand: the eased weather, cut to nothing underground. main.ts hands it to sfx.ts. */
   readonly weatherHeard = { rain: 0, wind: 0 };
   private skyClock = 0;
-  private fogLift = new THREE.Color(0x3b4754);
+  private fogLift = new THREE.Color(0x5a6b7c);
   private air = { fen: 0, wood: 0 };
 
   // orbit camera (render-side only; sim never sees it except via input direction)
@@ -368,7 +371,7 @@ export class Renderer {
     parent.appendChild(this.renderer.domElement);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.5;
+    this.renderer.toneMappingExposure = 1.6;
     this.setupSky();
     this.hemi = new THREE.HemisphereLight(P.hemiSky, P.hemiGround, DAY.hemi);
     this.scene.add(this.hemi);
@@ -931,8 +934,8 @@ export class Renderer {
     const air = this.zoneAir(x, z);
     this.caveFogColor.lerp((DUNGEON_LOOK[dungeonAt(x, z)?.id ?? ''] ?? { fog: this.caveFogHollow }).fog, 0.05); // the Grotto's dark is green-black, the Rotroot's loam-black, the Hollow's blue-black
     fog.color.setHex(P.horizon).lerp(this.fogLift, w.lift).lerp(FEN_AIR.color, air.fen * 0.5).lerp(WOOD_AIR.color, air.wood * 0.4).lerp(this.caveFogColor, depth);
-    fog.near = mix(w.fogNear + air.fen * 2 - air.wood * 2, CAVE_LIGHT.fog.near, depth);
-    fog.far = mix(w.fogFar + air.fen * 10 - air.wood * 7, CAVE_LIGHT.fog.far + TORCH_LIGHT.fogFar * lit, depth);
+    fog.near = mix(w.fogNear + air.fen * 4 - air.wood * 4, CAVE_LIGHT.fog.near, depth);
+    fog.far = mix(w.fogFar + air.fen * 20 - air.wood * 14, CAVE_LIGHT.fog.far + TORCH_LIGHT.fogFar * lit, depth);
     // the sky and the rain go with the daylight: nothing of the weather reaches underground (rain is gone by the first few metres of cave), and
     // what is left of it is also what is left to be heard
     const outside = 1 - THREE.MathUtils.clamp(depth * 5, 0, 1);

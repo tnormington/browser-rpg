@@ -17,12 +17,16 @@ export interface WeatherLook {
   fogNear: number; fogFar: number; lift: number;
 }
 
-/** Sits at the clear-night values render.ts started from (FOG 6..42): `clear` changes nothing, the rest only take things away. */
+/**
+ * Sits at the clear-night values render.ts started from (FOG 12..85): `clear` changes nothing, the rest only take things
+ * away. Since HOM-149 what they take is less: the darkest weather still leaves the world lit and the view long enough to
+ * play in, because a downpour is a mood and not a blindfold.
+ */
 export const WEATHER: Record<WeatherKind, WeatherLook> = {
-  clear:    { cover: 0.38, rain: 0, wind: 0,    sun: 1,    hemi: 1,    env: 1,    fogNear: 6, fogFar: 42, lift: 0 },
-  overcast: { cover: 0.82, rain: 0, wind: 0.45, sun: 0.6,  hemi: 0.9,  env: 0.85, fogNear: 6, fogFar: 36, lift: 0.15 },
-  rain:     { cover: 0.97, rain: 1, wind: 0.75, sun: 0.4,  hemi: 0.8,  env: 0.75, fogNear: 4, fogFar: 28, lift: 0.22 },
-  fog:      { cover: 0.62, rain: 0, wind: 0.08, sun: 0.45, hemi: 0.9,  env: 0.9,  fogNear: 2, fogFar: 18, lift: 0.5 },
+  clear:    { cover: 0.38, rain: 0, wind: 0,    sun: 1,    hemi: 1,    env: 1,    fogNear: 12, fogFar: 85, lift: 0 },
+  overcast: { cover: 0.82, rain: 0, wind: 0.45, sun: 0.7,  hemi: 0.95, env: 0.9,  fogNear: 12, fogFar: 72, lift: 0.15 },
+  rain:     { cover: 0.97, rain: 1, wind: 0.75, sun: 0.55, hemi: 0.9,  env: 0.85, fogNear: 8,  fogFar: 56, lift: 0.22 },
+  fog:      { cover: 0.62, rain: 0, wind: 0.08, sun: 0.6,  hemi: 0.95, env: 0.95, fogNear: 4,  fogFar: 36, lift: 0.5 },
 };
 
 /** Who can follow whom: the weather moves through overcast, it does not jump from a clear sky to a downpour. */

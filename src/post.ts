@@ -18,7 +18,8 @@ export const POST = {
   msaa: 4,
   ao: { radius: 1.2, distanceExponent: 1.5, thickness: 1.5, scale: 1.3, samples: 16, intensity: 0.95 },
   bloom: { strength: 0.25, radius: 0.25, threshold: BLOOM_THRESHOLD, knee: 1.5 },
-  grade: { crush: 0.015, shadowTint: [0.93, 0.99, 1.08], highlightTint: [1.06, 1.0, 0.93], tintAmount: 0.6, contrast: 1.12, vignette: 0.6, vignetteStart: 0.32 },
+  // saturation is the frame-wide vibrancy dial (HOM-149); the vignette is a frame, not a tunnel, so it starts late and stays shallow
+  grade: { crush: 0.004, shadowTint: [0.93, 0.99, 1.08], highlightTint: [1.06, 1.0, 0.93], tintAmount: 0.6, saturation: 1.22, contrast: 1.06, vignette: 0.28, vignetteStart: 0.5 },
 };
 
 const GRADE_SHADER = {
@@ -27,11 +28,11 @@ const GRADE_SHADER = {
     crush: { value: POST.grade.crush }, contrast: { value: POST.grade.contrast },
     shadowTint: { value: new THREE.Vector3(...POST.grade.shadowTint) },
     highlightTint: { value: new THREE.Vector3(...POST.grade.highlightTint) },
-    tintAmount: { value: POST.grade.tintAmount },
+    tintAmount: { value: POST.grade.tintAmount }, saturation: { value: POST.grade.saturation },
     vignette: { value: POST.grade.vignette }, vignetteStart: { value: POST.grade.vignetteStart },
   },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float crush, contrast, tintAmount, vignette, vignetteStart;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float crush, contrast, tintAmount, saturation, vignette, vignetteStart;
     uniform vec3 shadowTint, highlightTint; varying vec2 vUv;
     void main() {
       vec3 c = texture2D(tDiffuse, vUv).rgb;
@@ -39,6 +40,7 @@ const GRADE_SHADER = {
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       vec3 tint = mix(shadowTint, highlightTint, smoothstep(0.15, 0.6, l));  // cool shadows, warm highlights
       c *= mix(vec3(1.0), tint, tintAmount);
+      c = max(mix(vec3(l), c, saturation), 0.0);                             // push every hue out from its own grey
       c = clamp((c - 0.5) * contrast + 0.5, 0.0, 1.0);
       float d = distance(vUv, vec2(0.5)) * 1.4142;                            // 0 centre .. 1 corner
       c *= 1.0 - vignette * smoothstep(vignetteStart, 1.0, d);

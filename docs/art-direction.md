@@ -7,19 +7,42 @@ Rendered comparisons: `sh bench/art.sh` (frames per reference), `python bench/co
 
 - **Light does the work.** One strong key, deep unlit shadow, a warm practical (candles, campfires, forge) pooling against cold dark. Big planes catch light so facets read as form, not noise.
 - **Flat colour, few hues per object.** Variation comes from light, never from per-triangle tint. The cave is about five colours.
-- **Dark surround.** The frame edge falls to near-black; depth fades to dark, not to a lit haze.
+- **Dark surround.** The frame edge falls off; depth fades into air. **Amended by HOM-149** -- the board asked for a
+  brighter, more vibrant world and the references are no longer the whole of the answer: the surround darkens, it does
+  not go to black, and depth now fades into a lit haze you can see eighty metres through.
 - **Small bright accents on large dark areas.** Runes, fire, candle flames, blue crystals.
 - **Silhouette is the character.** Horns, flared pauldrons, cape: readable as a black shape.
+
+## Brightness and vibrancy (HOM-149)
+
+The board's note was that the world is "too dark and drab" and that the eye should carry farther. It is still night and
+still cold; what changed is that **unlit** is no longer the same as **invisible**, and a hue is allowed to read as that
+hue. Four dials do all of it, and they are the ones to reach for again -- not a repaint of the per-region palettes in
+`world-view.ts`, which ride on top of these and look after themselves.
+
+| Dial | Where | Was -> is |
+| --- | --- | --- |
+| Fill | `DAY.hemi`, `DAY.env` (`render.ts`) | 0.4 -> 0.85. The key is unchanged at 4.4: the complaint was about the shadow side, and lifting the key would only have blown out the open ground. |
+| Terrain value | `PALETTE` (`render.ts`) | The terrain, rock, bark and atmosphere entries come up roughly one stop and keep their hue. The three saturated families (fire, blood, arcane) are **untouched** -- they stay the brightest, most saturated things in the frame, which is the whole point of spending saturation on them. |
+| Saturation | `POST.grade.saturation` | New, 1.22. One frame-wide dial, applied after the shadow/highlight tint and before contrast. |
+| View distance | `FOG` (`render.ts`), `WEATHER` (`weather.ts`) | 6..42 -> 12..85, and every weather scaled with it. `FOG_CULL`, `ACTOR_RANGE` and `NODE_RANGE` are derived, so they follow on their own. |
+
+Also: exposure 1.5 -> 1.6, vignette 0.6-from-0.32 -> 0.28-from-0.5 (a frame, not a tunnel), black crush 0.015 -> 0.004,
+contrast 1.12 -> 1.06. The dungeons got the same treatment on their own constants (`CAVE_LIGHT`, the four
+`DUNGEON_LOOK` entries): each keeps its own dark, but the dark is one you can fight in.
+
+Looking at it: `node bench/world-look.mjs` shoots every region from the camera the player has, so the next change to any
+of these four dials can be judged the same way this one was.
 
 ## Rules
 
 | | |
 | --- | --- |
-| Key / fill / rim | Key (moon) `DAY.sun` 4.4, cold. Fill (hemisphere + sky environment) is low, 0.4, so shadows go deep. Rim `DAY.rim` 1.5 from the side opposite the key, so actors keep an edge against dark ground. Tune in `render.ts`; keep key:fill roughly 10:1. |
+| Key / fill / rim | Key (moon) `DAY.sun` 4.4, cold. Fill (hemisphere + sky environment) 0.85, so a shadow is dark but not empty. Rim `DAY.rim` 1.8 from the side opposite the key, so actors keep an edge against dark ground. Tune in `render.ts`; key:fill is about 5:1 since HOM-149, and raising the *key* is the wrong way to brighten anything -- it only blows out the open ground. |
 | Warm | Fire only: forge, braziers, gold. The forge light is the one warm pool and must not clip the building to white (`FORGE_LIGHT`, forge slot `light`). |
-| Fog / sky | Horizon and fog `0x222c38`, zenith a deep indigo `0x101a33`. Fog fades to dark, not a bright haze. |
+| Fog / sky | Horizon and fog `0x3a4e62`, zenith a deep indigo `0x1a2b50`. Fog is a lit night haze and carries to `FOG.far` 85, far enough that the next landmark is already in sight before the last one is behind you. |
 | Sky dome | Everything above the horizon is one shader (`sky.ts`), drawn after the opaque world so it only pays for empty pixels. It is the one place in the frame allowed to be vivid: the aurora is the exception to the emissive rule below, and it takes the arcane family (`P.heal` at the foot, `P.violet` at the top) so it still reads as this world's light. It is a clear-sky thing; `cover` takes it away. Nothing up there may out-glow the forge or compete with an enemy ring for attention: check against `bench/sky.sh`, and against `bench/sky-cost.mjs` for what the dome costs. |
-| Grade | Vignette 0.6 from 0.32, contrast 1.12, cold shadows / warm highlights (`POST.grade`). |
+| Grade | Vignette 0.28 from 0.5, contrast 1.06, saturation 1.22, cold shadows / warm highlights (`POST.grade`). |
 | Emissive | Saturation is for fire, blood and arcane light only. Arcane crystals (`CRYSTALS`) and tier 3+ gear glow are cold blue; neither may out-glow the forge. Emissive stays under the bloom threshold unless it is a beacon (`glow.ts`); the glow a light throws is a halo over it, not a hotter material (`halo.ts`). |
 | Colour | Flat per material. Ground and cave floor are tinted per vertex with low variance; never per triangle. |
 | Surface | Relief, not colour (`surface.ts`). Every material class carries a faint greyscale detail map and a normal map, so the key light has something to catch; the colour under them stays flat. Models are dressed too (`surface` on a `SlotDef`): nothing in the world is a bare flat colour except a light. |
