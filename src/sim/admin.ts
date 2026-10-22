@@ -1,10 +1,12 @@
-// QA tools as sim actions (HOM-114): set the combat level, put the player anywhere on the map, put any item in the bag,
+// QA tools as sim actions (HOM-114): set any skill's level, put the player anywhere on the map, put any item in the bag,
 // so a late-game fight, gate or recipe can be reached without playing up to it. Pure sim like every other action, so the
 // panel and the tests drive the same code. Nothing in the game itself issues one of these: main.ts only hands the HUD an
 // `admin` callback behind the dev flag (the dev server, or ?debug=1), and without that callback no panel is ever built.
 import type { GameState } from '../sim';
 import { MAX_LEVEL, xpForLevel } from './xp';
 import { ITEMS } from './items';
+import { SkillId } from './skills';
+import { maxStamina } from './agility';
 import { addItem } from './inventory';
 import { refreshPlayerStats } from './combat';
 import { ENEMY_TYPES, EnemyDef, SPAWNS } from './data';
@@ -16,12 +18,14 @@ export const MAX_GRANT = 999;
 
 export type AdminAction =
   | { k: 'level'; level: number }
+  | { k: 'skill'; id: SkillId; level: number }
   | { k: 'teleport'; x: number; z: number }
   | { k: 'give'; id: string; qty: number }
   | { k: 'gold'; amount: number };
 
 export function applyAdminAction(s: GameState, act: AdminAction) {
   if (act.k === 'level') setCombatLevel(s, act.level);
+  else if (act.k === 'skill') setSkillLevel(s, act.id, act.level);
   else if (act.k === 'teleport') teleport(s, act.x, act.z);
   else if (act.k === 'gold') giveGold(s, act.amount);
   else giveItem(s, act.id, act.qty);
@@ -41,6 +45,22 @@ export function setCombatLevel(s: GameState, level: number) {
   p.unlocked = Math.min(p.unlocked, want);
   refreshPlayerStats(s, true);
   p.energy = p.maxEnergy;
+}
+
+/**
+ * Put any skill at a level outright, the way the combat level is one button. Agility is the reason it exists: what it
+ * buys (the sprint meter, the dodge-roll, the double jump at DOUBLE_JUMP_LEVEL) is earned only by running, so the
+ * double jump — and every top authored in the band it owns — was the one capability the panel could not reach.
+ * Combat goes through setCombatLevel, so its health, energy and abilities still follow the level.
+ */
+export function setSkillLevel(s: GameState, id: SkillId, level: number) {
+  if (id === 'combat') return setCombatLevel(s, level);
+  const p = s.player;
+  if (!Number.isFinite(level)) return;
+  const want = Math.max(1, Math.min(MAX_LEVEL, Math.round(level)));
+  p.skills[id].xp = xpForLevel(want);
+  p.skills[id].level = want;
+  if (id === 'agility') p.stamina = maxStamina(p); // the meter is the level: arrive with the breath the new one holds, as a level-up does
 }
 
 /**

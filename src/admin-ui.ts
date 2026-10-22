@@ -1,10 +1,11 @@
-// The admin / QA panel (HOM-114): set the combat level, jump anywhere on the map, put any item in the bag and gold in
+// The admin / QA panel (HOM-114): set any skill's level, jump anywhere on the map, put any item in the bag and gold in
 // the purse (HOM-138: a trainer's ability has a price, and that price was the one thing the panel could not hand over).
 // Dev tooling, not a game feature: the HUD only builds it when main.ts passes an `admin` callback, which it does on the
 // dev server or with ?debug=1. Reads GameState; every change it makes leaves as an AdminAction, like any other panel.
 import type { GameState } from './sim';
 import { AdminAction, MAX_GRANT, destinations } from './sim/admin';
 import { MAX_LEVEL } from './sim/xp';
+import { SKILLS, SKILL_IDS, SkillId } from './sim/skills';
 import { MAX_GOLD } from './sim/shop';
 import { ITEMS } from './sim/items';
 import { regionAt } from './sim/world';
@@ -31,6 +32,7 @@ const button = (parent: HTMLElement, label: string, run: () => void, cls = 'btn 
 export class AdminUi {
   private panel: HTMLElement;
   private now: HTMLElement;
+  private skill: HTMLSelectElement;
   private level: HTMLInputElement;
   private where: HTMLSelectElement;
   private search: HTMLInputElement;
@@ -39,7 +41,7 @@ export class AdminUi {
   private open = false;
   /** The search the item list was last built for, so typing rebuilds it and nothing else does. */
   private shown: string | null = null;
-  /** Set when the panel opens: the level box takes the level the player actually has, once. */
+  /** Set when the panel opens, and when another skill is picked: the level box takes the level that skill actually has, once. */
   private fresh = false;
 
   constructor(root: HTMLElement, dock: HTMLElement, private send: (a: AdminAction) => void) {
@@ -52,10 +54,12 @@ export class AdminUi {
     titleRow(this.panel, 'Admin  (`)', () => this.setOpen(false));
     this.now = el(this.panel, 'anow');
 
-    el(this.panel, 'rgroup', 'Combat level');
+    el(this.panel, 'rgroup', 'Skill level');
     const lvl = el(this.panel, 'afield');
+    this.skill = this.buildSkills(lvl);
     this.level = numberBox(lvl, 1, MAX_LEVEL);
-    button(lvl, 'Set level', () => this.send({ k: 'level', level: Number(this.level.value) }));
+    this.skill.addEventListener('change', () => { this.fresh = true; });
+    button(lvl, 'Set level', () => this.send({ k: 'skill', id: this.skill.value as SkillId, level: Number(this.level.value) }));
 
     el(this.panel, 'rgroup', 'Teleport');
     const go = el(this.panel, 'afield');
@@ -96,8 +100,23 @@ export class AdminUi {
   update(s: GameState) {
     if (!this.open) return;
     const p = s.player;
-    if (this.fresh) { this.fresh = false; this.level.value = String(p.combat.level); }
-    this.now.textContent = `Combat ${p.combat.level}  -  at ${Math.round(p.x)}, ${Math.round(p.z)} in ${regionAt(p.x, p.z)?.name ?? 'nowhere'}`;
+    if (this.fresh) { this.fresh = false; this.level.value = String(p.skills[this.skill.value as SkillId].level); }
+    const id = this.skill.value as SkillId;
+    const picked = id === 'combat' ? '' : `  -  ${SKILLS[id].name} ${p.skills[id].level}`;
+    this.now.textContent = `Combat ${p.combat.level}${picked}  -  at ${Math.round(p.x)}, ${Math.round(p.z)} in ${regionAt(p.x, p.z)?.name ?? 'nowhere'}`;
+  }
+
+  /** Every skill the level box can be pointed at, Combat first because it is the one that was always there. */
+  private buildSkills(parent: HTMLElement): HTMLSelectElement {
+    const sel = document.createElement('select');
+    for (const id of SKILL_IDS) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = `${SKILLS[id].icon} ${SKILLS[id].name}`;
+      sel.appendChild(opt);
+    }
+    parent.appendChild(sel);
+    return sel;
   }
 
   /** Towns first, then every region and each dungeon's rooms, every option carrying its place in the list and what stands there. */

@@ -2,7 +2,8 @@
 // sim step like any other action, and that every place the panel offers is somewhere you can actually stand.
 // Run with `npm run verify`.
 import { GameState, NO_INPUT, createState, step } from './sim';
-import { AdminAction, BOSS_GROUP, MAX_GRANT, NAMED_RESPAWN, destinations, giveGold, giveItem, setCombatLevel, teleport } from './sim/admin';
+import { AdminAction, BOSS_GROUP, MAX_GRANT, NAMED_RESPAWN, destinations, giveGold, giveItem, setCombatLevel, setSkillLevel, teleport } from './sim/admin';
+import { DOUBLE_JUMP_COST, DOUBLE_JUMP_LEVEL, canDoubleJump, maxStamina } from './sim/agility';
 import { MAX_GOLD } from './sim/shop';
 import { MAX_LEVEL, xpForLevel } from './sim/xp';
 import { ABILITIES, ENEMY_TYPES, SPAWNS } from './sim/data';
@@ -58,6 +59,43 @@ section('Setting the combat level');
   run(s, { k: 'level', level: 2 });
   run(s, { k: 'level', level: 24 });
   assert(s.events.filter(e => e.t === 'unlock').length === owed(2, 24), 'going back down and up again hands them over a second time');
+}
+
+section('Setting a skill level');
+{
+  const s = quiet(), p = s.player;
+  const level = () => p.skills.mining.level; // read through a call: an assert on one literal must not narrow the next
+  setSkillLevel(s, 'mining', 60);
+  assert(level() === 60 && p.skills.mining.xp === xpForLevel(60), `Mining 60 with the XP it costs: ${p.skills.mining.xp}`);
+  setSkillLevel(s, 'mining', 5);
+  assert(level() === 5, 'it winds back down as readily as it goes up');
+  setSkillLevel(s, 'mining', 0);
+  assert(level() === 1, 'under 1 is level 1');
+  setSkillLevel(s, 'mining', 1e6);
+  assert(level() === MAX_LEVEL, `over the top is ${MAX_LEVEL}`);
+  setSkillLevel(s, 'mining', Number.NaN);
+  assert(level() === MAX_LEVEL, 'and a number that is not one leaves the level alone');
+
+  setSkillLevel(s, 'combat', 40);
+  assert(p.combat.level === 40 && p.skills.combat.level === 40 && p.hp === p.maxHp, 'combat goes through the combat setter, so health and abilities still follow it');
+}
+{
+  // why the tool exists: the double jump is bought with Agility, which is earned only by running, so without this the
+  // panel could not reach it -- and a top authored in the band it owns could not be stood on (HOM-159)
+  const s = quiet(), p = s.player;
+  assert(!canDoubleJump(p), `a fresh character is Agility ${p.skills.agility.level}, under the ${DOUBLE_JUMP_LEVEL} the double jump asks for: pressing again in the air does nothing`);
+  run(s, { k: 'skill', id: 'agility', level: DOUBLE_JUMP_LEVEL });
+  assert(p.skills.agility.level === DOUBLE_JUMP_LEVEL, 'the action reaches the sim through a plain step');
+  assert(p.stamina === maxStamina(p) && p.stamina >= DOUBLE_JUMP_COST, `and arrives with the meter the new level holds (${Math.round(p.stamina)}), which is what the jump is paid from`);
+  assert(canDoubleJump(p), 'so the double jump is there to be pressed');
+
+  // and it is really taken: a hop, then a second press in the air, is two takeoffs and the second is flagged as the double
+  const jumps = { all: 0, double: 0 };
+  for (let i = 0; i < 40; i++) {
+    step(s, { ...NO_INPUT, jump: i === 0 || i === 4 });
+    for (const ev of s.events) if (ev.t === 'jump') { jumps.all++; if (ev.double) jumps.double++; }
+  }
+  assert(jumps.all === 2 && jumps.double === 1, `two takeoffs off the panel's Agility, the second a double jump (${jumps.all} / ${jumps.double})`);
 }
 
 section('Teleporting');

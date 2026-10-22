@@ -79,10 +79,11 @@ takes a slot. `node bench/browser.test.mjs` (part of `npm run verify`) covers th
 ## The admin panel (QA)
 
 The playtest server is a dev build, so the game always has the QA panel: the **Admin** button in the
-bottom-left corner, or the **`** key. It sets your combat level, teleports you to any town or region,
+bottom-left corner, or the **`** key. It sets any skill's level, teleports you to any town or region,
 and puts any item in your bag — which is how a late-game fight, gate or recipe is reached without
 playing up to it. Levelling up through it hands over the abilities and the talent points the level
-owes, so a jumped-to character is the character, not a stand-in.
+owes, so a jumped-to character is the character, not a stand-in. Agility is the one to remember: the
+sprint meter, the dodge-roll and the double jump are all behind it, and it is earned only by running.
 
 It is dev tooling: a build the human downloads has no panel, no button and no key, because main.ts
 only wires it up behind the same `?debug=1` flag that `window.__debug` sits behind. The rules it uses
