@@ -48,6 +48,14 @@ export function sanitizeKeys(raw: unknown, slots: number): string[] {
 export const sameEntry = (a: BarEntry | null, b: BarEntry | null) =>
   !!a && !!b && (a.k === 'ability' && b.k === 'ability' ? a.i === b.i : a.k === 'item' && b.k === 'item' ? a.id === b.id : false);
 
+/**
+ * The loadout is the abilities on the bar and where they sit. Potions and food come and go from the bag, so they are not part of it:
+ * this is true when 
+ext puts a different ability in some slot than ar does. The HUD refuses that in combat (HOM-179).
+ */
+export const loadoutDiffers = (bar: BarLayout, next: BarLayout) =>
+  bar.length !== next.length || bar.some((e, i) => (e?.k === 'ability' ? e.i : -1) !== (next[i]?.k === 'ability' ? (next[i] as { i: number }).i : -1));
+
 /** Only a usable item (food, a potion) goes on the bar: there is nothing to press on a sword or a lump of ore. */
 export const barWorthy = (id: string) => !!ITEMS[id]?.use;
 

@@ -1,7 +1,7 @@
 // HOM-105: the action bar's rules. What a slot may hold (a spell or a consumable), what a stored layout is
 // allowed to be, and which keys a slot may take. The layout's own growth rule is checked in hud-ui.test.ts (HOM-104).
 // Run with `npm run verify`.
-import { BarEntry, DEFAULT_KEYS, RESERVED_KEYS, barWorthy, bindKey, bindRefusal, defaultBar, keyLabel, sameEntry, sanitizeBar, sanitizeKeys } from './bar-layout';
+import { BarEntry, DEFAULT_KEYS, RESERVED_KEYS, barWorthy, bindKey, bindRefusal, defaultBar, keyLabel, sameEntry, loadoutDiffers, sanitizeBar, sanitizeKeys } from './bar-layout';
 import { ABILITIES } from './sim/data';
 import { ITEMS } from './sim/items';
 
@@ -103,3 +103,29 @@ section('What the player reads on a slot');
 }
 
 console.log(`\nAll ${checks} action bar layout and keybinding checks passed.`);
+
+section('A book of more abilities than slots (HOM-179)');
+{
+  assert(ABILITIES.length > SLOT_COUNT, `the book (${ABILITIES.length}) is longer than the bar (${SLOT_COUNT}): the bar is a loadout`);
+  const fresh = defaultBar(SLOT_COUNT, ABILITIES.length);
+  assert(fresh.every(e => e?.k === 'ability'), 'a fresh bar is full of abilities and the rest wait in the book');
+  // a level-50 save: nine abilities arranged on a 16-slot bar, in a deliberate order with gaps
+  const mine = pad({ k: 'ability', i: 8 }, null, { k: 'ability', i: 3 }, { k: 'ability', i: 0 }, null, { k: 'item', id: FOOD }, { k: 'ability', i: 5 });
+  const back = bars(JSON.parse(JSON.stringify(mine)));
+  assert(JSON.stringify(back) === JSON.stringify(mine), 'a saved arrangement of nine abilities loads at level 99 exactly as it was, gaps and all');
+  assert(!back.some(e => e?.k === 'ability' && e.i >= 16), 'and the six new abilities are not pushed onto it: they wait in the book');
+  const old = bars([{ k: 'ability', i: 2 }, { k: 'ability', i: 0 }]);
+  assert(old[0]?.k === 'ability' && old[0].i === 2 && old[1]?.k === 'ability' && old[1].i === 0, 'a save from a shorter bar keeps the slots the player arranged');
+}
+
+section('The loadout is the abilities and where they sit (HOM-179)');
+{
+  const a = pad({ k: 'ability', i: 0 }, { k: 'ability', i: 1 }, null);
+  const swapped = a.slice(); [swapped[0], swapped[1]] = [swapped[1], swapped[0]];
+  assert(!loadoutDiffers(a, a.slice()), 'the same bar is not a change');
+  assert(loadoutDiffers(a, swapped), 'swapping two abilities is a change');
+  assert(loadoutDiffers(a, pad({ k: 'ability', i: 0 }, null, null)), 'clearing an ability is a change');
+  assert(loadoutDiffers(a, pad({ k: 'ability', i: 0 }, { k: 'ability', i: 1 }, { k: 'ability', i: 16 })), 'putting an ability from the book on the bar is a change');
+  assert(!loadoutDiffers(a, pad({ k: 'ability', i: 0 }, { k: 'ability', i: 1 }, { k: 'item', id: FOOD })), 'a potion on a free slot is not');
+  assert(!loadoutDiffers(pad({ k: 'item', id: FOOD }), pad(null, { k: 'item', id: FOOD })), 'moving food is not');
+}

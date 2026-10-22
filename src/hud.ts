@@ -38,7 +38,7 @@ import { DockWindow, HudWindow, el, dragData, parseDrag } from './dom';
 import { abilityArt, enemyArt, faceRow, itemArt, paintArt, preloadItemArt, setFaceArt } from './art';
 import { Dock } from './dock';
 import { loadBar, loadBarKeys, saveBar, saveBarKeys } from './storage';
-import { BarEntry, DEFAULT_KEYS, barWorthy, bindKey, bindRefusal, keyLabel, sameEntry, sanitizeBar, sanitizeKeys } from './bar-layout';
+import { BarEntry, BarLayout, DEFAULT_KEYS, barWorthy, bindKey, bindRefusal, keyLabel, loadoutDiffers, sameEntry, sanitizeBar, sanitizeKeys } from './bar-layout';
 
 const PUMMEL = ABILITIES.findIndex(a => a.kind === 'interrupt');
 
@@ -174,6 +174,7 @@ export class Hud {
   private xpSkill: SkillId = 'combat';
   /** One per bar slot: `entry` is what it currently fires, null when the slot is empty. */
   private slots: { root: HTMLElement; icon: HTMLElement; key: HTMLElement; aname: HTMLElement; qty: HTMLElement; sweep: HTMLElement; cdText: HTMLElement; lock: HTMLElement; lockText: HTMLElement; entry: BarEntry | null }[] = [];
+  private inCombat = false;
   private bar = sanitizeBar(loadBar(), SLOT_COUNT, ABILITIES.length);
   /** The key each slot answers to, the player's own: `keys[i]` is a `KeyboardEvent.code`, or '' for an unbound slot. */
   private keys = sanitizeKeys(loadBarKeys(), SLOT_COUNT);
@@ -354,13 +355,24 @@ export class Hud {
   private slotOfAbility(ability: number) { return this.bar.findIndex(e => e?.k === 'ability' && e.i === ability); }
 
   /** Put something in a slot (or empty it). It lives in one slot only, so its old one is cleared. */
-  private assign(barSlot: number, entry: BarEntry | null) {
+  private assign(barSlot: number, entry: BarEntry | null, handedOver = false) {
     if (barSlot < 0 || barSlot >= this.bar.length) return;
+    const next = this.bar.slice();
     if (entry) {
-      const old = this.bar.findIndex(e => sameEntry(e, entry));
-      if (old >= 0) this.bar[old] = null;
+      const old = next.findIndex(e => sameEntry(e, entry));
+      if (old >= 0) next[old] = null;
     }
-    this.bar[barSlot] = entry;
+    next[barSlot] = entry;
+    this.rearrange(next, handedOver);
+  }
+
+  /**
+   * Take `next` as the bar. Which abilities sit where is the loadout, and it is a plan, not a trick played mid-fight (as with talents):
+   * in combat it is refused, while food and potions can still be shelved. A new ability the game hands over (`handedOver`) is not the player's swap.
+   */
+  private rearrange(next: BarLayout, handedOver = false) {
+    if (this.inCombat && !handedOver && loadoutDiffers(this.bar, next)) return this.say('You cannot change your loadout in combat');
+    this.bar = next;
     this.barChanged();
   }
 
@@ -374,8 +386,9 @@ export class Hud {
       return this.assign(barSlot, { k: 'item', id: d.id });
     }
     if (d.slot >= this.bar.length || d.slot === barSlot) return;
-    [this.bar[barSlot], this.bar[d.slot]] = [this.bar[d.slot], this.bar[barSlot]];
-    this.barChanged();
+    const next = this.bar.slice();
+    [next[barSlot], next[d.slot]] = [next[d.slot], next[barSlot]];
+    this.rearrange(next);
   }
 
   private barChanged() {
@@ -681,7 +694,7 @@ export class Hud {
     const a = ABILITIES[ability], at = this.unlockQueue++ * UNLOCK_BANNER_GAP_MS;
     if (this.slotOfAbility(ability) < 0) {
       const free = this.bar.findIndex((e, i) => e === null && !!this.keys[i]); // a slot with no key is no help: it could not be pressed
-      if (free >= 0) this.assign(free, { k: 'ability', i: ability });
+      if (free >= 0) this.assign(free, { k: 'ability', i: ability }, true);
     }
     const key = this.keyForAbility(ability), where = key ? `press ${key}` : 'assign it in your spell book (P)';
     const barSlot = this.slotOfAbility(ability);
@@ -739,6 +752,7 @@ export class Hud {
 
   update(s: GameState, dtSeconds: number) {
     const p = s.player;
+    this.inCombat = p.inCombat;
     this.playerLvl.textContent = `Adventurer  Lv ${p.combat.level}`;
     this.goldEl.textContent = `Gold ${p.gold}`;
     // the buff row carries whatever is running; the line above it is left for the one thing that is a wait, not an effect

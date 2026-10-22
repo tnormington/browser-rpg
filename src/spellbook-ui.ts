@@ -17,7 +17,7 @@ export class SpellbookUi implements HudWindow {
   constructor(root: HTMLElement, private bar: () => (BarEntry | null)[], private keyOf: (ability: number) => string | null, private clear: (ability: number) => void) {
     this.panel = el(root, 'panel bookpanel');
     titleRow(this.panel, 'Spell Book  (P)', () => this.setOpen(false));
-    el(this.panel, 'shophint', 'Drag a spell onto the action bar to assign it. Right-click a bar slot (or ✕ here) to clear it. Click a slot\'s key to rebind it.');
+    el(this.panel, 'shophint', 'Your bar is a loadout: the book holds every ability, the bar only 16 of them. Drag a spell onto the bar to put it there (it takes the place of what was in that slot), right-click a bar slot to clear it. Not in combat. Click a slot\'s key to rebind it.');
     this.list = el(this.panel, 'recipes');
     this.win = panelWindow(this.panel);
     this.panel.style.display = 'none';
