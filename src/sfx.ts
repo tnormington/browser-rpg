@@ -5,6 +5,7 @@
 // take all three together.
 import type { GameEvent } from './sim';
 import { ABILITIES } from './sim/data';
+import { inCave, perchAt } from './sim/world';
 import { WEATHER_BEDS, bedFor, type WeatherLayer } from './ambience';
 import { VOICES, voiceOf } from './voices';
 import { Music } from './music';
@@ -32,6 +33,9 @@ const GROUPS = {
   fish:      { minGap: 400, maxVoices: 1 },
   cook:      { minGap: 300, maxVoices: 2 },
   flight:    { minGap: 1000, maxVoices: 2 },
+  jump:      { minGap: 100, maxVoices: 2 },   // a held key hops again on landing: the gap only guards that
+  land:      { minGap: 120, maxVoices: 2 },
+  chest:     { minGap: 500, maxVoices: 4 },   // its own group so the payoff never costs the Agility level-up stinger that follows it its voice
 };
 type Group = keyof typeof GROUPS;
 
@@ -77,6 +81,16 @@ const SOUNDS = {
   cookDone:  { files: ['cook-1', 'cook-2', 'cook-3'], vol: 0.5, jitter: 0.05 },
   takeoff:   { files: ['levelup'], vol: 0.45, rate: 0.8 },
   landing:   { files: ['thud'], vol: 0.6, jitter: 0.04 },
+  hop:       { files: ['swing-1'], vol: 0.18, jitter: 0.08, rate: 1.5 },   // the push-off: a breath of air, quieter than any swing
+  hopAir:    { files: ['swing-2'], vol: 0.3, jitter: 0.04, rate: 1.7 },   // the second takeoff: a sharper, higher whip, with a rising chime (see playEvents) no other sound in the game has
+  landGrass: { files: ['thud'], vol: 0.5, jitter: 0.05, rate: 1.1 },
+  landCave:  { files: ['step-cave-1', 'step-cave-2'], vol: 0.5, jitter: 0.06, rate: 0.8 },
+  landProp:  { files: ['thud'], vol: 0.45, jitter: 0.04, rate: 1.5 },   // a prop is hard and hollow, not turf: higher and shorter than the ground's thud
+  landKnock: { files: ['interrupt'], vol: 0.1, jitter: 0.1, rate: 0.5 },   // wood or stone answering under it
+  chestLid:  { files: ['thud'], vol: 0.55, jitter: 0.03, rate: 0.7 },   // the lid
+  chestCoin: { files: ['loot'], vol: 0.5, jitter: 0.03, delay: 0.14 },   // what is inside
+  chestBell: { files: ['levelup'], vol: 0.4, rate: 1.25, delay: 0.3 },   // a cache or better: the bright stinger
+  chestHoard:{ files: ['levelup'], vol: 0.4, rate: 1, delay: 0.5 },   // a hoard: the stinger again a fifth under, so it rings twice
   // the enemy's side of a fight. Its blow, cry, hit and death are its voice's (voices.ts); these two are shared, because
   // every shooter in the game is robed or a boss and every net is the same rope.
   bolt:      { files: ['swing-2'], vol: 0.3, jitter: 0.1, rate: 1.3 },
@@ -285,7 +299,11 @@ function tone(freq: number, dur: number, type: OscillatorType, vol: number, slid
   o.stop(t + dur + 0.02);
 }
 
-const arpeggio = (notes: number[], step: number, type: OscillatorType, vol: number) =>
+/** Airtime of the hop in progress, for how hard it lands; undefined on a walk-off fall (or a save loaded mid-air), which lands at DEFAULT_AIRTIME. */
+let landAirtime: number | undefined;
+const DEFAULT_AIRTIME = 0.4;
+
+const arpeggio =(notes: number[], step: number, type: OscillatorType, vol: number) =>
   notes.forEach((f, i) => tone(f, step * 2.2, type, vol, f, i * step));
 
 /** mount is the id of the mount being ridden, null on foot. Read from the state each tick, not from 'mount' events, so a save loaded mounted already sounds mounted. */
@@ -330,7 +348,25 @@ export function playEvents(events: GameEvent[], mount: string | null = null) {
         else if (ev.what === 'complete') play('stinger', [SOUNDS.complete, SOUNDS.completeLv]);
         break;
       case 'loot': play('loot', [SOUNDS.loot]); break;
-      case 'chest': play('stinger', [SOUNDS.unlock]); break; // no free creak yet: a found chest is the bright stinger, louder than a drop
+      case 'chest':   // the payoff of the exploration loop: the lid, the coin, and a bell that grows with the tier. No free creak yet.
+        play('chest', ev.tier === 'stash' ? [SOUNDS.chestLid, SOUNDS.chestCoin]
+          : ev.tier === 'cache' ? [SOUNDS.chestLid, SOUNDS.chestCoin, SOUNDS.chestBell]
+          : [SOUNDS.chestLid, SOUNDS.chestCoin, SOUNDS.chestBell, SOUNDS.chestHoard], { noGap: true, exempt: true });
+        break;
+      case 'jump':
+        if (ev.double) { play('jump', [SOUNDS.hopAir], { noGap: true }); tone(520, 0.16, 'triangle', 0.07, 1040); }
+        else play('jump', [SOUNDS.hop]);
+        landAirtime = ev.airtime;
+        break;
+      case 'land': {
+        // Heavier for a longer hop; a fall off an edge raises no 'jump', so it gets the default. Landing on a prop is not landing on turf.
+        const weight = Math.min(1.4, 0.6 + (landAirtime ?? DEFAULT_AIRTIME));
+        const top = perchAt(ev.x, ev.z, Infinity)?.top ?? 0;
+        const layer = top > 0 ? SOUNDS.landProp : inCave(ev.x, ev.z) ? SOUNDS.landCave : SOUNDS.landGrass;
+        play('land', top > 0 ? [{ ...layer, vol: layer.vol * weight }, SOUNDS.landKnock] : [{ ...layer, vol: layer.vol * weight }]);
+        landAirtime = undefined;
+        break;
+      }
       case 'crafted':
         if (ev.skill === 'cooking') { play('cook', [SOUNDS.cookDone]); break; }
         if (ev.skill === 'leatherworking') { play('leather', [SOUNDS.rackDone, SOUNDS.tack]); break; }
