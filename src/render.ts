@@ -274,8 +274,8 @@ export class Renderer {
   readonly camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.1, 200);
   private ground: THREE.Mesh;
   private player: THREE.Mesh;
-  private prev = { x: 0, z: 0 };
-  private curr = { x: 0, z: 0 };
+  private prev = { x: 0, y: 0, z: 0 };
+  private curr = { x: 0, y: 0, z: 0 };
   private raycaster = new THREE.Raycaster();
   private actors = new Map<number, Actor>();
   /** The fens' Withering Ground, each drawn as a boss's ground circle (makeTele) in the colour of the stain: made when the player first comes near. */
@@ -427,6 +427,7 @@ export class Renderer {
     for (const n of s.nodes) this.addNode(n);
 
     this.curr.x = this.prev.x = s.player.x;
+    this.curr.y = this.prev.y = s.player.y;
     this.curr.z = this.prev.z = s.player.z;
     this.post = new PostStack(this.renderer, this.scene, this.camera, quality);
     this.skyDome.setQuality(quality); this.rain.setQuality(quality);
@@ -1496,7 +1497,7 @@ export class Renderer {
 
   /** Called once per sim tick so we can interpolate between the last two states. */
   snapshot(s: GameState) {
-    const next = { x: s.player.x, z: s.player.z };
+    const next = { x: s.player.x, y: s.player.y, z: s.player.z };
     this.prev = Math.hypot(next.x - this.curr.x, next.z - this.curr.z) > 30 ? next : this.curr; // a long jump (a flight's landing, a respawn) is a cut, not a slide
     this.curr = next;
     for (const e of s.enemies) {
@@ -1923,6 +1924,9 @@ export class Renderer {
     if (this.inMap) return this.drawMap(s, ride);
     const x = this.prev.x + (this.curr.x - this.prev.x) * alpha;
     const z = this.prev.z + (this.curr.z - this.prev.z) * alpha;
+    // the hop rides the same interpolation as the ground does: taken raw, a half-second arc is 16 sim steps the display
+    // shows twice each, so the body climbs in stairs while its shadow slides
+    const py = this.prev.y + (this.curr.y - this.prev.y) * alpha;
     this.castPunch = Math.max(0, this.castPunch - 1 / 60);
     const nowMs = performance.now(), dtFx = Math.min(0.1, (nowMs - this.lastDraw) / 1000);
     this.lastDraw = nowMs;
@@ -1985,11 +1989,11 @@ export class Renderer {
       // auto-attack's swing timer is the sim's, so the wind-up can start early enough that the strike lands on the beat
       const tgt = pl.autoAttack && !pl.dead && s.targetId !== null ? s.enemies.find(e => e.id === s.targetId) : undefined;
       if (tgt && Math.hypot(tgt.x - pl.x, tgt.z - pl.z) <= AUTO_RANGE) pa.anticipate(pl.swing);
-      this.player.position.set(x, pl.y, z); // pl.y: the sim's jump offset, presentation only
+      this.player.position.set(x, py, z); // py: the sim's jump offset, presentation only
       this.player.rotation.x = pl.dead && !pa.hasDeath ? -Math.PI / 2 : 0;
       this.player.scale.setScalar(1);
     } else {
-      this.player.position.set(x, (pl.dead ? 0.5 : 1) + pl.y, z);
+      this.player.position.set(x, (pl.dead ? 0.5 : 1) + py, z);
       this.player.rotation.x = pl.dead ? -Math.PI / 2 : 0;
       this.player.scale.setScalar(1 + this.castPunch * 1.2);
     }

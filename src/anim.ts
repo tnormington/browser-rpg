@@ -22,6 +22,13 @@ export interface AnimDef {
   impact?: Record<string, number>;
   /** Full-body jump clip, stretched over the airtime. */
   jump?: string;
+  /**
+   * The airborne span of the jump clip, in clip seconds: the frame the feet leave the ground, and the frame they are
+   * reaching for it again. A pack's jump clip crouches before the push and absorbs after the landing, but the sim's
+   * takeoff and touchdown are instants, so playing the whole clip over the airtime runs the crouch while the body is
+   * already rising. Only this span is stretched; the recovery under it is `touchdown`'s squash. Default: the whole clip.
+   */
+  jumpSpan?: [number, number];
   /** No death clip on this rig: it topples onto its side procedurally and lies this high off the ground (world units). */
   lie?: number;
   /** No walk clip: hop this high (world units) while moving. */
@@ -85,6 +92,16 @@ export const GATHERS: Record<string, GatherPose> = {
 };
 
 /**
+ * The hop's own arms, in the body's frame, mirrored for the right side. The knight's Jump clip throws both of them
+ * straight over the head, which reads as a cheer rather than a hop, so the arms are flown by hand for the airtime:
+ * swept down and back off the push, brought forward and out as the ground comes up. `aim` runs after the mixer, so
+ * everything else in the hop is still the clip's.
+ */
+const JUMP_ARMS: Record<'up' | 'down', [number, number, number]> = { up: [0.26, -0.93, -0.26], down: [0.34, -0.88, 0.33] };
+const JUMP_ELBOW = 0.45;    // how far forward of the upper arm the forearm hangs: the arm's own bend, so it is not one stiff stick
+const JUMP_ARM_FADE = 0.11; // seconds the pose takes to take the arms over, and to hand them back after touchdown
+
+/**
  * Where a rider sits, in the fit wrapper's frame (world units): the point the hips settle on, `y` up from the feet's standing plane and `z` forward.
  * The saddle's own height is the mount's business (mount.ts); the Animator only knows how to bend a standing rig into a seat.
  */
@@ -132,8 +149,11 @@ export class Animator {
   private land = idle(0.3, 0.25);
   private twist: Pulse = { t: TWIST_END, dur: TWIST_END, peak: 0, amp: 0, dir: 1 };
   private air = 0;      // 0..1: vertical speed while airborne, stretches the body
+  private climb = 0;    // -1..1: the same, signed -- which way the hop's arms are swept
   private fall = 0;     // the fastest this hop has dropped (world units/s): how hard the touchdown lands
   private tumble = { t: 0, dur: 0 }; // the double jump's somersault: runs 0..dur, idle once t >= dur
+  private hopping = false; // airborne on a jump: the arms are the hop's between takeoff and touchdown
+  private hopArms = 0;  // 0..1: how much of them it actually has, eased toward `hopping` so neither handover snaps
   private deadT = 0;
   private slide = 0;
   private coil = LEAD;     // seconds the body spends drawing back before the strike (the wind-up the swing was started with)
@@ -261,10 +281,13 @@ export class Animator {
     else this.stall = Math.max(this.stall, dur);
   }
 
-  /** Takeoff: the jump clip is stretched over the airtime so it ends as the sim lands. */
+  /** Takeoff: the clip's airborne span (`jumpSpan`) is stretched over the airtime so it ends as the sim lands. */
   jump(airtime = 0.7) {
     const c = this.def.jump && this.actions.get(this.def.jump);
-    if (c && !this.holding) this.play(this.def.jump!, { once: true, fade: 0.06, speed: c.getClip().duration / airtime });
+    if (!c || this.holding) return;
+    const [from, to] = this.def.jumpSpan ?? [0, c.getClip().duration];
+    this.hopping = true;
+    this.play(this.def.jump!, { once: true, start: from, fade: 0.06, speed: (to - from) / airtime });
   }
 
   /**
@@ -290,15 +313,19 @@ export class Animator {
    */
   touchdown(): number {
     const weight = Math.min(1.7, Math.max(0.35, this.fall / HOP_FALL));
-    this.air = 0; this.fall = 0; this.tumble.t = this.tumble.dur;
+    this.air = 0; this.climb = 0; this.fall = 0; this.hopping = false; this.tumble.t = this.tumble.dur;
     this.land = { t: 0, dur: 0.12 + 0.05 * weight, peak: 0.3, amp: weight * 0.6, dir: 1 };
     // a quick hand-back: the jump clip ends arms-out, and at the default fade the leap's flung arms and the run's legs share the body for a fifth of a second
     if (this.def.jump && this.current === this.actions.get(this.def.jump) && !this.holding) { this.oneShot = false; this.loop(0, LAND_FADE); }
     return weight;
   }
 
-  /** Per-frame airborne state: vertical speed stretches the body. */
-  airborne(vy: number) { this.air = Math.min(1, Math.abs(vy) / 8); this.fall = vy === 0 ? 0 : Math.max(this.fall, -vy); } // the sim reports 0 whenever it is on the ground
+  /** Per-frame airborne state: vertical speed stretches the body, and sweeps the hop's arms from the push to the landing. */
+  airborne(vy: number) { // the sim reports 0 whenever it is on the ground
+    this.climb = Math.max(-1, Math.min(1, vy / 8));
+    this.air = Math.abs(this.climb);
+    this.fall = vy === 0 ? 0 : Math.max(this.fall, -vy);
+  }
 
   /** The wind-up tell, per frame: `kind` is the sim's cast kind (null = not winding up), `k` 0..1 through the wind-up. */
   telegraph(kind: string | null, k: number) { this.windKind = kind; this.wind = kind ? k : 0; }
@@ -338,6 +365,8 @@ export class Animator {
     this.time += dt;
     this.primed = Math.max(0, this.primed - dt);
     for (const p of [this.hit, this.lunge, this.land, this.twist, this.tumble]) p.t = Math.min(p.dur, p.t + dt);
+    // dying in the air leaves no touchdown, so the fall is what ends the hop there
+    this.hopArms += ((this.hopping && !this.holding ? 1 : 0) - this.hopArms) * Math.min(1, dt / JUMP_ARM_FADE);
     if (this.holding) this.deadT += dt;
     this.applyPose();
   }
@@ -375,6 +404,17 @@ export class Animator {
       const t = this.twist.t, hit = this.twist.peak;
       const spin = (t < hit ? -0.3 + 0.7 * smooth(Math.max(0, t - hit + 0.22) / 0.22) : 0.4 * (1 - smooth((t - hit) / (TWIST_END - hit)))) * this.twist.amp;
       this.turn('Abdomen', 0, spin * 0.6, 0); this.turn('Torso', 0, spin * 0.6, 0);
+    }
+    // the hop's arms, swept from the push to the landing by how fast the body is still climbing. Before sit(): in a saddle
+    // the reins win, whatever the horse is doing under the rider
+    if (this.hopArms > 0.01) {
+      const k = smooth((1 - this.climb) / 2), up = JUMP_ARMS.up, dn = JUMP_ARMS.down;
+      const dir: [number, number, number] = [up[0] + (dn[0] - up[0]) * k, up[1] + (dn[1] - up[1]) * k, up[2] + (dn[2] - up[2]) * k];
+      for (const side of ['L', 'R'] as const) {
+        const mx = side === 'L' ? 1 : -1;
+        this.aim(`UpperArm${side}`, `LowerArm${side}`, [dir[0] * mx, dir[1], dir[2]], this.hopArms);
+        this.aim(`LowerArm${side}`, `Palm${side}`, [dir[0] * mx, dir[1], dir[2] + JUMP_ELBOW], this.hopArms * 0.9);
+      }
     }
     if (this.seat) this.sit();
     if (this.workKind) this.work(GATHERS[this.workKind]);

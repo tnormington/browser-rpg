@@ -45,7 +45,10 @@ const SKIN = 0xb89a7e;
 export const SLOTS = {
   player: { file: 'knight', height: 2.0, look: { sat: 0.55, light: 1.9, named: { Skin: SKIN, Armor: 0x6a7684, ArmorLegs: 0x6a7684, Boots: 0x2a2622, Hands: SKIN } }, splitLegs: true,
     surface: { '*': 'plate', Skin: 'skin', Hands: 'skin', Boots: 'hide' },   // the knight's own armour is worn plate, not world iron
-    anim: { idle: 'Idle', move: 'Run', moveSpeed: 6, attack: ['Run_swordAttack', 'swordAttackJump'], upper: ['Run_swordAttack'], death: 'Death', jump: 'Jump', impact: { Run_swordAttack: 0.4, swordAttackJump: 0.62 } } },
+    // jumpSpan: the Jump clip is 1.21 s, of which 0 - 0.50 is a crouch and 0.88 - 1.21 the landing absorb. The hop is half a
+    // second, so the whole clip squeezed into it ran the crouch while the knight was already in the air: only 0.50 (the legs
+    // at full extension, feet leaving) to 0.88 (straight again, reaching for the ground) is the part that is actually airborne.
+    anim: { idle: 'Idle', move: 'Run', moveSpeed: 6, attack: ['Run_swordAttack', 'swordAttackJump'], upper: ['Run_swordAttack'], death: 'Death', jump: 'Jump', jumpSpan: [0.5, 0.88], impact: { Run_swordAttack: 0.4, swordAttackJump: 0.62 } } },
   warden: { file: 'wizard', height: 2.1, look: { sat: 0.6, light: 1.6, named: { Skin: SKIN, Clothes: 0x4c3b66, Hat: 0x33283f, Belt: 0x3a2d22, Gold: 0xb8893a } },
     surface: { '*': 'cloth', Skin: 'skin', Face: 'skin', Belt: 'hide', Gold: 'metal' }, anim: { idle: 'Idle', move: 'Walk' } },
   boar: { file: 'pig', height: 1.0, look: { sat: 0.5, light: 0.95, named: { 'Material.003': 0x93705a, Material: 0x3a281c } }, surface: 'hide',
