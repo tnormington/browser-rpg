@@ -261,11 +261,11 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     hazard: { name: 'Withering Ground', windup: 1.2, every: 4, first: 1.5, damage: 85, radius: 3, range: 14 },
     look: { model: 'hexer', scale: 1.25, tint: 0x6a3a8a } },
   ogre: { name: 'Hollow Ogre', level: 9, hp: 1250, damage: 42, attackInterval: 2.4, speed: 3.8,
-    aggroRadius: 9, leash: 18, attackRange: 2.8, radius: 1.2, xp: 240, respawn: 120,
+    aggroRadius: 9, leash: 18, attackRange: 2.8, radius: 1.2, xp: 240, respawn: 360, // HOM-169: 120 s on two spawns paid 2.7x a band's mean-kill hour at level 11; at 360 it is 0.9x. XP stays: it is the tutorial's bank
     heavy: { name: 'Boulder Slam', windup: 1.6, every: 7, first: 3, damage: 140, radius: 5 },
     look: { model: 'brute', scale: 1.15, tint: 0x3a4658 } },
   warden: { name: 'Hollow Warden', level: 11, hp: 1600, damage: 40, attackInterval: 2.4, speed: 4.0,
-    aggroRadius: 12, leash: 22, attackRange: 3.2, radius: 1.6, xp: 900, respawn: 180,
+    aggroRadius: 12, leash: 22, attackRange: 3.2, radius: 1.6, xp: 310, respawn: 600, // HOM-169: the boss rule, 10 x (20 + 11), on a boss's 10 minutes; it paid 900 on 180 s, 29x trash and the best farm to level 23 (docs/combat-99.md 5)
     heavy: { name: 'Seismic Crush', windup: 1.8, every: 8, first: 4, damage: 135, radius: 6.5 },
     hazard: { name: 'Falling Rock', windup: 1.6, every: 6, first: 5, damage: 80, radius: 3.2, range: 14 },
     look: { model: 'brute', scale: 1.5, tint: 0x5a6a9a } },

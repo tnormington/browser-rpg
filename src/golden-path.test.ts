@@ -1900,11 +1900,12 @@ section('HOM-158 the chests: placement, reward, opening once, and the save');
 
   const s0 = createState(1);
   const spawns = s0.enemies.map(e => ({ x: e.spawnX, z: e.spawnZ }));
-  const bosses = s0.enemies.filter(e => ENEMY_TYPES[e.type].respawn >= 300).map(e => ({ x: e.spawnX, z: e.spawnZ }));
+  // (HOM-169 put the Warden on 600 s and the Hollow Ogre on 360: the Hollow's two are the cave's own and were never in this 14 u rule, which is the lone bosses')
+  const bosses = s0.enemies.filter(e => ENEMY_TYPES[e.type].respawn >= 300 && e.type !== 'warden' && e.type !== 'ogre').map(e => ({ x: e.spawnX, z: e.spawnZ }));
   // what a spawn notices: its distance less its notice radius. Hale's 60 u square holds eleven spawns, so there the rule is 4 u outside every radius (the widest is 10) and not 16 from the spawn
   const woken = s0.enemies.map(e => ({ x: e.spawnX, z: e.spawnZ, r: ENEMY_TYPES[e.type].aggroRadius }));
-  // the Warden (180 s) is the Hollow's boss though the 300 s line above leaves him out: his hall is 22 u square, so no corner of it is 14 u from him
-  const bossNotice = s0.enemies.filter(e => ENEMY_TYPES[e.type].respawn >= 300 || e.type === 'warden').map(e => ({ x: e.spawnX, z: e.spawnZ, r: ENEMY_TYPES[e.type].aggroRadius }));
+  // the Warden is the Hollow's boss though the line above leaves him out: his hall is 22 u square, so no corner of it is 14 u from him
+  const bossNotice = s0.enemies.filter(e => (ENEMY_TYPES[e.type].respawn >= 300 && e.type !== 'ogre') || e.type === 'warden').map(e => ({ x: e.spawnX, z: e.spawnZ, r: ENEMY_TYPES[e.type].aggroRadius }));
   const near = (a: { x: number; z: number }, list: { x: number; z: number; r?: number }[]) => Math.min(...list.map(b => Math.hypot(a.x - b.x, a.z - b.z) - (b.r ?? 0)));
   for (const c of CHESTS) {
     const place = placeById(c.place)!, cave = inCave(c.x, c.z);
@@ -2688,7 +2689,7 @@ section('HOM-15 SECOND GOLDEN PATH: the first quest to its end, then the cave, t
   const SHARDS = recipeById('warden_edge')!.inputs.find(i => i.id === 'warden_shard')!.qty;
   let kills2 = 0;
   while (countOf(s, 'warden_shard') < SHARDS && kills2 < 14) {
-    for (let w = 0; st(warden) === 'dead' && w < 400; w++) run(s, 1); // waits out the respawn (never blocked: it is a timer)
+    for (let w = 0; st(warden) === 'dead' && w < ENEMY_TYPES.warden.respawn + 60; w++) run(s, 1); // waits out the respawn (never blocked: it is a timer; 400 s was a wait for a 180 s one)
     park();
     walkVia(s, mouthWalk); walkVia(s, [[-18, -62], [-18, -70], [-18, -75]]);
     for (let a = 0; a < 3 && st(warden) !== 'dead' && !s.player.dead; a++) huntOne(s, 'warden');
@@ -3648,9 +3649,11 @@ section('HOM-46 XP parity: ground you have outgrown pays less');
   assert(killXp(40, 'warden', 4604) === Math.round(warden.xp * 0.1), 'a level 40 gets the 10% floor: it still pays, a little');
   assert(killXp(1, 'boar', 4605) === boar.xp && killXp(5, 'boar', 4606) === Math.round(boar.xp * 0.8), 'a boar still pays a level 1 in full, and a level 5 four fifths');
   assert(xpParity(10, 10) === 1 && xpParity(1, 99) === 0.1 && xpParity(99, 1) === 1.25 && Math.abs(xpParity(12, 10) - 1.1) < 1e-9, 'the rule itself: 1 at parity, +5% a level above, clamped to 0.1 .. 1.25');
-  // what it does to the farm: the Warden's 900 XP shrinks as the player grows past level 11, the more so the further they go
+  // what it does to the farm: the Warden's 310 XP shrinks as the player grows past level 11, the more so the further they go
   const pay = (level: number) => Math.round(warden.xp * xpParity(warden.level, level));
-  assert(pay(11) === 900 && pay(15) === 720 && pay(20) === 495 && pay(30) === 90 && pay(11) > pay(15) && pay(15) > pay(20) && pay(20) > pay(30), `the Warden pays ${pay(11)} at 11, ${pay(15)} at 15, ${pay(20)} at 20 and ${pay(30)} at 30: it stops being the best farm in the game`);
+  assert(pay(11) === 310 && pay(15) === 248 && pay(20) === 171 && pay(30) === 31 && pay(11) > pay(15) && pay(15) > pay(20) && pay(20) > pay(30), `the Warden pays ${pay(11)} at 11, ${pay(15)} at 15, ${pay(20)} at 20 and ${pay(30)} at 30: it stops being the best farm in the game`);
+  // HOM-169 (docs/combat-99.md 5): it is a boss, on the boss rule and a boss's respawn, and killed for real it pays the 310
+  assert(warden.xp === 310 && warden.respawn === 600 && killXp(11, 'warden', 4607) === 310, 'the Warden pays 310 at level 11 and comes back after 600 s: a boss, not the best farm in the game');
 }
 
 // ---------------------------------------------------------------------------
