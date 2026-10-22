@@ -23,7 +23,7 @@ What it costs to put combat levels 42 to 99 in this game, where the enemies for 
 | The Hollow Warden | **900 XP becomes 310 (the boss rule) and its respawn 180 s becomes 600 s.** A windfall belongs in a quest lump, which is paid once, and not on a body that comes back. Not applied: it edits one assertion (`golden-path.test.ts:3653`). | 5 |
 | What fills 58 empty levels | **A blade every 8 levels from 48 (seven), one last armour step at 48, a talent row that takes the 44 points that have nowhere to go, and a new ability every 10 levels from 50 (six).** Armour has 13 % left in it, so the ladder past 48 is weapons, talents and abilities. | 6 |
 | The repeatable objective | **Writs: 2 a board, in each of the five towns, refilling 20 hours after you hand one in.** Ask 12 trash-kills' worth; **pay the same again** as a bonus, indexed on your level at hand-in, plus an Echo mark. **A supplement**: a full daily tour takes about 25 % off the road, and nothing caps the kills. | 7 |
-| HOM-163's shape | **Right, with four requirements** (already posted on this card): rewards in kill-equivalents not literal XP, a pure offer function, the enemy's level on the kill event, time passed in. | 7.4 |
+| HOM-163's shape (landed at `96d05d5`) | **The loop is right and the table stays a table. Four changes:** a reward that resolves against `trashXp(level)` instead of a linear `Scale`, a 20-hour refill per bounty (today it is on offer again at once), the enemy's level on the kill, `finishable` that knows about Echoes. | 7.4 |
 
 ---
 
@@ -78,8 +78,8 @@ The gathering skills already work this way: a swing pays a fixed share of the co
 ```
 cost(L)    = xpForLevel(L + 1) - xpForLevel(L)
 kpl(L)     = 46 + (K98 - 46) x (L - 40) / 58           mean kills a level, K98 = 90
-trash(E)   = cost(min(E, 98)) / (1.4345 x kpl(E))
-enemyXp(E, role) = round(trash(E) x { trash 1, elite 3, rare 6, boss 10 })
+trashXp(E) = E <= 40 ? 20 + E : cost(min(E, 98)) / (1.4345 x kpl(E))     the one function the writ and the Echo share
+enemyXp(E, role) = round(trashXp(E) x { trash 1, elite 3, rare 6, boss 10 })
 ```
 
 The role multipliers are 3.1's and are time-fair: an elite is about 3x a trash fight and a boss about 8x (3.4), so a writ's "12 trash, or 4 elites, or a boss" costs the player about the same minutes whichever it asks. `E` is the enemy's level; the kill pays `enemyXp(E, role) x xpParity(E, L)` as every kill does. `enemyXp` is the one new function. It prices **Echo rows**; the authored rows keep their `xp`, which the rule already agrees with (Vael's 610 against the formula's 650 at level 41: 6 % high, the price of continuity at 40 and not worth a row edit).
@@ -280,11 +280,11 @@ The armour row is the finding: **the ladder past level 48 cannot be armour.** HO
 
 | Question | Call |
 | --- | --- |
-| **What it pays** | A **bonus of 12 trash-kills' worth of XP**, `12 x trash(L)`, **paid on the player's level at hand-in**, on top of what the kills themselves paid. Plus **1 Echo mark**. No gold beyond the loot of the kills. |
-| **What it asks** | **12 trash-kill equivalents** of Echo rows of one species: 12 trash, **or 4 elites, or 1 boss and 2 trash** (the role multipliers are time-fair, section 2). Kills count when the Echo's level is within 3 of the player's level when the writ was accepted. |
-| **How often** | **Two slots on each board; a slot refills 20 hours after a writ is handed in.** Nothing banks: a slot unclaimed for a week offers one writ. A writ in progress survives a save and a level-up. |
-| **Obey parity?** | **The bonus does not; the kills do.** The same reason as the chests (7.4 of `action-layer.md`): a bonus on the player's level at hand-in never decays and never inflates. A writ pays the same share of a level at 45 as at 95. |
-| **Per town or global** | **Per town, five boards** (Hale's Rest, Saltmarrow, Thornwick, Highmoor, the Spire). The Echo setting is global. **A board names the species of its own region**, rotating with the number of writs completed, so a full tour is a reason to fly, and a board is a reason to be in that town. |
+| **What it pays** | A **bonus equal to the work: `perKill x count x trashXp(L)` XP** (`perKill` is 1.0), where `trashXp(L)` is `20 + L` to level 40 and section 2's above it, **paid on the player's level at hand-in**, on top of what the kills themselves paid. **Gold: the placeholder's `3 + L` stands** (a tip: 23 at level 20, against 15 a kill; the bible's economy, 7, is built to run short and doubling it would break that). From the Seal, **1 Echo mark**. |
+| **What it asks** | **8 to 12 kills as HOM-163's table has them** (3 for the Ridge Ogres, 6 for a caster), counted in trash-kill equivalents once the Seal is broken: **12 trash, or 4 elites, or 1 boss and 2 trash** (the role multipliers are time-fair, section 2). After the Seal each board also offers **one Echo writ**, `levelBand: 3` (HOM-163's `spire-peace`, "foes of your own mettle", already has the shape), counting Echoes within 3 levels of the player. |
+| **How often** | **Two bounties on each board, each its own slot; a slot refills 20 hours after it is handed in.** Nothing banks: a slot unclaimed for a week offers one writ. A writ in progress survives a save and a level-up. |
+| **Obey parity?** | **The bonus does not; the kills do.** The same reason as the chests (7.4 of `action-layer.md`): a bonus on the player's level at hand-in never decays and never inflates. A writ pays the same share of the road at 45 as at 95. |
+| **Per town or global** | **Per town, five boards** (Hale's Rest, Saltmarrow, Thornwick, Highmoor, the Spire), as built. The Echo setting is global. **A board's rows name the species of its own region**, so a full tour is a reason to fly and a board is a reason to be in that town. |
 | **Primary or supplement** | **Supplement.** 7.2 has the numbers. Nothing caps the kills, and a player who never opens a board reaches 99 in 44 hours. |
 
 ### 7.2 What it is worth
@@ -298,7 +298,7 @@ A kill-equivalent is a trash kill at parity. 12 of them is **17.9 % of a level a
 | **Rate** | 1.0x | **2.0x while fighting, 1.3x over the tour** |
 | 41 to 99 (5,689 trash-equivalents) | 44.1 hours | **23.7 days of the tour, about 33 hours** |
 
-**A full daily tour takes about a quarter off the road** and puts about half of that day's XP in the bonus. A player who tours once a week gets about a seventh of it. That is a modest size on purpose: enough that a player who has been away has a reason to go round the towns, small enough that nobody who plays four hours on a Saturday is behind someone who plays 85 minutes a day. **The bonus is `WRIT_BONUS_KILLS = 12` and it is the one number to turn.** With the 29 minutes of travel, the tour breaks even with simply fighting at a bonus of **6.3**: at 6 it is 0.98x (nobody tours), at 12 it is 1.31x and 99 is 33.6 hours, at 24 it is 1.97x and 99 is 22.4. So 12 is not generous, it is the smallest round number that pays for the walk; a board that wants the tour to be the way to play wants 18 to 24.
+**A full daily tour takes about a quarter off the road** and puts about half of that day's XP in the bonus. A player who tours once a week gets about a seventh of it. That is a modest size on purpose: enough that a player who has been away has a reason to go round the towns, small enough that nobody who plays four hours on a Saturday is behind someone who plays 85 minutes a day. **The bonus is `perKill` times the count (nominally 12), and `perKill` is the one number to turn.** With the 29 minutes of travel, the tour breaks even with simply fighting at a `perKill` of **0.53**: at 0.5 it is 0.98x (nobody tours), at 1.0 it is 1.31x and 99 is 33.6 hours, at 2.0 it is 1.97x and 99 is 22.4. So 1.0 is not generous, it is the smallest round number that pays for the walk; a board that wants the tour to be the way to play wants 1.5 to 2.
 
 **Echo marks** are the currency of section 6: **a blade step costs 20 marks**, about an hour of kills (a mean pull's elite and boss share is about 19 marks an hour at 1 an elite and 3 a boss) or two days of tours at one a writ. A player who never opens a board is never behind the curve, which is 6.1's rule for capstones: reliable, not gated on a daily.
 
@@ -307,16 +307,16 @@ A kill-equivalent is a trash kill at parity. 12 of them is **17.9 % of a level a
 - **Dailies as the road** (WoW before Legion). A cap on a day's XP is a cap on play, and the board asked for a *pull*. Every quest-log game that capped play by daily eventually removed it.
 - **Rested XP.** It rewards absence with no task and no destination; a writ rewards the same absence with a reason to be somewhere. I would add it only after a playtest says writs are not enough.
 - **A streak.** It needs a calendar day, and a calendar day needs a time zone. A 20-hour per-slot timer is a day that drifts earlier and needs no reset.
-- **Fixed bounties** (a table of "kill 4 X"). 58 levels of target rows is the authoring the whole of section 3 exists to avoid.
+- **A table of fixed targets per level** (a row for "kill 4 X" at every level). 58 levels of target rows is the authoring the whole of section 3 exists to avoid. The table HOM-163 built is a table of *places*, ten rows, and stays that size, because the reward scales and Echoes supply the level.
 
 ### 7.4 HOM-163's shape
 
-accept → track → turn in → re-accept **is right.** Four requirements, posted on this card and repeated here because the first and fourth are the expensive ones to retrofit:
+HOM-163 landed (`96d05d5`) while this was being written, and I read `sim/bounties.ts`. **accept → track → turn in → re-accept is right, and the table stays a table**: I withdraw the "pure offer function" I asked for in my note on this card, because two rows a board are already the two slots. `MAX_ACTIVE`, saving by id and target signature, `abandon` costing nothing, and `levelBand` are all kept. **Four things in it must change**, in the order they are expensive to retrofit:
 
-1. **A reward is not a literal XP number.** It is `bonusKills`, `marks` and (later) `goldKills`, resolved at hand-in against `enemyXp` and the player's level. A table of XP would need a row per level.
-2. **The offer is a pure function:** `offer(combatLevel, echoSetting, town, slot, completedCount) -> { species[], n, level }`, seeded by `completedCount`, so re-opening a board cannot re-roll it. It stores what it resolved when accepted.
-3. **A `kill` event carries the enemy's level** as well as `species`. A writ for "4 Marsh Hogs" past level 41 is "4 at level 56 or above".
-4. **Time comes in as an input.** `readyAt` per slot is in the save and is compared with a `now` the shell passes in. The sim never calls `Date`, and a test passes its own `now`.
+1. **A reward cannot be a literal XP number, and `Scale` cannot say this one.** `Scale` is `base + perLevel x level`, which is the rule exactly up to level 40 (`xp: { base: 20 x count, perLevel: count }`) and linear where the road is exponential above it. Add a form that resolves against a function: `xp: { perKill: 1 }`, meaning `perKill x count x trashXp(level)`, with `trashXp` the one function section 2 adds. Resolve it **at hand-in** (the chests' rule) and not at accept, which is a difference of one level, about 9 %.
+2. **A handed-in bounty is on offer again at once** (`done` is a counter, nothing waits). With a bonus equal to the work that is a 2x faucet with no pull and no rhythm. Add `readyAt` per bounty id to the save and a `now` the shell passes in; a bounty is takeable when `now >= readyAt`, and handing one in sets it 20 hours on. The sim never calls `Date`, and a test passes its own `now`.
+3. **A kill must carry the instance's level.** `bountyOnKill(s, type, region)` and `counts()` read `ENEMY_TYPES[type].level`, which is the authored row's. An Echo of a level-38 golem at 70 is a level-70 kill. Pass `defOf(e).level` (section 3.7) and `counts` compares that.
+4. **`finishable()` is computed once from the authored spawns.** After the Seal a `levelBand` row is finishable whenever Echoes are on, and not otherwise, so the board does not offer an Echo writ to a player who has switched them off.
 
 ---
 
@@ -328,7 +328,7 @@ accept → track → turn in → re-accept **is right.** Four requirements, post
 | 2 | `defOf(enemy)` through the 37 reads | me for 11, **Game Engineer for 26** | 1 |
 | 3 | `echoRow`, the setting, the respawn rule, the tell ladder as data | me | 2 |
 | 4 | The Echo switch and name plate level | Game Engineer | 3 |
-| 5 | Writs: the table, the offer function, `WRIT_BONUS_KILLS`, marks | me (the table); Game Engineer (the module, HOM-163) | 1, 3 |
+| 5 | Writs: the reward rule (`xp: { perKill }`, the 20-hour refill, the kill's level, `finishable`), the table's rewards and the Echo row, marks | Game Engineer (the module, 7.4's four changes); me (the rewards and `trashXp`) | 1, 3 |
 | 6 | Blades, the armour step, six abilities, the fifth talent tier | me (data and effects) | 3 |
 | 7 | The loadout bar | Game Engineer | 6 |
 
@@ -342,7 +342,7 @@ accept → track → turn in → re-accept **is right.** Four requirements, post
 
 Assertions in `src/golden-path.test.ts` or a sibling that joins `npm run verify`:
 
-1. **The rule is continuous and monotone.** `enemyXp(40, 'trash')` is within 3 % of 60; it rises with `E` to 98; `enemyXp(99)` equals `enemyXp(98)`; an elite is 3x, a rare 6x, a boss 10x.
+1. **The rule is continuous and monotone.** `trashXp(40)` is 60 and `trashXp(41)` is within 7 % of 61; it rises with `E` to 98; `enemyXp(99)` equals `enemyXp(98)`; an elite is 3x, a rare 6x, a boss 10x.
 2. **The pace is what section 1.3 says.** The sum of `kpl(L)` for 41 to 98 is 3,966 within 1 %, and at every `L` a Standard Echo trash kill pays `cost(L) / (1.4345 x kpl(L))` within 1 XP.
 3. **An Echo row is the model's.** For a spread of templates (`marsh_hog`, `rune_golem`, `spire_warden`, `archmage_vael`) at `E` = 42, 60, 80 and 99, the row's HP is `(TTK + 1) x DPS` within 2 %, and a bot on the real sim in line gear takes **14.2 s within 8 %** and loses **the template's share of health within 4 points**. Measured at `--fast 1`: the bible has already been bitten twice by `--fast 4`.
 4. **Echoes change nothing before the Seal, and everything is restored after.** A save with `echo: null` runs the golden path unchanged; switching off returns the authored rows at their next respawn.
@@ -372,7 +372,7 @@ Assertions in `src/golden-path.test.ts` or a sibling that joins `npm run verify`
 - **Whether the gear keeps pace.** The line assumes a blade every 8 levels on schedule. A player a blade behind is 9 to 19 % slower per set, the same as 3.3's table, and a player two behind takes up to half a bar from trash. *Lever: the blade's mark cost and the equip level.*
 - **Whether Echoes are fun.** The tell ladder is the whole of the variety, and 3.8 names what happens if it is not enough. This is the biggest unknown and a playtest is the only instrument.
 - **Whether a person reads a 1.7 s telegraph at level 70.** 3.4a's unknown, now applied to every trash row from 70. *Lever: the slam's share, 24 %.*
-- **The writ's pull.** 1.3x is a model of a person's evening, with a travel figure nobody has timed; the real unknown is whether anyone opens a board twice. *Lever: `WRIT_BONUS_KILLS`.*
+- **The writ's pull.** 1.3x is a model of a person's evening, with a travel figure nobody has timed; the real unknown is whether anyone opens a board twice. *Lever: `perKill`.*
 - **The pair at 84.** Neutral per kill on paper (23 % a body, 15 % faster a body); what it does to rest time, and so to the loop and to every hour in 1.3, is unmeasured. *Lever: drop the rung.*
 - **The first 41 levels in practice.** The Warden arithmetic assumes a full clear; it is a direction, not a prediction.
 
