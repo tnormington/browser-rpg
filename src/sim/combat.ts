@@ -35,6 +35,20 @@ export const SWEEP_CLEAR = 1.1;
 const clearsGround = (p: { x: number; z: number; airborne: boolean; y: number }) => p.airborne && p.y - (perchAt(p.x, p.z, p.y)?.top ?? 0) >= SWEEP_CLEAR;
 /** The standable prop the player is standing on, or null. Enemies cannot follow onto it, so it is where they reach to instead (see updateEnemies). */
 const perchOf = (p: { x: number; z: number; y: number; airborne: boolean }) => p.airborne || p.y <= 0 ? null : perchAt(p.x, p.z, p.y);
+/**
+ * The prop under the player's feet for reach and for the rooftop rule: unlike perchOf it holds through a hop, so a player on a step
+ * does not lose their reach (or a player on a roof their roof) for the half-second they are off it.
+ */
+const floorProp = (p: { x: number; z: number; y: number }) => perchAt(p.x, p.z, p.y);
+/**
+ * Distance from the player to `e` as their reach reads it: to the rim of the top they stand on, so a step changes who is standing where
+ * and nothing about who can hit whom (docs/action-layer.md 6, rule 1). The enemy's half is in updateEnemies.
+ */
+export const reachTo = (p: { x: number; z: number; y: number }, e: { x: number; z: number }) => Math.max(0, dist(p, e) - (floorProp(p)?.r ?? 0));
+/** A top this high is a rooftop: out of the fight. Nothing acquires a player on one, and a chase gives up after ROOFTOP_GRACE (rule 3). */
+export const ROOFTOP = 2.0;
+export const ROOFTOP_GRACE = 2;
+const onRoof = (p: { x: number; z: number; y: number }) => (floorProp(p)?.top ?? 0) >= ROOFTOP;
 /** How far to one side of the player a blocked shooter aims while it works round the cover between them (see updateRanged). */
 const ROUND_OFFSET = 3;
 /** A melee fighter that also throws (a `ranged` and a `heavy`) throws at a player further off than its reach plus this. */
@@ -205,7 +219,7 @@ function updateAutoAttack(s: GameState, dt: number) {
   if (!p.autoAttack) return;
   const t = enemyById(s, s.targetId);
   if (!t || !targetable(t)) return setAutoAttack(s, false);
-  if (p.swing > 0 || dist(p, t) > AUTO_RANGE) return;
+  if (p.swing > 0 || reachTo(p, t) > AUTO_RANGE) return;
   p.swing = interval;
   p.action = null;
   p.facing = Math.atan2(t.x - p.x, t.z - p.z);
@@ -305,8 +319,8 @@ function tryUse(s: GameState, slot: number) {
   if (a.kind !== 'heal' && a.kind !== 'guard') {
     target = enemyById(s, s.targetId);
     if (!target || !targetable(target)) return fail(s, 'target', slot);
-    if (dist(p, target) > a.range) return fail(s, 'range', slot);
-    if (a.minRange !== undefined && dist(p, target) < a.minRange) return fail(s, 'range', slot); // a leap has nowhere to go from their face
+    if (reachTo(p, target) > a.range) return fail(s, 'range', slot);
+    if (a.minRange !== undefined && reachTo(p, target) < a.minRange) return fail(s, 'range', slot); // a leap has nowhere to go from their face
     if (a.kind === 'interrupt' && !target.cast) return fail(s, 'nocast', slot); // costs nothing and does nothing
     if (a.dash) {
       if (p.root) return fail(s, 'rooted', slot); // the net holds your feet, and that is exactly what a leap needs
@@ -366,7 +380,7 @@ function tryUse(s: GameState, slot: number) {
       const d = Math.atan2(e.x - p.x, e.z - p.z) - aim;
       return Math.abs(Math.atan2(Math.sin(d), Math.cos(d)));
     };
-    const hit = s.enemies.filter(e => targetable(e) && dist(p, e) <= a.range && (e === target || angleTo(e) <= half))
+    const hit = s.enemies.filter(e => targetable(e) && reachTo(p, e) <= a.range && (e === target || angleTo(e) <= half))
       .sort((m, n) => dist(p, m) - dist(p, n));
     for (const e of hit) {
       const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), e, fx.cleaveDamage * mult);
@@ -544,6 +558,7 @@ function aggro(s: GameState, e: Enemy) {
   if (e.state !== 'idle') return;
   const def = defOf(e);
   e.state = 'chase';
+  e.roofFor = 0;
   e.attackCd = Math.max(e.attackCd, 0.6);
   if (def.heavy) e.heavyCd = Math.max(e.heavyCd, def.heavy.first);
   if (def.hazard) e.hazardCd = Math.max(e.hazardCd, def.hazard.first);
@@ -716,9 +731,10 @@ export function updateEnemies(s: GameState, dt: number) {
     if (e.state === 'idle') {
       if (dp > SIM_WAKE_RANGE) continue; // far from the player and at rest: there is nothing for it to do
       // no aggro in a town: not for a player standing in the square, and not from an enemy that has strayed into it
-      if (!p.dead && !isFlying(p) && dp <= aggroRadius(def, p.combat.level) && !inSafeZone(p.x, p.z) && !strayedIntoTown(e) && clearLine(e, p)) aggro(s, e);
+      if (!p.dead && !isFlying(p) && !onRoof(p) && dp <= aggroRadius(def, p.combat.level) && !inSafeZone(p.x, p.z) && !strayedIntoTown(e) && clearLine(e, p)) aggro(s, e);
     } else if (e.state === 'chase') {
-      if (p.dead || dist(e, { x: e.spawnX, z: e.spawnZ }) > def.leash || strayedIntoTown(e)) { // a chase that reaches a town gives up, like one that outruns its leash
+      e.roofFor = onRoof(p) ? e.roofFor + dt : 0; // a rooftop is out of the fight: the chase lets go once it has watched you up there for a while
+      if (p.dead || e.roofFor >= ROOFTOP_GRACE || dist(e, { x: e.spawnX, z: e.spawnZ }) > def.leash || strayedIntoTown(e)) { // a chase that reaches a town gives up, like one that outruns its leash
         startReturn(e);
         dropTarget(s, e.id, 'evade');
       } else if (e.stagger > 0) {

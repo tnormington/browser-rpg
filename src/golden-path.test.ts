@@ -16,6 +16,7 @@ import {
   CAVE_DOOR_Z, CAVE_PILLARS, CAVE_ROCKS, CAVE_ROOMS, COLLIDERS, LANDMARKS, PLAYER_RADIUS, ROCKS, TREES, WORLD_HALF,
   GREYWATER, REGIONS, SALTMARROW, THORNWICK, TOWNS, caveDepth, caveWallPoints, clampToWorld, inCave, regionAt, resolveCollisions, sameSideOfDoor,
   DUNGEONS, dungeonAt, dungeonById, mountsAllowed, SAFE_ZONES,
+  colliderIndexChanged,
 } from './sim/world';
 import { roadDist } from './sim/road';
 import { dungeonOpen } from './sim/dungeon';
@@ -40,7 +41,7 @@ import {
   EXECUTE_BONUS, EXECUTE_UNDER, TALENTS, TALENT_START_LEVEL, TIER_COST, TREE_IDS, WOUNDED_UNDER,
   abilityFromTalent, deriveTalents, refreshTalents, spentIn, spentTotal, talentById, talentPoints,
 } from './sim/talents';
-import { SWEEP_CLEAR, abilityOpen, reductionOf } from './sim/combat';
+import { ROOFTOP_GRACE, SWEEP_CLEAR, abilityOpen, reductionOf } from './sim/combat';
 import { PROCS } from './sim/procs';
 import { SHOP_STOCK, VENDOR, SHOP_REACH, BUY_MARKUP, buyPrice, HARBOUR_STOCK, HARBOUR_VENDOR } from './sim/shop';
 
@@ -1813,6 +1814,87 @@ section('HOM-151 y is real: standing on a top, falling off it, the double jump, 
     assert(bites >= 2, `a wolf bites a player standing in the middle of a rock it cannot enter (${bites} bites in 6s)`);
     assert(Math.hypot(wolf.x - rock.x, wolf.z - rock.z) >= rock.r + ENEMY_TYPES.wolf.radius - 1e-6, 'and it does so from outside the footprint: the enemy still cannot climb it');
   } finally { COLLIDERS.splice(COLLIDERS.indexOf(rock), 1); }
+}
+section('HOM-166 anti-kite: a step is not a free fight either way, and a rooftop is out of the fight (docs/action-layer.md 6, rules 1 and 3)');
+{
+  // a hog in `chase` 8 u off, an immortal player auto-attacking: on the ground, on a step, on a rooftop. Counts what each side lands over `secs`.
+  const rocks = { step: { x: 0, z: 0, r: 1.2, top: 1.0 }, roof: { x: 0, z: 0, r: 2.0, top: 2.8 } };
+  /** `fn` with the prop in the world (or none). The collider index is told both ways: it only notices a change in length, and a push then a splice is none. */
+  const withRock = <T>(rock: { x: number; z: number; r: number; top: number } | null, fn: () => T): T => {
+    if (rock) { COLLIDERS.push(rock); colliderIndexChanged(); }
+    try { return fn(); } finally { if (rock) { COLLIDERS.splice(COLLIDERS.indexOf(rock), 1); colliderIndexChanged(); } }
+  };
+  const duel = (seed: number, on: 'ground' | 'step' | 'roof', secs: number) => {
+    const rock = on === 'ground' ? null : rocks[on];
+    return withRock(rock, () => {
+      const g = quietState(seed), hog = enemyOf(g, 'marsh_hog');
+      placeAt(hog, 8, 0); hog.state = 'chase'; hog.attackCd = 0;
+      g.player.x = 0; g.player.z = 0; g.player.y = rock?.top ?? 0; g.player.hp = g.player.maxHp = 1e6;
+      g.targetId = hog.id; g.player.autoAttack = true;
+      const out = { dealt: 0, taken: 0, dropAt: -1, hog };
+      for (let n = 0; n < secs * 30; n++) {
+        tick(g);
+        for (const ev of g.events) {
+          if (ev.t === 'hit' && ev.target === 'player') out.taken++;
+          else if (ev.t === 'hit') out.dealt++;
+        }
+        if (out.dropAt < 0 && st(hog) === 'return') out.dropAt = n * TICK_DT;
+      }
+      return out;
+    });
+  };
+  const ground = duel(1601, 'ground', 15), step = duel(1601, 'step', 15);
+  assert(ground.dealt >= 5 && ground.taken >= 3, `baseline: on the ground the hog trades blows (${ground.dealt} landed, ${ground.taken} taken in 15 s)`);
+  assert(step.dealt >= ground.dealt * 0.8 && step.taken >= ground.taken * 0.8 && step.dropAt < 0,
+    `on a step the player answers the hit that lands, as on the ground (${step.dealt}/${ground.dealt} landed, ${step.taken}/${ground.taken} taken): the hog stops at its rim and the swing reads to it`);
+
+  // an ability reads the rim too: a target 4.1 u from the middle of a 1.2 step is 2.9 from its rim, inside Strike's 3
+  const rim = (on: 'ground' | 'step') => {
+    const rock = on === 'step' ? rocks.step : null;
+    return withRock(rock, () => {
+      const g = quietState(1602), hog = enemyOf(g, 'marsh_hog');
+      placeAt(hog, 4.1, 0);
+      g.player.x = 0; g.player.z = 0; g.player.y = rock?.top ?? 0; g.targetId = hog.id;
+      tick(g, { ability: SLOT.strike });
+      return hasEvent(g, e => e.t === 'fail' && e.reason === 'range');
+    });
+  };
+  assert(rim('ground') && !rim('step'), 'Strike at 4.1 u from the middle: out of range on the ground, in range from a 1.2 u step');
+
+  // rule 3: a chase on a rooftop gives up after 2 s, walks home, and nothing acquires the player up there
+  const roof = duel(1603, 'roof', 20);
+  assert(roof.dropAt >= ROOFTOP_GRACE - 0.1 && roof.dropAt <= ROOFTOP_GRACE + 1.5, `a hog chasing a player on a 2.8 roof gives up the chase (at ${roof.dropAt.toFixed(1)} s)`);
+  assert(roof.taken <= 2 && ['return', 'idle'].includes(st(roof.hog)) && Math.hypot(roof.hog.x - roof.hog.spawnX, roof.hog.z - roof.hog.spawnZ) < 0.5,
+    `...and is home and idle 20 s on, not re-acquiring (${roof.taken} hits taken, state ${st(roof.hog)})`);
+  assert(roof.hog.hp === roof.hog.maxHp, 'a reset, not a win: it heals to full on the way home');
+
+  // a roof is not a place to start a fight from, either: an idle hog inside its notice radius does not wake
+  withRock(rocks.roof, () => {
+    const g = quietState(1604), hog = enemyOf(g, 'marsh_hog');
+    placeAt(hog, 5, 0); hog.attackCd = 0;
+    g.player.x = 0; g.player.z = 0; g.player.y = rocks.roof.top; g.player.hp = g.player.maxHp = 1e6;
+    run(g, 5);
+    assert(st(hog) === 'idle' && g.player.hp === g.player.maxHp, 'nothing acquires a player on a rooftop');
+    g.player.y = 0; g.player.x = 20; hog.x = 15; hog.spawnX = 15;
+    run(g, 1);
+    assert(st(hog) === 'chase', 'the same hog acquires them the moment they are on the ground again');
+  });
+
+  // the half that makes rule 1 safe: hit from a roof and the target answers, then lets go, so a roof is not a free ranged-damage spot
+  withRock(rocks.roof, () => {
+    const g = quietState(1605), hog = enemyOf(g, 'marsh_hog');
+    placeAt(hog, 7, 0); hog.attackCd = 0;
+    atLevel(g, 10); // the throw is a level-3 ability; a hog is a level-10 fight
+    g.player.x = 0; g.player.z = 0; g.player.y = rocks.roof.top; g.player.hp = g.player.maxHp = 1e6; g.targetId = hog.id;
+    let throws = 0;
+    for (let n = 0; n < 40 * 30; n++) {
+      if (st(hog) === 'idle' || st(hog) === 'chase') g.targetId = hog.id; // the evade dropped it; the player clicks it again
+      tick(g, n % 30 === 0 ? { ability: SLOT.throw } : {}); g.player.cd.fill(0); g.player.energy = g.player.maxEnergy;
+      for (const ev of g.events) if (ev.t === 'hit' && ev.target !== 'player') throws++;
+      if (st(hog) === 'dead') break;
+    }
+    assert(throws >= 5 && st(hog) !== 'dead', `a player throwing from a rooftop for 40 s (${throws} hits landed) does not kill a hog: it resets to full each time it gives up`);
+  });
 }
 {
   // the double jump: a second takeoff in the air, once per hop, behind Agility, on a fresh press

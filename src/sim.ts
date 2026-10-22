@@ -67,6 +67,7 @@ export interface Enemy {
   hazardCd: number;  // seconds until the ground hazard may be marked again
   netCd: number;     // seconds until the net may be thrown again
   netRun: number;    // seconds left of the retreat a landed net bought it: the only time a shooter gives ground
+  roofFor: number;   // seconds the player it is chasing has stood on a rooftop: at ROOFTOP_GRACE it gives up (docs/action-layer.md 6, rule 3)
 }
 
 /** One incoming hit remembered for the death recap. `at` is game seconds (tick * TICK_DT). */
@@ -271,7 +272,7 @@ export function createState(seed = 1): GameState {
       hp: ENEMY_TYPES[sp.type].hp, maxHp: ENEMY_TYPES[sp.type].hp, state: 'idle',
       attackCd: 0, respawnIn: 0, deadFor: 0, hitFlash: 0, swing: 0, bleed: null, cast: null, stagger: 0,
       heavyCd: ENEMY_TYPES[sp.type].heavy?.first ?? 0, hazardCd: ENEMY_TYPES[sp.type].hazard?.first ?? 0, evadeFor: 0,
-      netCd: ENEMY_TYPES[sp.type].net?.first ?? 0, netRun: 0, sweepCd: ENEMY_TYPES[sp.type].sweep?.first ?? 0,
+      netCd: ENEMY_TYPES[sp.type].net?.first ?? 0, netRun: 0, roofFor: 0, sweepCd: ENEMY_TYPES[sp.type].sweep?.first ?? 0,
     })),
     drops: [],
     nextDropId: 1,
