@@ -22,8 +22,13 @@ export const TREES: Record<TreeId, { name: string; icon: string; blurb: string }
   hunt: { name: 'Hunt', icon: '🩸', blurb: 'Bleeds, crits and crowds.' },
 };
 
-/** Points that must already be spent in a tree before its tier opens. Index is the tier. */
-export const TIER_COST = [0, 2, 4, 8, 12];
+/**
+ * Points that must already be spent in a tree before its tier opens. Index is the tier. Tier 4 is the capstone (one talent, one ability) and tier 5 (docs/combat-99.md 6.2) is the tree
+ * past it: 18 is every rank the tree had, so it opens for a player who finished the tree and for no other, and five talents of four ranks (20) are what the 44 points past level 55 buy.
+ */
+export const TIER_COST = [0, 2, 4, 8, 12, 18];
+/** The tier the capstone ability sits on: the last of the tiers that is a choice between two. */
+export const CAPSTONE_TIER = 4;
 export const TALENT_START_LEVEL = 2; // the combat level that hands over the first point
 /** Talent points a player of this combat level has in total, spent or not. */
 export const talentPoints = (level: number) => Math.max(0, level - TALENT_START_LEVEL + 1);
@@ -107,6 +112,40 @@ export const TALENTS: TalentDef[] = [
     desc: r => `Every critical hit gives you back ${10 * r} energy.` },
   { id: 'hemorrhage', tree: 'hunt', tier: 4, name: 'Hemorrhage', ranks: 1, prereq: 'bloodscent',
     desc: () => 'Teaches Hemorrhage: tears the bleed off your target from range, dealing everything it had left at once.' },
+
+  // ---- Past the capstones (docs/combat-99.md 6.2, HOM-176): five of four ranks a tree, opening at 18 points. Nothing here is a prerequisite: the tier only opens to a finished tree ----
+  { id: 'annihilator', tree: 'fury', tier: 5, name: 'Annihilator', ranks: 4,
+    desc: r => `Your heavy hits (Crushing Blow, Colossus Blow, Reaping Blow, Bloodthirst, Final Reckoning) deal ${pct(0.06 * r)} more damage.` },
+  { id: 'momentum', tree: 'fury', tier: 5, name: 'Momentum', ranks: 4,
+    desc: r => `Every kill gives you back ${8 * r} energy: the next fight starts with the last one's breath.` },
+  { id: 'savagery', tree: 'fury', tier: 5, name: 'Savagery', ranks: 4,
+    desc: r => `Your auto-attack swings hit for ${pct(0.08 * r)} more.` },
+  { id: 'warcry', tree: 'fury', tier: 5, name: 'Warcry', ranks: 4,
+    desc: r => `Battle Fury hits ${pct(0.04 * r)} harder still: ${pct(0.15 + 0.04 * r)} in all.` },
+  { id: 'cull', tree: 'fury', tier: 5, name: 'Cull', ranks: 4,
+    desc: r => `Everything you deal hits ${pct(0.06 * r)} harder against a target below ${pct(EXECUTE_UNDER)} health.` },
+
+  { id: 'triumph', tree: 'bulwark', tier: 5, name: 'Triumph', ranks: 4,
+    desc: r => `Every kill heals you for ${pct(0.02 * r)} of your maximum health.` },
+  { id: 'steadfast', tree: 'bulwark', tier: 5, name: 'Steadfast', ranks: 4,
+    desc: r => `Guard and Rampart take ${pct(0.1 * r)} more of what is left off: the hit that still gets through is smaller.` },
+  { id: 'concussion', tree: 'bulwark', tier: 5, name: 'Concussion', ranks: 4,
+    desc: r => `Shield Bash comes back ${3 * r}s sooner.` },
+  { id: 'adrenaline', tree: 'bulwark', tier: 5, name: 'Adrenaline', ranks: 4,
+    desc: r => `Every hit that lands on you gives you back ${3 * r} energy.` },
+  { id: 'deflection', tree: 'bulwark', tier: 5, name: 'Deflection', ranks: 4,
+    desc: r => `Bolts from a distance hurt you ${pct(0.06 * r)} less.` },
+
+  { id: 'openveins', tree: 'hunt', tier: 5, name: 'Open Veins', ranks: 4,
+    desc: r => `Serrated Throw comes back ${(1.5 * r).toFixed(1).replace('.0', '')}s sooner.` },
+  { id: 'farreach', tree: 'hunt', tier: 5, name: 'Far Reach', ranks: 4,
+    desc: r => `Cleave, Whirlwind, Shockwave and Bloodbath reach ${(0.4 * r).toFixed(1)} units further.` },
+  { id: 'lifeblood', tree: 'hunt', tier: 5, name: 'Lifeblood', ranks: 4,
+    desc: r => `Every tick of a bleed you opened heals you for ${(0.3 * r).toFixed(1)}% of your maximum health.` },
+  { id: 'predatoreye', tree: 'hunt', tier: 5, name: "Predator's Eye", ranks: 4,
+    desc: r => `You crit ${pct(0.03 * r)} more often against anything that is bleeding.` },
+  { id: 'rupture', tree: 'hunt', tier: 5, name: 'Rupture', ranks: 4,
+    desc: r => `Hemorrhage pays out ${pct(0.15 * r)} more of the bleed it tears off.` },
 ];
 
 /** Ranks taken, by talent id. A talent absent from the record has never been bought. */
@@ -148,6 +187,21 @@ export interface TalentEffects {
   cleaveArc: number;      // extra degrees on Cleave's cone
   cleaveCost: number;     // energy off Cleave
   cleaveDamage: number;   // multiplier on what a sweep deals
+  heavyHit: number;       // multiplier on the heavy strikes (every strike that is not Strike itself)
+  killEnergy: number;     // energy a kill gives back
+  swingDamage: number;    // multiplier on an auto-attack swing's damage
+  furyBonus: number;      // added to Battle Fury's damage multiplier
+  cull: number;           // multiplier on everything dealt to a target below executeUnder's health
+  killHeal: number;       // share of maximum health a kill heals
+  guardDeepen: number;    // share of a guard buff's remaining damage taken that is taken off again (Guard, Rampart)
+  bashCdCut: number;      // seconds off Shield Bash's cooldown
+  hurtEnergy: number;     // energy every hit that lands on the player gives back
+  rangedReduction: number; // further reduction on a bolt from a distance
+  throwCdCut: number;     // seconds off Serrated Throw's cooldown
+  sweepReach: number;     // world units added to a sweep's reach
+  bleedHeal: number;      // share of maximum health a bleed tick heals
+  bleedCrit: number;      // added critical chance against a target that is bleeding
+  burstBonus: number;     // multiplier on the bleed Hemorrhage spends
 }
 
 export function deriveTalents(t: Talents): TalentEffects {
@@ -183,6 +237,21 @@ export function deriveTalents(t: Talents): TalentEffects {
     cleaveArc: 20 * r('whirling'),
     cleaveCost: 5 * r('whirling'),
     cleaveDamage: 1 + 0.12 * r('carnage'),
+    heavyHit: 1 + 0.06 * r('annihilator'),
+    killEnergy: 8 * r('momentum'),
+    swingDamage: 1 + 0.08 * r('savagery'),
+    furyBonus: 0.04 * r('warcry'),
+    cull: 1 + 0.06 * r('cull'),
+    killHeal: 0.02 * r('triumph'),
+    guardDeepen: 0.1 * r('steadfast'),
+    bashCdCut: 3 * r('concussion'),
+    hurtEnergy: 3 * r('adrenaline'),
+    rangedReduction: 0.06 * r('deflection'),
+    throwCdCut: 1.5 * r('openveins'),
+    sweepReach: 0.4 * r('farreach'),
+    bleedHeal: 0.003 * r('lifeblood'),
+    bleedCrit: 0.03 * r('predatoreye'),
+    burstBonus: 1 + 0.15 * r('rupture'),
   };
 }
 
@@ -208,12 +277,15 @@ export function learnBlocked(t: Talents, level: number, id: string): TalentFail 
   return null;
 }
 
+/** Ranks held in a tree in tiers below `tier`: what had to be bought before that tier's first rank could be (its own ranks, and the ones above, come after). */
+const spentBelow = (t: Talents, tree: TreeId, tier: number) => TALENTS.reduce((n, d) => n + (d.tree === tree && d.tier < tier ? t[d.id] ?? 0 : 0), 0);
+
 /** True when a saved build could have been bought legally at that level: no unknown ids, no over-spend, no skipped tier or prerequisite. */
 export function legalTalents(t: Talents, level: number): boolean {
   if (spentTotal(t) > talentPoints(level)) return false;
   return TALENTS.every(d => {
     const n = t[d.id] ?? 0;
-    return n === 0 || (n <= d.ranks && spentIn(t, d.tree) >= TIER_COST[d.tier] && prereqMet(t, d));
+    return n === 0 || (n <= d.ranks && spentBelow(t, d.tree, d.tier) >= TIER_COST[d.tier] && prereqMet(t, d));
   });
 }
 

@@ -84,7 +84,7 @@ section('Two new slots, and the sets that fill them');
   for (const [set, g, b] of pairs) assert(ITEMS[set[0]].stats!.armor === g && ITEMS[set[1]].stats!.armor === b && set.every(id => RECIPES.some(r => r.output.id === id && r.station === 'rack')), `${set[0]} / ${set[1]}: ${g} and ${b} armour, made at the rack`);
   const kit = deriveStats({ ...emptyEquipment(), hands: 'wolfskin_gloves', feet: 'wolfskin_boots' });
   assert(kit.armor === 12, 'gloves and boots add together');
-  assert(RECIPES.filter(r => r.skill === 'leatherworking').every(r => r.inputs.every(i => RAW_HIDES.includes(i.id) || i.id.endsWith('leather') || i.id === 'tanned_hide')), 'leatherworking eats only the hides the player already carries');
+  assert(RECIPES.filter(r => r.skill === 'leatherworking').every(r => r.inputs.every(i => RAW_HIDES.includes(i.id) || i.id.endsWith('leather') || i.id === 'tanned_hide' || i.id === 'echo_mark')), 'leatherworking eats only the hides the player already carries (and, for the last pair, the Echo marks that tan them: HOM-176)');
   assert(VENDORS.every(v => v.stock.every(id => !RAW_HIDES.includes(id))), 'and no vendor sells a hide');
   const old = JSON.parse(serialize(createState(1))); delete old.player.equipment.hands; delete old.player.equipment.feet; delete old.player.xp.leatherworking;
   const o = deserialize(JSON.stringify(old))!;
@@ -109,7 +109,7 @@ section('The three hides (HOM-107): marsh, thorn and moor, their leathers and th
     const rs = RECIPES.filter(r => r.output.id === gloves || r.output.id === boots || r.output.id === `${name}_leather`);
     assert(rs.length === 3 && rs.every(r => r.skill === 'leatherworking' && r.station === 'rack') && rs.find(r => r.output.id === gloves)!.level === lw, `...three recipes at the rack, the gloves at Leatherworking ${lw}`);
   }
-  assert(RECIPES.filter(r => r.station === 'rack').length === 6 + 9, 'nine recipes more: the rack makes fifteen things in all');
+  assert(RECIPES.filter(r => r.station === 'rack').length === 6 + 9 + 3, 'nine recipes more, and three for the Echohide step (HOM-176): the rack makes eighteen things in all');
 
   // 1. no recipe takes a hide below its gate: trace every leatherworking recipe back to the raw hide it starts from
   const rawOf = (id: string): string => RAW_HIDES.includes(id) ? id : rawOf(RECIPES.find(r => r.output.id === id)!.inputs[0].id);

@@ -1,7 +1,7 @@
 // Combat rules: targeting, abilities, damage, enemy AI, death and respawn. Pure sim, no DOM/Three.
 import type { GameState, GameEvent, Enemy, EnemyState, Player } from '../sim';
 import { MAX_REDUCTION } from './items';
-import { EXECUTE_BONUS, WOUNDED_UNDER } from './talents';
+import { EXECUTE_BONUS, EXECUTE_UNDER, WOUNDED_UNDER } from './talents';
 import { grantXp } from './skills';
 import { maxStamina, netHold, rolling } from './agility';
 import { applyBuff, breakFood, buffedDamage, buffedOutgoing, clearBuffs, maxHpOf } from './consumables';
@@ -19,7 +19,7 @@ import { clearLine } from './sight';
 import { isFlying } from './flight';
 import { dismount } from './mounts';
 import {
-  ABILITIES, ENEMY_TYPES, defOf, GCD, QUEUE_WINDOW, CRIT_CHANCE, CRIT_MULT, ENERGY_MAX, ENERGY_REGEN,
+  ABILITIES, AbilityDef, ENEMY_TYPES, defOf, GCD, QUEUE_WINDOW, CRIT_CHANCE, CRIT_MULT, ENERGY_MAX, ENERGY_REGEN,
   RESPAWN_DELAY, OOC_DELAY, OOC_REGEN_FRAC, TAB_RANGE, powerForLevel,
   STAGGER_TIME, STAGGER_HEAVY_KEEP, ACQUIRE_RANGE, ACQUIRE_BEHIND_RANGE, FRONT_HALF_ARC, aggroRadius,
   AUTO_RANGE, AUTO_BASE, AUTO_WEAPON_SHARE, AUTO_SLOT, BARE_SWING, RECAP_WINDOW, RECAP_MAX, TICK_DT, SIM_WAKE_RANGE, xpParity,
@@ -89,11 +89,13 @@ export const abilityOpen = (p: Player, slot: number) => {
     && (!a.talent || (p.talents[a.talent] ?? 0) > 0);
 };
 
-/** An ability's cooldown after talents: Second Wind comes back sooner with Rally, Pummel with Counterstrike and Stalwart, Crushing Blow with Relentless. */
+/** An ability's cooldown after talents: Second Wind comes back sooner with Rally, Pummel with Counterstrike and Stalwart, Crushing Blow with Relentless, Shield Bash with Concussion, Serrated Throw with Open Veins. */
 export function cooldownOf(p: Player, slot: number): number {
   const a = ABILITIES[slot], fx = p.talentFx;
   if (a.kind === 'heal') return Math.max(1, a.cooldown - fx.healCdCut);
   if (a.kind === 'interrupt') return Math.max(1, a.cooldown * fx.pummelCdMult - fx.pummelCdCut);
+  if (a.kind === 'bash') return Math.max(1, a.cooldown - fx.bashCdCut);
+  if (a.kind === 'dot') return Math.max(1, a.cooldown - fx.throwCdCut);
   if (a.tag === 'crush') return Math.max(1, a.cooldown - fx.crushCdCut);
   return a.cooldown;
 }
@@ -228,7 +230,7 @@ function updateAutoAttack(s: GameState, dt: number) {
   // speed sets the rhythm, not the damage per second: a quicker weapon hits proportionally lighter. The weapon's own
   // interval, not the talented one: Frenzy is meant to be a gain, and scaling by it here would hand the gain straight back
   const power = powerForLevel(p.combat.level) * p.stats.swingInterval / BARE_SWING;
-  const { amount, crit } = rollDamage(s, AUTO_BASE, power, p.stats.weaponDamage * AUTO_WEAPON_SHARE, t);
+  const { amount, crit } = rollDamage(s, AUTO_BASE, power, p.stats.weaponDamage * AUTO_WEAPON_SHARE, t, p.talentFx.swingDamage); // Savagery
   p.energy = Math.min(p.maxEnergy, p.energy + p.talentFx.swingEnergy); // Unbridled: the swings pay for the abilities
   damageEnemy(s, t, amount, crit, AUTO_SLOT);
   rollProcs(s, 'swing'); // the rhythm you are not pressing is where the openings come from
@@ -242,9 +244,9 @@ function updateAutoAttack(s: GameState, dt: number) {
  */
 function rollDamage(s: GameState, base: number, power: number, bonus: number, target: Enemy, mult = 1) {
   const p = s.player, fx = p.talentFx;
-  const crit = rand(s) < CRIT_CHANCE + fx.crit + p.stats.crit;
+  const crit = rand(s) < CRIT_CHANCE + fx.crit + p.stats.crit + (target.bleed ? fx.bleedCrit : 0); // Predator's Eye
   const amount = Math.max(1, Math.round((base + bonus) * power * mult * fx.damage * buffedOutgoing(p)
-    * (wounded(p) ? fx.lowHpDamage : 1) * (target.bleed ? fx.bleedHunter : 1)
+    * (wounded(p) ? fx.lowHpDamage : 1) * (target.bleed ? fx.bleedHunter : 1) * (target.hp <= target.maxHp * EXECUTE_UNDER ? fx.cull : 1)
     * (0.9 + 0.2 * rand(s)) * (crit ? CRIT_MULT + fx.critMult : 1)));
   return { amount, crit };
 }
@@ -283,6 +285,9 @@ function killEnemy(s: GameState, e: Enemy) {
   bountyOnKill(s, e.type, e.region);
   const xp = Math.max(1, Math.round(def.xp * xpParity(def.level, s.player.combat.level))); // the rate at the level the player is when it dies
   if (grantXp(s, 'combat', xp, e.x, e.z) > 0) refreshPlayerStats(s, true); // levelling restores health: a punchy reward
+  const fx = s.player.talentFx;
+  s.player.energy = Math.min(s.player.maxEnergy, s.player.energy + fx.killEnergy); // Momentum
+  if (fx.killHeal > 0) leechHeal(s, s.player.maxHp * fx.killHeal);                 // Triumph
 }
 
 // ---------- abilities ----------
@@ -322,7 +327,7 @@ function tryUse(s: GameState, slot: number) {
   if (a.kind !== 'heal' && a.kind !== 'guard') {
     target = enemyById(s, s.targetId);
     if (!target || !targetable(target)) return fail(s, 'target', slot);
-    if (reachTo(p, target) > a.range) return fail(s, 'range', slot);
+    if (reachTo(p, target) > rangeOf(p, a)) return fail(s, 'range', slot);
     if (a.minRange !== undefined && reachTo(p, target) < a.minRange) return fail(s, 'range', slot); // a leap has nowhere to go from their face
     if (a.kind === 'interrupt' && !target.cast) return fail(s, 'nocast', slot); // costs nothing and does nothing
     if (a.dash) {
@@ -372,7 +377,7 @@ function tryUse(s: GameState, slot: number) {
   } else if (target && a.kind === 'burst') {
     // Hemorrhage: the wound is spent in one go. Its own hit lands first, so Predator still reads the bleed.
     const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), target, mult);
-    const left = target.bleed ? target.bleed.ticks * target.bleed.damage : 0;
+    const left = target.bleed ? Math.round(target.bleed.ticks * target.bleed.damage * fx.burstBonus) : 0; // Rupture
     target.bleed = null;
     damageEnemy(s, target, amount, crit, slot);
     if (left > 0) damageEnemy(s, target, left, false, slot);
@@ -383,29 +388,42 @@ function tryUse(s: GameState, slot: number) {
       const d = Math.atan2(e.x - p.x, e.z - p.z) - aim;
       return Math.abs(Math.atan2(Math.sin(d), Math.cos(d)));
     };
-    const hit = s.enemies.filter(e => targetable(e) && reachTo(p, e) <= a.range && (e === target || angleTo(e) <= half))
+    const hit = s.enemies.filter(e => targetable(e) && reachTo(p, e) <= rangeOf(p, a) && (e === target || angleTo(e) <= half))
       .sort((m, n) => dist(p, m) - dist(p, n));
+    let dealt = 0;
     for (const e of hit) {
       const { amount, crit } = rollDamage(s, a.damage, power, p.stats.weaponDamage * (a.weaponMult ?? 1), e, fx.cleaveDamage * mult);
       damageEnemy(s, e, amount, crit, slot);
+      dealt += amount;
+      if (a.stagger && targetable(e)) { // Shockwave: the ones that are still standing are held, each as a Pummel would hold it
+        staggerEnemy(s, e);
+        s.events.push({ t: 'interrupt', id: e.id, x: e.x, z: e.z });
+      }
     }
+    if (a.leech) leechHeal(s, dealt * a.leech); // Bloodbath: the whole sweep feeds you
   } else if (target) {
     // Execute: Crushing Blow finishes a wounded target, and a kill hands the cooldown straight back
     const exec = a.tag === 'crush' && fx.executeUnder > 0 && target.hp <= target.maxHp * fx.executeUnder;
     const { amount, crit } = rollDamage(s, a.damage * (exec ? 1 + EXECUTE_BONUS : 1), power,
-      p.stats.weaponDamage * (a.weaponMult ?? 1), target, (a.tag === 'strike' ? fx.strikeBonus : 1) * mult);
+      p.stats.weaponDamage * (a.weaponMult ?? 1), target, (a.tag === 'strike' ? fx.strikeBonus : a.kind === 'strike' ? fx.heavyHit : 1) * mult);
     if (a.kind === 'dot') target.bleed = {
       ticks: a.dotTicks! + fx.bleedTicks, timer: fx.bleedInterval, interval: fx.bleedInterval,
       damage: Math.round(a.dotDamage! * power * fx.bleedBonus * mult), // a procced throw opens the deeper wound, not just the bigger hit
     };
     damageEnemy(s, target, amount, crit, slot);
     if (exec && target.state === 'dead') p.cd[slot] = 0;
-    if (a.leech) { // Bloodthirst: the hit feeds you, whether or not it was the one that landed last
-      const heal = Math.min(p.maxHp - p.hp, Math.round(amount * a.leech));
-      if (heal > 0) { p.hp += heal; s.events.push({ t: 'heal', x: p.x, z: p.z, amount: heal }); }
-    }
+    if (a.leech) leechHeal(s, amount * a.leech); // Bloodthirst: the hit feeds you, whether or not it was the one that landed last
   }
 }
+
+/** Health that comes back from what the player dealt (Bloodthirst, Bloodbath), never past the maximum. */
+function leechHeal(s: GameState, raw: number) {
+  const p = s.player, heal = Math.min(p.maxHp - p.hp, Math.round(raw));
+  if (heal > 0) { p.hp += heal; s.events.push({ t: 'heal', x: p.x, z: p.z, amount: heal }); }
+}
+
+/** How far an ability reaches once talents have had their say: a sweep goes further with Far Reach. */
+const rangeOf = (p: Player, a: AbilityDef) => a.kind === 'cleave' ? a.range + p.talentFx.sweepReach : a.range;
 
 /** The fractions of a leap that are tried, longest first: rock shortens a leap rather than refusing it. */
 const DASH_STEPS = [1, 0.7, 0.45];
@@ -577,6 +595,7 @@ export function harmPlayer(s: GameState, src: string, srcId: number | undefined,
   if (isFlying(p) || rolling(p)) return; // on a flight nothing can touch you, and a dodge-roll is the same window bought with breath
   amount = buffedDamage(p, amount); // Guard: what lands, and what the recap and the floating number say, is the halved hit
   p.hp = Math.max(0, p.hp - amount);
+  p.energy = Math.min(p.maxEnergy, p.energy + p.talentFx.hurtEnergy); // Adrenaline: it hurts, and it wakes you
   p.outOfCombat = 0;
   p.action = null; // getting hit breaks concentration
   dismount(s); // ...and throws you from the saddle: a bolt, a slam or the fen's own ground
@@ -655,7 +674,7 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
     if (!p.dead && dist(e, p) <= def.ranged!.range + 2) { // a little slack: a pace back mid-cast does not dodge a bolt, leaving its reach does
       // ...and so does putting rock between you and it: the shot is loosed into the stone
       if (!clearLine(e, p)) s.events.push({ t: 'blocked', id: e.id, x: e.x, z: e.z });
-      else hurtPlayer(s, e, takeDamage(p, def.damage * (0.85 + 0.3 * rand(s))), def.ranged!.name);
+      else hurtPlayer(s, e, Math.max(1, Math.round(takeDamage(p, def.damage * (0.85 + 0.3 * rand(s))) * (1 - p.talentFx.rangedReduction))), def.ranged!.name); // Deflection
     }
   }
 }
@@ -720,6 +739,7 @@ export function updateEnemies(s: GameState, dt: number) {
         const dmg = e.bleed.damage;
         if (--e.bleed.ticks <= 0) e.bleed = null;
         damageEnemy(s, e, dmg, false, 2, true);
+        if (p.talentFx.bleedHeal > 0 && !p.dead) leechHeal(s, p.maxHp * p.talentFx.bleedHeal); // Lifeblood
         rollProcs(s, 'bleed'); // the wound you opened is a clock of its own
         if ((e.state as EnemyState) === 'dead') continue;
       }

@@ -3,7 +3,8 @@ import type { GameState } from '../sim';
 import type { Action } from './actions';
 import { LANDMARKS, Pt } from './world';
 import { SkillId, grantXp } from './skills';
-import { ITEMS } from './items';
+import { ECHO_BLADE_COUNT, ITEMS, echoBladeId, echoBladeSmithing } from './items';
+import { xpForLevel } from './xp';
 import { masteryTime, masteryYield } from './mastery';
 import { addItem, countItem, hasRoom, removeItem } from './inventory';
 import { FISH, SEA_SALT, cookedId, pieId } from './fish';
@@ -28,6 +29,33 @@ export interface Recipe {
 // The metal ladder (docs/world-design.md 2.2, HOM-56). A bar's XP is 0.25 x the XP cost of its level (it is the action you repeat); a piece is 0.35 x,
 // a blade 0.4 x (made once, so worth more each). Mining and smithing climb together if you smelt what you mine: a player who does is
 // never more than a few bars short of a gate, but a player who skips the forge meets "needs Smithing N" at every rung.
+/** What a recipe pays, as a share of the XP cost of the level it is made at: the ladder's rule everywhere (a bar 0.25, a piece 0.35, a blade 0.4 of the cost of its level). */
+const craftXp = (share: number, level: number) => Math.round(share * (xpForLevel(level + 1) - xpForLevel(level)));
+
+/**
+ * The Echo ladder's recipes (docs/combat-99.md 6.2, HOM-176). **Smithing gates each blade at 54 + 6k, and nothing past the starmetal bar pays Smithing XP**, so the gate would be 9.5 million XP
+ * of 2,175-XP bars at 96: unreachable. The Echo bar is the action you repeat. It is a starmetal bar tempered with one shard, made at seven levels (54, where Crownbreaker leaves a smith, up to 90: the level before each blade's gate), each
+ * paying the rule's 0.25 of its own level's cost, so climbing from one blade's gate to the next takes about 30 bars; three of them go into every blade, with three more shards and the 20 marks.
+ * Leatherworking has the same shape on a smaller scale: moor leather tanned in two marks, then the pair, so the last armour step is made rather than found.
+ */
+export const ECHO_BAR_LEVELS = [54, 60, 66, 72, 78, 84, 90] as const;
+export const ECHO_BLADE_MARKS = 20, ECHO_BLADE_BARS = 3, ECHO_BLADE_SHARDS = 3;
+export const ECHO_LEATHER_LEVEL = 40;
+function echoRecipes(): Recipe[] {
+  const roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+  return [
+    ...ECHO_BAR_LEVELS.map((level, i): Recipe => ({ id: `echo_bar_${i + 1}`, name: `Echo Bar ${roman[i]}`, skill: 'smithing', level, time: 10, xp: craftXp(0.25, level),
+      inputs: [{ id: 'starmetal_bar', qty: 1 }, { id: 'echo_shard', qty: 1 }], output: { id: 'echo_bar', qty: 1 } })),
+    ...Array.from({ length: ECHO_BLADE_COUNT }, (_, i): Recipe => ({ id: echoBladeId(i + 1), name: ITEMS[echoBladeId(i + 1)].name, skill: 'smithing', level: echoBladeSmithing(i + 1), time: 18, xp: craftXp(0.4, echoBladeSmithing(i + 1)),
+      inputs: [{ id: 'echo_bar', qty: ECHO_BLADE_BARS }, { id: 'echo_shard', qty: ECHO_BLADE_SHARDS }, { id: 'echo_mark', qty: ECHO_BLADE_MARKS }], output: { id: echoBladeId(i + 1), qty: 1 } })),
+    { id: 'echo_leather', name: 'Tan Echo Leather', skill: 'leatherworking', station: 'rack', level: ECHO_LEATHER_LEVEL, time: 3, xp: craftXp(0.07, ECHO_LEATHER_LEVEL),
+      inputs: [{ id: 'moor_leather', qty: 1 }, { id: 'echo_mark', qty: 2 }], output: { id: 'echo_leather', qty: 1 } },
+    { id: 'echohide_gloves', name: 'Echohide Gloves', skill: 'leatherworking', station: 'rack', level: ECHO_LEATHER_LEVEL, time: 11, xp: craftXp(0.1, ECHO_LEATHER_LEVEL),
+      inputs: [{ id: 'echo_leather', qty: 2 }], output: { id: 'echohide_gloves', qty: 1 } },
+    { id: 'echohide_boots', name: 'Echohide Boots', skill: 'leatherworking', station: 'rack', level: ECHO_LEATHER_LEVEL + 1, time: 12, xp: craftXp(0.1, ECHO_LEATHER_LEVEL + 1),
+      inputs: [{ id: 'echo_leather', qty: 3 }], output: { id: 'echohide_boots', qty: 1 } },
+  ];
+}
 export const RECIPES: Recipe[] = [
   // copper (HOM-81): two copper ore to a bar and nothing else, so the whole set is made from the one rock Hale has. It shares bronze's gate
   // rather than sitting under it (Smithing starts at 1), and pays less XP a bar: the reason to walk out for tin is still the better metal.
@@ -159,6 +187,7 @@ export const RECIPES: Recipe[] = [
     inputs: [{ id: 'moor_leather', qty: 2 }], output: { id: 'moorhide_gloves', qty: 1 } },
   { id: 'moorhide_boots', name: 'Moorhide Boots', skill: 'leatherworking', station: 'rack', level: 35, time: 11, xp: 337,
     inputs: [{ id: 'moor_leather', qty: 3 }], output: { id: 'moorhide_boots', qty: 1 } },
+  ...echoRecipes(),
 ];
 
 export const FORGE_REACH = 6; // centre-to-centre; the hut is 2.6 radius

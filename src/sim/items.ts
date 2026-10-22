@@ -58,6 +58,40 @@ const herbItems = (): Record<string, ItemDef> => ({
   ] as [string, ItemDef][])),
 });
 
+/**
+ * The seven Echo blades (docs/combat-99.md 6.2): one every 8 combat levels from 48, each on the weapon line `W(L) = 36 + 2.6 (L - 16)` at the level it arrives, so 119, 140, 161, 182, 202,
+ * 223, 244. Smithing gates each at 54 + 6k (the long pole), the equip level is the arrival level, and 1-3 are tier 7 and 4-7 tier 8 (TIER_COLORS). Ids are `echo_blade_<n>` (gear-look.ts has a look for each).
+ */
+export const ECHO_BLADE_COUNT = 7;
+export const echoBladeLevel = (n: number) => 48 + 8 * (n - 1);
+export const echoBladeDamage = (n: number) => Math.round(36 + 2.6 * (echoBladeLevel(n) - 16));
+export const echoBladeSmithing = (n: number) => 54 + 6 * n;
+export const echoBladeId = (n: number) => `echo_blade_${n}`;
+const ECHO_BLADE_ROWS = [
+  ['Shardclamp', 'A shard of the Seal clamped across the guard, and a seam of cold light down the steel behind it.'],
+  ['Tallyblade', 'Three marks cut in the flat, each a notch shorter: one for every fight you have already won.'],
+  ['Sundered Edge', 'The blade split down its length, the halves hanging apart and still moving together.'],
+  ['Rasp', 'Shards set like teeth down one edge, under a crescent guard that curls up to catch what slides along it.'],
+  ['Halo Edge', 'Feathers of cold stone fanned off the guard, and a ring of shards turning round the blade.'],
+  ['Heartstone', 'No steel left in it: one long crystal, grown round the hilt, with two more stones coming off it.'],
+  ['Afterimage', 'Dark to the edge, and the blade it was a moment ago trails behind it, three times over.'],
+] as const;
+/** The leather the last armour step is cut from (6.2: 133 to 160 at 48): hands 27 and feet 33 on top of the starmetal set's 100 is the cap exactly. */
+export const ECHOHIDE_SET = ['echohide_gloves', 'echohide_boots'] as const;
+
+/** Echo shards and marks are what the Echo ladder is made of (the marks are echo.ts's drop; the item is below), so these are the rows nothing before the Seal could use. */
+const echoItems = (): Record<string, ItemDef> => ({
+  echo_shard: { name: 'Echo Shard', stack: 999, dropWeight: 0, tier: 0, value: 2, desc: 'A splinter of a fight that was never quite over. Echo elites and bosses leave them; a smith tempers a starmetal bar with one, and a blade is folded round three.' },
+  echo_bar: { name: 'Echo Bar', stack: 50, dropWeight: 0, tier: 0, value: 150, desc: 'A starmetal bar tempered with an Echo shard until it rings. The Echo blades are smithed from it, and so is the long road up the Smithing line.' },
+  echo_leather: { name: 'Echo Leather', stack: 50, dropWeight: 0, tier: 0, value: 14, desc: 'Moor leather tanned in Echo marks until it is black. A leatherworker cuts the last of the gloves and boots from it.' },
+  echohide_gloves: { name: 'Echohide Gloves', slot: 'hands', stats: { armor: 27 }, stack: 1, dropWeight: 0, tier: 6, value: 96, req: { combat: 48 }, desc: 'Blackened hide with a seam of teal stitched through it, and Echo shards stood round the cuff. With the starmetal set they are the armour cap, and the last armour there is.' },
+  echohide_boots: { name: 'Echohide Boots', slot: 'feet', stats: { armor: 33 }, stack: 1, dropWeight: 0, tier: 6, value: 144, req: { combat: 48 }, desc: 'Blackened hide with a seam of teal stitched through it, and a ring of Echo shards round the rim. With the starmetal set they are the armour cap, and the last armour there is.' },
+  ...Object.fromEntries(ECHO_BLADE_ROWS.map(([name, desc], i): [string, ItemDef] => [echoBladeId(i + 1), {
+    name, slot: 'weapon', stats: { damage: echoBladeDamage(i + 1), speed: 2.0 }, stack: 1, dropWeight: 0, tier: i < 3 ? 7 : 8, value: echoBladeDamage(i + 1) * 11, req: { combat: echoBladeLevel(i + 1) },
+    desc: `${desc} The ${['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh'][i]} of the seven an Echo smith can make.`,
+  }])),
+});
+
 /** How far a lit torch reaches, world units. Wider than the cave's own lantern (render.ts CAVE_LIGHT), which is what carrying one is for. */
 export const TORCH_REACH = 26;
 
@@ -94,6 +128,7 @@ export const ITEMS: Record<string, ItemDef> = {
   [SEA_SALT]: { name: 'Sea Salt', stack: 50, dropWeight: 0, tier: 0, value: 2, desc: 'Coarse grey salt from the Saltmarrow pans. A pie wants a pinch.' },
   ...fishItems(),
   ...herbItems(),
+  ...echoItems(),
   // weapons
   // the copper set (HOM-81): the bottom rung, smithed from the one rock Hale has, so a new character can make gear before they leave town.
   // Soft and light: it swings quicker than a rusty blade and bites less, and every piece is a shade under its bronze counterpart.

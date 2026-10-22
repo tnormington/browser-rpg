@@ -112,6 +112,12 @@ const ROLE_GOLD: Record<EnemyRole, number> = { trash: 1, elite: 3, rare: 4, boss
  */
 export const ECHO_MARKS: Record<EnemyRole, number> = { trash: 0, elite: 1, rare: 2, boss: 3 };
 export const ECHO_MARK_ITEM = 'echo_mark';
+/**
+ * Echo shards a kill drops (HOM-176): what a blade is folded round and what the Echo bar is tempered with, so what the Smithing line climbs on. One from an elite and one from a rare, two from a boss:
+ * about two shards for every three marks, which is the 250 or so the ladder asks over 44 hours against the 840 marks that same time pays.
+ */
+export const ECHO_SHARDS: Record<EnemyRole, number> = { trash: 0, elite: 1, rare: 1, boss: 2 };
+export const ECHO_SHARD_ITEM = 'echo_shard';
 
 /**
  * The health a row is anchored to, at its own level: its authored HP where the model built it (level 18 up: 1.00 / 3.00 / 4.00 / 8.00 of the template on every row, and a camp's 0.75
@@ -310,7 +316,7 @@ export function expectedDropValue(type: string): number {
 
 /**
  * What an Echo kill pays beyond the original's table: gold to bring the kill up to the bible's `0.6 L + 3` (times the role) at the Echo's level, so the table's own drops (hides, a sword)
- * are still the loot and the purse is what the level adds; and the Echo marks of the role. Returns the gold, for the kill event.
+ * are still the loot and the purse is what the level adds; and the Echo marks and shards of the role. Returns the gold, for the kill event.
  */
 export function echoLoot(s: GameState, e: Enemy): number {
   if (e.echo === null) return 0;
@@ -318,5 +324,6 @@ export function echoLoot(s: GameState, e: Enemy): number {
   const gold = Math.max(0, Math.round(ROLE_GOLD[role] * (0.6 * e.echo + 3) - expectedDropValue(e.type)));
   p.gold = Math.min(MAX_GOLD, p.gold + gold);
   if (ECHO_MARKS[role] > 0) dropAt(s, ECHO_MARK_ITEM, ECHO_MARKS[role], e.x, e.z);
+  if (ECHO_SHARDS[role] > 0) dropAt(s, ECHO_SHARD_ITEM, ECHO_SHARDS[role], e.x, e.z);
   return gold;
 }

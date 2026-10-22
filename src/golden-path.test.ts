@@ -38,7 +38,7 @@ import { CHESTS, CHEST_R, CHEST_TOTAL, LAMP_CAP, PLACES, chestCount, chestReward
 import { clearLine } from './sim/sight';
 import { playerStatuses } from './sim/status';
 import {
-  EXECUTE_BONUS, EXECUTE_UNDER, TALENTS, TALENT_START_LEVEL, TIER_COST, TREE_IDS, WOUNDED_UNDER,
+  CAPSTONE_TIER, EXECUTE_BONUS, EXECUTE_UNDER, TALENTS, TALENT_START_LEVEL, TIER_COST, TREE_IDS, WOUNDED_UNDER,
   abilityFromTalent, deriveTalents, refreshTalents, spentIn, spentTotal, talentById, talentPoints,
 } from './sim/talents';
 import { ROOFTOP_GRACE, SWEEP_CLEAR, abilityOpen, reductionOf } from './sim/combat';
@@ -3157,12 +3157,12 @@ section('HOM-38 talents: the rules of the trees');
 {
   assert(talentPoints(1) === 0 && talentPoints(TALENT_START_LEVEL) === 1 && talentPoints(10) === 9, 'no points at level 1, then one a level from level 2');
   assert(TALENTS.every(t => TREE_IDS.includes(t.tree) && t.ranks >= 1 && t.tier < TIER_COST.length), 'every talent sits in a real tree at a real tier');
-  const CAP = TIER_COST.length - 1;
-  const ranksIn = (tree: string) => TALENTS.filter(t => t.tree === tree).reduce((n, t) => n + t.ranks, 0);
-  assert(TREE_IDS.every(tree => TIER_COST.every((_, tier) => TALENTS.filter(t => t.tree === tree && t.tier === tier).length === (tier === CAP ? 1 : 2))),
-    'every tree is two talents abreast at each tier, with one capstone under them: a route through, not a list to tick off');
+  const CAP = CAPSTONE_TIER, PAST = TIER_COST.length - 1;
+  const ranksIn = (tree: string, upTo = CAP) => TALENTS.filter(t => t.tree === tree && t.tier <= upTo).reduce((n, t) => n + t.ranks, 0);
+  assert(PAST === CAP + 1 && TREE_IDS.every(tree => TIER_COST.every((_, tier) => TALENTS.filter(t => t.tree === tree && t.tier === tier).length === (tier === CAP ? 1 : tier === PAST ? 5 : 2))),
+    'every tree is two talents abreast at each tier, with one capstone under them, and then a last tier of five: a route through, not a list to tick off');
   assert(TREE_IDS.every(tree => ranksIn(tree) === 18 && ranksIn(tree) > talentPoints(10)),
-    `a tree is 18 ranks, so none can be filled before combat 10: depth costs breadth (${TREE_IDS.map(t => ranksIn(t)).join('/')})`);
+    `a tree is 18 ranks to the capstone, so none can be filled before combat 10: depth costs breadth (${TREE_IDS.map(t => ranksIn(t)).join('/')})`);
   assert(TALENTS.every(d => !d.prereq || (talentById(d.prereq)?.tree === d.tree && talentById(d.prereq)!.tier < d.tier)),
     'every prerequisite is a talent lower down the same tree, so a branch is always reachable from where it starts');
   assert(TALENTS.filter(d => d.tier === CAP).every(d => d.ranks === 1 && !!d.prereq && abilityFromTalent(d.id) >= 0),
@@ -3749,7 +3749,7 @@ section('HOM-46 adamant: Mining 28 (HOM-56), a smithed set, and gear that asks f
 {
   const sets = ['adamant_helm', 'adamant_chestplate', 'adamant_greaves', 'adamant_blade'];
   assert(sets.every(id => ITEMS[id].req?.combat === 14 && ITEMS[id].tier === 5), 'every adamant piece is tier 5 and needs combat 14');
-  assert(Object.entries(ITEMS).filter(([id]) => !sets.includes(id) && id !== 'marrows_edge' && id !== 'rotroot_edge' && id !== 'kings_crown' && id !== 'crownbreaker' && !id.startsWith('stormiron_') && !id.startsWith('starmetal_') && !([...MARSHHIDE_SET, ...THORNHIDE_SET, ...MOORHIDE_SET] as string[]).includes(id)).every(([, d]) => d.req === undefined), 'nothing older has a requirement (Marrow\'s Edge, HOM-64, the Rotroot Edge, HOM-66, the stormiron set, HOM-95, the King\'s Crown, HOM-99, the three regional leather pairs, HOM-107, and the starmetal set and Crownbreaker, HOM-111, are newer and ask for combat 18, 26, 23, 30, 18, 24, 32 and 32): no old save is touched');
+  assert(Object.entries(ITEMS).filter(([id]) => !sets.includes(id) && id !== 'marrows_edge' && id !== 'rotroot_edge' && id !== 'kings_crown' && id !== 'crownbreaker' && !id.startsWith('stormiron_') && !id.startsWith('starmetal_') && !id.startsWith('echo_blade_') && !id.startsWith('echohide_') && !([...MARSHHIDE_SET, ...THORNHIDE_SET, ...MOORHIDE_SET] as string[]).includes(id)).every(([, d]) => d.req === undefined), 'nothing older has a requirement (Marrow\'s Edge, HOM-64, the Rotroot Edge, HOM-66, the stormiron set, HOM-95, the King\'s Crown, HOM-99, the three regional leather pairs, HOM-107, the starmetal set and Crownbreaker, HOM-111, and the Echo blades and leather, HOM-176, are newer and ask for combat 18, 26, 23, 30, 18, 24, 32, 32 and 48 to 96): no old save is touched');
   assert(['stormiron_helm', 'stormiron_chestplate', 'stormiron_greaves', 'stormiron_blade'].every(id => ITEMS[id].req?.combat === 23 && ITEMS[id].tier === 5), 'every stormiron piece is tier 5 and needs combat 23');
   assert(deriveStats({ ...emptyEquipment(), head: 'adamant_helm', chest: 'adamant_chestplate', legs: 'adamant_greaves' }).armor === 68 && ITEMS.adamant_blade.stats!.damage === 40, 'the set is 16 + 30 + 22 = 68 armour, the blade 40: the bible\'s numbers');
   assert(deriveStats({ ...emptyEquipment(), weapon: 'adamant_blade' }).weaponDamage > deriveStats({ ...emptyEquipment(), weapon: 'warden_edge' }).weaponDamage, 'the Adamant Blade beats the Warden\'s Edge');

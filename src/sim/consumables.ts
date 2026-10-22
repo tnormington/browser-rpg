@@ -18,14 +18,19 @@ export const BUFFS: Record<string, BuffDef> = {
   well_fed: { name: 'Well Fed', desc: '+10% max health.', icon: '🍗', duration: 20 * 60, maxHp: 0.10 },
   guard: { name: 'Guard', desc: 'damage taken halved.', icon: '🛡', duration: 4, damageTaken: 0.5 },
   battle_fury: { name: 'Battle Fury', desc: 'everything you deal hits 15% harder.', icon: '🔥', duration: 20, damageDealt: 1.15 },
+  rampart: { name: 'Rampart', desc: 'three quarters off everything that hits you.', icon: '🧱', duration: 2.5, damageTaken: 0.25 },
+  echo_surge: { name: 'Echo Surge', desc: 'everything you deal hits 50% harder.', icon: '🌀', duration: 15, damageDealt: 1.5 },
 };
 
 /** What a hit that has already been through armour is worth once every buff has had its say. */
 export const buffedDamage = (p: Player, amount: number) =>
-  Math.max(1, Math.round(p.buffs.reduce((n, b) => n * (BUFFS[b.id]?.damageTaken ?? 1), amount)));
+  Math.max(1, Math.round(p.buffs.reduce((n, b) => {
+    const taken = BUFFS[b.id]?.damageTaken ?? 1;
+    return n * (taken < 1 ? taken * (1 - p.talentFx.guardDeepen) : taken); // Steadfast: a guard takes off a share of what it left
+  }, amount)));
 
-/** The multiplier every point of damage the player deals carries from their buffs (Battle Fury); 1 with none of them up. */
-export const buffedOutgoing = (p: Player) => p.buffs.reduce((n, b) => n * (BUFFS[b.id]?.damageDealt ?? 1), 1);
+/** The multiplier every point of damage the player deals carries from their buffs (Battle Fury, with Warcry on it); 1 with none of them up. */
+export const buffedOutgoing = (p: Player) => p.buffs.reduce((n, b) => n * ((BUFFS[b.id]?.damageDealt ?? 1) + (b.id === 'battle_fury' ? p.talentFx.furyBonus : 0)), 1);
 
 /** Max health at the player's level with every buff, Bastion and Vitality enchant on it: the one place that is worked out (combat's stat refresh reads it too). */
 export const maxHpOf = (p: Player) =>
