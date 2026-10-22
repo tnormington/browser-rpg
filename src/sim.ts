@@ -59,9 +59,10 @@ export interface Enemy {
   /** `interval` is the seconds between ticks, fixed when the wound was opened (Exsanguinate empties it sooner). */
   bleed: { ticks: number; timer: number; damage: number; interval: number } | null;
   /** A wind-up in progress: the tell the player reads. Cleared by a Pummel, by dying, or when it lands. */
-  cast: { kind: CastKind; t: number; total: number; x?: number; z?: number; radius?: number } | null;
+  cast: { kind: CastKind; t: number; total: number; x?: number; z?: number; radius?: number; gap?: number; struck?: boolean } | null;
   stagger: number;   // seconds left stunned after an interrupt: it does nothing
   heavyCd: number;   // seconds until the heavy attack may start again
+  sweepCd: number;   // seconds until the low sweep may start again
   evadeFor: number;  // seconds spent walking home after giving up a chase: a walk that goes nowhere (rock in the way) ends in a reset
   hazardCd: number;  // seconds until the ground hazard may be marked again
   netCd: number;     // seconds until the net may be thrown again
@@ -138,7 +139,7 @@ export type GameEvent =
   | { t: 'talent'; id: string; rank: number }          // a talent point was spent, and the rank it bought
   | { t: 'talentfail'; reason: TalentFail; id: string } // ...or could not be
   | { t: 'talentreset' }                               // every point handed back
-  | { t: 'telegraph'; id: number; kind: CastKind; windup: number; x?: number; z?: number; radius?: number }  // an enemy starts a wind-up; a 'ground' one carries the spot it will land on
+  | { t: 'telegraph'; id: number; kind: CastKind; windup: number; x?: number; z?: number; radius?: number; gap?: number }  // an enemy starts a wind-up; a 'ground' one carries the spot it will land on, a 'sweep' its ring and, for a pair, the `gap` before the second
   | { t: 'net'; id: number; x: number; z: number; name: string; duration: number }  // a net landed: the player is held where they stand for `duration`
   | { t: 'interrupt'; id: number; x: number; z: number }  // a Pummel landed on a wind-up
   | { t: 'blocked'; id: number; x: number; z: number }    // a ranged wind-up finished with rock in the way: the shot is wasted
@@ -270,7 +271,7 @@ export function createState(seed = 1): GameState {
       hp: ENEMY_TYPES[sp.type].hp, maxHp: ENEMY_TYPES[sp.type].hp, state: 'idle',
       attackCd: 0, respawnIn: 0, deadFor: 0, hitFlash: 0, swing: 0, bleed: null, cast: null, stagger: 0,
       heavyCd: ENEMY_TYPES[sp.type].heavy?.first ?? 0, hazardCd: ENEMY_TYPES[sp.type].hazard?.first ?? 0, evadeFor: 0,
-      netCd: ENEMY_TYPES[sp.type].net?.first ?? 0, netRun: 0,
+      netCd: ENEMY_TYPES[sp.type].net?.first ?? 0, netRun: 0, sweepCd: ENEMY_TYPES[sp.type].sweep?.first ?? 0,
     })),
     drops: [],
     nextDropId: 1,

@@ -186,6 +186,12 @@ export interface EnemyDef {
    * Interruptible. `range` is how far away the enemy will still start one.
    */
   hazard?: { name: string; windup: number; every: number; first: number; damage: number; radius: number; range: number };
+  /**
+   * A low swing that goes under a jump (docs/action-layer.md 2): stands still for `windup`, then hits everything within `radius` of itself for flat
+   * `damage` unless the player is rolling or above SWEEP_CLEAR. A pair (`gap`) lands a second ring that long after the first. Interruptible.
+   * Not written in the rows below: `SWEEP_ROWS` (after them) derives it, so the damage is always the swings the cast displaces.
+   */
+  sweep?: { name: string; windup: number; every: number; first: number; damage: number; radius: number; gap?: number };
   /** Once the first quest has reached this stage the enemy is gone for good: it does not respawn, and a copy that is still standing (an older save) is cleared. */
   retiresAt?: 'report2';
   /** Aggro spreads to every pack-mate within this many units. */
@@ -213,11 +219,11 @@ export function aggroRadius(def: EnemyDef, playerLevel: number): number {
 }
 
 /** The wind-ups an enemy can be in the middle of. One name for the set, so the sim, the HUD and the renderer agree on it. */
-export type CastKind = 'heavy' | 'bolt' | 'ground' | 'net';
+export type CastKind = 'heavy' | 'bolt' | 'ground' | 'net' | 'sweep';
 
 /** The name of the wind-up an enemy is casting, for cast bars and the telegraph line. One place, so a new kind cannot crash a HUD that guessed. */
 export function castName(def: EnemyDef, kind: CastKind): string {
-  return (kind === 'heavy' ? def.heavy?.name : kind === 'ground' ? def.hazard?.name : kind === 'net' ? def.net?.name : def.ranged?.name) ?? def.name;
+  return (kind === 'heavy' ? def.heavy?.name : kind === 'ground' ? def.hazard?.name : kind === 'net' ? def.net?.name : kind === 'sweep' ? def.sweep?.name : def.ranged?.name) ?? def.name;
 }
 
 export const ENEMY_TYPES: Record<string, EnemyDef> = {
@@ -459,6 +465,34 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
 
 /** The stats of this enemy: the one place an instance's type becomes a row, so a spawn that differs from its species has one seam to change. */
 export const defOf = (enemy: { type: string }): EnemyDef => ENEMY_TYPES[enemy.type];
+
+/**
+ * The sweep (docs/action-layer.md 2): 23 solo melee fighters from level 10, none in a pack, none a caster, none in a dungeon. A single for trash, a pair
+ * for elites and rares. The damage is not chosen: a cast displaces the swings the enemy would have made, so a landed sweep is worth exactly those
+ * (a single `(windup + I) / I` swings, each ring of a pair `(windup + gap + I) / 2I`), and a player who eats every one is where the tuned
+ * tables already put them. A retune of a row's `damage` or `attackInterval` carries through to its sweep.
+ */
+export const SWEEP_WINDUP = 0.9;
+export const SWEEP_GAP = 0.9;
+export const SWEEP_REACH = 5.5; // past attackRange: 5.7 to 5.9 u to leave it from where the player stands, which a walk (3.6) or a sprint (5.4) in the time left does not
+const SWEEP_TIERS = { trash: { first: 5, every: 10, pair: false }, elite: { first: 4, every: 8, pair: true }, rare: { first: 3, every: 8, pair: true } };
+const SWEEP_ROWS: Record<string, [name: string, tier: keyof typeof SWEEP_TIERS]> = {
+  marsh_hog: ['Tusk Sweep', 'trash'], shore_crab: ['Pincer Sweep', 'trash'], mire_troll: ['Low Swing', 'trash'], thornback: ['Tusk Sweep', 'trash'],
+  blight_stag: ['Antler Sweep', 'trash'], cairn_brute: ['Low Swing', 'trash'], moor_ram: ['Horn Sweep', 'trash'], ridge_ogre: ['Low Swing', 'trash'],
+  sand_ogre: ['Low Swing', 'trash'], rune_golem: ['Stone Sweep', 'trash'],
+  toll_captain: ['Cudgel Sweep', 'elite'], barnacle_ogre: ['Anchor Sweep', 'elite'], bogfather: ['Mire Sweep', 'elite'], thorn_warden: ['Thorn Sweep', 'elite'],
+  barrow_lord: ['Barrow Sweep', 'elite'], stonehorn: ['Stonehorn Sweep', 'elite'], ashen_colossus: ['Ashen Sweep', 'elite'], spire_warden: ["Warden's Sweep", 'elite'],
+  old_grey: ['Rending Sweep', 'rare'], gutterhook: ['Gutter Sweep', 'rare'], mother_mire: ['Sinking Sweep', 'rare'], elder_thornback: ['Gore Sweep', 'rare'],
+  hollow_knight: ['Hollow Sweep', 'rare'],
+};
+for (const [id, [name, tier]] of Object.entries(SWEEP_ROWS)) {
+  const def = ENEMY_TYPES[id], t = SWEEP_TIERS[tier], I = def.attackInterval;
+  def.sweep = {
+    name, windup: SWEEP_WINDUP, first: t.first, every: t.every, radius: def.attackRange + SWEEP_REACH,
+    damage: Math.round(def.damage * (t.pair ? (SWEEP_WINDUP + SWEEP_GAP + I) / (2 * I) : (SWEEP_WINDUP + I) / I)),
+    ...(t.pair ? { gap: SWEEP_GAP } : {}),
+  };
+}
 
 /**
  * Where enemies stand. Hale's own come first and keep their ids (a save matches by id and type); every other region's follow in region

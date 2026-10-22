@@ -31,7 +31,7 @@ const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.
  * which is a 0.238 s window, against the roll's 0.30 (docs/action-layer.md 2.3). A slam is not low: it lands on a player in the air.
  */
 export const SWEEP_CLEAR = 1.1;
-/** Above SWEEP_CLEAR, measured from the floor the player is over (the ground, or the top of a prop they stand above), not from 0. The net asks it; so will the sweep. */
+/** Above SWEEP_CLEAR, measured from the floor the player is over (the ground, or the top of a prop they stand above), not from 0. The net asks it, and so does the sweep. */
 const clearsGround = (p: { x: number; z: number; airborne: boolean; y: number }) => p.airborne && p.y - (perchAt(p.x, p.z, p.y)?.top ?? 0) >= SWEEP_CLEAR;
 /** The standable prop the player is standing on, or null. Enemies cannot follow onto it, so it is where they reach to instead (see updateEnemies). */
 const perchOf = (p: { x: number; z: number; y: number; airborne: boolean }) => p.airborne || p.y <= 0 ? null : perchAt(p.x, p.z, p.y);
@@ -430,6 +430,7 @@ function staggerEnemy(s: GameState, e: Enemy) {
   if (def.heavy) e.heavyCd = Math.max(e.heavyCd, def.heavy.every * STAGGER_HEAVY_KEEP);
   if (def.hazard) e.hazardCd = Math.max(e.hazardCd, def.hazard.every * STAGGER_HEAVY_KEEP);
   if (def.net) e.netCd = Math.max(e.netCd, def.net.every * STAGGER_HEAVY_KEEP);
+  if (def.sweep) e.sweepCd = Math.max(e.sweepCd, def.sweep.every * STAGGER_HEAVY_KEEP);
 }
 
 // ---------- per-tick updates ----------
@@ -546,6 +547,7 @@ function aggro(s: GameState, e: Enemy) {
   e.attackCd = Math.max(e.attackCd, 0.6);
   if (def.heavy) e.heavyCd = Math.max(e.heavyCd, def.heavy.first);
   if (def.hazard) e.hazardCd = Math.max(e.hazardCd, def.hazard.first);
+  if (def.sweep) e.sweepCd = Math.max(e.sweepCd, def.sweep.first);
   if (def.pack) for (const o of s.enemies) if (o !== e && o.type === e.type && o.state === 'idle' && dist(o, e) <= def.pack && clearLine(o, e)) aggro(s, o);
 }
 
@@ -579,16 +581,35 @@ function startGroundCast(s: GameState, e: Enemy) {
   s.events.push({ t: 'telegraph', id: e.id, kind: 'ground', windup: h.windup, x: p.x, z: p.z, radius: h.radius });
 }
 
+/** A low swing: the ring is the enemy's own, fixed here (a pair is one cast, `gap` longer, with a second ring at its end). */
+function startSweepCast(s: GameState, e: Enemy) {
+  const w = ENEMY_TYPES[e.type].sweep!;
+  e.cast = { kind: 'sweep', t: 0, total: w.windup + (w.gap ?? 0), x: e.x, z: e.z, radius: w.radius, gap: w.gap };
+  s.events.push({ t: 'telegraph', id: e.id, kind: 'sweep', windup: w.windup, x: e.x, z: e.z, radius: w.radius, gap: w.gap });
+}
+
+/** A ring lands: it passes under a player who is rolling or above SWEEP_CLEAR, and takes anyone else inside it. The ground is hit either way. */
+function sweepRing(s: GameState, e: Enemy) {
+  const p = s.player, w = ENEMY_TYPES[e.type].sweep!;
+  e.swing = 0.15;
+  s.events.push({ t: 'slam', id: e.id, x: e.x, z: e.z, radius: w.radius });
+  if (!p.dead && !clearsGround(p) && dist(e, p) <= w.radius) hurtPlayer(s, e, takeDamage(p, w.damage, true), w.name, true);
+}
+
 /** Tick a wind-up. The enemy stands still and watches the player; when it completes, the attack lands only if the player is still in reach. */
 function updateCast(s: GameState, e: Enemy, dt: number) {
   const p = s.player, def = defOf(e), c = e.cast!;
   e.facing = Math.atan2(p.x - e.x, p.z - e.z);
   c.t += dt;
+  if (c.gap && !c.struck && c.t >= def.sweep!.windup) { c.struck = true; sweepRing(s, e); } // a pair's first ring, `gap` before the cast ends
   if (c.t < c.total) return;
   e.cast = null;
   e.attackCd = def.attackInterval;
   e.swing = 0.15;
-  if (c.kind === 'ground') {
+  if (c.kind === 'sweep') {
+    e.sweepCd = def.sweep!.every;
+    sweepRing(s, e);
+  } else if (c.kind === 'ground') {
     const h = def.hazard!;
     e.hazardCd = h.every;
     s.events.push({ t: 'slam', id: e.id, x: c.x!, z: c.z!, radius: h.radius });
@@ -685,6 +706,7 @@ export function updateEnemies(s: GameState, dt: number) {
     e.attackCd = Math.max(0, e.attackCd - dt);
     e.heavyCd = Math.max(0, e.heavyCd - dt);
     e.hazardCd = Math.max(0, e.hazardCd - dt);
+    e.sweepCd = Math.max(0, e.sweepCd - dt);
     e.netCd = Math.max(0, e.netCd - dt);
     e.netRun = Math.max(0, e.netRun - dt);
     e.hitFlash = Math.max(0, e.hitFlash - dt);
@@ -716,6 +738,7 @@ export function updateEnemies(s: GameState, dt: number) {
         stepToward(e, p.x, p.z, def.speed, dt, def.attackRange * 0.9 + (perch?.r ?? 0));
         if (dist(e, p) - (perch?.r ?? 0) <= def.attackRange && e.attackCd <= 0) {
           if (def.heavy && e.heavyCd <= 0) startCast(s, e, 'heavy', def.heavy.windup);
+          else if (def.sweep && e.sweepCd <= 0) startSweepCast(s, e); // the slam goes first when both are ready
           else {
             e.attackCd = def.attackInterval;
             e.swing = 0.15;
