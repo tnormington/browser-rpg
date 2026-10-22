@@ -6,14 +6,18 @@
 import type { GameEvent } from './sim';
 import { ABILITIES } from './sim/data';
 import { WEATHER_BEDS, bedFor, type WeatherLayer } from './ambience';
+import { VOICES, voiceOf } from './voices';
 import { Music } from './music';
 
 // ---- tuning table: change numbers here, by ear ----
 /** minGap ms between plays of a group, maxVoices simultaneously sounding in it. */
 const GROUPS = {
   hitEnemy:  { minGap: 60,  maxVoices: 3 },
+  cry:       { minGap: 650, maxVoices: 2 },   // an enemy struck twice a second calls out once: the gap is the rate limit, not the swing's
   hurt:      { minGap: 120, maxVoices: 2 },
   swing:     { minGap: 150, maxVoices: 2 },
+  foe:       { minGap: 90,  maxVoices: 3 },   // a pack of three all swinging is three blows; a fourth is the one you lose
+
   slam:      { minGap: 200, maxVoices: 2 },
   interrupt: { minGap: 100, maxVoices: 1 },
   stinger:   { minGap: 500, maxVoices: 1 },
@@ -32,9 +36,8 @@ const GROUPS = {
 type Group = keyof typeof GROUPS;
 
 /** files: variants (random, never the same twice in a row); rate: fixed pitch multiplier; delay: seconds. */
-interface Layer { files: string[]; vol: number; jitter?: number; rate?: number; delay?: number }
+export interface Layer { files: string[]; vol: number; jitter?: number; rate?: number; delay?: number }
 const SOUNDS = {
-  hitFlesh:  { files: ['hit-flesh-1', 'hit-flesh-2', 'hit-flesh-3'], vol: 0.55, jitter: 0.06 },
   hitCrit:   { files: ['hit-crit'], vol: 0.6, jitter: 0.04 },
   hurt:      { files: ['hurt-1', 'hurt-2'], vol: 0.6, jitter: 0.05 },
   hurtHeavy: { files: ['slam'], vol: 0.8 },
@@ -74,24 +77,12 @@ const SOUNDS = {
   cookDone:  { files: ['cook-1', 'cook-2', 'cook-3'], vol: 0.5, jitter: 0.05 },
   takeoff:   { files: ['levelup'], vol: 0.45, rate: 0.8 },
   landing:   { files: ['thud'], vol: 0.6, jitter: 0.04 },
-  // enemy voices by body, see BODY: a big one's hit replaces the flesh hit, a shell's rides on top of it; a kill is one of the kill sounds
-  killBeast: { files: ['hurt-1', 'hurt-2'], vol: 0.5, jitter: 0.05, rate: 0.75 },
-  killMan:   { files: ['thud'], vol: 0.55, jitter: 0.06, rate: 1.1 },
-  killBig:   { files: ['slam'], vol: 0.6, jitter: 0.04, rate: 0.9 },
-  hitBig:    { files: ['hit-flesh-1', 'hit-flesh-2', 'hit-flesh-3'], vol: 0.55, jitter: 0.05, rate: 0.7 },
-  hitShell:  { files: ['interrupt'], vol: 0.25, jitter: 0.05, rate: 1.6 },   // a claw on a carapace
+  // the enemy's side of a fight. Its blow, cry, hit and death are its voice's (voices.ts); these two are shared, because
+  // every shooter in the game is robed or a boss and every net is the same rope.
+  bolt:      { files: ['swing-2'], vol: 0.3, jitter: 0.1, rate: 1.3 },
+  boltTail:  { files: ['interrupt'], vol: 0.12, jitter: 0.08, rate: 0.6, delay: 0.02 },   // a low ring under the shot: what makes it a hex and not a swing
+  netThrow:  { files: ['swing-1'], vol: 0.35, jitter: 0.06, rate: 0.6 },   // weighted rope, thrown low
 } satisfies Record<string, Layer>;
-/** What an enemy sounds like when struck or killed, by species id; anything not listed is a beast. */
-type Body = 'beast' | 'man' | 'big' | 'shell';
-const BODY: Record<string, Body> = {
-  brute: 'big', ogre: 'big', warden: 'big', toll_captain: 'big', barnacle_ogre: 'big', gutterhook: 'big', mire_troll: 'big', bogfather: 'big',
-  mother_mire: 'big', thorn_warden: 'big', elder_thornback: 'big', cairn_brute: 'big', barrow_lord: 'big', hollow_knight: 'big', ridge_ogre: 'big', stonehorn: 'big',
-  sand_ogre: 'big', ashen_colossus: 'big', rune_golem: 'big', spire_warden: 'big',
-  waste_reaver: 'man', spire_adept: 'man',
-  hexer: 'man', ravager: 'man', archer: 'man', seer: 'man', footpad: 'man', drowned_sailor: 'man', tide_hag: 'man', bog_witch: 'man', rotwood_cultist: 'man', barrow_wight: 'man', moor_raider: 'man',
-  shore_crab: 'shell',
-};
-const bodyOf = (species: string): Body => BODY[species] ?? 'beast';
 const slamVol =(radius: number) => Math.min(1, 0.5 + radius / 12);
 
 const AMBIENCE_FADE = 1.5;   // seconds to cross between beds
@@ -306,12 +297,14 @@ export function playEvents(events: GameEvent[], mount: string | null = null) {
         if (ev.target === 'player') {
           play('hurt', ev.heavy ? [SOUNDS.hurt, SOUNDS.hurtHeavy] : [SOUNDS.hurt], { exempt: true });
         } else {
-          const body = bodyOf(ev.species);
-          const layers = [body === 'big' ? SOUNDS.hitBig : SOUNDS.hitFlesh, ...(ev.crit ? [SOUNDS.hitCrit] : []), ...(body === 'shell' ? [SOUNDS.hitShell] : [])];
-          play('hitEnemy', layers, { steal: ev.crit });
+          const voice = VOICES[voiceOf(ev.species)];
+          play('hitEnemy', ev.crit ? [...voice.hit, SOUNDS.hitCrit] : voice.hit, { steal: ev.crit });
+          play('cry', voice.cry);   // its own group, so a thing being struck twice a second is not screaming twice a second
         }
         break;
       case 'swing': play('swing', [SOUNDS.swing]); break;
+      case 'attack': play('foe', ev.ranged ? [SOUNDS.bolt, SOUNDS.boltTail] : VOICES[voiceOf(ev.species)].attack); break;
+      case 'net': play('foe', [SOUNDS.netThrow], { noGap: true }); break;
       case 'cast':
         if (ev.slot === 1) play('swing', [SOUNDS.cast1]);
         else if (ev.slot === 2) play('swing', [SOUNDS.cast2]);
@@ -321,7 +314,7 @@ export function playEvents(events: GameEvent[], mount: string | null = null) {
         break;
       case 'slam': play('slam', [{ ...SOUNDS.slam, vol: slamVol(ev.radius) }], { exempt: true }); break;
       case 'interrupt': play('interrupt', [SOUNDS.interrupt], { exempt: true }); break;
-      case 'kill': { const body = bodyOf(ev.species); play('kill', [body === 'big' ? SOUNDS.killBig : body === 'man' ? SOUNDS.killMan : SOUNDS.killBeast]); break; }
+      case 'kill': play('kill', VOICES[voiceOf(ev.species)].kill); break;
       case 'begin':
         if (ev.skill === 'fishing') play('fish', [SOUNDS.fishCast]);
         else if (ev.skill === 'cooking') play('cook', [SOUNDS.cookStart]);

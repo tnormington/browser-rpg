@@ -130,6 +130,7 @@ export type GameEvent =
   | { t: 'slam'; id: number; x: number; z: number; radius: number }  // a heavy attack resolved (hit or miss: the ground shakes either way)
   | { t: 'cast'; slot: number }
   | { t: 'swing'; target: number; x: number; z: number }   // an auto-attack swing left the player's hand (a 'hit' with slot AUTO_SLOT follows on the same tick)
+  | { t: 'attack'; id: number; species: string; ranged: boolean }  // the enemy's side of that: a blow or a bolt left it, whether or not it lands (a telegraphed heavy raises 'slam' instead)
   | { t: 'auto'; on: boolean }                              // auto-attack armed / disarmed: the HUD button and swing bar follow this
   | { t: 'untarget'; id: number; reason: 'dead' | 'evade' } // the target was taken from you, and why (the player's own Esc / retarget raise nothing)
   | { t: 'combat'; on: boolean }                            // the player entered / left combat

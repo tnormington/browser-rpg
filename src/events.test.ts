@@ -1,6 +1,7 @@
 // HOM-67: the sim events the audio asks for: fishing and cooking begin / finish, a species on every enemy hit and kill. Run with `npm run verify`.
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState, GameEvent } from './sim';
 import { addItem } from './sim/inventory';
+import { ENEMY_TYPES } from './sim/data';
 import { cookedId, FISH } from './sim/fish';
 import { LANDMARKS } from './sim/world';
 
@@ -48,6 +49,23 @@ console.log('\n# HOM-67 enemies: a species on the hit and the kill');
   assert(hits.length > 0 && hits.every(x => x.t === 'hit' && typeof x.species === 'string' && x.species.length > 0), 'every hit, the player\'s and the enemy\'s, names a species');
   assert(hits.some(x => x.t === 'hit' && x.species === e.type), 'and it is the enemy\'s type');
   assert(kills.length > 0 && kills.every(x => x.t === 'kill' && typeof x.species === 'string' && x.species.length > 0), 'the kill names one too');
+}
+
+console.log('\n# HOM-146 enemy attacks: an attack event for every blow and every bolt');
+{
+  const s = createState(14601), e = s.enemies[0];   // a boar: melee, no telegraphed heavy
+  s.player.x = e.x; s.player.z = e.z + 2; s.player.hp = s.player.maxHp = 99999;
+  const ev = record(s, 20);
+  const blows = ev.filter(x => x.t === 'attack');
+  assert(blows.length > 0 && blows.every(x => x.t === 'attack' && x.species === e.type && !x.ranged && x.id === e.id), 'a melee enemy raises an attack naming itself and its species');
+  assert(blows.length === ev.filter(x => x.t === 'hit' && x.target === 'player').length, '...one per blow, so the sound and the damage cannot drift apart');
+}
+{
+  const s = createState(14602), e = s.enemies.find(x => ENEMY_TYPES[x.type].ranged)!;
+  s.player.x = e.x + 3; s.player.z = e.z; s.player.hp = s.player.maxHp = 99999;
+  const ev = record(s, 20);
+  const shots = ev.filter(x => x.t === 'attack');
+  assert(shots.length > 0 && shots.every(x => x.t === 'attack' && x.species === e.type && x.ranged), `a shooter (${e.type}) raises a ranged attack when the bolt leaves it`);
 }
 
 console.log(`\nAll ${checks} event checks passed.`);

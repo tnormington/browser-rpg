@@ -591,10 +591,13 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
     p.root = { left: n.duration, total: n.duration, name: n.name };
     e.netRun = n.duration;
     s.events.push({ t: 'net', id: e.id, x: p.x, z: p.z, name: n.name, duration: n.duration });
-  } else if (!p.dead && dist(e, p) <= def.ranged!.range + 2) { // a little slack: a pace back mid-cast does not dodge a bolt, leaving its reach does
-    // ...and so does putting rock between you and it: the shot is loosed into the stone
-    if (!clearLine(e, p)) s.events.push({ t: 'blocked', id: e.id, x: e.x, z: e.z });
-    else hurtPlayer(s, e, takeDamage(p, def.damage * (0.85 + 0.3 * rand(s))), def.ranged!.name);
+  } else {
+    s.events.push({ t: 'attack', id: e.id, species: e.type, ranged: true }); // the shot leaves it either way: a bolt the player walked out of is still a bolt you hear
+    if (!p.dead && dist(e, p) <= def.ranged!.range + 2) { // a little slack: a pace back mid-cast does not dodge a bolt, leaving its reach does
+      // ...and so does putting rock between you and it: the shot is loosed into the stone
+      if (!clearLine(e, p)) s.events.push({ t: 'blocked', id: e.id, x: e.x, z: e.z });
+      else hurtPlayer(s, e, takeDamage(p, def.damage * (0.85 + 0.3 * rand(s))), def.ranged!.name);
+    }
   }
 }
 
@@ -697,6 +700,7 @@ export function updateEnemies(s: GameState, dt: number) {
           else {
             e.attackCd = def.attackInterval;
             e.swing = 0.15;
+            s.events.push({ t: 'attack', id: e.id, species: e.type, ranged: false });
             hurtPlayer(s, e, takeDamage(p, def.damage * (0.85 + 0.3 * rand(s))), 'Melee');
           }
         }
