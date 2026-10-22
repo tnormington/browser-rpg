@@ -15,6 +15,11 @@ import { GATES, LANDMARKS, WITHERING, regionAt } from './sim/world';
 import { bestMount } from './sim/mounts';
 import { applyStress } from './sim/stress';
 import { ITEMS } from './sim/items';
+import { ABILITIES } from './sim/data';
+import { TALENTS, learnTalent, resetTalents } from './sim/talents';
+import { dress } from './sim/echo';
+import { masterNear, startFlight } from './sim/flight';
+import { boardNear } from './sim/bounties';
 import { bestFoodSlot } from './sim/consumables';
 import { nodeById } from './sim/gathering';
 import { CursorId, cursorFor } from './cursor';
@@ -88,7 +93,7 @@ addEventListener('beforeunload', save);
 addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 const canvas = view.renderer.domElement;
 if (debug && params.has('weather')) view.weather.set(params.get('weather') as WeatherKind, true); // ?weather=clear|overcast|rain|fog pins it for the bench
-if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scene, view, sim: state, step: () => step(state, readInput()), stress, items: ITEMS, world: { WITHERING, GATES, LANDMARKS, regionAt } };
+if (debug) (window as any).__debug = { renderer: view.renderer, scene: view.scene, view, sim: state, step: () => step(state, readInput()), stress, items: ITEMS, hud, bench: { abilities: ABILITIES, talents: TALENTS, learnTalent: (id: string) => learnTalent(state, id), resetTalents: () => resetTalents(state), dress: (e: Parameters<typeof dress>[1]) => dress(state, e), flyTo: (to: string) => startFlight(state, to), masterNear: () => masterNear(state)?.id ?? null, boardNear: () => boardNear(state)?.id ?? null }, world: { WITHERING, GATES, LANDMARKS, regionAt } };
 
 // --- input -> sim Input ---
 /** G: eat the best food the bag has and the moment allows. */

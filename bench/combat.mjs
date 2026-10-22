@@ -30,7 +30,10 @@
 //   bot has not been seen to use well, so read a --kit result as no better than none. --gear rotroot|starmetal|crownbreaker are the sets a player is in at 27 to 31, 32 and from 32 with the Cairn King's blade.
 //   In a dungeon room the player starts at the door (not toward the town), and a dodge never goes to a spot that is not floor: the Cairn King, 5 from his chamber's north wall, killed the bot 3 fights in 12
 //   when its dodge ran into the wall. Every landed slam is listed in the result's `why` (kind, plan, distance, where the player and the enemy stood).
-// Not modelled: food, potions, talents.
+// HOM-183: --rotation old|new|both, --echo 3|0|-3, --build fury,bulwark,hunt, --spacing S (ttk). --gear line past level 48 is the Echo blades and Echohide. The press counts are the `presses` column; NEVER PRESSED lines say what did not fire.
+//   node bench/combat.mjs --mode ttk --types rune_golem --level 50 --gear line --echo 3 --rotation both --n 10 --fast 1 --skip-build
+//   The new rotation's rules for the two off-GCD buttons (Rampart, Echo Surge) and for Final Reckoning are written out in fightStep.
+// Not modelled: food, potions; talents only under --rotation new.
 // ttk: isolated 1v1 (everything else in the world pinned dead), player placed 7 units off; per fight: first swing -> kill, damage taken, % of max HP.
 // loop: the type's camps in their natural layout (other types pinned dead), kill -> loot (real clicks) -> walk (real clicks) -> wait for --health of max HP
 //   -> next fight; swing-to-swing time split into fight / loot / walk / regen-wait / engage. Writes bench/shots/bot-<mode>-<tag>.json.
@@ -67,16 +70,46 @@ async function botInPage(cfg) {
     starmetal: { weapon: 'starmetal_blade', head: 'starmetal_helm', chest: 'starmetal_chestplate', legs: 'starmetal_greaves' }, // 80 / 100 from 32
     crownbreaker: { weapon: 'crownbreaker', head: 'starmetal_helm', chest: 'starmetal_chestplate', legs: 'starmetal_greaves' },
   };
+  // HOM-183: past 48 the line is the Echo ladder's real gear: the highest of the seven blades whose equip level (48 + 8 (n - 1)) is reached, the starmetal body and Echohide gloves and boots (armour 160, the cap).
+  const ECHO_BLADES = [1, 2, 3, 4, 5, 6, 7].map(n => ({ id: `echo_blade_${n}`, level: 48 + 8 * (n - 1) }));
+  const echoLine = level => ({ weapon: ECHO_BLADES.filter(b => b.level <= level).at(-1).id, head: 'starmetal_helm', chest: 'starmetal_chestplate', legs: 'starmetal_greaves', hands: 'echohide_gloves', feet: 'echohide_boots' });
+  const bar = d.hud;
+  const setBar = idxs => { // the bar as a loadout: slot i holds idxs[i] (ability index) or its default; rebuilt each fight so a run never inherits the last one's
+    const next = bar.bar.map((_, i) => ({ k: 'ability', i }));
+    for (const [slot, ab] of Object.entries(idxs)) next[slot] = { k: 'ability', i: ab };
+    bar.rearrange(next, true);
+  };
+  const keyOf = ab => { const at = bar.bar.findIndex(e => e?.k === 'ability' && e.i === ab); if (at < 0 || !bar.keys[at]) throw new Error(`ability ${ab} (${d.bench.abilities[ab]?.name}) is not on the bar`); return bar.keys[at]; };
+  // HOM-183: the new rotation's six abilities (index 16-21) go where the bot never presses what stood there: Whirlwind, Bloodthirst, Shield Bash, Hemorrhage, Sidestep, Charge (slots 6, 8, 9, 10, 14, 15).
+  const NEW_SLOTS = { 6: 16, 8: 17, 9: 18, 10: 19, 14: 20, 15: 21 };
+  const spendTalents = () => { // greedy, in the order of --build, tier by tier, each talent to full rank: every legal point of talentPoints(level), through the sim's own learnTalent
+    d.bench.resetTalents();
+    for (const tree of cfg.build) for (const t of d.bench.talents.filter(x => x.tree === tree).sort((x, y) => x.tier - y.tier)) {
+      for (let r = p.talents[t.id] ?? 0; r < t.ranks; r++) { d.bench.learnTalent(t.id); if ((p.talents[t.id] ?? 0) <= r) break; } // a refused rank (out of points, tier shut) ends that talent
+    }
+  };
+  let rot = cfg.rotations[0], lastRot = null; // 'old' or 'new' (HOM-183): --rotation both sets it per run
   const setup = (level, gear) => { // the shortcut the report discloses: level and gear set directly, bag emptied
     p.combat.level = level; p.combat.xp = cum[level]; p.maxHp = 100 + 15 * (level - 1);
     const line = gear === 'line'; // docs/world-design.md 3.4: the line gear for the enemy's own level, weapon 36 + 2.6 (L - 16), armour 60 + 2.2 (L - 16); looks like base, stats from the formula
-    Object.assign(p.equipment, GEAR[line ? 'base' : gear]);
+    const echoGear = line && level > 48; // above 48 the line is the real Echo gear (HOM-183), stats from the item table
+    const set = echoGear ? echoLine(level) : GEAR[line ? 'base' : gear];
+    if (echoGear) for (const k of Object.keys(p.equipment)) p.equipment[k] = null;
+    Object.assign(p.equipment, set);
     let w = 0, a = 0, sw = 2.4;
-    for (const id of Object.values(GEAR[line ? 'base' : gear])) { const st = ITEMS[id].stats; w += st.damage ?? 0; a += st.armor ?? 0; if (st.speed) sw = st.speed; }
-    if (line) { w = 36 + 2.6 * (level - 16); a = 60 + 2.2 * (level - 16); }
+    for (const id of Object.values(set)) { const st = ITEMS[id].stats; w += st.damage ?? 0; a += st.armor ?? 0; if (st.speed) sw = st.speed; }
+    if (line && !echoGear) { w = 36 + 2.6 * (level - 16); a = 60 + 2.2 * (level - 16); }
     Object.assign(p.stats, { weaponDamage: w, armor: a, reduction: Math.min(0.8, a / (a + 40)), swingInterval: sw });
-    p.hp = p.maxHp; p.energy = p.maxEnergy; p.cd.fill(0); p.gcd = 0; p.queued = null; p.autoAttack = false; p.swing = 0; p.buffs = [];
     p.dead = false; p.outOfCombat = 99; p.inCombat = false; s.targetId = null; s.interact = null; s.drops = [];
+    if (rot === 'new') { // HOM-183: the whole kit a player of this level has: the trainer's abilities, a spent talent tree and the six on the bar
+      for (const ab of d.bench.abilities) if (ab.trainer && !p.learned.includes(ab.name)) p.learned.push(ab.name);
+      spendTalents(); setBar(NEW_SLOTS);
+    } else { d.bench.resetTalents(); setBar({}); }
+    p.hp = p.maxHp = Math.round((100 + 15 * (level - 1)) * p.talentFx.maxHp); p.energy = p.maxEnergy;
+    // --spacing S: cooldowns carry from the last fight less S seconds, as they do in a 40 s loop; without it every fight starts with everything ready (this bench's old assumption)
+    if (cfg.spacing > 0 && lastRot === rot) { for (let i = 0; i < p.cd.length; i++) p.cd[i] = Math.max(0, p.cd[i] - cfg.spacing); } else p.cd.fill(0);
+    lastRot = rot;
+    p.gcd = 0; p.queued = null; p.queuedOff = null; p.autoAttack = false; p.swing = 0; p.buffs = [];
     p.inventory.fill(null);
     if (cfg.kit) for (const n of ['Guard', 'Last Stand']) if (!p.learned.includes(n)) p.learned.push(n); // HOM-125 --kit: the two trainer defences a player at 30 owns (350 g and 750 g)
   };
@@ -96,12 +129,12 @@ async function botInPage(cfg) {
   const tele = new Map();
   const teleZero = () => ({ seen: 0, pummelPlan: 0, dodgePlan: 0, late: 0, netted: 0, pummelled: 0, dodged: 0, landed: 0, missed: 0, skipped: 0 });
   let rec = null;
-  const newRec = () => { tele.clear(); return (rec = { firstSwing: null, kills: [], taken: 0, heavies: 0, interrupts: 0, casts: new Array(13).fill(0), swings: 0, dealt: 0, heals: 0, healed: 0, tele: {} }); };
+  const newRec = () => { tele.clear(); return (rec = { firstSwing: null, kills: [], taken: 0, heavies: 0, interrupts: 0, casts: new Array(d.bench.abilities.length).fill(0), swings: 0, dealt: 0, heals: 0, healed: 0, tele: {} }); };
   const push = s.events.push.bind(s.events);
   s.events.push = (...evs) => {
     for (const e of evs) if (rec) {
       if (e.t === 'swing') { rec.swings++; rec.firstSwing ??= s.tick; }
-      else if (e.t === 'cast') { rec.casts[e.slot]++; if (e.slot <= 2) rec.firstSwing ??= s.tick; }
+      else if (e.t === 'cast') { rec.casts[e.slot]++; if (['strike', 'dot', 'cleave'].includes(d.bench.abilities[e.slot].kind)) rec.firstSwing ??= s.tick; } // the first hit is any of the damaging abilities (it was slots 0-2 before the six new ones could open a fight)
       else if (e.t === 'hit') { if (e.target === 'player') { rec.taken += e.amount; if (e.heavy) rec.heavies++; } else rec.dealt += e.amount; }
       else if (e.t === 'heal') { rec.heals++; rec.healed += e.amount; }
       else if (e.t === 'telegraph') { (rec.tele[e.kind] ??= teleZero()).seen++; tele.set(e.id, { ...e, plan: null }); }
@@ -125,11 +158,11 @@ async function botInPage(cfg) {
     if (p.root) { k.netted++; return 'none'; }
     if ((t.cast?.t ?? 0) > 0.9) { k.late++; return 'none'; }
     if (Math.random() >= cfg.dodgeRate) { k.skipped++; return 'none'; } // HOM-125: --dodge-rate P, a player who steps out of a share P of the telegraphs there was time to (world-design 3.4a's cliff)
-    const R = pd.kind === 'heavy' ? cfg.heavyRadius[t.type] : pd.radius;
+    const R = pd.kind === 'heavy' ? (t.row?.heavy?.radius ?? cfg.heavyRadius[t.type]) : pd.radius; // an Echo row's slam (Boulder Slam, 5 u) is not in the type's own table
     if (!(R > 0)) throw new Error(`dodge: no radius for ${t.type}'s ${pd.kind}`);
     // HOM-125: a person does not walk into a wall to get out of a circle. In a room, a slam goal that is not on the floor is turned (20 degrees at a time, either way) to the nearest one that is,
     // and the far side of the enemy is not taken when its own slam dodge would be a wall (the Cairn King stands 5 from his chamber's north wall, and 3.4a's far side was exactly it).
-    const reg = d.world.regionAt(t.x, t.z), Rh = cfg.heavyRadius[t.type] ?? 0;
+    const reg = d.world.regionAt(t.x, t.z), Rh = t.row?.heavy?.radius ?? cfg.heavyRadius[t.type] ?? 0;
     const slamGoal = a => ({ x: t.x + Math.cos(a) * (Rh + 0.9), z: t.z + Math.sin(a) * (Rh + 0.9) });
     if (pd.kind === 'heavy') { // straight away from the enemy, along enemy -> player, to radius + 0.9
       const away = Math.atan2(p.z - t.z, p.x - t.x);
@@ -173,16 +206,35 @@ async function botInPage(cfg) {
     // KeyX is the attack key (KeyR is an ability-bar slot, so this used to cast whatever R holds and never arm anything). It is a toggle that the sim
     // only applies on its next tick, so assert the state wanted: tap only when disarmed, and not again until that tap has had ticks to land.
     if (!p.autoAttack && dd <= 3 && s.tick - lastAttackTap >= 6) { lastAttackTap = s.tick; tap('KeyX'); }
-    const slotKey = i => tap(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyT', 'Digit7', 'Digit8'][i]); // bar-layout.ts DEFAULT_KEYS: slots 6 and up are not Digit7 and on
+    const slotKey = i => tap(keyOf(i)); // the key the bar has the ability on (HOM-183: the bar is a loadout, so the key is read from it, not from the ability's number)
+    const hpFrac = t.hp / t.maxHp, surge = p.buffs.some(b => b.id === 'echo_surge');
+    // HOM-183 --rotation new, the two buttons that are off the global cooldown. They are held for a moment, not pressed on cooldown:
+    //  Rampart (16, 45 s): for a slam or marked circle the bot is not answering (plan none: no Pummel to spare, no step out of it), once it is inside the last 2.2 s of its wind-up so the 2.5 s of it covers the landing; and below 40 % health.
+    //  Echo Surge (19, 90 s, 15 s): at the start of a fight, on a target still above 60 % health and within reach, never into the end of one.
+    if (rot === 'new') {
+      const left = t.cast ? t.cast.total - t.cast.t : 99;
+      if (p.cd[16] <= 0.02 && p.energy >= 20 && p.combat.level >= 50 && !p.buffs.some(b => b.id === 'rampart')
+        && ((pd && (pd.kind === 'heavy' || pd.kind === 'ground') && pd.plan === 'none' && t.cast && left <= 2.2 && left >= 0.3) || p.hp < 0.4 * p.maxHp)) slotKey(16);
+      if (p.cd[19] <= 0.02 && p.energy >= 40 && p.combat.level >= 80 && !surge && dd <= 3.5 && hpFrac >= 0.6) slotKey(19);
+    }
     if (t.cast && t.cast.t >= 0.25 && p.cd[5] <= 0.02 && p.energy >= 10 && dd <= 3.5) slotKey(5);
     else if (cfg.kit && p.hp < 0.6 * p.maxHp && p.cd[7] <= 0.02 && p.energy >= 20) slotKey(7); // --kit: Guard (off the GCD) once under 60 %
     else if (p.queued === null && p.gcd <= 0.4) {
       const w = p.gcd, en = Math.min(p.maxEnergy, p.energy + 8 * w);
-      const ok = (slot, cost, range) => p.cd[slot] <= w + 0.02 && en >= cost && dd <= range;
-      const adjacent = chasers.filter(e => dist(e, p) <= 3.5).length;
+      const ok = (slot, cost, range) => p.cd[slot] <= w + 0.02 && en >= cost && dd <= range && (rot !== 'new' || p.combat.level >= d.bench.abilities[slot].unlockLevel);
+      const adjacent = chasers.filter(e => dist(e, p) <= 3.5).length, around = chasers.filter(e => dist(e, p) <= 4.5).length;
+      // HOM-183 --rotation new, the GCD buttons. Final Reckoning (21, 90 energy, 60 s) is held for a Surge: while one is active or coming, nothing else spends the energy below 90 (the heals excepted), so it lands inside the
+      // 15 s window (with at least 4 s of it left); with no Surge up it is pressed as soon as the energy is there. Never on a target under 40 % (it would be overkill). Reaping Blow (17) goes on cooldown, ahead of Crushing Blow, on a target above 20 %. Shockwave (18) answers a wind-up Pummel could not, or holds a pair
+      // (two or more within reach). Bloodbath (20) is for a pair, or for the leech below 60 % health. Everything else is the old rotation.
+      const final = rot === 'new' && hpFrac >= 0.4 && p.combat.level >= 99 && p.cd[21] <= w + 0.02, reserve = final && en < 90 && surge && p.buffs.find(b => b.id === 'echo_surge').left >= 4;
       const windHeal = 45 * (1 + 0.07 * (p.combat.level - 1)); // Second Wind's heal (sim/data.ts: 45 x powerForLevel, no talents)
       if (cfg.kit && p.hp < 0.4 * p.maxHp && ok(12, 40, 99)) slotKey(12); // --kit: Last Stand (3 x Second Wind, 90 s) once under 40 %
       else if (((cfg.heal && p.maxHp - p.hp >= windHeal) || (cfg.tactics && p.hp < 0.45 * p.maxHp)) && ok(3, 25, 99)) slotKey(3); // --heal: Second Wind on cooldown when none of it is wasted; --tactics: also when low, and Cleave on a crowd
+      else if (final && ok(21, 90, 3.5)) slotKey(21);
+      else if (reserve) { /* saving the energy for Final Reckoning inside the Surge */ }
+      else if (rot === 'new' && hpFrac >= 0.2 && ok(17, 60, 3)) slotKey(17);
+      else if (rot === 'new' && ((t.cast && p.cd[5] > 0.3) || around >= 2) && ok(18, 45, 4.5)) slotKey(18);
+      else if (rot === 'new' && (around >= 2 || p.hp < 0.6 * p.maxHp) && ok(20, 50, 4)) slotKey(20);
       else if (cfg.tactics && adjacent >= 2 && ok(4, 25, 3.5)) slotKey(4);
       else if (ok(1, 30, 3)) slotKey(1);
       else if (ok(2, 20, 9) && !t.bleed) slotKey(2);
@@ -192,9 +244,17 @@ async function botInPage(cfg) {
   }
 
   // ttk: one isolated fight, the player placed 7 units off
-  const trial = async (e, level, gear) => {
+  const trial = async (e, level, gear, rotation) => {
+    rot = rotation;
     setup(level, gear);
-    resetEnemy(e); pin(o => o === e);
+    // HOM-183 --echo 3|0|-3: the Echo switch (Hard, Standard, Easy) set, as the Seal's holder has it, and the spawn dressed the way a respawn at this player's level would dress it. At 84 and up a trash row
+    // comes in twos: the mate is stood up beside it and both are fought, the time to kill is to the second kill.
+    if (cfg.echo !== null) { s.quest.eighth = 'done'; p.echo = cfg.echo; d.bench.dress(e); }
+    resetEnemy(e);
+    const mate = s.enemies.find(o => o.mateOf === e.id && o.respawnIn < 1e8);
+    if (mate) resetEnemy(mate);
+    pin(o => o === e || o === mate);
+    const need = [e.id, ...(mate ? [mate.id] : [])];
     const reg = d.world.regionAt(e.spawnX, e.spawnZ);
     // HOM-125: in a dungeon room the player comes in by the door, so the stand-off point is toward it. "Toward the town" put the player on the far side of the Cairn King, between him
     // and the north wall (he spawns 5 from it), where the dodge's "straight away" was a wall: 28 % of his slams landed and 3 of 12 fights died of it, a bench fault and not his.
@@ -209,10 +269,12 @@ async function botInPage(cfg) {
     if (!spot) throw new Error(`ttk: no stand-off point on ${e.type} #${e.id}'s own floor (${reg?.id}) at (${e.spawnX.toFixed(1)}, ${e.spawnZ.toFixed(1)})`);
     p.x = spot.x; p.z = spot.z; p.facing = Math.atan2(e.spawnX - p.x, e.spawnZ - p.z);
     newRec(); const start = s.tick;
-    while (!rec.kills.some(k => k.id === e.id) && !p.dead && s.tick - start < cfg.cap * 30) { fightStep(e); await frame(); }
+    const done = () => need.every(id => rec.kills.some(k => k.id === id));
+    while (!done() && !p.dead && s.tick - start < cfg.cap * 30) { fightStep(e); await frame(); }
     hold('KeyW', false);
-    const killed = rec.kills.find(k => k.id === e.id);
-    const r = { type: e.type, id: e.id, level, gear, maxHp: p.maxHp, killed: !!killed, died: p.dead, ttk: killed && rec.firstSwing != null ? (killed.tick - rec.firstSwing) / 30 : null,
+    const killed = done() ? rec.kills.reduce((a, k) => (need.includes(k.id) && k.tick > a.tick ? k : a), { tick: -1 }) : null;
+    const spent = d.bench.talents.reduce((a, t) => a + (p.talents[t.id] ?? 0), 0), tier5 = d.bench.talents.filter(t => t.tier === 5).reduce((a, t) => a + (p.talents[t.id] ?? 0), 0);
+    const r = { type: e.type, id: e.id, rot, echo: e.echo, talents: `${spent}/${level - 1} (${tier5} in tier 5)`, mates: need.length - 1, level, gear, maxHp: p.maxHp, killed: !!killed, died: p.dead, ttk: killed && rec.firstSwing != null ? (killed.tick - rec.firstSwing) / 30 : null,
       lead: rec.firstSwing != null ? (rec.firstSwing - start) / 30 : null, taken: rec.taken, takenPct: 100 * rec.taken / p.maxHp, netPct: 100 * (rec.taken - rec.healed) / p.maxHp, heals: rec.heals, healedPct: 100 * rec.healed / p.maxHp,
       heavies: rec.heavies, interrupts: rec.interrupts, casts: rec.casts, swings: rec.swings, dealt: rec.dealt, tele: rec.tele, why: rec.why };
     for (let i = 0; i < 20; i++) await frame();
@@ -349,7 +411,7 @@ async function botInPage(cfg) {
   } else if (cfg.mode === 'ttk') {
     for (const run of cfg.runs) {
       const spawns = s.enemies.filter(e => e.type === run.type);
-      for (let i = 0; i < run.n; i++) { const r = await trial(spawns[i % spawns.length], run.level, run.gear); out.push(r); note('ttk', { type: run.type, i: i + 1, of: run.n, ttk: r.ttk, died: r.died }); }
+      for (let i = 0; i < run.n; i++) { const r = await trial(spawns[i % spawns.length], run.level, run.gear, run.rot); out.push(r); note('ttk', { type: run.type, rot: run.rot, i: i + 1, of: run.n, ttk: r.ttk, died: r.died }); }
     }
   } else {
     for (const run of cfg.runs) out.push({ type: run.type, level: run.level, gear: run.gear, thr: cfg.thr, fights: await loop(run.type, run.level, run.gear, run.n, cfg.thr) });
@@ -370,11 +432,19 @@ async function runBot(page) {
   const dodge = opt('dodge', mode === 'ttk' ? 'slam' : 'none'); // the brackets are the slam-dodging player's (world-design 3.4a); 'none' is the bench as it was
   if (!['none', 'slam', 'all'].includes(dodge)) throw new Error(`--dodge none|slam|all, not ${dodge}`);
   const types = opt('types', 'marsh_hog').split(','), n = Number(opt('n', 20)), gear = opt('gear', 'base'), thr = Number(opt('health', 0.8));
-  const runs = types.map(type => ({ type, n, gear, level: opt('level', '') ? Number(opt('level', '')) : levels[type] }));
+  // HOM-183: --rotation old|new|both (default old: every number this bench ever printed is still what it prints). `new` is the kit a player has at the level: the trainer's six abilities, a spent talent tree
+  // (--build fury,bulwark,hunt: the order the trees are filled in), the six on the bar. `both` runs each row twice, old then new, so the difference is in one table. --echo 3|0|-3 puts the Echo switch on
+  // (Hard, Standard, Easy); --spacing S carries cooldowns from fight to fight less S seconds (40 is the bible's loop) where the default starts every fight with everything ready.
+  const rotation = opt('rotation', 'old'); if (!['old', 'new', 'both'].includes(rotation)) throw new Error(`--rotation old|new|both, not ${rotation}`);
+  const rotations = rotation === 'both' ? ['old', 'new'] : [rotation], echo = opt('echo', '') === '' ? null : Number(opt('echo', ''));
+  if (echo !== null && ![-3, 0, 3].includes(echo)) throw new Error(`--echo 3|0|-3, not ${opt('echo', '')}`);
+  if (mode !== 'ttk' && (rotation !== 'old' || echo !== null)) throw new Error('--rotation and --echo are ttk modes');
+  const build = opt('build', 'fury,bulwark,hunt').split(','); if (build.some(t => !['fury', 'bulwark', 'hunt'].includes(t))) throw new Error(`--build is fury, bulwark and hunt in an order, not ${opt('build', '')}`);
+  const runs = types.flatMap(type => rotations.map(rot => ({ type, rot, n, gear, level: opt('level', '') ? Number(opt('level', '')) : levels[type] })));
   page.on('console', m => { if (m.type() === 'error') console.error('page:', m.text()); });
   const t0 = Date.now();
   await page.exposeFunction('__benchLog', m => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s] ${m}`));
-  const res = await page.evaluate(botInPage, { mode, fast: Number(opt('fast', 0)), cap: Number(opt('cap', 120)), only: opt('types', '') ? types : null, runs, thr, dodge, heavyRadius, dodgeRate: Number(opt('dodge-rate', 1)), kit: process.argv.includes('--kit'), tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), n, levels, standoff: Number(opt('standoff', 13)), link: Number(opt('link', 13)), size: Number(opt('size', 3)), gearLo: opt('gearlo', 'base').split(','), gearHi: opt('gearhi', 'adamant,marrow').split(',') });
+  const res = await page.evaluate(botInPage, { rotations, echo, build, spacing: Number(opt('spacing', 0)), mode, fast: Number(opt('fast', 0)), cap: Number(opt('cap', 120)), only: opt('types', '') ? types : null, runs, thr, dodge, heavyRadius, dodgeRate: Number(opt('dodge-rate', 1)), kit: process.argv.includes('--kit'), tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), n, levels, standoff: Number(opt('standoff', 13)), link: Number(opt('link', 13)), size: Number(opt('size', 3)), gearLo: opt('gearlo', 'base').split(','), gearHi: opt('gearhi', 'adamant,marrow').split(',') });
   const wall = ((Date.now() - t0) / 1000).toFixed(0);
   if (mode === 'camp' || mode === 'ride' || mode === 'clusters') {
     writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify(res, null, 1));
@@ -382,7 +452,7 @@ async function runBot(page) {
     console.log(`wall ${wall}s at speed ${speed}`);
     return;
   }
-  writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify({ mode, gear, thr, speed, n, dodge, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), runs, res }, null, 1));
+  writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify({ mode, gear, rotation, echo, build, spacing: Number(opt('spacing', 0)), thr, speed, n, dodge, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), runs, res }, null, 1));
   const stat = a => { a = a.filter(x => x != null); if (!a.length) return { n: 0 }; const m = a.reduce((x, y) => x + y, 0) / a.length, sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, a.length - 1)); const sorted = [...a].sort((x, y) => x - y), h = sorted.length >> 1, med = sorted.length % 2 ? sorted[h] : (sorted[h - 1] + sorted[h]) / 2;
     return { n: a.length, mean: +m.toFixed(2), median: +med.toFixed(2), sd: +sd.toFixed(2), min: +Math.min(...a).toFixed(1), max: +Math.max(...a).toFixed(1) }; };
   if (mode === 'ttk') {
@@ -390,11 +460,22 @@ async function runBot(page) {
     const mm = a => { const s = stat(a); return s.n ? `${s.median} / ${s.mean}` : '-'; };
     const sumTele = (t, kind) => t.reduce((a, x) => { const k = x.tele[kind]; if (k) for (const f in k) a[f] = (a[f] ?? 0) + k[f]; return a; }, {});
     console.log(`--dodge ${dodge}; ttk, gross, net: median / mean`);
-    console.table(runs.map(r => { const t = res.filter(x => x.type === r.type), hv = sumTele(t, 'heavy'), gr = sumTele(t, 'ground'), tl = k => (k.seen ? `${k.seen} seen, ${k.dodged ?? 0} dodged, ${k.pummelled ?? 0} pummelled, ${k.landed ?? 0} landed, ${k.late ?? 0} late, ${k.netted ?? 0} netted, ${k.skipped ?? 0} skipped` : '-');
-      return { type: r.type, level: r.level, gear, fights: t.length, died: t.filter(x => x.died).length, swings: mm(t.map(x => x.swings)), noSwing: t.filter(x => x.swings === 0).length, ttk: mm(t.map(x => x.ttk)), gross: mm(t.map(x => x.takenPct)), net: mm(t.map(x => x.netPct)),
-        heals: +(t.reduce((a, x) => a + x.heals, 0) / (t.length || 1)).toFixed(1), healedPct: +(t.reduce((a, x) => a + x.healedPct, 0) / (t.length || 1)).toFixed(0), slams: tl(hv), circles: tl(gr) }; }));
+    // HOM-183: the press count is a permanent column, as the swing count was (HOM-98). `presses` is the mean number of casts a fight, every ability that fired plus every one of the six past level 48 the player's level
+    // has open (a 0 there is printed as a 0); `presses0` is the abilities of the run that never fired in any fight, and is warned about below the table.
+    const abilities = await page.evaluate(() => window.__debug.bench.abilities.map(a => ({ name: a.name, unlock: a.unlockLevel })));
+    const pressesOf = (t, level, rot) => {
+      const mean = i => t.reduce((a, x) => a + (x.casts[i] ?? 0), 0) / (t.length || 1);
+      const shown = abilities.map((a, i) => ({ ...a, i, m: mean(i) })).filter(a => a.m > 0 || (rot === 'new' && a.i >= 16 && level >= a.unlock));
+      return { text: shown.map(a => `${a.name} ${+a.m.toFixed(2)}`).join(', '), silent: shown.filter(a => a.m === 0).map(a => a.name) };
+    };
+    const echoCol = t => { const l = t.map(x => x.echo).filter(x => x != null); return l.length ? `${Math.min(...l)}-${Math.max(...l)}${t.some(x => x.mates) ? ' pair' : ''}` : '-'; };
+    console.table(runs.map(r => { const t = res.filter(x => x.type === r.type && x.rot === r.rot), hv = sumTele(t, 'heavy'), gr = sumTele(t, 'ground'), tl = k => (k.seen ? `${k.seen} seen, ${k.dodged ?? 0} dodged, ${k.pummelled ?? 0} pummelled, ${k.landed ?? 0} landed, ${k.late ?? 0} late, ${k.netted ?? 0} netted, ${k.skipped ?? 0} skipped` : '-');
+      return { type: r.type, rot: r.rot, level: r.level, echo: echoCol(t), talents: t[0]?.talents, gear, fights: t.length, died: t.filter(x => x.died).length, swings: mm(t.map(x => x.swings)), noSwing: t.filter(x => x.swings === 0).length, ttk: mm(t.map(x => x.ttk)), gross: mm(t.map(x => x.takenPct)), net: mm(t.map(x => x.netPct)),
+        heals: +(t.reduce((a, x) => a + x.heals, 0) / (t.length || 1)).toFixed(1), healedPct: +(t.reduce((a, x) => a + x.healedPct, 0) / (t.length || 1)).toFixed(0), slams: tl(hv), circles: tl(gr), presses: pressesOf(t, r.level, r.rot).text }; }));
     for (const r of runs) { // a bench that says it dodges and did not is lying; say so rather than print a table that looks fine
-      const t = res.filter(x => x.type === r.type), hv = sumTele(t, 'heavy'), gr = sumTele(t, 'ground');
+      const t = res.filter(x => x.type === r.type && x.rot === r.rot), hv = sumTele(t, 'heavy'), gr = sumTele(t, 'ground');
+      const silent = pressesOf(t, r.level, r.rot).silent;
+      if (silent.length && t.length) console.log(`NEVER PRESSED: ${r.type} --rotation ${r.rot} level ${r.level}: ${silent.join(', ')} fired in none of ${t.length} fights${silent.includes('Rampart') ? ' (Rampart is held for an unanswered slam or circle, or below 40 % health: none came)' : ''}`);
       if (dodge !== 'none' && (hv.seen ?? 0) > 0 && (hv.dodged ?? 0) + (hv.pummelled ?? 0) === 0) console.log(`BENCH LYING: ${r.type} --dodge ${dodge}: ${hv.seen} slam telegraphs, 0 dodged, 0 pummelled (${hv.late ?? 0} late, ${hv.netted ?? 0} netted)`);
       if (dodge === 'all' && (gr.seen ?? 0) > 0 && (gr.dodged ?? 0) + (gr.pummelled ?? 0) === 0) console.log(`BENCH LYING: ${r.type} --dodge all: ${gr.seen} ground telegraphs, 0 dodged, 0 pummelled`);
     }
