@@ -26,7 +26,7 @@ import { ROLL_SPEED, ROLL_TIME, SPRINT_SPEED, canDoubleJump } from './sim/agilit
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { HaloSpot, haloMesh, tickHalos } from './halo';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
-import { WorldView, flightMasterFigure, headstones, Kit } from './world-view';
+import { WorldView, flightMasterFigure, hasTop, headstones, standableRocks, Kit } from './world-view';
 import { WorldMap, mapPosition } from './world-map';
 import { landingSpot } from './sim/flight';
 import { GROUND_CELL, bakeUV, dress, groundDrift, hasSurface } from './surface';
@@ -394,6 +394,7 @@ export class Renderer {
     this.kit = { mesh: (g, c, cls, sh) => mesh(g, c, cls as MatClass, sh), P };
     this.world = new WorldView(this.scene, this.kit);
     this.scene.add(flightMasterFigure(this.kit, LANDMARKS.flightHale, { x: 0, z: 6 }, this.flightParts)); // faces the spawn, like the other two
+    standableRocks(this.kit, REGIONS.filter(r => r.zone === 'hale' || r.cave).flatMap(r => r.obstacles), o => this.scene.add(o)); // the steps and rooftops of Hale and the caves: render.ts draws those regions itself (HOM-161)
     this.scene.add(headstones(this.kit, REGIONS.find(r => r.id === 'clearing')!.obstacles.filter(o => o.kind === 'grave'))); // Hale's graveyard
     this.rings = new Rings(this.scene);
     this.slashes = new Slashes(this.scene);
@@ -645,9 +646,10 @@ export class Renderer {
     this.buildCaveWalls(bakeUV(new THREE.DodecahedronGeometry(1)), material(P.caveWall, 'rock'), 2);
 
     // standing stones: one instanced draw
-    const stones = new THREE.InstancedMesh(bakeUV(new THREE.CylinderGeometry(0.75, 1.05, 1, 6)), material(P.caveWall, 'rock'), CAVE_PILLARS.length);
+    const pillars = CAVE_PILLARS.filter(o => !hasTop(o)); // a stone with a top is a step: standableRocks draws it
+    const stones = new THREE.InstancedMesh(bakeUV(new THREE.CylinderGeometry(0.75, 1.05, 1, 6)), material(P.caveWall, 'rock'), pillars.length);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(), pos = new THREE.Vector3();
-    CAVE_PILLARS.forEach((o, i) => {
+    pillars.forEach((o, i) => {
       const h = PILLAR_HEIGHT * (0.85 + this.jitter(i + 7) * 0.3);
       stones.setMatrixAt(i, m.compose(pos.set(o.x, h / 2, o.z), q.setFromAxisAngle(up, i * 1.7), sc.set(o.r, h, o.r)));
     });
@@ -736,7 +738,7 @@ export class Renderer {
       }
     }
     // the standing stones: every vault obstacle gets a cut collar and a floating sigil, so none reads as a bare rock
-    for (const o of CAVE_PILLARS.filter(o => dungeonAt(o.x, o.z)?.id === 'vault')) {
+    for (const o of CAVE_PILLARS.filter(o => !hasTop(o) && dungeonAt(o.x, o.z)?.id === 'vault')) {
       cut.push(new THREE.CylinderGeometry(o.r * 0.9, o.r * 1.15, 0.5, 8).translate(o.x, 0.25, o.z), new THREE.CylinderGeometry(o.r * 0.75, o.r * 0.75, 0.3, 8).translate(o.x, 3.2, o.z));
       rune.push(new THREE.OctahedronGeometry(0.3).translate(o.x, 4, o.z));
     }
@@ -1293,7 +1295,7 @@ export class Renderer {
   private cameraRocks: { x: number; z: number; r: number }[] = [];
   private pullCameraInside(fx: number, fy: number, fz: number) {
     if (!this.cameraRocks.length) {
-      this.cameraRocks = [...this.caveWallPts.map(p => ({ x: p.x, z: p.z, r: p.w * CAMERA_ROCK_FILL })), ...CAVE_PILLARS, ...CAVE_MOUTH.map(o => ({ x: o.x, z: o.z, r: o.r * 1.1 }))];
+      this.cameraRocks = [...this.caveWallPts.map(p => ({ x: p.x, z: p.z, r: p.w * CAMERA_ROCK_FILL })), ...CAVE_PILLARS.filter(o => !hasTop(o)), ...CAVE_MOUTH.map(o => ({ x: o.x, z: o.z, r: o.r * 1.1 }))];
     }
     const c = this.camera.position, dx = c.x - fx, dz = c.z - fz, len2 = dx * dx + dz * dz;
     const onFloor = (k: number) => { const p = { x: fx + dx * k, z: fz + dz * k }, o = clampToWorld(p, CAMERA_FLOOR_MARGIN); return o.x === p.x && o.z === p.z; };

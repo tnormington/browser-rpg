@@ -184,6 +184,28 @@ function snag(bag: Bag, x: number, z: number, seed: number) {
   bag.bone.push(place(new THREE.CylinderGeometry(0.1, 0.24, h, 5).rotateZ(0.12), x, h / 2, z, ry), place(new THREE.CylinderGeometry(0.04, 0.09, 1.5, 4).rotateZ(1), x + 0.5, h * 0.7, z, ry), place(new THREE.CylinderGeometry(0.04, 0.08, 1.1, 4).rotateZ(-1.1), x - 0.4, h * 0.5, z, ry));
 }
 
+/** Does the sim give this obstacle a top to land on? */
+export const hasTop = (o: Obstacle) => (o as Climbable).top !== undefined;
+
+/**
+ * A rock the player can land on (HOM-152): a squat, blunt-sided block cut off flat at the height the sim gives it (`top`), under a pale worn cap
+ * (props.ts `ledge`). Where every other rock is a dome that comes to a point, this is a table: that is the whole grammar, and it reads in the
+ * dark and the rain because it is a silhouette and a tone, not a colour or a light. Module-level so render.ts's own regions, Hale's clearing
+ * and the caves, draw tops the same way (HOM-161).
+ */
+function standableRock(bag: Bag, o: Obstacle, top: number, ry: number, i: number) {
+  const r = o.r * (1.1 + hash(i + 3) * 0.2);
+  bag.rock.push(place(new THREE.CylinderGeometry(r * 0.82, r, top, 7).translate(0, top / 2, 0), o.x, 0, o.z, ry));
+  placeProp(bag, 'ledge', o.x, o.z, ry, r * 0.82, top);
+}
+
+/** The obstacles with a top, drawn as standable rocks and added through `add`: what render.ts calls for the regions it draws itself (HOM-161). */
+export function standableRocks(kit: Kit, obs: Obstacle[], add: (o: THREE.Object3D) => void) {
+  const bag = newBag();
+  obs.forEach((o, i) => { if (hasTop(o)) standableRock(bag, o, (o as Climbable).top!, hash(o.x * 3.1 + o.z * 7.7) * Math.PI * 2, i); });
+  WorldView.emitBag(kit, bag, add);
+}
+
 /** The graveyard's stones as one draw. Saltmarrow's are drawn with its slabs; Hale's clearing is render.ts's own, so it asks for them here. */
 export function headstones(kit: Kit, obs: Obstacle[]): THREE.Mesh {
   return kit.mesh(mergeGeometries(obs.flatMap((o, i) => headstone(o, hash(o.x * 3.1 + o.z * 7.7) * Math.PI * 2, i)))!, kit.P.slate, 'rock');
@@ -336,23 +358,12 @@ export class WorldView {
     return m;
   }
 
-  /**
-   * A rock the player can land on (HOM-152): a squat, blunt-sided block cut off flat at the height the sim gives it (`top`), under a pale worn cap
-   * (props.ts `ledge`). Where every other rock is a dome that comes to a point, this is a table: that is the whole grammar, and it reads in the
-   * dark and the rain because it is a silhouette and a tone, not a colour or a light.
-   */
-  private standableRock(bag: Bag, o: Obstacle, top: number, ry: number, i: number) {
-    const r = o.r * (1.1 + hash(i + 3) * 0.2);
-    bag.rock.push(place(new THREE.CylinderGeometry(r * 0.82, r, top, 7).translate(0, top / 2, 0), o.x, 0, o.z, ry));
-    placeProp(bag, 'ledge', o.x, o.z, ry, r * 0.82, top);
-  }
-
   /** Obstacles by what they are, merged into one draw per material; the road's waymarks ride with the slab they stand in. */
   private scenery(obs: Obstacle[], rect: Rect, r: Region, add: (o: THREE.Object3D) => void) {
     const bag = newBag();
     obs.forEach((o, i) => {
       const h = hash(o.x * 3.1 + o.z * 7.7), ry = h * Math.PI * 2, top = (o as Climbable).top;
-      if (top !== undefined && (o.kind === 'rock' || o.kind === undefined)) { this.standableRock(bag, o, top, ry, i); return; }
+      if (top !== undefined && (o.kind === 'rock' || o.kind === undefined)) { standableRock(bag, o, top, ry, i); return; }
       if (top !== undefined && o.kind === 'crate') placeProp(bag, 'ledge', o.x, o.z, ry, 0.6, 1.17); // a crate's top is fixed: its cap sits on the slats
       switch (o.kind) {
         case 'person': return;
@@ -696,8 +707,9 @@ export class WorldView {
   }
 
   /** One merged draw per material, for a bag of parts. The pools are unlit and additive, so they are not a material class of the renderer's. */
-  private emit(bag: Bag, add: (o: THREE.Object3D) => void, pal: Pal = SALT_PAL) {
-    const { P, mesh } = this.kit, one = (list: THREE.BufferGeometry[], color: number, cls: string, shadow: 'both' | 'cast' | 'receive' | 'none' = 'both') => {
+  private emit(bag: Bag, add: (o: THREE.Object3D) => void, pal: Pal = SALT_PAL) { WorldView.emitBag(this.kit, bag, add, pal); }
+  static emitBag(kit: Kit, bag: Bag, add: (o: THREE.Object3D) => void, pal: Pal = SALT_PAL) {
+    const { P, mesh } = kit, one = (list: THREE.BufferGeometry[], color: number, cls: string, shadow: 'both' | 'cast' | 'receive' | 'none' = 'both') => {
       if (list.length) add(mesh(mergeGeometries(list)!, color, cls, shadow));
     };
     one(bag.rock, P.slate, 'rock');
