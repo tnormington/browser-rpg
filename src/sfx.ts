@@ -330,6 +330,7 @@ export function playEvents(events: GameEvent[], mount: string | null = null) {
         else if (ev.what === 'complete') play('stinger', [SOUNDS.complete, SOUNDS.completeLv]);
         break;
       case 'loot': play('loot', [SOUNDS.loot]); break;
+      case 'chest': play('stinger', [SOUNDS.unlock]); break; // no free creak yet: a found chest is the bright stinger, louder than a drop
       case 'crafted':
         if (ev.skill === 'cooking') { play('cook', [SOUNDS.cookDone]); break; }
         if (ev.skill === 'leatherworking') { play('leather', [SOUNDS.rackDone, SOUNDS.tack]); break; }

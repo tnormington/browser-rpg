@@ -7,6 +7,7 @@ import { NPCS, speakerById, speakerNear } from './quest';
 import { vendorById, vendorNear } from './shop';
 import { masterById, masterNear } from './flight';
 import { dismount, finishMount } from './mounts';
+import { CHEST_R, chestById, openChest } from './chests';
 
 export type Action =
   | { k: 'gather'; nodeId: number; t: number; duration: number }
@@ -15,7 +16,7 @@ export type Action =
   | { k: 'flight'; from: string; to: string; t: number; duration: number }; // the ride: flight.ts runs it, and the player is out of everyone's reach until it lands
 
 /** `npc` and `vendor` name who (a click on them knows); without one, the nearest in earshot is meant (the E key). */
-export type Interact = { k: 'node'; id: number } | { k: 'forge'; site?: number } | { k: 'range' } | { k: 'alembic' } | { k: 'rack' } | { k: 'circle' } | { k: 'npc'; id?: string } | { k: 'vendor'; id?: string } | { k: 'flightmaster'; id?: string };
+export type Interact = { k: 'node'; id: number } | { k: 'forge'; site?: number } | { k: 'range' } | { k: 'alembic' } | { k: 'rack' } | { k: 'circle' } | { k: 'npc'; id?: string } | { k: 'vendor'; id?: string } | { k: 'flightmaster'; id?: string } | { k: 'chest'; id: string };
 
 /** Each forge's own radius, in `stationSites('forge')` order: the building is a collider (world.ts). */
 const FORGE_RS = stationSites('forge').map(f => OBSTACLES.find(o => o.x === f.x && o.z === f.z)!.r);
@@ -30,6 +31,7 @@ function target(s: GameState, it: Interact) {
   if (it.k === 'npc') return speakerById(it.id ?? '') ?? speakerById(speakerNear(s) ?? '') ?? NPCS[0]; // a giver or a waystation's villager
   if (it.k === 'vendor') return vendorById(it.id ?? '') ?? vendorNear(s) ?? vendorById('hale')!;
   if (it.k === 'flightmaster') return masterById(it.id ?? '') ?? masterNear(s) ?? masterById('hale')!;
+  if (it.k === 'chest') { const c = chestById(it.id); return c && { x: c.x, z: c.z, r: CHEST_R }; }
   if (it.k === 'forge') { const i = it.site !== undefined && FORGE_RS[it.site] !== undefined ? it.site : nearestSite(s, 'forge'), f = stationSites('forge')[i]; return { x: f.x, z: f.z, r: FORGE_RS[i] }; }
   if (it.k === 'range') return { x: LANDMARKS.range.x, z: LANDMARKS.range.z, r: RANGE_R };
   if (it.k === 'alembic') return { x: LANDMARKS.alembic.x, z: LANDMARKS.alembic.z, r: ALEMBIC_R };
@@ -66,6 +68,7 @@ export function updateInteract(s: GameState) {
   else if (it.k === 'npc') s.events.push({ t: 'npc', who: (t as { id: string }).id });
   else if (it.k === 'vendor') s.events.push({ t: 'shop', vendor: (t as { id: string }).id });
   else if (it.k === 'flightmaster') s.events.push({ t: 'flightmaster', town: (t as { id: string }).id });
+  else if (it.k === 'chest') { if (!openChest(s, it.id).ok) s.events.push({ t: 'stuck' }); } // a refusal (a rooftop chest from the ground, one already open) is the same shrug as being out of reach
   else beginGather(s, nodeById(s, it.id)!);
 }
 

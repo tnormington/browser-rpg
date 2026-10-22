@@ -3,6 +3,7 @@ import { GameState, GameEvent, ResourceNode, Enemy } from './sim';
 import { ABILITIES, AbilityDef, ENEMY_TYPES, GCD, abilityArtId, castName } from './sim/data';
 import { levelProgress } from './sim/xp';
 import { ITEMS } from './sim/items';
+import { placeById } from './sim/chests';
 import { InvAction, countItem } from './sim/inventory';
 import { SKILLS, SkillId } from './sim/skills';
 import { Status, enemyStatuses, playerStatuses } from './sim/status';
@@ -546,6 +547,10 @@ export class Hud {
         const name = `${ITEMS[ev.item].name}`;
         this.float(ev.sold ? `+${ev.gold} gold` : `-${ev.gold} gold`, 'loot', s.player.x, 3.0, s.player.z);
         this.note(ev.sold ? `Sold ${name} for ${ev.gold} gold` : `Bought ${name} for ${ev.gold} gold`, 'log-loot');
+      } else if (ev.t === 'chest') {
+        // the count is the whole reward for looking: "Greywater Road 1 / 2". The Agility lamp announces itself as the xp event that follows
+        this.float(`+${ev.gold} gold`, 'loot', ev.x, 1.2, ev.z);
+        this.note(`You open a hidden chest: ${ev.gold} gold${ev.xp ? `, ${ev.xp} Agility XP` : ''}. ${placeById(ev.place)!.name}: ${ev.opened} of ${ev.total} found.`, 'log-loot');
       } else if (ev.t === 'forge' || ev.t === 'range' || ev.t === 'alembic' || ev.t === 'rack') {
         ({ forge: this.forgeUi, range: this.rangeUi, alembic: this.alembicUi, rack: this.rackUi })[ev.t].setOpen(true);
       } else if (ev.t === 'circle') {

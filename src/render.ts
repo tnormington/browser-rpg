@@ -10,6 +10,7 @@ import { GATHER_STRIKE, NODE_TYPES, nodeById } from './sim/gathering';
 import { HARBOURMASTER, HIGH_STEWARD, NPC, SPIRE_KEEPER, THORN_REEVE, harbourMarker as harbourMarkOf, keeperMarker as keeperMarkOf, npcMarker as markerOf, reeveMarker as reeveMarkOf, stewardMarker as stewardMarkOf } from './sim/quest';
 import { nearestSite, stationSites } from './sim/crafting';
 import { VENDOR } from './sim/shop';
+import { CHESTS, isOpened } from './sim/chests';
 import { Motes, Particles, Rings, Slashes } from './fx';
 import { PostStack, Quality } from './post';
 import { Weather } from './weather';
@@ -207,6 +208,10 @@ const CRYSTALS = [
 const ACTOR_RANGE = FOG_CULL + 25;
 /** Ore, trees and other nodes are drawn only within this of the player (the fog has hidden them well before). */
 const NODE_RANGE = FOG_CULL + 25;
+/** A chest is built, drawn and clickable only within this of the player: its one glint is meant to be found at the edge of sight (HOM-152), not from the fog. */
+const CHEST_RANGE = FOG_CULL;
+/** How long a chest that has just been opened stays open and glowing, before it settles to the dark, spent mouth. */
+const CHEST_OPEN_S = 3;
 const FISH_RIPPLE = 0x9fc8d8; // a fishing shoal's ripple and fins: cold, pale, the one thing on the water
 /** A spot on the clearing's wall with another region's floor beyond it: the east gate. No boulder is set there. */
 const openToWorld = (x: number, z: number) => REGIONS.some(r => r.zone !== 'hale' && r.footprint.some(f => x > f.x0 + 0.01 && x < f.x1 - 0.01 && z > f.z0 + 0.01 && z < f.z1 - 0.01));
@@ -286,6 +291,8 @@ export class Renderer {
   private drops = new Map<number, DropView>();
   private weapon: THREE.Mesh;
   private nodes = new Map<number, NodeView>();
+  /** The chests (sim/chests.ts), by id: one group per state, built the first time that state is drawn, and only the current one is visible. */
+  private chests = new Map<string, { states: Partial<Record<ChestState, THREE.Group>>; shown?: ChestState; openUntil: number }>();
   /** One list per forge, in `stationSites('forge')` order: the hut, the chimney, the furnace, the anvil, then the dressed model once it loads. */
   private forgeSites: THREE.Object3D[][] = [];
   private rangeParts: THREE.Object3D[] = [];
@@ -1375,6 +1382,31 @@ export class Renderer {
     }
   }
 
+  /** A chest within sight shows its state: closed (the lock's glint), open for a few seconds after you open it, then spent. Far ones are not drawn at all. */
+  private drawChests(s: GameState, nowMs: number) {
+    const p = s.player;
+    for (const c of CHESTS) {
+      const v = this.chests.get(c.id) ?? { states: {}, openUntil: 0 };
+      this.chests.set(c.id, v);
+      const near = Math.hypot(c.x - p.x, c.z - p.z) <= CHEST_RANGE;
+      const opened = isOpened(p, c.id);
+      if (opened && v.shown === 'closed') v.openUntil = nowMs + CHEST_OPEN_S * 1000; // seen closed and now opened: this is the moment it happens
+      const want: ChestState = !opened ? 'closed' : nowMs < v.openUntil ? 'open' : 'spent';
+      for (const [state, g] of Object.entries(v.states)) g.visible = near && state === want;
+      if (!near) continue;
+      if (!v.states[want]) {
+        const g = this.buildProp(want === 'closed' ? 'chest' : want === 'open' ? 'chestOpen' : 'chestSpent');
+        g.position.set(c.x, c.floor, c.z);
+        g.rotation.y = c.x * 1.7 + c.z; // no two face the same way
+        g.userData.chestId = c.id;
+        this.scene.add(g);
+        v.states[want] = g;
+      }
+      v.states[want]!.visible = true;
+      v.shown = want;
+    }
+  }
+
   private addActor(e: Enemy) {
     const def = ENEMY_TYPES[e.type];
     const slot = slotOf(e.type), color = slot === 'boar' ? P.boar : slot === 'wolf' || slot === 'pup' ? P.wolf : slot === 'hexer' ? P.robe : P.brute;
@@ -1737,6 +1769,17 @@ export class Renderer {
     }));
   }
 
+  /** The id of the chest under a screen position, or null: the exact ray first, then the same forgiving volume a node gets. A chest is low and a click is wide. */
+  pickChest(clientX: number, clientY: number, tolerance = 0): string | null {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    const shown = [...this.chests.values()].flatMap(v => Object.values(v.states).filter(g => g.visible));
+    const hit = this.raycaster.intersectObjects(shown, true)[0];
+    for (let o: THREE.Object3D | null = hit?.object ?? null; o; o = o.parent) if (o.userData.chestId !== undefined) return o.userData.chestId as string;
+    const idx = this.pickVolumes(clientX, clientY, tolerance, shown.map(g => ({ id: CHESTS.findIndex(c => c.id === g.userData.chestId), x: g.position.x, z: g.position.z, height: 0.6 + g.position.y, radius: 0.7 })));
+    return idx === null ? null : CHESTS[idx].id;
+  }
+
   /** The index into `stationSites('forge')` of the forge building under the click, or null when it lands on none. */
   pickForge(clientX: number, clientY: number): number | null {
     this.raycaster.setFromCamera(
@@ -1791,6 +1834,8 @@ export class Renderer {
     if (npc !== null) return { k: 'npc', id: npc };
     if (flightMaster !== null) return { k: 'flightmaster', id: flightMaster };
     if (node !== null) return { k: 'node', id: node };
+    const chest = this.pickChest(clientX, clientY);
+    if (chest !== null) return { k: 'chest', id: chest };
     if (vendor !== null) return { k: 'vendor', id: vendor };
     if (forge !== null) return { k: 'forge', site: forge };
     if (this.pickRange(clientX, clientY)) return { k: 'range' };
@@ -1802,6 +1847,8 @@ export class Renderer {
       if (nearEnemy !== null) return { k: 'enemy', id: nearEnemy };
       const nearNode = this.pickNode(clientX, clientY, tolerance);
       if (nearNode !== null) return { k: 'node', id: nearNode };
+      const nearChest = this.pickChest(clientX, clientY, tolerance);
+      if (nearChest !== null) return { k: 'chest', id: nearChest };
     }
     return null;
   }
@@ -1919,6 +1966,7 @@ export class Renderer {
     this.drawWithering(x, z, nowMs);
     this.drawDrops(s);
     this.drawNodes(s);
+    this.drawChests(s, nowMs);
     if (this.gear) {
       this.gear.sync(s.player.equipment, dtFx, this.motes);
       this.gear.hold(workSkill); // after sync: a slot rebuilt this frame does not know a tool is out in place of the sword
@@ -2127,6 +2175,7 @@ interface Actor {
 }
 
 /** One upright click volume: a capsule standing on the ground at (x, z). */
+type ChestState = 'closed' | 'open' | 'spent';
 interface PickCandidate { id: number; x: number; z: number; height: number; radius: number }
 interface NodeView { group: THREE.Group; type: string; crown?: THREE.Mesh; live?: THREE.Object3D; stump?: THREE.Object3D; mats: Mat[]; base: number[] }
 interface DropView { group: THREE.Group; gem: THREE.Mesh }

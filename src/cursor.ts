@@ -51,6 +51,7 @@ export const CURSOR_FOR: Record<Pick['k'], CursorId> = {
   vendor: 'trade',
   flightmaster: 'flight',
   node: 'gather',
+  chest: 'gather',
   forge: 'forge',
   range: 'cook',
   alembic: 'brew',
