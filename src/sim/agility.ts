@@ -89,7 +89,7 @@ export const DOUBLE_JUMP_LEVEL = 25;
 export const DOUBLE_JUMP_APEX = 3.2;    // u above the floor the second push peaks at
 export const DOUBLE_JUMP_CEILING = 2.9; // a press higher than this does nothing (it would overshoot the apex's meaning) and is not spent
 export const DOUBLE_JUMP_COST = 40;     // stamina, against a roll's 45 and a meter of 220 at the level it unlocks
-export const canDoubleJump = (p: Player, rise: number) =>
+export const canDoubleJump = (p: Player, rise = 0) =>
   p.skills.agility.level >= DOUBLE_JUMP_LEVEL && p.stamina >= DOUBLE_JUMP_COST && rise <= DOUBLE_JUMP_CEILING;
 /** The vertical speed that peaks at DOUBLE_JUMP_APEX from `rise` units above the floor (rising is at GRAVITY, so the apex is v^2 / 2g). */
 export const doubleJumpVelocity = (rise: number) => Math.sqrt(2 * GRAVITY * (DOUBLE_JUMP_APEX - rise));
