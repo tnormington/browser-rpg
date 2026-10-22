@@ -48,7 +48,17 @@ const SOUNDS = {
   cast1:     { files: ['swing-1'], vol: 0.5, jitter: 0.04, rate: 0.8 },
   cast2:     { files: ['swing-2'], vol: 0.45, jitter: 0.04, rate: 1.2 },
   cast4:     { files: ['swing-2'], vol: 0.5, jitter: 0.04, rate: 0.85 },
-  slam:      { files: ['slam'], vol: 0.8, jitter: 0.03 },   // volume is scaled by radius, see slamVol
+  // the six past level 48, each its own voice: a sound is keyed on the ability's name (see CAST), never on its index
+  rampart:   { files: ['thud'], vol: 0.6, jitter: 0.03, rate: 0.55 },   // a shield planted: the dull, heavy end of Guard
+  reap:      { files: ['swing-1'], vol: 0.55, jitter: 0.04, rate: 0.62 },
+  reapHit:   { files: ['thud'], vol: 0.6, jitter: 0.03, rate: 0.8, delay: 0.07 },
+  shock:     { files: ['slam'], vol: 0.55, jitter: 0.03, rate: 1.3 },
+  bathe:     { files: ['swing-2'], vol: 0.5, jitter: 0.04, rate: 0.75 },
+  bathe2:    { files: ['hit-flesh-2'], vol: 0.4, jitter: 0.05, rate: 0.7, delay: 0.06 },   // wet, low: it is drinking
+  reckon:    { files: ['swing-1'], vol: 0.6, jitter: 0.02, rate: 0.5 },
+  reckonHit: { files: ['slam'], vol: 0.8, jitter: 0.02, rate: 0.75, delay: 0.12 },
+  reckonBell:{ files: ['levelup'], vol: 0.3, rate: 0.6, delay: 0.16 },   // the last button there is: a stinger's ring under the blow
+  slam:     { files: ['slam'], vol: 0.8, jitter: 0.03 },   // volume is scaled by radius, see slamVol
   interrupt: { files: ['interrupt'], vol: 0.7, jitter: 0.04 },
   levelup:   { files: ['levelup'], vol: 0.6 },
   unlock:    { files: ['levelup'], vol: 0.4, rate: 1.25 },
@@ -302,6 +312,30 @@ function tone(freq: number, dur: number, type: OscillatorType, vol: number, slid
 const arpeggio =(notes: number[], step: number, type: OscillatorType, vol: number) =>
   notes.forEach((f, i) => tone(f, step * 2.2, type, vol, f, i * step));
 
+/**
+ * What pressing an ability sounds like, keyed on its name: an ability is known by its position in ABILITIES and a
+ * position is not stable, so a sound filed under one went to the wrong button twice. An ability not named here falls
+ * back to Guard's two notes if it is a self-buff and is silent otherwise (Strike's swing is its own 'swing' event).
+ */
+const CAST: Record<string, () => void> = {
+  'Crushing Blow': () => play('swing', [SOUNDS.cast1]),
+  'Serrated Throw': () => play('swing', [SOUNDS.cast2]),
+  'Cleave': () => play('swing', [SOUNDS.cast4]),
+  'Second Wind': () => arpeggio([392, 494, 587], 0.06, 'sine', 0.06),
+  'Rampart': () => { play('slam', [SOUNDS.rampart], { exempt: true }); tone(98, 0.3, 'triangle', 0.08, 82); },   // a low block, no melody
+  'Reaping Blow': () => { play('swing', [SOUNDS.reap]); play('slam', [SOUNDS.reapHit]); },
+  'Shockwave': () => { play('slam', [SOUNDS.shock], { exempt: true }); tone(150, 0.4, 'sine', 0.12, 45); },   // a ring going out and down
+  'Echo Surge': () => arpeggio([330, 440, 554, 740], 0.045, 'sine', 0.06),   // climbing and bright: the only offensive buff, so the only one that rises
+  'Bloodbath': () => { play('swing', [SOUNDS.bathe]); play('hitEnemy', [SOUNDS.bathe2]); },
+  'Final Reckoning': () => { play('swing', [SOUNDS.reckon]); play('slam', [SOUNDS.reckonHit, SOUNDS.reckonBell], { exempt: true }); tone(60, 0.7, 'sine', 0.16, 30, 0.1); },
+};
+
+function castSound(a: (typeof ABILITIES)[number]) {
+  const cue = CAST[a.name];
+  if (cue) cue();
+  else if (a.kind === 'guard') arpeggio([262, 330], 0.05, 'triangle', 0.07);   // Guard goes up: two low notes
+}
+
 /** mount is the id of the mount being ridden, null on foot. Read from the state each tick, not from 'mount' events, so a save loaded mounted already sounds mounted. */
 export function playEvents(events: GameEvent[], mount: string | null = null) {
   for (const ev of events) {
@@ -320,11 +354,7 @@ export function playEvents(events: GameEvent[], mount: string | null = null) {
       case 'attack': play('foe', ev.ranged ? [SOUNDS.bolt, SOUNDS.boltTail] : VOICES[voiceOf(ev.species)].attack); break;
       case 'net': play('foe', [SOUNDS.netThrow], { noGap: true }); break;
       case 'cast':
-        if (ev.slot === 1) play('swing', [SOUNDS.cast1]);
-        else if (ev.slot === 2) play('swing', [SOUNDS.cast2]);
-        else if (ev.slot === 4) play('swing', [SOUNDS.cast4]);
-        else if (ev.slot === 3) arpeggio([392, 494, 587], 0.06, 'sine', 0.06);   // Second Wind
-        else if (ABILITIES[ev.slot].kind === 'guard') arpeggio([262, 330], 0.05, 'triangle', 0.07); // Guard goes up: two low notes
+        castSound(ABILITIES[ev.slot]);
         break;
       case 'slam': play('slam', [{ ...SOUNDS.slam, vol: slamVol(ev.radius) }], { exempt: true }); break;
       case 'interrupt': play('interrupt', [SOUNDS.interrupt], { exempt: true }); break;
