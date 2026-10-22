@@ -19,12 +19,12 @@ import { Action, Interact, requestInteract, updateAction, updateInteract } from 
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
 import { holdDoor } from './sim/dungeon';
 import { dismount, moveSpeed, toggleMount, updateMount } from './sim/mounts';
-import { maxStamina, startSprint, updateAgility } from './sim/agility';
+import { ROLL_SPEED, jumpVelocity, maxStamina, rolling, startRoll, startSprint, updateAgility } from './sim/agility';
 import { START_TOWN, discoverMasters, startFlight, updateFlight } from './sim/flight';
 import { holdAtGates } from './sim/gates';
 import { updateWithering } from './sim/hazards';
 import { PLAYER_RADIUS, inCave, regionAt, resolveCollisions } from './sim/world';
-import { ABILITIES, CastKind, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, JUMP_VELOCITY, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT } from './sim/data';
+import { ABILITIES, CastKind, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT, jumpAirtime } from './sim/data';
 import {
   acquireFront, clearTarget, pressAbility, refreshPlayerStats, setTarget, tabTarget, toggleAutoAttack,
   updateEnemies, updatePlayerCombat, updatePlayerDeath,
@@ -117,6 +117,10 @@ export interface Player {
   sprinting: boolean;      // running flat out this tick: what moveSpeed and the run animation read. Transient
   winded: boolean;         // the meter was run dry: no sprinting until it is WINDED_UNTIL full again. Transient
   sprinted: number;        // ground covered at a sprint since the last XP was handed over. Transient
+  /** Seconds left of a dodge-roll (sim/agility.ts). Above zero the player is carried along (rollX, rollZ) and nothing can touch them. Transient */
+  rolling: number;
+  rollCd: number;          // seconds until another roll may start. Transient
+  rollX: number; rollZ: number; // the unit direction the roll is carrying them. Transient
 }
 
 export type GameEvent =
@@ -143,7 +147,8 @@ export type GameEvent =
   | { t: 'stuck' }                                          // something was clicked from too far off to touch: the HUD says so
   | { t: 'gate'; id: string; keeper: string; text: string; need: number } // a hard gate turned the player back: the keeper's line, and the combat level it asks for
   | { t: 'door'; dungeon: string; blurb: string }           // a shut dungeon door turned the player back: blurb says what opens it (at most one every two seconds)
-  | { t: 'jump' }                                           // left the ground
+  | { t: 'jump'; airtime: number }                          // left the ground, and for how long: Agility raises the takeoff, so the clip is stretched over the hop actually taken
+  | { t: 'roll'; x: number; z: number; facing: number }     // a dodge-roll started here, going that way
   | { t: 'land'; x: number; z: number }                     // back on the ground
   | { t: 'step'; surface: 'grass' | 'cave' }                // a foot came down: once per STRIDE_DIST walked on the ground, not while airborne
   | { t: 'begin'; skill: SkillId; what: 'gather' | 'craft'; id: string } // an action was accepted and started (a cast of the line, a batch at the range): id is the node type or the recipe
@@ -213,6 +218,7 @@ export interface Input {
   acquire?: boolean;                            // forgiving click: target the nearest hostile in front of the player (always, even with a target held)
   jump?: boolean;                               // jump if on the ground (held = bunny-hop on landing)
   sprint?: boolean;                             // shift held this tick: run flat out while there is stamina for it (sim/agility.ts)
+  roll?: boolean;                               // ctrl pressed this tick: a dodge-roll out of the same meter (sim/agility.ts)
   inv: InvAction[];                             // inventory/equipment actions this tick
   shop?: ShopAction[];                          // sell/buy requests this tick (optional like the others added after the first callers)
   enchant?: EnchantAction[];                    // disenchant / enchant requests this tick, at the rune circle
@@ -229,7 +235,7 @@ export interface Input {
   admin?: AdminAction[];
 }
 
-export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, sprint: false, inv: [], interact: null, craft: null, questAdvance: false, talent: null, talentReset: false };
+export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, sprint: false, roll: false, inv: [], interact: null, craft: null, questAdvance: false, talent: null, talentReset: false };
 
 export function createState(seed = 1): GameState {
   const skills = newSkills();
@@ -244,7 +250,7 @@ export function createState(seed = 1): GameState {
       dead: false, respawnIn: 0, outOfCombat: 99,
       skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), durability: {}, enchants: {}, stats: deriveStats(emptyEquipment()),
       talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [], procs: [], root: null,
-      stamina: 0, sprinting: false, winded: false, sprinted: 0,
+      stamina: 0, sprinting: false, winded: false, sprinted: 0, rolling: 0, rollCd: 0, rollX: 0, rollZ: 1,
     },
     targetId: null,
     tab: null,
@@ -324,8 +330,12 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   if (p.root) dx = dz = 0; // netted: your feet are the one thing the net holds, so the keys go nowhere
   const len = Math.hypot(dx, dz);
   if (len > 1) { dx /= len; dz /= len; }
-  startSprint(s, input.sprint === true, len > 1e-4); // before the speed is read: sprinting is what makes it 9 rather than 6
-  const speed = moveSpeed(p);
+  // both before the speed is read, and the roll first because a roll is not a sprint: sprinting is what makes the speed 9
+  // rather than 6, and a roll overrules both the keys and the speed for as long as it lasts.
+  startRoll(s, input.roll === true, dx, dz);
+  startSprint(s, input.sprint === true, len > 1e-4);
+  if (rolling(p)) { dx = p.rollX; dz = p.rollZ; }
+  const speed = rolling(p) ? ROLL_SPEED : moveSpeed(p);
   const px = p.x, pz = p.z;
   p.x += dx * speed * dt;
   p.z += dz * speed * dt;
@@ -335,7 +345,7 @@ function movePlayer(s: GameState, input: Input, dt: number) {
 
   const moved = Math.hypot(p.x - px, p.z - pz);
   p.moving = moved > 1e-4;
-  if (len > 1e-4) p.facing = Math.atan2(dx, dz);
+  if (len > 1e-4 || rolling(p)) p.facing = Math.atan2(dx, dz);
   if (input.face != null) p.facing = input.face; // steering beats the walk: strafing with the mouse keeps you facing the camera
   updateAgility(s, moved, dt); // the ground actually covered is what the meter is charged for, and what the skill is paid for
   stepVertical(s, input.jump === true, dt);
@@ -360,9 +370,9 @@ function stepStride(s: GameState, moved: number) {
 function stepVertical(s: GameState, wantsJump: boolean, dt: number) {
   const p = s.player;
   if (wantsJump && p.y === 0 && p.vy === 0) {
-    p.vy = JUMP_VELOCITY;
+    p.vy = jumpVelocity(p); // Agility pushes off harder, and height goes as the square of it
     p.action = null; // like moving, hopping breaks the concentration of a gather or craft
-    s.events.push({ t: 'jump' });
+    s.events.push({ t: 'jump', airtime: jumpAirtime(p.vy) });
   }
   if (p.y === 0 && p.vy === 0) { p.airborne = false; return; }
   p.vy -= (p.vy > 0 ? GRAVITY : FALL_GRAVITY) * dt; // the fall is the quicker half: see the note on GRAVITY

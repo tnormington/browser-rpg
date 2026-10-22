@@ -1,12 +1,15 @@
 // HOM-147: Agility. Shift is sprint, the stamina meter pays for it, and the meter is the skill — levelling it is a longer run.
+// Plus the three things the level buys besides: a shorter hold from a net, a higher hop, and the dodge-roll on the same meter.
 // Run with `npm run verify`.
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState } from './sim';
 import { SKILLS, SKILL_IDS, grantXp } from './sim/skills';
 import { FOOT_SPEED, moveSpeed } from './sim/mounts';
 import {
+  JUMP_LIFT, ROLL_CD, ROLL_COST, ROLL_SPEED, ROLL_TIME, ROOT_CUT,
   SPRINT_DRAIN, SPRINT_SPEED, SPRINT_XP_EVERY, SPRINT_XP_PER_UNIT, STAMINA_BASE, STAMINA_PER_LEVEL,
-  STAMINA_REFILL, WINDED_UNTIL, maxStamina, startSprint, updateAgility,
+  STAMINA_REFILL, WINDED_UNTIL, jumpVelocity, maxStamina, netHold, startSprint, updateAgility,
 } from './sim/agility';
+import { ENEMY_TYPES, JUMP_VELOCITY, jumpAirtime, jumpHeight } from './sim/data';
 import { deserialize, serialize } from './sim/save';
 import { harmPlayer } from './sim/combat';
 import { xpForLevel } from './sim/xp';
@@ -175,6 +178,132 @@ section('It survives a save, and a death gives it back');
   assert(died.player.dead, 'the player is down');
   run(died, 12);
   assert(!died.player.dead && died.player.stamina === maxStamina(died.player) && !died.player.winded, 'you wake at the graveyard with your breath back, like your health');
+}
+
+section('Light on your feet: Agility is how much of a net you shrug off');
+{
+  const net = ENEMY_TYPES.footpad.net!;
+  assert(netHold(atLevel(1).player, net.duration) === net.duration, 'at Agility 1 a net holds you for every second it is worth');
+  assert(near(netHold(atLevel(99).player, net.duration), net.duration * (1 - ROOT_CUT), 1e-9), '...and at 99 for half of them');
+  assert(near(netHold(atLevel(50).player, net.duration), net.duration * (1 - ROOT_CUT * 49 / 98), 1e-9), 'and the levels between it pay out in a straight line');
+
+  // the rule where it is used: a footpad walked up to and left to throw its bola
+  const thrown = (level: number) => {
+    const s = atLevel(level), p = s.player, e = s.enemies[0];
+    Object.assign(e, { type: 'footpad', hp: ENEMY_TYPES.footpad.hp, maxHp: ENEMY_TYPES.footpad.hp, state: 'chase', respawnIn: 0, deadFor: 0, netCd: 0, cast: null });
+    e.x = p.x + 4; e.z = p.z; e.spawnX = e.x; e.spawnZ = e.z;
+    for (let n = 0; n < Math.round(6 / TICK_DT); n++) {
+      tick(s);
+      const ev = s.events.find(x => x.t === 'net');
+      if (ev) return { s, held: (ev as { duration: number }).duration };
+    }
+    return { s, held: -1 };
+  };
+  const slow = thrown(1), quick = thrown(99);
+  assert(slow.held === ENEMY_TYPES.footpad.net!.duration, 'a bola thrown at Agility 1 lands for its full two and a half seconds');
+  assert(slow.s.player.root !== null && slow.s.player.root.total === slow.held, 'and that is the hold the player (and the bar over their head) carries');
+  assert(near(quick.held, slow.held / 2, 0.01), 'the same bola thrown at Agility 99 is shrugged off in half the time');
+}
+
+section('A higher hop: nothing reads y, so the whole reward is seeing it');
+{
+  assert(jumpVelocity(atLevel(1).player) === JUMP_VELOCITY, 'Agility 1 leaves the ground exactly as it always did');
+  assert(near(jumpVelocity(atLevel(99).player), JUMP_VELOCITY * (1 + JUMP_LIFT), 1e-9), '...and 99 pushes off a quarter harder');
+
+  const peak = (level: number) => {
+    const s = atLevel(level);
+    let top = 0, airtime = -1;
+    for (let n = 0; n < Math.round(2 / TICK_DT); n++) {
+      tick(s, { jump: n === 0 });
+      const ev = s.events.find(x => x.t === 'jump');
+      if (ev) airtime = (ev as { airtime: number }).airtime;
+      top = Math.max(top, s.player.y);
+    }
+    return { top, airtime, landed: s.player.y === 0 };
+  };
+  const low = peak(1), high = peak(99);
+  assert(near(low.top, jumpHeight(JUMP_VELOCITY), 0.25) && low.landed, 'the hop at Agility 1 is the 1.35u it has always been, and comes back down');
+  assert(high.top > low.top * 1.5 && high.landed, `and at 99 it is over half again as high (${high.top.toFixed(2)}u against ${low.top.toFixed(2)}u): height goes as the square of the takeoff`);
+  assert(near(low.airtime, jumpAirtime(JUMP_VELOCITY), 1e-9) && high.airtime > low.airtime,
+    'each hop tells the renderer its own airtime, so the clip is stretched over the one actually taken rather than a constant');
+}
+
+section('Ctrl is a dodge-roll, and the sprint meter is what pays for it');
+{
+  const s = quiet(), from = { x: s.player.x, z: s.player.z };
+  tick(s, { dirX: 1, roll: true });
+  assert(s.player.rolling > 0 && s.events.some(e => e.t === 'roll'), 'the key starts a roll');
+  assert(near(s.player.stamina, STAMINA_BASE - ROLL_COST, SPRINT_DRAIN), 'and it is charged to the stamina meter on the spot');
+  run(s, ROLL_TIME, { dirX: 1 });
+  assert(s.player.rolling === 0, 'it is over in a third of a second');
+  // a tick's worth of slack either way: the countdown is settled after the step, as every other clock in the sim is
+  assert(near(dist(s.player, from), ROLL_SPEED * ROLL_TIME, ROLL_SPEED * TICK_DT), `...having carried the player about five units (${dist(s.player, from).toFixed(1)}u)`);
+
+  const hit = quiet();
+  tick(hit, { dirX: 1, roll: true });
+  const hp = hit.player.hp;
+  harmPlayer(hit, 'thornback', undefined, 50, 'Gore');
+  assert(hit.player.hp === hp && hit.player.rolling > 0, 'nothing can touch you while it lasts: that is what the breath bought');
+  run(hit, ROLL_TIME + ROLL_CD + 0.1);
+  harmPlayer(hit, 'thornback', undefined, 50, 'Gore');
+  assert(hit.player.hp < hp, 'and the window shuts when the roll does');
+
+  const again = quiet();
+  tick(again, { dirX: 1, roll: true });
+  run(again, ROLL_TIME + 0.1, { dirX: 1 });
+  tick(again, { dirX: 1, roll: true });
+  assert(again.player.rolling === 0, 'a second roll on the heels of the first is refused: the roll has a cooldown of its own');
+  run(again, ROLL_CD, { dirX: 1 });
+  tick(again, { dirX: 1, roll: true });
+  assert(again.player.rolling > 0, '...and answers again once it is up');
+
+  const facing = quiet();
+  facing.player.facing = Math.PI / 2; // due +x
+  tick(facing, { roll: true });
+  assert(near(facing.player.rollX, 1, 1e-6) && near(facing.player.rollZ, 0, 1e-6), 'standing still, the roll goes the way you are looking');
+  const walking = quiet();
+  walking.player.facing = Math.PI / 2;
+  tick(walking, { dirZ: -1, roll: true });
+  assert(near(walking.player.rollZ, -1, 1e-6), '...and walking, the way the keys are pushing, whatever the camera has you facing');
+
+  const broke = quiet();
+  broke.player.stamina = ROLL_COST - 1;
+  tick(broke, { dirX: 1, roll: true });
+  assert(broke.player.rolling === 0 && broke.player.stamina >= ROLL_COST - 1, 'with less than a roll left in the meter there is no roll, and nothing is spent');
+
+  const saddle = quiet();
+  saddle.player.mounts.push('courser'); saddle.player.mounted = true;
+  tick(saddle, { dirX: 1, roll: true });
+  assert(saddle.player.rolling === 0 && saddle.player.stamina === STAMINA_BASE, 'and none from a horse');
+
+  const tied = quiet();
+  tied.player.root = { left: 3, total: 3, name: 'Bola' };
+  tied.player.facing = Math.PI / 2;
+  const stood = { x: tied.player.x, z: tied.player.z };
+  tick(tied, { dirX: 1, roll: true });
+  assert(tied.player.rolling === 0 && dist(tied.player, stood) < 1e-6, 'a net holds your feet, and a roll is all feet');
+
+  const trained = quiet();
+  for (let n = 0; n < 3; n++) { tick(trained, { dirX: 1, roll: true }); run(trained, ROLL_TIME + ROLL_CD, { dirX: 1 }); }
+  assert(trained.player.skills.agility.xp === 0 && trained.player.sprinted === 0, 'rolling trains nothing: sprinting is still the only thing that does');
+
+  // the one way Agility governs the roll: a longer meter is more rolls on the trot before the breath runs out
+  const CAP = 20;
+  const rollsAt = (level: number) => {
+    const s = atLevel(level);
+    let n = 0;
+    while (n < CAP) {
+      tick(s, { dirX: n % 2 ? 1 : -1, roll: true });
+      if (s.player.rolling === 0) break;
+      n++;
+      run(s, ROLL_TIME + ROLL_CD, {});
+    }
+    return n;
+  };
+  const few = rollsAt(1), many = rollsAt(99);
+  assert(few >= 2 && few < 6, `at Agility 1 a roll is near half the meter, so you get ${few} on the trot and then need your breath back`);
+  assert(many === CAP, 'by 99 the meter is no longer what stops you: the roll\'s own cooldown is, and that is the same at every level');
+  assert(rollsAt(20) > few, '...and the levels between buy more of them, one meter-length at a time');
 }
 
 console.log(`\n${checks} checks passed`);

@@ -28,9 +28,12 @@ export const FRONT_HALF_ARC = 70;     // degrees either side of facing that coun
 export const JUMP_VELOCITY = 9;
 export const GRAVITY = 30;       // on the way up
 export const FALL_GRAVITY = 42;  // on the way down: 1.4x, so the descent is the snappy half
-export const JUMP_HEIGHT = JUMP_VELOCITY ** 2 / (2 * GRAVITY);
-/** Seconds a jump stays in the air, up at GRAVITY and down at FALL_GRAVITY. The jump clip is stretched over this. */
-export const JUMP_AIRTIME = JUMP_VELOCITY / GRAVITY + Math.sqrt((2 * JUMP_HEIGHT) / FALL_GRAVITY);
+/** How high a takeoff of `v` reaches, and how long it stays up (up at GRAVITY, down at FALL_GRAVITY). Agility raises the takeoff
+ * (sim/agility.ts), so both follow it rather than being constants: the jump clip is stretched over the airtime of the hop actually taken. */
+export const jumpHeight = (v: number) => v ** 2 / (2 * GRAVITY);
+export const jumpAirtime = (v: number) => v / GRAVITY + Math.sqrt((2 * jumpHeight(v)) / FALL_GRAVITY);
+export const JUMP_HEIGHT = jumpHeight(JUMP_VELOCITY);
+export const JUMP_AIRTIME = jumpAirtime(JUMP_VELOCITY);
 export const PLAYER_SPAWN = TOWNS[0].wake;
 
 // Auto-attack: a WoW-style melee swing on its own timer, off the GCD and free of energy. Rhythm, not power:

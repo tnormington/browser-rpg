@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
 import { floorLift, roomIndices } from './floor-stack';
 import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, dungeonAt, inCave, regionAt } from './sim/world';
-import { ABILITIES, ENEMY_TYPES, JUMP_AIRTIME, AUTO_RANGE, SPAWNS } from './sim/data';
+import { ABILITIES, ENEMY_TYPES, AUTO_RANGE, SPAWNS } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { GATHER_STRIKE, NODE_TYPES, nodeById } from './sim/gathering';
 import { HARBOURMASTER, HIGH_STEWARD, NPC, SPIRE_KEEPER, THORN_REEVE, harbourMarker as harbourMarkOf, keeperMarker as keeperMarkOf, npcMarker as markerOf, reeveMarker as reeveMarkOf, stewardMarker as stewardMarkOf } from './sim/quest';
@@ -21,7 +21,7 @@ import { PROPS, PropId } from './props';
 import { PlayerGear } from './gear';
 import { MountRig, MOUNT_LOOKS, mountLookId } from './mount';
 import { FOOT_SPEED, bestMount, moveSpeed } from './sim/mounts';
-import { SPRINT_SPEED } from './sim/agility';
+import { ROLL_SPEED, ROLL_TIME, SPRINT_SPEED } from './sim/agility';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { HaloSpot, haloMesh, tickHalos } from './halo';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
@@ -1481,7 +1481,13 @@ export class Renderer {
         }
       }
       else if (ev.t === 'swing' && this.playerAnim) { this.playerAnim.swung(); this.slashes.swipe(s.player.x, s.player.z, s.player.facing); } // auto-attack: raises no 'cast', the hit follows this tick
-      else if (ev.t === 'jump') this.playerAnim?.jump(JUMP_AIRTIME);
+      else if (ev.t === 'jump') this.playerAnim?.jump(ev.airtime); // the clip is stretched over the hop actually taken: Agility makes it a longer one
+      else if (ev.t === 'roll') {
+        // no roll clip in the pack, so the roll is told by the ground: a kick of dirt where it starts and a low streak of it along the way
+        const [dx, dz] = [Math.sin(ev.facing), Math.cos(ev.facing)];
+        this.matter.burst(ev.x, 0.2, ev.z, { color: [P.ash, P.dirt], count: 14, speed: 4.5, dir: [-dx, -dz], cone: 0.6, flat: true, gravity: 0, drag: 2.5, size: 1.6, life: 0.4, hdr: 0.8, alpha: 0.6 });
+        this.after(ROLL_TIME, () => this.matter.burst(s.player.x, 0.2, s.player.z, { color: [P.ash, P.dirt], count: 8, speed: 2.4, flat: true, gravity: 0, drag: 3, size: 1.4, life: 0.35, hdr: 0.6, alpha: 0.45 }));
+      }
       else if (ev.t === 'land') {
         this.playerAnim?.touchdown();
         this.matter.burst(ev.x, 0.15, ev.z, { color: [P.ash, P.dirt], count: 9, speed: 2.4, flat: true, gravity: 0, drag: 2.5, size: 1.8, life: 0.45, hdr: 0.8, alpha: 0.5 });
@@ -1846,7 +1852,7 @@ export class Renderer {
     const workSkill = work ? NODE_TYPES[work.type].skill : null;
     if (pa) {
       if (pl.dead !== this.playerWasDead) { if (pl.dead) pa.die(); else pa.revive(); this.playerWasDead = pl.dead; }
-      pa.locomotion(pl.moving && !pl.dead, pl.sprinting ? SPRINT_SPEED : FOOT_SPEED); // a sprint plays the same run clip faster, so the legs keep up with the ground
+      pa.locomotion(pl.moving && !pl.dead, pl.rolling > 0 ? ROLL_SPEED : pl.sprinting ? SPRINT_SPEED : FOOT_SPEED); // a sprint, and harder a roll, plays the same run clip faster, so the legs keep up with the ground
       pa.gather(workSkill, act ? (act.t % GATHER_STRIKE) / GATHER_STRIKE : 0);
       for (const rig of this.mounts.values()) if (rig.root.visible) { rig.update(dtFx, pl.moving && !pl.dead); pa.rideBob(rig.bob); }
       pa.update(dtFx);

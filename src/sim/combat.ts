@@ -3,7 +3,7 @@ import type { GameState, Enemy, EnemyState, Player } from '../sim';
 import { MAX_REDUCTION } from './items';
 import { EXECUTE_BONUS, WOUNDED_UNDER } from './talents';
 import { grantXp } from './skills';
-import { maxStamina } from './agility';
+import { maxStamina, netHold, rolling } from './agility';
 import { applyBuff, breakFood, buffedDamage, buffedOutgoing, clearBuffs, maxHpOf } from './consumables';
 import { PROCS, clearProcs, procOn, rollProcs, spendProc, updateProcs } from './procs';
 import { ITEMS, EQUIP_SLOTS } from './items';
@@ -484,6 +484,7 @@ function killPlayer(s: GameState) {
   clearBuffs(s);
   clearProcs(s);
   p.root = null;
+  p.rolling = p.rollCd = 0;
   p.dead = true;
   p.action = null;
   s.interact = null;
@@ -539,7 +540,7 @@ function aggro(s: GameState, e: Enemy) {
 /** Damage to the player from `src` (an enemy type, or the ground's own id; `srcId` is the enemy's id when there is one): the one place a hit lands, so the recap and the events agree. */
 export function harmPlayer(s: GameState, src: string, srcId: number | undefined, amount: number, what: string, heavy = false) {
   const p = s.player;
-  if (isFlying(p)) return; // on a flight nothing can touch you
+  if (isFlying(p) || rolling(p)) return; // on a flight nothing can touch you, and a dodge-roll is the same window bought with breath
   amount = buffedDamage(p, amount); // Guard: what lands, and what the recap and the floating number say, is the halved hit
   p.hp = Math.max(0, p.hp - amount);
   p.outOfCombat = 0;
@@ -589,11 +590,13 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
     const n = def.net!;
     e.netCd = n.every;
     // the same two outs as a bolt: walk out of its reach, or put rock between you and it
-    if (p.dead || isFlying(p) || dist(e, p) > n.range + 2) return;
+    if (p.dead || isFlying(p) || rolling(p) || dist(e, p) > n.range + 2) return;
     if (!clearLine(e, p)) return void s.events.push({ t: 'blocked', id: e.id, x: e.x, z: e.z });
-    p.root = { left: n.duration, total: n.duration, name: n.name };
-    e.netRun = n.duration;
-    s.events.push({ t: 'net', id: e.id, x: p.x, z: p.z, name: n.name, duration: n.duration });
+    // light on your feet: Agility is how much of the hold you shrug off, and the shooter only backs away for as long as it has you
+    const held = netHold(p, n.duration);
+    p.root = { left: held, total: held, name: n.name };
+    e.netRun = held;
+    s.events.push({ t: 'net', id: e.id, x: p.x, z: p.z, name: n.name, duration: held });
   } else {
     s.events.push({ t: 'attack', id: e.id, species: e.type, ranged: true }); // the shot leaves it either way: a bolt the player walked out of is still a bolt you hear
     if (!p.dead && dist(e, p) <= def.ranged!.range + 2) { // a little slack: a pace back mid-cast does not dodge a bolt, leaving its reach does
