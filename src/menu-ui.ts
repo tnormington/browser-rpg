@@ -6,11 +6,11 @@ import { ECHO_STEPS, echoUnlocked, type EchoSetting } from './sim/echo';
 import type { GameState } from './sim';
 
 /** What each setting is worth (docs/combat-99.md 3.4): the XP against Standard, and the health an Echo's fight costs against it. */
-const ECHO_ROWS: { to: EchoSetting; label: string; tip: string }[] = [
+const ECHO_ROWS: { to: EchoSetting; label: string; mult?: string; tip: string }[] = [
   { to: null, label: 'Off', tip: 'The world as it was authored.' },
-  { to: -3, label: 'Easy 0.66x', tip: 'Echoes stand 3 levels under you: 0.66x the XP of Standard, for 9 to 13 % less health cost.' },
-  { to: 0, label: 'Standard 1x', tip: 'Echoes stand at your level: the XP the fight is balanced around.' },
-  { to: 3, label: 'Hard 1.49x', tip: 'Echoes stand 3 levels over you: 1.49x the XP of Standard, for 10 to 17 % more health cost.' },
+  { to: -3, label: 'Easy', mult: '0.66x', tip: 'Echoes stand 3 levels under you: 0.66x the XP of Standard, for 9 to 13 % less health cost.' },
+  { to: 0, label: 'Standard', mult: '1x', tip: 'Echoes stand at your level: the XP the fight is balanced around.' },
+  { to: 3, label: 'Hard', mult: '1.49x', tip: 'Echoes stand 3 levels over you: 1.49x the XP of Standard, for 10 to 17 % more health cost.' },
 ];
 
 const CONTROLS: [string, string][] = [
@@ -72,12 +72,16 @@ export class MenuUi {
     this.echoRow.style.display = 'none'; // until the Seal is broken (quest.eighth done)
     const label = el(this.echoRow, 'echolabel', 'Echoes:');
     label.title = 'Enemies that respawn as copies of themselves at your level, from their next respawn on.';
-    for (const { to, label: text, tip } of ECHO_ROWS) {
-      const b = el(this.echoRow, 'btn mbtn echoopt', text);
+    for (const { to, label: text, mult, tip } of ECHO_ROWS) {
+      const b = el(this.echoRow, 'btn mbtn echoopt');
+      el(b, 'echoname', text);
+      if (mult) el(b, 'echomult', mult);
       b.title = tip;
       b.addEventListener('click', () => actions.echo(to));
       this.echoBtns.set(to, b);
     }
+    // the XP bar ends where the menu bar begins, whatever the bar holds (the Echo row makes it twice as long)
+    new ResizeObserver(() => root.style.setProperty('--menu-w', `${bar.offsetWidth}px`)).observe(bar);
     const quality = el(bar, 'btn mbtn', '');
     quality.title = 'Graphics quality: High has bloom, ambient occlusion and a colour grade; Low renders straight to the screen';
     const showQuality = (toggle: boolean) => { quality.textContent = `Graphics: ${actions.quality(toggle) === 'high' ? 'High' : 'Low'}`; };
@@ -101,6 +105,10 @@ export class MenuUi {
     const on = echoUnlocked(s);
     this.echoRow.style.display = on ? 'flex' : 'none';
     if (!on) return;
-    for (const to of ECHO_STEPS) this.echoBtns.get(to)!.classList.toggle('sel', to === s.player.echo);
+    for (const to of ECHO_STEPS) {
+      const b = this.echoBtns.get(to)!, sel = to === s.player.echo;
+      b.classList.toggle('sel', sel);
+      b.setAttribute('aria-pressed', String(sel));
+    }
   }
 }

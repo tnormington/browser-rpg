@@ -103,7 +103,7 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .hp{--fill:var(--fill-hp)}.energy{--fill:var(--fill-energy)}.enemyhp{--fill:var(--fill-blood)}
 /* sprint's meter: lit while running flat out, grey while the breath comes back and sprint will not answer */
 .stamina{--fill:var(--fill-stamina)}.stamina.running{--fill:var(--fill-stamina-hi)}.stamina.winded{--fill:var(--fill-steel);opacity:.65}
-.xp{--bar-h:12px;position:absolute;left:12%;right:max(12%,350px);bottom:6px;margin-top:0;--fill:var(--fill-xp)}
+.xp{--bar-h:12px;position:absolute;left:12%;right:max(12%,calc(var(--gutter) + var(--menu-w,338px) + var(--sp-4)));bottom:6px;margin-top:0;--fill:var(--fill-xp)}
 .xp.skill{--fill:var(--fill-skill)} /* the bar is following a gathering/crafting skill, not combat */
 /* buffs and debuffs under a unit frame: icon, seconds left, and a bar that empties over the effect's run */
 .buffs{position:absolute;left:0;bottom:calc(100% + var(--sp-2));display:flex;gap:var(--sp-2)}.buffs:empty{display:none}
@@ -294,6 +294,16 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .helpnote{margin-top:10px;opacity:.7}
 .menubar{position:absolute;right:var(--gutter);bottom:var(--sp-2);display:flex;gap:var(--sp-3);pointer-events:auto}
 .mbtn{padding:var(--sp-1) var(--sp-4);background:var(--iron)}
+/* the Echo switch (HOM-182): one sunk well holding a label and four segments, quiet until you look at it. The chosen segment is the one gold-washed block in the bar, as .btn.pri is
+   in a panel; nothing about it changes width, so a longer name or multiplier only makes the well longer. */
+.echorow{display:flex;align-items:stretch;overflow:hidden;white-space:nowrap;background:var(--iron-sunk);border:1px solid var(--edge-dim);border-radius:var(--r)}
+.echolabel{display:flex;align-items:center;padding:0 var(--sp-3);color:var(--ink-dim);cursor:help}
+.echorow .echoopt{padding:var(--sp-1) var(--sp-3);background:transparent;border:0;border-left:1px solid var(--edge-dim);border-radius:0;color:var(--ink-dim)}
+.echorow .echoopt:hover{background:var(--iron-hover);color:var(--gold)}
+.echorow .echoopt.sel{background:var(--gold-wash);color:var(--ink-bright);box-shadow:inset 0 0 0 1px var(--gold-dim)}
+.echorow .echoopt.sel:hover{background:var(--gold-wash-hi)}
+.echoname,.echomult{display:inline}.echomult{margin-left:var(--sp-2);font-size:var(--fs-sm)}.echoopt.sel .echomult{color:var(--gold-hi)}
+@media (max-width:1100px){.echoname:has(+ .echomult){display:none}.echomult{margin-left:0}} /* the strip is full: the multiplier is what is chosen between, so it stays and the name (still in the tooltip) goes */
 .hurt{position:absolute;inset:0;opacity:0;box-shadow:inset 0 0 120px 30px rgba(170,15,15,.7)}
 .hurt.show{animation:hurt .45s ease-out}.hurt.heavy.show{animation:hurt 1.2s ease-out}
 @keyframes hurt{0%{opacity:1}100%{opacity:0}}

@@ -12,6 +12,8 @@
 // 5. With a target held, checks the HUD that is always on (quest tracker, minimap, both unit frames, action bar, swing bar, XP bar, menu bar, log)
 //    is clear of itself and sits inside the window.
 // 6. (HOM-104) The action bar is one row, no slot under MIN_SLOT px, and nothing printed on a slot wider than the slot.
+// 7. (HOM-182) With the Seal broken the menu bar carries the Echo row: it must keep clear of the XP bar (which gives up room to it), the XP bar must stay readable, and each of
+//    the four settings, Off included, must show exactly one picked segment.
 // Run `npm run build` first.
 //   node bench/hud-layout.mjs        exits non-zero on any overlap or any panel past the window's edge
 import { preview } from 'vite';
@@ -151,8 +153,20 @@ for (const [width, height] of SIZES) {
     const e = s.enemies.find(o => o.state !== 'dead');
     for (const o of s.enemies) if (o !== e) { o.state = 'dead'; o.respawnIn = 1e9; o.deadFor = 99; o.cast = null; }
     p.dead = false; p.x = e.x + 4; p.z = e.z; s.targetId = e.id; p.autoAttack = true;
-    d.step(); d.step();
+    // HOM-182: the Seal broken, so the menu bar carries the Echo row (twice its length). Whichever of the four settings is picked, exactly one segment says so, and it looks
+    // unlike the others; the row's own text may change but it may not push the XP bar under a button or leave it too short to read.
+    s.quest.eighth = 'done';
+    for (const to of [null, -3, 0, 3]) {
+      p.echo = to; d.step(); d.step();
+      await new Promise(r => setTimeout(r, 150));
+      const opts = [...document.querySelectorAll('.echoopt')], sel = opts.filter(o => o.classList.contains('sel'));
+      if (opts.length !== 4 || sel.length !== 1) fails.push(`the Echo row shows ${sel.length} of ${opts.length} segments picked with echo ${to}`);
+      else if (opts.some(o => o !== sel[0] && getComputedStyle(o).backgroundColor === getComputedStyle(sel[0]).backgroundColor)) fails.push(`the picked Echo segment (echo ${to}) looks like an unpicked one`);
+    }
+    p.echo = 0; d.step(); d.step();
     await new Promise(r => setTimeout(r, 400));
+    const xpBox = document.querySelector('.xp').getBoundingClientRect();
+    if (xpBox.width < 140) fails.push(`the XP bar is ${Math.round(xpBox.width)}px wide with the Echo row up: its label does not fit`);
     const parts = [['quest tracker', '.tracker'], ['minimap', '.minimap'], ['player frame', '.frame.player'], ['target frame', '.frame.target'],
       ['action bar', '.actionbar'], ['swing bar', '.swing'], ['XP bar', '.xp'], ['menu bar', '.menubar'], ['message log', '.msglog'],
       ['admin button', '.devbar']]; // HOM-114: dev builds only, and this bench loads the game as one
