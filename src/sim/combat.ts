@@ -583,14 +583,14 @@ function startGroundCast(s: GameState, e: Enemy) {
 
 /** A low swing: the ring is the enemy's own, fixed here (a pair is one cast, `gap` longer, with a second ring at its end). */
 function startSweepCast(s: GameState, e: Enemy) {
-  const w = ENEMY_TYPES[e.type].sweep!;
+  const w = defOf(e).sweep!;
   e.cast = { kind: 'sweep', t: 0, total: w.windup + (w.gap ?? 0), x: e.x, z: e.z, radius: w.radius, gap: w.gap };
   s.events.push({ t: 'telegraph', id: e.id, kind: 'sweep', windup: w.windup, x: e.x, z: e.z, radius: w.radius, gap: w.gap });
 }
 
 /** A ring lands: it passes under a player who is rolling or above SWEEP_CLEAR, and takes anyone else inside it. The ground is hit either way. */
 function sweepRing(s: GameState, e: Enemy) {
-  const p = s.player, w = ENEMY_TYPES[e.type].sweep!;
+  const p = s.player, w = defOf(e).sweep!;
   e.swing = 0.15;
   s.events.push({ t: 'slam', id: e.id, x: e.x, z: e.z, radius: w.radius });
   if (!p.dead && !clearsGround(p) && dist(e, p) <= w.radius) hurtPlayer(s, e, takeDamage(p, w.damage, true), w.name, true);
