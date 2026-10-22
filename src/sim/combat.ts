@@ -18,7 +18,7 @@ import { clearLine } from './sight';
 import { isFlying } from './flight';
 import { dismount } from './mounts';
 import {
-  ABILITIES, ENEMY_TYPES, GCD, QUEUE_WINDOW, CRIT_CHANCE, CRIT_MULT, ENERGY_MAX, ENERGY_REGEN,
+  ABILITIES, ENEMY_TYPES, defOf, GCD, QUEUE_WINDOW, CRIT_CHANCE, CRIT_MULT, ENERGY_MAX, ENERGY_REGEN,
   RESPAWN_DELAY, OOC_DELAY, OOC_REGEN_FRAC, TAB_RANGE, powerForLevel,
   STAGGER_TIME, STAGGER_HEAVY_KEEP, ACQUIRE_RANGE, ACQUIRE_BEHIND_RANGE, FRONT_HALF_ARC, aggroRadius,
   AUTO_RANGE, AUTO_BASE, AUTO_WEAPON_SHARE, AUTO_SLOT, BARE_SWING, RECAP_WINDOW, RECAP_MAX, TICK_DT, SIM_WAKE_RANGE, xpParity,
@@ -251,7 +251,7 @@ function damageEnemy(s: GameState, e: Enemy, amount: number, crit: boolean, slot
 }
 
 function killEnemy(s: GameState, e: Enemy) {
-  const def = ENEMY_TYPES[e.type];
+  const def = defOf(e);
   e.state = 'dead';
   e.deadFor = 0;
   e.respawnIn = def.respawn;
@@ -423,7 +423,7 @@ function leap(s: GameState, slot: number, spot: { x: number; z: number }) {
 
 /** Stun an enemy and push back everything it was about to do, so it cannot slam the instant it comes round. */
 function staggerEnemy(s: GameState, e: Enemy) {
-  const def = ENEMY_TYPES[e.type];
+  const def = defOf(e);
   e.cast = null;
   e.stagger = STAGGER_TIME + s.player.talentFx.staggerBonus; // Stalwart
   e.attackCd = Math.max(e.attackCd, 1);
@@ -541,7 +541,7 @@ function startReturn(e: Enemy) {
 /** Wake an idle enemy (and the pack-mates that can see it: the cry does not carry through a standing stone). */
 function aggro(s: GameState, e: Enemy) {
   if (e.state !== 'idle') return;
-  const def = ENEMY_TYPES[e.type];
+  const def = defOf(e);
   e.state = 'chase';
   e.attackCd = Math.max(e.attackCd, 0.6);
   if (def.heavy) e.heavyCd = Math.max(e.heavyCd, def.heavy.first);
@@ -574,14 +574,14 @@ function startCast(s: GameState, e: Enemy, kind: 'heavy' | 'bolt' | 'net', windu
 
 /** Mark the ground under the player: the circle is fixed here, and lands where they were, not where they are. */
 function startGroundCast(s: GameState, e: Enemy) {
-  const h = ENEMY_TYPES[e.type].hazard!, p = s.player;
+  const h = defOf(e).hazard!, p = s.player;
   e.cast = { kind: 'ground', t: 0, total: h.windup, x: p.x, z: p.z, radius: h.radius };
   s.events.push({ t: 'telegraph', id: e.id, kind: 'ground', windup: h.windup, x: p.x, z: p.z, radius: h.radius });
 }
 
 /** Tick a wind-up. The enemy stands still and watches the player; when it completes, the attack lands only if the player is still in reach. */
 function updateCast(s: GameState, e: Enemy, dt: number) {
-  const p = s.player, def = ENEMY_TYPES[e.type], c = e.cast!;
+  const p = s.player, def = defOf(e), c = e.cast!;
   e.facing = Math.atan2(p.x - e.x, p.z - e.z);
   c.t += dt;
   if (c.t < c.total) return;
@@ -625,7 +625,7 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
  * the retreat a landed net bought it (see `net` in EnemyDef).
  */
 function updateRanged(s: GameState, e: Enemy, dt: number) {
-  const p = s.player, def = ENEMY_TYPES[e.type], r = def.ranged!, d = dist(e, p);
+  const p = s.player, def = defOf(e), r = def.ranged!, d = dist(e, p);
   e.facing = Math.atan2(p.x - e.x, p.z - e.z);
   // No line, no shot: it works round the rock instead of firing through it, so cover buys you the gap, not the fight.
   // It aims a few units to one side of the player rather than straight at them: walking at a pillar it is squarely
@@ -653,13 +653,13 @@ function stepToward(e: Enemy, tx: number, tz: number, speed: number, dt: number,
   if (move <= 0) return;
   e.x += (dx / d) * move;
   e.z += (dz / d) * move;
-  resolveCollisions(e, ENEMY_TYPES[e.type].radius);
+  resolveCollisions(e, defOf(e).radius);
 }
 
 export function updateEnemies(s: GameState, dt: number) {
   const p = s.player;
   for (const e of s.enemies) {
-    const def = ENEMY_TYPES[e.type];
+    const def = defOf(e);
     const retired = !!def.retiresAt && questReached(s, def.retiresAt);
     if (retired && e.state === 'idle') { e.state = 'dead'; e.hp = 0; e.respawnIn = def.respawn; e.deadFor = 99; } // an older save left it standing
     if (e.state === 'dead') {

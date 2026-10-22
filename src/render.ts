@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, TOWNS, WORLD_HALF } from './sim';
 import { floorLift, roomIndices } from './floor-stack';
 import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, dungeonAt, inCave, perchAt, regionAt } from './sim/world';
-import { ABILITIES, ENEMY_TYPES, AUTO_RANGE, SPAWNS, GRAVITY, FALL_GRAVITY } from './sim/data';
+import { ABILITIES, ENEMY_TYPES, defOf, AUTO_RANGE, SPAWNS, GRAVITY, FALL_GRAVITY } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { GATHER_STRIKE, NODE_TYPES, nodeById } from './sim/gathering';
 import { HARBOURMASTER, HIGH_STEWARD, NPC, SPIRE_KEEPER, THORN_REEVE, harbourMarker as harbourMarkOf, keeperMarker as keeperMarkOf, npcMarker as markerOf, reeveMarker as reeveMarkOf, stewardMarker as stewardMarkOf } from './sim/quest';
@@ -1149,7 +1149,7 @@ export class Renderer {
     a.group.add(inst.root);
     a.model = inst.root;
     a.mats = inst.materials;
-    const tint = ENEMY_TYPES[a.type].look?.tint;
+    const tint = defOf(a).look?.tint;
     for (const m of a.mats) { if (tint !== undefined) m.color.lerp(new THREE.Color(tint), TINT_MIX); m.emissive.setHex(a.glow); }
     a.anim = new Animator(inst.root, inst.clips, SLOTS[slotOf(a.type) as 'boar'].anim);
     const kit = SILHOUETTES[a.type];
@@ -1428,7 +1428,7 @@ export class Renderer {
   }
 
   private addActor(e: Enemy) {
-    const def = ENEMY_TYPES[e.type];
+    const def = defOf(e);
     const slot = slotOf(e.type), color = slot === 'boar' ? P.boar : slot === 'wolf' || slot === 'pup' ? P.wolf : slot === 'hexer' ? P.robe : P.brute;
     const group = new THREE.Group();
     const mat = material(color, 'hide');
@@ -1515,7 +1515,7 @@ export class Renderer {
       if (ev.t === 'hit') {
         if (ev.target === 'player') {
           const src = ev.src === undefined ? undefined : s.enemies.find(e => e.id === ev.src);
-          const ranged = !!src && !!ENEMY_TYPES[src.type].ranged, lag = ranged ? 0 : LEAD; // a bolt lands on the tick; a bite lands when the jaws arrive
+          const ranged = !!src && !!defOf(src).ranged, lag = ranged ? 0 : LEAD; // a bolt lands on the tick; a bite lands when the jaws arrive
           const [dx, dz] = src ? unit(ev.x - src.x, ev.z - src.z) : [-Math.sin(s.player.facing), -Math.cos(s.player.facing)];
           const hold = ev.heavy ? 0.1 : 0.05;
           this.playerAnim?.react(ev.heavy ? 1.6 : 0.8, lag);
@@ -1584,7 +1584,7 @@ export class Renderer {
         if (w > 1.25) this.shakeMag = Math.max(this.shakeMag, 0.06 * (w - 1.25) / 0.45);
       }
       else if (ev.t === 'slam') {
-        const hz = ENEMY_TYPES[s.enemies.find(e => e.id === ev.id)?.type ?? '']?.hazard, stone = !!hz && FALLING.has(hz.name) && hz.radius === ev.radius; // the stone landing, not the boss's own slam
+        const src = s.enemies.find(e => e.id === ev.id), hz = src && defOf(src).hazard, stone = !!hz && FALLING.has(hz.name) && hz.radius === ev.radius; // the stone landing, not the boss's own slam
         this.matter.burst(ev.x, 0.2, ev.z, { color: [P.ash, P.dirt], count: 22, speed: ev.radius * 0.9, flat: true, gravity: 0, drag: 2.2, size: 3, life: 0.8, hdr: 0.8, alpha: 0.45 }); // the ground goes up in a ring of dust
         if (stone) this.matter.burst(ev.x, 0.3, ev.z, { color: [P.ash, P.boulder, P.stone], count: 36, speed: 6, up: 3, gravity: -12, size: 1.4, life: 0.8, hdr: 1 });
         else this.particles.burst(ev.x, 0.3, ev.z, { color: [P.bloodLight, P.ember], count: 26, speed: 7, up: 2, size: 0.8, life: 0.7 });
@@ -2018,7 +2018,7 @@ export class Renderer {
     this.selection.visible = !!target;
     if (target) {
       const a = this.actors.get(target.id) ?? { px: target.x, pz: target.z, cx: target.x, cz: target.z };
-      const r = ENEMY_TYPES[target.type].radius + 0.5 + 0.05 * Math.sin(performance.now() / 120);
+      const r = defOf(target).radius + 0.5 + 0.05 * Math.sin(performance.now() / 120);
       this.selection.position.set(a.px + (a.cx - a.px) * alpha, 0.12, a.pz + (a.cz - a.pz) * alpha);
       this.selection.scale.setScalar(r);
       this.selection.rotation.y = performance.now() / 600;
@@ -2132,10 +2132,10 @@ export class Renderer {
     g.rotation.y = e.facing;
     let lunge = 1 + e.swing * 2, shrink = Math.max(0.05, 1 - e.deadFor / 2), fall = dead;
     if (an) {
-      const speed = ENEMY_TYPES[a.type].speed, moving = !dead && Math.hypot(a.cx - a.px, a.cz - a.pz) > 1e-3;
+      const speed = defOf(a).speed, moving = !dead && Math.hypot(a.cx - a.px, a.cz - a.pz) > 1e-3;
       if (dead !== a.dead) { if (dead) an.die(); else an.revive(); }
       // a bite is `attackCd` away and the sim gives no warning of its own: draw back for it, so the lunge has a wind-up the player can read
-      const def = ENEMY_TYPES[a.type];
+      const def = defOf(a);
       if (!dead && e.state === 'chase' && !e.cast && e.stagger <= 0 && !def.ranged && !(def.heavy && e.heavyCd <= 0) && e.attackCd > 0
         && Math.hypot(e.x - this.curr.x, e.z - this.curr.z) <= def.attackRange) an.anticipate(e.attackCd, 0.35);
       if (!dead && e.swing > a.swing) an.swung();
@@ -2153,7 +2153,7 @@ export class Renderer {
     }
     a.swing = e.swing; a.flash = e.hitFlash; a.dead = dead;
     g.rotation.z = fall ? Math.PI / 2 : 0;
-    g.position.y = fall ? ENEMY_TYPES[e.type].radius : 0;
+    g.position.y = fall ? defOf(e).radius : 0;
     g.scale.setScalar((dead ? shrink : lunge) * a.scale); // shrink away when dead
     // the tell: a wind-up reddens and swells the model (and leans it back), and a heavy fills its ground circle until it lands
     const wind = e.cast && !dead ? e.cast.t / e.cast.total : 0;
@@ -2169,7 +2169,7 @@ export class Renderer {
     const gc = e.cast?.kind === 'ground' && !dead ? e.cast : null; // the mark under the player: drawn from state, so it needs no event
     if (gc) {
       a.ground ??= this.makeTele(gc.radius!);
-      if (FALLING.has(ENEMY_TYPES[e.type].hazard?.name ?? '') && !a.ground.rock) a.ground.root.add(a.ground.rock = this.makeFallingStone(gc.radius!));
+      if (FALLING.has(defOf(e).hazard?.name ?? '') && !a.ground.rock) a.ground.root.add(a.ground.rock = this.makeFallingStone(gc.radius!));
     }
     if (a.ground) {
       a.ground.root.visible = !!gc;

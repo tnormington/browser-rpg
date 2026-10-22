@@ -1,6 +1,6 @@
 // HUD: DOM overlay. Reads GameState and sim events; never mutates sim state.
 import { GameState, GameEvent, ResourceNode, Enemy } from './sim';
-import { ABILITIES, AbilityDef, ENEMY_TYPES, GCD, abilityArtId, castName } from './sim/data';
+import { ABILITIES, AbilityDef, defOf, GCD, abilityArtId, castName } from './sim/data';
 import { levelProgress } from './sim/xp';
 import { ITEMS } from './sim/items';
 import { placeById } from './sim/chests';
@@ -628,21 +628,21 @@ export class Hud {
       } else if (ev.t === 'interrupt') {
         const e = s.enemies.find(x => x.id === ev.id);
         this.float('INTERRUPTED', 'interrupt', ev.x, 3.4, ev.z);
-        this.note(`${e ? ENEMY_TYPES[e.type].name : 'Enemy'} interrupted`, 'log-xp');
+        this.note(`${e ? defOf(e).name : 'Enemy'} interrupted`, 'log-xp');
         this.warn.classList.remove('show');
       } else if (ev.t === 'net') {
         const e = s.enemies.find(x => x.id === ev.id);
         this.float('CAUGHT', 'interrupt', ev.x, 3.4, ev.z);
-        this.note(`${e ? ENEMY_TYPES[e.type].name : 'Enemy'}'s ${ev.name} holds you: ${ev.duration}s before you can move`, 'log-xp');
+        this.note(`${e ? defOf(e).name : 'Enemy'}'s ${ev.name} holds you: ${ev.duration}s before you can move`, 'log-xp');
         this.warn.classList.remove('show');
       } else if (ev.t === 'blocked') {
         const e = s.enemies.find(x => x.id === ev.id);
         this.float('BLOCKED', 'interrupt', ev.x, 3.4, ev.z);
-        this.note(`${e ? ENEMY_TYPES[e.type].name : 'Enemy'}'s shot hit the rock: you broke its line`, 'log-xp');
+        this.note(`${e ? defOf(e).name : 'Enemy'}'s shot hit the rock: you broke its line`, 'log-xp');
         this.warn.classList.remove('show');
       } else if (ev.t === 'kill') {
         const e = s.enemies.find(x => x.id === ev.id);
-        if (e) this.note(`${ENEMY_TYPES[e.type].name} slain`, 'log-kill');
+        if (e) this.note(`${defOf(e).name} slain`, 'log-kill');
       } else if (ev.t === 'npc') {
         this.questUi.setOpen(true, s, ev.who);
       } else if (ev.t === 'quest') {
@@ -693,7 +693,7 @@ export class Hud {
   private telegraph(ev: Extract<GameEvent, { t: 'telegraph' }>, s: GameState) {
     const e = s.enemies.find(x => x.id === ev.id), p = s.player;
     if (!e || Math.hypot(e.x - p.x, e.z - p.z) > 16) return;
-    const def = ENEMY_TYPES[e.type];
+    const def = defOf(e);
     const name = castName(def, ev.kind);
     // only offer the Pummel answer when it is both learned and sitting on the bar: there is no key to name otherwise
     const pk = p.combat.level >= ABILITIES[PUMMEL].unlockLevel ? this.keyForAbility(PUMMEL) : null;
@@ -752,7 +752,7 @@ export class Hud {
     const t = s.targetId === null ? undefined : s.enemies.find(e => e.id === s.targetId);
     this.targetFrame.style.display = t ? 'block' : 'none';
     if (t) {
-      const def = ENEMY_TYPES[t.type];
+      const def = defOf(t);
       setFaceArt(this.targetFace, enemyArt(t.type)); // by type: every Wild Boar wears the one boar's face
       this.targetName.textContent = `${def.name}  Lv ${def.level}`;
       this.targetName.className = `name ${def.level > p.combat.level + 2 ? 'hard' : ''}`;
@@ -818,7 +818,7 @@ export class Hud {
     const cand: { e: Enemy; scr: { x: number; y: number }; d: number }[] = [];
     for (const e of s.enemies) {
       const d = Math.hypot(e.x - p.x, e.z - p.z);
-      const scr = e.state !== 'dead' && d < 28 && clearLine(p, e) ? this.project(e.x, ENEMY_TYPES[e.type].radius * 2 + (e.type === 'brute' ? 1.6 : 0.9), e.z) : null;
+      const scr = e.state !== 'dead' && d < 28 && clearLine(p, e) ? this.project(e.x, defOf(e).radius * 2 + (e.type === 'brute' ? 1.6 : 0.9), e.z) : null;
       if (scr && !this.behindHud(blockers, scr)) cand.push({ e, scr, d });
     }
     // the target first, then nearest: a plate that would print over one already placed (a pack) is lifted above it, never overprinted
@@ -832,7 +832,7 @@ export class Hud {
       let plate = this.plates.get(e.id);
       if (!plate) {
         const root = el(this.root, 'plate');
-        const def = ENEMY_TYPES[e.type];
+        const def = defOf(e);
         el(root, 'pname', `${def.name} ${def.level}`);
         const cast = el(root, 'bar thin pcast');
         plate = { root, fill: el(el(root, 'bar thin pbar'), 'fill'), cast, castFill: el(cast, 'fill') };

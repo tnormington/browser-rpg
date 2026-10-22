@@ -457,6 +457,9 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     look: { model: 'hexer', scale: 1.6, tint: 0x6a5aa8 } },
 };
 
+/** The stats of this enemy: the one place an instance's type becomes a row, so a spawn that differs from its species has one seam to change. */
+export const defOf = (enemy: { type: string }): EnemyDef => ENEMY_TYPES[enemy.type];
+
 /**
  * Where enemies stand. Hale's own come first and keep their ids (a save matches by id and type); every other region's follow in region
  * order, from the region's own `spawns` (world.ts), so new ground only ever adds ids at the end.
