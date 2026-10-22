@@ -2056,7 +2056,7 @@ export class Renderer {
       an.locomotion(moving, speed);
       an.telegraph(e.cast && !dead ? e.cast.kind : null, e.cast ? e.cast.t / e.cast.total : 0);
       // a low wind-up scrapes the ground it is about to take the legs from: grit streams flat out along the floor, thicker as it winds
-      if (e.cast && !dead && TELLS[e.cast.kind]?.scrape && Math.random() < dt * 22 * (e.cast.t / e.cast.total)) {
+      if (e.cast && !dead && TELLS[e.cast.kind]?.scrape && Math.random() < dt * 22 * (0.4 + 0.6 * (e.cast.t / e.cast.total))) {
         const [fx, fz] = [Math.sin(e.facing), Math.cos(e.facing)], side = (Math.random() - 0.5) * 1.6;
         this.matter.burst(e.x + fx * 0.9 + fz * side, 0.12, e.z + fz * 0.9 - fx * side, { color: [P.ash, P.dirt], count: 2, speed: 1.6, dir: [fx, fz], cone: 0.5, flat: true, gravity: 0, drag: 2.2, size: 1.3, life: 0.5, hdr: 0.8, alpha: 0.5 });
       }

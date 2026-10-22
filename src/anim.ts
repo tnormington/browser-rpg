@@ -43,6 +43,11 @@ export interface TellPose {
   roll?: number;
   /** The body drags grit along the ground as it winds: the renderer lays the dust, since it knows where the enemy stands. */
   scrape?: boolean;
+  /**
+   * The share of the wind-up the pose takes to draw (default 1: it builds all the way to the blow). A tell the player has to
+   * answer by timing has to be readable inside a reaction, so it drops into the pose early and holds it, the scrape and the tremble carrying the rest.
+   */
+  snap?: number;
 }
 /**
  * Keyed by the sim's cast kind. Heavy: both fists high over the head. Bolt: the casting hand thrown up and back.
@@ -56,7 +61,7 @@ export const TELLS: Record<string, TellPose> = {
   bolt: { arms: { R: [-0.3, 1, -0.5], L: [0.25, 0.3, 1] }, lean: 0.2, sink: 0.04, swell: 0.06, shake: 0.015 },
   ground: { arms: { R: [-0.3, 1, -0.5], L: [0.3, 1, -0.5] }, lean: 0.15, sink: 0.02, swell: 0.08, shake: 0.02 },
   net: { arms: { L: [0.85, 0.25, 0.5], R: [-0.85, 0.25, 0.5] }, lean: 0.25, sink: 0.1, swell: 0.05, shake: 0.02 },
-  sweep: { arms: { R: [-1, -0.75, -0.75], L: [0.3, -0.9, 0.2] }, lean: -0.45, sink: 0.2, swell: 0.08, shake: 0.008, squat: 0.34, roll: 0.22, scrape: true },
+  sweep: { arms: { R: [-1, -0.75, -0.75], L: [0.3, -0.9, 0.2] }, lean: -0.45, sink: 0.2, swell: 0.08, shake: 0.008, squat: 0.34, roll: 0.22, scrape: true, snap: 0.3 },
 };
 
 /**
@@ -344,7 +349,7 @@ export class Animator {
   private applyPose() {
     const r = this.root, d = this.def;
     const h = level(this.hit), lg = level(this.lunge), ld = level(this.land);
-    const tell = this.windKind ? TELLS[this.windKind] : undefined, w = tell ? smooth(Math.min(1, this.wind)) : 0;
+    const tell = this.windKind ? TELLS[this.windKind] : undefined, w = tell ? smooth(Math.min(1, this.wind / (tell.snap ?? 1))) : 0;
     // a beast has no arms to trail and no hips to fold: crushed to half height and rolled over it reads as dying, so it only ducks its head into the low tell
     const folds = this.bones.has('UpperArmL') ? 1 : 0;
     // the fallen (no death clip): roll onto one side with a little overshoot, hopping up as it goes
