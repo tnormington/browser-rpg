@@ -1891,30 +1891,35 @@ section('HOM-158 the chests: placement, reward, opening once, and the save');
   assert(PLACES.length === 14 && new Set(PLACES.flatMap(p => p.regions)).size === PLACES.flatMap(p => p.regions).length && PLACES.flatMap(p => p.regions).every(id => REGIONS.some(r => r.id === id)), 'fourteen places, each region in exactly one, every one a real region');
   const perchOf = (c: ChestDef) => COLLIDERS.find(o => o.top !== undefined && o.x === c.x && o.z === c.z);
   assert(CHESTS.every(c => placeById(c.place) && (c.tier === 'stash' ? c.floor === 0 && !perchOf(c) : perchOf(c)?.top === c.floor && c.floor > 0)), 'a stash stands on the ground, and a cache or a hoard stands on the top of a prop that has one');
-  // 7.1's table (stash / cache / hoard), as placed. Seven are still to come: Hale's cache and hoard and the five dungeons' caches, in regions render.ts draws itself, which cannot show a top
-  const plan: Record<string, [number, number, number]> = { hale: [1, 0, 0], hollow: [1, 0, 0], greywater: [2, 1, 1], saltmarrow: [1, 2, 2], grotto: [1, 0, 0], dunmere: [2, 1, 1], thornwick: [1, 2, 2], rotroot: [1, 0, 0], barrowdowns: [2, 1, 2], highmoor: [1, 2, 2], cairnhold: [1, 0, 0], cairnwaste: [2, 1, 2], spire: [1, 1, 2], vault: [1, 0, 0] };
+  // 7.1's table (stash / cache / hoard): a dungeon holds a stash and a cache and no hoard, Hale one of each
+  const plan: Record<string, [number, number, number]> = { hale: [1, 1, 1], hollow: [1, 1, 0], greywater: [2, 1, 1], saltmarrow: [1, 2, 2], grotto: [1, 1, 0], dunmere: [2, 1, 1], thornwick: [1, 2, 2], rotroot: [1, 1, 0], barrowdowns: [2, 1, 2], highmoor: [1, 2, 2], cairnhold: [1, 1, 0], cairnwaste: [2, 1, 2], spire: [1, 1, 2], vault: [1, 1, 0] };
   const tally = (place: string) => (['stash', 'cache', 'hoard'] as const).map(t => chestsIn(place).filter(c => c.tier === t).length);
-  assert(PLACES.every(p => tally(p.id).join() === plan[p.id].join()) && CHESTS.length === 43, '18 stashes, 11 caches and 14 hoards, the per-place counts of 7.1 (43 of 50 placed)');
+  assert(PLACES.every(p => tally(p.id).join() === plan[p.id].join()) && CHESTS.length === CHEST_TOTAL, '18 stashes, 17 caches and 15 hoards, the per-place counts of 7.1: all 50 placed');
   const count = (t: ChestDef['tier']) => CHESTS.filter(c => c.tier === t).length;
-  assert(17 - count('cache') === 6 && 15 - count('hoard') === 1 && count('stash') === 18, 'which leaves 6 caches and 1 hoard of 7.1 to place: Hale\'s two and the five dungeons\' caches');
+  assert(count('cache') === 17 && count('hoard') === 15 && count('stash') === 18, 'the doc\'s three tiers: 18 stashes, 17 caches, 15 hoards');
 
   const s0 = createState(1);
   const spawns = s0.enemies.map(e => ({ x: e.spawnX, z: e.spawnZ }));
   const bosses = s0.enemies.filter(e => ENEMY_TYPES[e.type].respawn >= 300).map(e => ({ x: e.spawnX, z: e.spawnZ }));
+  // what a spawn notices: its distance less its notice radius. Hale's 60 u square holds eleven spawns, so there the rule is 4 u outside every radius (the widest is 10) and not 16 from the spawn
+  const woken = s0.enemies.map(e => ({ x: e.spawnX, z: e.spawnZ, r: ENEMY_TYPES[e.type].aggroRadius }));
+  // the Warden (180 s) is the Hollow's boss though the 300 s line above leaves him out: his hall is 22 u square, so no corner of it is 14 u from him
+  const bossNotice = s0.enemies.filter(e => ENEMY_TYPES[e.type].respawn >= 300 || e.type === 'warden').map(e => ({ x: e.spawnX, z: e.spawnZ, r: ENEMY_TYPES[e.type].aggroRadius }));
   const near = (a: { x: number; z: number }, list: { x: number; z: number; r?: number }[]) => Math.min(...list.map(b => Math.hypot(a.x - b.x, a.z - b.z) - (b.r ?? 0)));
   for (const c of CHESTS) {
     const place = placeById(c.place)!, cave = inCave(c.x, c.z);
     const home = REGIONS.filter(r => place.regions.includes(r.id)).some(r => r.footprint.some(f => c.x >= f.x0 && c.x <= f.x1 && c.z >= f.z0 && c.z <= f.z1));
     // a stash is found behind something: 2 to 4 u from a solid. A cache or a hoard is found on something, so what is solid to it is every other prop, and the prop it stands on
-    // (r from the middle, where it stands) is kept a walk-round clear of all of them: at least 1.8 rim to rim, and a cache's whole step outside every safe circle
+    // (r from the middle, where it stands) is kept a walk-round clear of all of them: at least 1.8 rim to rim, and a cache's whole step outside every safe circle. Its rim is 0.6 clear of the world's edge,
+    // and 1.4 of a cave's wall: a gap narrower than a body is a slot it is shoved into and cannot settle in
     const perch = perchOf(c), r = perch?.r ?? 0;
     const solid = near(c, COLLIDERS.filter(o => o !== perch)), dSpawn = near(c, spawns);
-    const clear = clampToWorld({ x: c.x, z: c.z }, r + (perch ? 0.6 : PLAYER_RADIUS));
+    const clear = clampToWorld({ x: c.x, z: c.z }, r + (perch ? (cave ? 1.4 : 0.6) : PLAYER_RADIUS));
     const roadRegion = REGIONS.find(r => r.road && place.regions.includes(r.id));
     const offRoad = roadRegion?.road ? roadDist(roadRegion.road, c.x, c.z) : null;
     const apart = perch ? solid >= r + 1.8 : solid >= 1.8 && solid <= 4.5;
     const ok = home && apart && clear.x === c.x && clear.z === c.z && (c.tier === 'hoard' || near(c, SAFE_ZONES) > r) && near(c, bosses) >= 14 + r
-      && dSpawn >= (cave ? 8 : 16) && (offRoad === null || (offRoad >= 15 && offRoad <= 60));
+      && (c.place === 'hale' ? near(c, woken) >= 4 : dSpawn >= (cave ? (c.id === 'hollow-cache-1' ? 5 : 8) : 16)) && (offRoad === null || (offRoad >= 15 && offRoad <= 60));
     assert(ok, `${c.id}: in its place, ${perch ? `on a ${c.floor} u top with ${(solid - r).toFixed(1)} u to the nearest prop` : `2 to 4 u from something solid (${solid.toFixed(1)})`}, ${dSpawn.toFixed(0)} u from a spawn, off the road ${offRoad === null ? 'n/a' : offRoad.toFixed(0)}, ${c.tier === 'hoard' ? 'a hoard may stand in a safe circle' : 'outside every safe circle'}, 14 u from a boss`);
   }
   // 100 u between two of a road's, which is what the long roads have room for; a town's 140 x 140 floor holds up to five, so there it is 35
@@ -1922,6 +1927,9 @@ section('HOM-158 the chests: placement, reward, opening once, and the save');
   assert(open.every((a, i) => open.every((b, j) => i === j || a.place !== b.place || Math.hypot(a.x - b.x, a.z - b.z) >= (onRoad(a.place) ? 100 : 35))), 'no two chests of one place in open country are closer than 100 u along a road, or 35 u in a town');
   const rooms = CHESTS.filter(c => inCave(c.x, c.z)).map(c => CAVE_ROOMS.findIndex(r => c.x >= r.rect.x0 && c.x <= r.rect.x1 && c.z >= r.rect.z0 && c.z <= r.rect.z1));
   assert(rooms.every(r => r >= 0) && new Set(rooms).size === rooms.length, 'a dungeon holds at most one chest to a room');
+  const caches = CHESTS.filter(c => c.tier === 'cache' && inCave(c.x, c.z));
+  assert(caches.length === 5 && caches.every(c => near(c, bossNotice) > 0 && CAVE_ROOMS.some(r => c.x >= r.rect.x0 && c.x <= r.rect.x1 && c.z >= r.rect.z0 && c.z <= r.rect.z1 && r.rect.x1 - r.rect.x0 >= 8)),
+    'a dungeon\'s cache is outside every boss\'s notice radius and in a room 8 u wide or more: a step in a 5 u corridor would cork it to an ogre');
 
   // what they pay: coin on the player's combat level, the lamp on their Agility, whatever the region
   assert([5, 20, 40].every(L => chestReward('stash', L, 1).gold === Math.round(0.5 * (0.6 * L + 3)) && chestReward('cache', L, 1).gold === chestReward('stash', L, 1).gold && chestReward('hoard', L, 1).gold === Math.round(0.6 * L + 3)),

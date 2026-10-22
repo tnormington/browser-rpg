@@ -3,14 +3,13 @@
 // (a chest stands in the middle of its perch, on its top: the two never disagree about where it is). Heights are the two authored in each band of 5.1:
 // steps 0.6 and 1.0, rooftops 2.6 and 2.8. src/reach.test.ts proves the rest.
 //
-// Only the regions world-view.ts draws can hold one: it cuts a standable rock flat under a pale cap, and render.ts's own regions (Hale's clearing, ridge and seams,
-// and every cave, where an obstacle is drawn as a standing stone) have no way to show a top. The caches and hoards that belong there are held back until they do
-// (chests.ts), because a step you cannot see is a chest floating over bare floor.
+// Any region can hold one: world-view.ts, and since HOM-161 render.ts (Hale's clearing and the caves), cut a standable rock flat under a pale cap, so a step is seen
+// wherever a chest stands on it. A cave's step is a low table, not in `tall`, so it never breaks sight.
 export interface Perch {
   /** The chest that stands on it. */
   chest: string;
   tier: 'cache' | 'hoard';
-  /** The region (world.ts) whose obstacles it joins: it must be one world-view.ts draws. */
+  /** The region (world.ts) whose obstacles it joins: a cave's own room or corridor (hollow's throat, grotto's hold) for a dungeon's cache. */
   region: string;
   x: number; z: number;
   /** A step is 1.3 (the rule needs 1.2 to land on it), a rooftop 2.2 (it needs 2.0). */
@@ -23,6 +22,9 @@ const cache = (chest: string, region: string, x: number, z: number, top: number)
 const hoard = (chest: string, region: string, x: number, z: number, top: number): Perch => ({ chest, tier: 'hoard', region, x, z, r: ROOF_R, top });
 
 export const PERCHES: Perch[] = [
+  // Hale: the cache on the clearing's west edge, away from the road and the forge, and the hoard on the middle of its south edge, a watchtower in plain sight of the whole square
+  cache('hale-cache-1', 'clearing', -27, -3, 0.6),
+  hoard('hale-hoard-1', 'clearing', 2, 26, 2.8),
   cache('greywater-cache-1', 'greywater', 150, 40, 0.6),
   hoard('greywater-hoard-1', 'greywater', 440, -28, 2.6),
   cache('saltmarrow-cache-1', 'saltmarrow', 843, -20, 0.6),
@@ -48,4 +50,13 @@ export const PERCHES: Perch[] = [
   cache('spire-cache-1', 'spire', 2025, 50, 0.6),
   hoard('spire-hoard-1', 'spire', 1990, 45, 2.6),
   hoard('spire-hoard-2', 'spire', 1932, -44, 2.8),
+  // A dungeon's cache: in a room, never a corridor (the Hollow's are 5 u wide and a step leaves a lane too narrow for an ogre to follow you out), and 2.7 u from every wall so
+  // no body is wedged between the step and the stone. In four dungeons it is the corner of the boss's room on the door's wall, as far from the door as the wall goes, 17 u or more from him. The Hollow's hall is 22 u
+  // square and has no such corner, so its cache is in the cavern, at the east end 10 u from the throat, and its stash moved into the hall (chests.ts).
+  // The cavern's eight spawns are never more than 6 u off, so its cache is 5 u from the nearest.
+  cache('hollow-cache-1', 'hollow', -8, -46, 0.6),
+  cache('grotto-cache-1', 'hold', 895, -103, 1.0),
+  cache('rotroot-cache-1', 'heart', 886, 1119, 0.6),
+  cache('cairnhold-cache-1', 'chamber', 1901, 885, 1.0),
+  cache('vault-cache-1', 'sanctum', 2013, -119, 0.6),
 ];

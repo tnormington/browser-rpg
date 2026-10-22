@@ -3,9 +3,8 @@
 // and nothing else, because every item in the game sells for its `value` and a chest of items would compete with every other source at once.
 // Pure sim, like every other action: the renderer draws what CHESTS says and the E key calls openChest.
 //
-// What is placed so far is the 18 stashes, which need nothing but the legs to find, and the 11 caches and 14 hoards on the steps and rooftops of perches.ts.
+// All fifty are placed: the 18 stashes, which need nothing but the legs to find, and the 17 caches and 15 hoards on the steps and rooftops of perches.ts.
 // A chest declared at a tier its route cannot honour is a lie in the journal, so src/reach.test.ts holds every declared tier to the route it needs (reach.ts).
-// Still to place are 7 of the 50: Hale's cache and hoard and the five dungeons' caches, all in regions render.ts draws itself, which cannot show a top yet.
 import type { GameState, Player } from '../sim';
 import { PERCHES } from './perches';
 import { grantXp } from './skills';
@@ -64,12 +63,12 @@ export interface ChestDef {
 
 /**
  * Where they are. A stash is 15 to 60 u off the road in open country, 16 u or more from any spawn (the widest notice radius is 12, and 4 is the margin),
- * outside every safe circle, 100 u from the next of its place; a dungeon holds one and its rooms are too packed for 16 (the nearest spawn is 8 to 14 u
- * off). Each one stands 2 to 4 u from something solid, which is what "behind something" is. src/golden-path.test.ts holds all of that to account.
+ * outside every safe circle, 100 u from the next of its place; a dungeon's rooms are too packed for 16 (the nearest spawn is 8 to 14 u off), and Hale's 60 u
+ * square holds eleven spawns, so there a chest need only be 4 u outside the notice radius of every one (10 at the widest). Each one stands 2 to 4 u from something solid, which is what "behind something" is. src/golden-path.test.ts holds all of that to account.
  */
 export const CHESTS: ChestDef[] = [
   { id: 'hale-stash-1', place: 'hale', tier: 'stash', x: 28, z: -24, floor: 0 },
-  { id: 'hollow-stash-1', place: 'hollow', tier: 'stash', x: -18, z: -54, floor: 0 },
+  { id: 'hollow-stash-1', place: 'hollow', tier: 'stash', x: -27, z: -89, floor: 0 },
   { id: 'greywater-stash-1', place: 'greywater', tier: 'stash', x: 294, z: 46, floor: 0 },
   { id: 'greywater-stash-2', place: 'greywater', tier: 'stash', x: 584, z: -42, floor: 0 },
   { id: 'saltmarrow-stash-1', place: 'saltmarrow', tier: 'stash', x: 873, z: 48, floor: 0 },
