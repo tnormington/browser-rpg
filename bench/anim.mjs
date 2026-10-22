@@ -18,6 +18,7 @@ const server = await preview({ root, logLevel: 'error', preview: { port: 4175, o
 const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
 page.on('pageerror', e => console.error('pageerror', String(e)));
+if (scenarios.some(s => s.startsWith('ability:'))) await page.addInitScript(bar => localStorage.setItem('browser-rpg.actionbar', JSON.stringify(bar)), [16, 17, 18, 19, 20, 21, 6, 11, 7, 1]); // Rampart Reaping Shockwave EchoSurge Bloodbath Final Whirlwind Colossus Guard Crushing
 await page.goto(`${server.resolvedUrls.local[0]}?debug=1&weather=clear`);
 await page.waitForFunction(() => window.__debug, null, { timeout: 60000 });
 await page.evaluate(() => window.__debug.view.modelsReady);
@@ -47,6 +48,9 @@ await page.addScriptTag({ content: `
 await page.clock.install();
 await page.clock.pauseAt(new Date(Date.now() + 2000));
 const adv = ms => page.clock.runFor(ms);
+// ability:<key>[:<type>]  press one of the abilities that has no default key (the bar holds the first sixteen of the book). The bar the page loads
+// is seeded in the init script above: Digit1..Digit0 are these, in this order, so the press is the real one: bar key -> pendingAbilities -> sim cast
+const ABILITY_KEYS = ['rampart', 'reaping', 'shockwave', 'echosurge', 'bloodbath', 'final', 'whirlwind', 'colossus', 'guard', 'crushing'];
 // the loop's accumulator starts behind by however long the page has been up, so the sim does not tick at all until the fake
 // clock has caught up with it (a key pressed before then goes nowhere, which is how `jump` once shot 14 frames of a standing player)
 await adv(15000);
@@ -188,6 +192,25 @@ const S = {
     await page.keyboard.down('Space'); await adv(40); await page.keyboard.up('Space');
     await burst('double-jump', 20, 40, CLIP, async i => { if (i === at) { await page.keyboard.down('Space'); await adv(40); await page.keyboard.up('Space'); } });
   },
+  // ability: the player at 99 with the whole book, a target that cannot die in front, a second body behind for a sweep; one press of the real bar key
+  async ability(key, type = 'brute') {
+    const i = ABILITY_KEYS.indexOf(key);
+    if (i < 0) throw new Error('no ability key ' + key);
+    await page.evaluate(([t]) => {
+      stage(t, t === 'brute' ? 2.6 : 2.0);
+      const d = window.__debug, s = d.sim, p = s.player, e = window.__e;
+      p.combat.level = 99; p.learned = ['Rampart', 'Reaping Blow', 'Shockwave', 'Echo Surge', 'Bloodbath', 'Final Reckoning', 'Whirlwind', 'Colossus Blow', 'Guard'];
+      p.energy = p.maxEnergy; p.stats.weaponDamage = 244; p.hp = Math.floor(p.maxHp * 0.6);
+      e.hp = e.maxHp = 1e7; s.targetId = e.id;
+      const w = s.enemies.find(o => o !== e && o.type === 'wolf') ?? s.enemies.find(o => o !== e); // the second body: behind the player, to show a sweep takes it too
+      w.x = p.x - 1.7; w.z = p.z + 0.8; w.facing = Math.PI / 2; w.hp = w.maxHp = 1e7; w.state = 'idle'; w.attackCd = 99; w.spawnX = w.x; w.spawnZ = w.z;
+      d.step(); d.view.snapshot(s); d.view.snapshot(s);
+      frame(e.x - p.x, 1.5, 8.5, 0.6);
+    }, [type]);
+    await adv(300);
+    await page.keyboard.press(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'KeyQ', 'KeyE', 'KeyR', 'KeyF'][i]);
+    await burst(`ability-${key}`, 16, 33, CLIP);
+  },
   async telegraph(type, h = 1.4) {
     await page.evaluate(([t, h]) => {
       const gap = t === 'hexer' ? 4 : 2.6; stage(t, gap); frame(gap, h, t === 'hexer' ? 6 : 7);
@@ -198,6 +221,7 @@ const S = {
 };
 for (const sc of scenarios) {
   await adv(1500); // the last scenario's particles and rings expire before this one is staged
+  if (sc.startsWith('ability:')) { const [, k, t] = sc.split(':'); await S.ability(k, t); continue; }
   if (sc.startsWith('gather:')) { const [, t, i] = sc.split(':'); await gather(t, +(i ?? 0)); continue; }
   if (sc.startsWith('windup:')) { const [, t, k] = sc.split(':'); await windup(t, k); continue; }
   if (sc.startsWith('tell:')) { const [, t, k, ...rest] = sc.split(':'); await tell(t, k, rest.join(':').split(';')); continue; }

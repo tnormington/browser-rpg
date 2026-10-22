@@ -1,4 +1,4 @@
-// Rendering only: reads GameState, never mutates it.
+﻿// Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, TOWNS, WORLD_HALF } from './sim';
@@ -65,6 +65,13 @@ const P = PALETTE;
 const STONE = /golem|colossus|cairn|stonehorn|hollow_knight|^warden$|spire_warden/, UNQUIET = /wight|barrow_lord|grave_hound|drowned|void_hound/;
 const BLOOD = [PALETTE.blood, PALETTE.bloodDark, PALETTE.bloodDark];
 const matterOf =(type: string): 'flesh' | 'stone' | 'bone' => STONE.test(type) ? 'stone' : UNQUIET.test(type) ? 'bone' : 'flesh';
+/** The abilities that have a look of their own, by the slot the book holds them in (the book grows at the end, so none of these move). */
+const slotNamed = (name: string) => ABILITIES.findIndex(a => a.name === name);
+const FINAL_RECKONING = slotNamed('Final Reckoning'), BLOODBATH = slotNamed('Bloodbath'), SHOCKWAVE = slotNamed('Shockwave');
+/** A blow that lands with weight: a crushing one, a sweep, or anything that carries two and a half weapons or more (Colossus Blow, Reaping Blow, Final Reckoning). */
+const weighty = (a?: { tag?: string; kind: string; weaponMult?: number }) => !!a && (a.tag === 'crush' || a.kind === 'cleave' || (a.weaponMult ?? 1) >= 2.5);
+/** The colours of a blade's trail when it is not plain steel: the capstone's, a blood-drinker's, and the echo Echo Surge leaves a beat behind a blow. */
+const TRAIL = { capstone: new THREE.Color(PALETTE.ember).multiplyScalar(1.5), blood: new THREE.Color(PALETTE.bloodLight).multiplyScalar(1.1), echo: new THREE.Color(PALETTE.gold).multiplyScalar(1.1) };
 /** The ground-plane vector (x, z) scaled to length 1; a zero vector points straight ahead. */
 const unit = (x: number, z: number): [number, number] => { const d = Math.hypot(x, z); return d < 1e-4 ? [0, 1] : [x / d, z / d]; };
 type Mat = THREE.MeshStandardMaterial;
@@ -1574,28 +1581,30 @@ export class Renderer {
           this.shakeMag = Math.max(this.shakeMag, 0.04);
           this.impact(s, ev, 0, 0, false);
         } else {
-          const A = ABILITIES[ev.slot], heavy = ev.crit || A?.tag === 'crush' || A?.kind === 'cleave';
-          const thrown = A?.kind === 'dot', lag = this.playerAnim?.strikeIn ?? 0, hold = heavy ? 0.09 : 0.05;
+          const A = ABILITIES[ev.slot], heavy = ev.crit || weighty(A), last = ev.slot === FINAL_RECKONING; // the last button there is is held longest and shoves hardest
+          const thrown = A?.kind === 'dot', lag = this.playerAnim?.strikeIn ?? 0, hold = last ? 0.2 : heavy ? 0.09 : 0.05;
           const [dx, dz] = unit(ev.x - s.player.x, ev.z - s.player.z);
           const an = this.actors.get(ev.target)?.anim;
           if (!thrown) this.playerAnim?.freeze(hold, lag); // a thrown blade leaves the hand: only a swung one is held in it
-          an?.freeze(hold, lag, heavy ? 0.05 : 0.03);
-          an?.react(heavy ? 1.5 : 1, lag); // the recoil is the proof the blow landed
+          an?.freeze(hold, lag, last ? 0.08 : heavy ? 0.05 : 0.03);
+          an?.react(last ? 2.2 : heavy ? 1.5 : 1, lag); // the recoil is the proof the blow landed
           this.after(lag, () => {
-            this.shakeMag = Math.max(this.shakeMag, ev.crit ? 0.1 : heavy ? 0.08 : 0);
-            this.punch(dx, dz, ev.crit ? 0.2 : heavy ? 0.16 : 0.07);
+            this.shakeMag = Math.max(this.shakeMag, last ? 0.22 : ev.crit ? 0.1 : heavy ? 0.08 : 0);
+            this.punch(dx, dz, last ? 0.3 : ev.crit ? 0.2 : heavy ? 0.16 : 0.07);
             this.impact(s, ev, dx, dz, heavy);
           });
+          // Bloodbath's leech, drawn: a thread of blood runs from every body the sweep struck back to the one that swung
+          if (ev.slot === BLOODBATH) this.after(lag, () => this.particles.trail(ev.x, 1.2, ev.z, s.player.x, 1.3, s.player.z, P.blood));
         }
       } else if (ev.t === 'cast') {
         this.castPunch = 0.12;
-        if (ABILITIES[ev.slot].kind === 'guard') { // a raised guard is a ring of light round the player, not a swing
-          const p = s.player;
-          this.rings.pulse(p.x, 0.3, p.z, P.arcaneLight, 2.4, 0.4, 0.8);
-          this.particles.burst(p.x, 1.0, p.z, { color: [P.arcaneLight, P.gold], count: 14, speed: 2, up: 1.5, life: 0.5 });
-        } else if (ev.slot !== 3 && this.playerAnim) { // slot 3 is the heal: no swing; the cleave takes the heavy swing
-          this.playerAnim.attack(ev.slot === 1 || ev.slot === 4);
-          this.slashes.swipe(s.player.x, s.player.z, s.player.facing, ev.slot === 1 || ev.slot === 4);
+        const A = ABILITIES[ev.slot], last = ev.slot === FINAL_RECKONING;
+        if (A.kind === 'guard') this.guardCast(A.buff, s); // a raised guard is a ring of light round the player, not a swing
+        else if (A.kind !== 'heal' && this.playerAnim) { // a heal has no swing; the heavy ones and the sweeps take the heavy swing
+          this.playerAnim.attack(weighty(A), last ? 0.7 : 0.4);
+          if (A.arc === 360) this.spinCast(ev.slot, s);
+          else this.slash(s, weighty(A), last ? 1.9 : undefined, last ? TRAIL.capstone : undefined);
+          if (last) this.rings.pulse(s.player.x, 0.2, s.player.z, P.gold, 0.5, 0.24, 3.2, 1.5); // the whole body drawn into the blow: it lets go as the hold ends
         }
         if (ev.slot === 4) { // the sweep: a wide arc of dust and light in front of the player
           const p = s.player, a = p.facing;
@@ -1603,7 +1612,7 @@ export class Renderer {
           for (let k = -2; k <= 2; k++) this.particles.burst(p.x + Math.sin(a + k * 0.45) * 2.2, 1.0, p.z + Math.cos(a + k * 0.45) * 2.2, { color: [P.arcaneLight, P.ash], count: 6, speed: 2.5, life: 0.35 });
         }
       }
-      else if (ev.t === 'swing' && this.playerAnim) { this.playerAnim.swung(); this.slashes.swipe(s.player.x, s.player.z, s.player.facing); } // auto-attack: raises no 'cast', the hit follows this tick
+      else if (ev.t === 'swing' && this.playerAnim) { this.playerAnim.swung(); this.slash(s, false); } // auto-attack: raises no 'cast', the hit follows this tick
       else if (ev.t === 'jump' && ev.double) {
         // the one takeoff with nothing to push against: the body crouches into it and rolls, and the air gives for an instant, a disc of
         // arcane light snapping out under the feet and gone. That flash is also how the player learns the second jump is spent
@@ -1712,7 +1721,7 @@ export class Renderer {
   private impact(s: GameState, ev: Extract<GameEvent, { t: 'hit' }>, dx: number, dz: number, heavy: boolean) {
     const p = s.player, y = 1.2, dir: [number, number] = [dx, dz];
     if (ev.dot) return void this.particles.burst(ev.x, y, ev.z, { color: P.violet, count: 5, speed: 1.5, up: 1, life: 0.4 });
-    const power = heavy ? 1.6 : 1, matter = matterOf(ev.species);
+    const power = ev.slot === FINAL_RECKONING ? 2.4 : heavy ? 1.6 : 1, matter = matterOf(ev.species);
     const r = ENEMY_TYPES[ev.species]?.radius ?? 0.6, cx = ev.x - dx * r * 0.8, cz = ev.z - dz * r * 0.8; // where the blade met it: the near face, not its middle
     if (ev.slot === 2) {
       this.particles.trail(p.x, 1.4, p.z, ev.x, y, ev.z, P.violet);
@@ -1720,7 +1729,7 @@ export class Renderer {
     } else if (ev.slot === 1) { // Crushing Blow: the ground takes some of it too
       this.particles.burst(ev.x, 0.4, ev.z, { color: [P.fire, P.gold, P.ember], count: 18, speed: 5, dir, cone: 0.35, up: 2, gravity: -10, size: 0.8, life: 0.55 });
       this.rings.pulse(ev.x, 0.15, ev.z, P.fire, 2.8, 0.35, 0.4, 1.4);
-    }
+    } else if (ev.slot === FINAL_RECKONING) this.reckoning(ev, dx, dz);
     // the contact flash: one big sprite, gone in about five frames; it is what makes the hit read as a hit
     this.particles.burst(cx, y, cz, { color: matter === 'flesh' ? P.bloodLight : [P.ember, P.gold], count: 1, speed: 0, size: 5 * power, life: 0.09, gravity: 0, hdr: matter === 'flesh' ? 1.8 : 2.4 });
     if (matter === 'flesh') {
@@ -1731,6 +1740,56 @@ export class Renderer {
       this.matter.burst(cx, y, cz, { color: matter === 'stone' ? [P.ash, P.boulder] : [P.bone, P.ash], count: Math.round(5 * power), speed: 3, dir, cone: 0.3, up: 1.5, gravity: -12, size: 1.4, life: 0.5, hdr: 1 });
     }
     if (ev.crit) this.particles.burst(ev.x, y + 0.4, ev.z, { color: [P.gold, P.arcaneLight], count: 12, speed: 5, up: 2, size: 0.8, life: 0.5 });
+  }
+
+  /** A cut of the blade. While Echo Surge is on, a wider, golden one follows a beat behind it: the buff shows in every blow it feeds. */
+  private slash(s: GameState, heavy: boolean, scale?: number, color?: THREE.Color) {
+    const { x, z, facing } = s.player;
+    this.slashes.swipe(x, z, facing, heavy, scale, color);
+    if (s.player.buffs.some(b => b.id === 'echo_surge')) this.after(0.09, () => this.slashes.swipe(x, z, facing, heavy, (scale ?? (heavy ? 1.35 : 1)) * 1.25, TRAIL.echo, 0.35));
+  }
+
+  /** The 360 degree blows: one turn of the blade at the reach of the sweep. Whirlwind is plain steel; Bloodbath is red and Shockwave sets the ground off. */
+  private spinCast(slot: number, s: GameState) {
+    const p = s.player, A = ABILITIES[slot], r = A.range;
+    this.slashes.spin(p.x, p.z, p.facing, r, slot === BLOODBATH ? TRAIL.blood : undefined);
+    if (p.buffs.some(b => b.id === 'echo_surge')) this.after(0.1, () => this.slashes.spin(p.x, p.z, p.facing + 1, r * 1.2, TRAIL.echo));
+    if (slot === SHOCKWAVE) { // the stagger is the enemies' (the interrupt event holds each of them); the wave that did it runs out along the ground from the feet
+      this.rings.pulse(p.x, 0.2, p.z, P.gold, r * 1.15, 0.4, 0.8, 1.4);
+      this.matter.burst(p.x, 0.2, p.z, { color: [P.ash, P.dirt], count: 24, speed: r * 2.4, flat: true, gravity: 0, drag: 2.5, size: 2.2, life: 0.6, hdr: 0.8, alpha: 0.5 });
+      this.shakeMag = Math.max(this.shakeMag, 0.1);
+    } else if (slot === BLOODBATH) this.matter.burst(p.x, 1.0, p.z, { color: BLOOD, count: 14, speed: 4.5, up: 0.5, gravity: -22, drag: 0.6, size: 0.9, life: 0.45, hdr: 1 });
+  }
+
+  /** A raised buff. Guard is light round the body; Rampart is a wall closing on it, and Echo Surge is heat climbing it: two buttons that do opposite things do not get one picture. */
+  private guardCast(buff: string | undefined, s: GameState) {
+    const p = s.player;
+    if (buff === 'rampart') {
+      for (const y of [0.25, 0.95, 1.65]) this.rings.pulse(p.x, y, p.z, P.steel, 0.85, 0.22, 2.1, 1); // three bands of steel snap shut on the body together
+      this.matter.burst(p.x, 0.2, p.z, { color: [P.ash, P.dirt], count: 14, speed: 4, flat: true, gravity: 0, drag: 2.5, size: 1.8, life: 0.45, hdr: 0.8, alpha: 0.5 }); // and the ground takes the weight
+      this.shakeMag = Math.max(this.shakeMag, 0.05);
+    } else if (buff === 'echo_surge') {
+      [0.2, 0.9, 1.6].forEach((y, i) => this.after(i * 0.08, () => this.rings.pulse(p.x, y, p.z, i === 1 ? P.gold : P.ember, 2.1, 0.45, 0.7, 1.8))); // bands of heat climb the body one after another
+      this.particles.burst(p.x, 0.3, p.z, { color: [P.gold, P.ember, P.fire], count: 26, speed: 1.2, up: 5, gravity: -1, life: 0.9, size: 0.8 });
+    } else {
+      this.rings.pulse(p.x, 0.3, p.z, P.arcaneLight, 2.4, 0.4, 0.8);
+      this.particles.burst(p.x, 1.0, p.z, { color: [P.arcaneLight, P.gold], count: 14, speed: 2, up: 1.5, life: 0.5 });
+    }
+  }
+
+  /** Final Reckoning's landing: the ground takes the blow at once, and lets go of it when the hold on the frame ends (0.2 s, the same as the hit-stop). */
+  private reckoning(ev: Extract<GameEvent, { t: 'hit' }>, dx: number, dz: number) {
+    this.particles.burst(ev.x, 0.4, ev.z, { color: [P.fire, P.gold, P.ember], count: 30, speed: 6, dir: [dx, dz], cone: 0.35, up: 3, gravity: -10, size: 0.9, life: 0.6 });
+    this.rings.pulse(ev.x, 0.15, ev.z, P.fire, 3.4, 0.4, 0.5, 1.6);
+    this.matter.burst(ev.x, 0.2, ev.z, { color: [P.ash, P.dirt], count: 20, speed: 7, flat: true, gravity: 0, drag: 2.2, size: 2.4, life: 0.6, hdr: 0.8, alpha: 0.5 });
+    this.after(0.2, () => {
+      this.rings.pulse(ev.x, 0.15, ev.z, P.gold, 6, 0.6, 1, 1.2);
+      this.rings.pulse(ev.x, 0.15, ev.z, P.fire, 5, 0.5, 0.6, 1.8);
+      this.particles.burst(ev.x, 0.3, ev.z, { color: [P.gold, P.ember, P.fire], count: 36, speed: 1.5, up: 7, gravity: -3, life: 1, size: 0.8 }); // the column
+      this.matter.burst(ev.x, 0.2, ev.z, { color: [P.ash, P.dirt], count: 30, speed: 12, flat: true, gravity: 0, drag: 2.2, size: 2.6, life: 0.8, hdr: 0.8, alpha: 0.5 });
+      this.shakeMag = Math.max(this.shakeMag, 0.3);
+      this.punch(dx, dz, 0.3);
+    });
   }
 
   /** Run `fn` once `t` seconds have passed on the render clock (at once if it is already time). */
@@ -1894,7 +1953,7 @@ export class Renderer {
    * the pointer can never promise something the press would not deliver.
    *
    * Precedence, most specific first: an enemy under the position itself, then the NPC, flight master, node,
-   * vendor and the five stations (all exact), and only then the forgiving picks â€” a near miss takes the enemy,
+   * vendor and the five stations (all exact), and only then the forgiving picks Ã¢â‚¬â€ a near miss takes the enemy,
    * else the node, but never something that was really aimed at elsewhere. `tolerance` is how many pixels of
    * near miss still count; 0 leaves the forgiving pass out.
    */

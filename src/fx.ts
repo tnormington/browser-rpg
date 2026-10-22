@@ -203,39 +203,63 @@ export class Rings {
 /** The arc a sword blow just cut: a crescent that sweeps across the player's front and fades. A small pool, reused. */
 export class Slashes {
   private geo = new THREE.RingGeometry(1.4, 1.8, 14, 1, -Math.PI / 2 - 0.8, 1.6).rotateX(-Math.PI / 2); // arc centred on +z, lying flat
-  private pool: { root: THREE.Group; mat: THREE.MeshBasicMaterial; age: number; dur: number; from: number }[] = [];
+  private spinGeo = new THREE.RingGeometry(0.86, 1, 36, 1, 0, 5).rotateX(-Math.PI / 2); // five-sixths of a circle: the blade's whole turn, unit radius
+  private pool: Slash[] = [];
+  private spins: Slash[] = [];
   private tint = new THREE.Color(0xbfd2ea).multiplyScalar(FX_HDR * 0.45);
 
   constructor(private scene: THREE.Scene) {}
 
-  /** `heavy` swings wider and lasts longer. The arc is tilted so it reads as a diagonal cut, high on the sword side. */
-  swipe(x: number, z: number, facing: number, heavy = false) {
-    let s = this.pool.find(p => p.age >= p.dur);
+  /** A free slot of `pool` (one that has finished), or a new mesh on `geo` with `tilt` radians of roll about the forward axis. */
+  private grab(pool: Slash[], geo: THREE.BufferGeometry, tilt: number): Slash {
+    let s = pool.find(p => p.age >= p.dur);
     if (!s) {
       const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, toneMapped: false });
-      const mesh = new THREE.Mesh(this.geo, mat), root = new THREE.Group();
-      mesh.rotation.z = 0.55; // roll about the forward axis: the diagonal
+      const mesh = new THREE.Mesh(geo, mat), root = new THREE.Group();
+      mesh.rotation.z = tilt;
       mesh.raycast = () => {};
       root.add(mesh);
       this.scene.add(root);
-      s = { root, mat, age: 1, dur: 1, from: 0 };
-      this.pool.push(s);
+      s = { root, mat, age: 1, dur: 1, from: 0, turn: 0, peak: 0.5 };
+      pool.push(s);
     }
-    s.mat.color.copy(this.tint);
-    s.age = 0; s.dur = heavy ? 0.28 : 0.2; s.from = facing + 1.1;
+    return s;
+  }
+
+  /**
+   * `heavy` swings wider and lasts longer. The arc is tilted so it reads as a diagonal cut, high on the sword side.
+   * `scale` and `color` are for the blows that are not an ordinary heavy one: the capstone's is twice the size and gold, an echo of a swing is a ghost of it.
+   */
+  swipe(x: number, z: number, facing: number, heavy = false, scale = heavy ? 1.35 : 1, color?: THREE.Color, peak = 0.5) {
+    const s = this.grab(this.pool, this.geo, 0.55);
+    s.mat.color.copy(color ?? this.tint);
+    s.age = 0; s.dur = heavy ? 0.28 : 0.2; s.from = facing + 1.1; s.turn = 2.2; s.peak = peak;
     s.root.position.set(x, 1.25, z);
-    s.root.scale.setScalar(heavy ? 1.35 : 1);
+    s.root.scale.setScalar(scale);
+    s.root.rotation.y = s.from;
+    s.root.visible = true;
+  }
+
+  /** The body's full turn: a ring at hip height, `radius` across, that the blade sweeps round once. For the 360 degree blows (Whirlwind, Shockwave, Bloodbath). */
+  spin(x: number, z: number, facing: number, radius: number, color?: THREE.Color) {
+    const s = this.grab(this.spins, this.spinGeo, 0.22);
+    s.mat.color.copy(color ?? this.tint);
+    s.age = 0; s.dur = 0.3; s.from = facing + 1.1; s.turn = Math.PI * 2; s.peak = 0.7;
+    s.root.position.set(x, 1.0, z);
+    s.root.scale.setScalar(radius);
     s.root.rotation.y = s.from;
     s.root.visible = true;
   }
 
   update(dt: number) {
-    for (const s of this.pool) {
+    for (const list of [this.pool, this.spins]) for (const s of list) {
       if (s.age >= s.dur) { s.root.visible = false; continue; }
       s.age += dt;
       const k = Math.min(1, s.age / s.dur);
-      s.root.rotation.y = s.from - 2.2 * (1 - (1 - k) * (1 - k)); // fast out, easing off: the cut
-      s.mat.opacity = 0.5 * (1 - k) * (1 - k);
+      s.root.rotation.y = s.from - s.turn * (1 - (1 - k) * (1 - k)); // fast out, easing off: the cut
+      s.mat.opacity = s.peak * (1 - k) * (1 - k);
     }
   }
 }
+
+interface Slash { root: THREE.Group; mat: THREE.MeshBasicMaterial; age: number; dur: number; from: number; turn: number; peak: number }
