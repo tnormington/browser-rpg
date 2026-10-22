@@ -16,7 +16,7 @@ import { branchBounds, branchDist, branchTrack, roadAt, roadDist, roadHalfWidth,
 import { VILLAGERS } from './sim/villagers';
 import { PROPS, PropId } from './props';
 import { mergeParts } from './creatures';
-import { GROUND_CELL, bakeUV, groundDrift } from './surface';
+import { GROUND_CELL, groundDrift } from './surface';
 import { HaloSpot, haloMesh } from './halo';
 
 /** The few things this file needs from the renderer: its mesh factory (materials and shadows stay in render.ts) and its palette. */
@@ -293,9 +293,6 @@ export class WorldView {
     for (const v of VILLAGERS) if (inSlab(v) && branchById(v.id)?.region === r.id) {
       this.person(add, v, 0x5a4a3a, 'brim', Math.atan2(branchById(v.id)!.to.x - v.x, branchById(v.id)!.to.z - v.z) + Math.PI, t.picks.npc, v.id);
     }
-
-    // the edge of the world: a wall of boulders where the floor ends and nothing else begins
-    this.boundary(floors, rect, r, add);
   }
 
   /** A slab of ground tinted per vertex: grass, with the road down its axis (the road is the region's z-centre), sand toward the sea, paving in a town square. */
@@ -743,26 +740,6 @@ export class WorldView {
     }
     const halos = haloMesh(bag.halos); // the glow round every lamp, window and torch on the slab, in one draw
     if (halos) add(halos);
-  }
-  /** Boulders every 4 units along the edges of the floor that open onto nothing, as the clearing's ring does, in one instanced draw. */
-  private boundary(floors: Rect[], rect: Rect, r: Region, add: (o: THREE.Object3D) => void) {
-    const all = REGIONS.flatMap(x => x.footprint), pts: { x: number; z: number }[] = [], main = mainRect(r);
-    const f = floors[0];
-    const edge = (x: number, z: number) => {
-      if (all.some(o => o !== f && inside(o, x, z))) return; // another floor lies here: a way through, not a wall
-      if (r.id === 'saltmarrow' && x > SALTMARROW.x + 29) return; // the shore is open water (rocks along it would wall the quay in)
-      pts.push({ x, z });
-    };
-    // the slab's own edges along the region's long way (north and south for a road that runs east to west, west and east for one that runs north to south), and its end edges only where they are the region's ends
-    const long = isLong(main), west = rect.x0 <= main.x0 + 1e-6, east = rect.x1 >= main.x1 - 1e-6, north = rect.z0 <= main.z0 + 1e-6, south = rect.z1 >= main.z1 - 1e-6;
-    for (let x = rect.x0; x <= rect.x1 + 1e-6; x += 4) { if (!long || north) edge(x, rect.z0); if (!long || south) edge(x, rect.z1); }
-    for (let z = rect.z0; z <= rect.z1 + 1e-6; z += 4) { if (long || west) edge(rect.x0, z); if (long || east) edge(rect.x1, z); }
-    if (!pts.length) return;
-    const im = new THREE.InstancedMesh(bakeUV(new THREE.DodecahedronGeometry(1.6)), this.kit.mesh(new THREE.BufferGeometry(), this.kit.P.boulder, 'rock').material, pts.length);
-    pts.forEach((p, i) => { const k = hash(i * 7 + p.x), s = 0.8 + k * 0.45; im.setMatrixAt(i, M.compose(V.set(p.x, 0.8 * s, p.z), Q.setFromAxisAngle(UP, k * 40), S.set(s, s, s))); });
-    im.castShadow = im.receiveShadow = true;
-    im.matrixAutoUpdate = false;
-    add(im);
   }
 
   /** The sea past the shore and the quay out over it. */

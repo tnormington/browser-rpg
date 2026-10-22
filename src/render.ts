@@ -28,6 +28,7 @@ import { ROLL_SPEED, ROLL_TIME, SPRINT_SPEED, canDoubleJump } from './sim/agilit
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { HaloSpot, haloMesh, tickHalos } from './halo';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
+import { EdgeView } from './edges-view';
 import { WorldView, flightMasterFigure, hasTop, headstones, standableRocks, Kit } from './world-view';
 import { WorldMap, mapPosition } from './world-map';
 import { landingSpot } from './sim/flight';
@@ -222,8 +223,6 @@ const CHEST_RANGE = FOG_CULL;
 /** How long a chest that has just been opened stays open and glowing, before it settles to the dark, spent mouth. */
 const CHEST_OPEN_S = 3;
 const FISH_RIPPLE = 0x9fc8d8; // a fishing shoal's ripple and fins: cold, pale, the one thing on the water
-/** A spot on the clearing's wall with another region's floor beyond it: the east gate. No boulder is set there. */
-const openToWorld = (x: number, z: number) => REGIONS.some(r => r.zone !== 'hale' && r.footprint.some(f => x > f.x0 + 0.01 && x < f.x1 - 0.01 && z > f.z0 + 0.01 && z < f.z1 - 0.01));
 /** Adamant (Saltmarrow's cliff ore): sea-green flecks on a dark green-black rock. A stand-in look until the Artist's (W2.5). */
 const ADAMANT = { rock: 0x2c4a40, fleck: 0x5de0b0, glow: 0x0e3a2a };
 /** Stormiron (the barrows' and the Thornwood's ore): a pale slate-lilac rock with lilac-white flecks, the cold opposite of adamant's jade. Matches the metal's look in gear-look.ts. */
@@ -326,6 +325,7 @@ export class Renderer {
   private stewardMarker!: THREE.Sprite;
   private keeperMarker!: THREE.Sprite;
   private world!: WorldView;
+  private edges!: EdgeView;
   private kit!: Kit;
   private beyond!: THREE.Mesh;
   /** Model slots that have loaded: an enemy built after its slot arrived is dressed at once. */
@@ -404,6 +404,7 @@ export class Renderer {
     this.buildZone();
     this.kit = { mesh: (g, c, cls, sh) => mesh(g, c, cls as MatClass, sh), P };
     this.world = new WorldView(this.scene, this.kit);
+    this.edges = new EdgeView(this.scene, (c, cls) => material(c, cls as MatClass));
     this.scene.add(flightMasterFigure(this.kit, LANDMARKS.flightHale, { x: 0, z: 6 }, this.flightParts)); // faces the spawn, like the other two
     standableRocks(this.kit, REGIONS.filter(r => r.zone === 'hale' || r.cave).flatMap(r => r.obstacles), o => this.scene.add(o)); // the steps and rooftops of Hale and the caves: render.ts draws those regions itself (HOM-161)
     this.buildBoards();
@@ -618,13 +619,7 @@ export class Renderer {
     this.buildCave();
     this.buildCrystals();
 
-    // boundary: ring of boulders along the edge
-    for (let i = -WORLD_HALF; i <= WORLD_HALF; i += 3) {
-      for (const [x, z] of [[i, -WORLD_HALF], [i, WORLD_HALF], [-WORLD_HALF, i], [WORLD_HALF, i]]) {
-        if (inCave(x, z) || openToWorld(x, z)) continue; // the throat opens through the boundary here, and so does the east gate
-        this.boundary.push(add(mesh(new THREE.DodecahedronGeometry(1.6), P.boulder, 'rock'), x, 0.8, z) as THREE.Mesh);
-      }
-    }
+    // the edge of the world is edges-view.ts's: sim/edges.ts places it face by face, and the throat and the east gate are gaps in it
     // the east gate: two stone posts and a lintel across the 6-unit gap, so the way out reads as a way out
     for (const z of [4.4, 11.6]) add(mesh(new THREE.CylinderGeometry(0.45, 0.6, 3.6, 6), P.stone, 'stone'), 30, 1.8, z);
     add(mesh(new THREE.BoxGeometry(0.6, 0.45, 7.8), P.bark, 'wood'), 30, 3.6, 8);
@@ -1280,8 +1275,9 @@ export class Renderer {
     this.buildCaveWalls(p.geometry!, p.materials.length === 1 ? p.materials[0] : p.materials, side);
   }
 
-  /** The 80-odd boundary boulders become one instanced draw: a single scene object instead of one per rock. */
+  /** The dev stress scatter's boulders (the only ones left in `boundary`: the edges are edges-view.ts's) become one instanced draw: a single scene object instead of one per rock. */
   private dressBoundary(p: Prepared) {
+    if (!this.boundary.length) return;
     const im = new THREE.InstancedMesh(p.geometry!, p.materials.length === 1 ? p.materials[0] : p.materials, this.boundary.length);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(), pos = new THREE.Vector3();
     this.boundary.forEach((b, i) => {
@@ -2009,6 +2005,7 @@ export class Renderer {
     if (ride) {
       map.frameRide(ride.from, ride.to, ride.t / ride.duration, aspect, now);
       const at = landingSpot(ride.to);
+      this.edges.update(at.x, at.z);
       this.world.update(at.x, at.z); // the arrival is built while the ride runs, so landing costs no frame
     } else {
       const me = mapPosition(s.player.x, s.player.z);
@@ -2038,6 +2035,7 @@ export class Renderer {
     this.rings.update(dtFx);
     this.slashes.update(dtFx);
     this.world.update(x, z);
+    this.edges.update(x, z);
     this.beyond.position.set(x, -0.05, z);
     const hm = harbourMarkOf(s);
     this.harbourMarker.visible = !!hm && this.world.harbourShown();
