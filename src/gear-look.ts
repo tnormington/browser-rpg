@@ -32,7 +32,9 @@ export interface Appearance {
   /** Colour of the motes that drift off the piece; 0 = none. */
   motes: number;
   /** Bespoke silhouette for a named metal or piece, layered on the rung's. Absent = the rung's plain shape. */
-  form?: 'adamant' | 'storm' | 'star' | 'greywolf' | 'gutterhook' | 'wolfskin' | 'marsh' | 'thorn' | 'moor' | 'crown';
+  form?: 'adamant' | 'storm' | 'star' | 'greywolf' | 'gutterhook' | 'wolfskin' | 'marsh' | 'thorn' | 'moor' | 'crown' | 'echohide' | 'echo';
+  /** Which of the seven Echo blades this is (1..7, docs/combat-99.md 6.2): each is built on a shape of its own, not the rung's. */
+  blade?: number;
   /** Weapon width multiplier (default 1): adamant is broad, stormiron narrow. */
   width?: number;
 }
@@ -61,12 +63,19 @@ export const TIER_LOOKS: Appearance[] = [
   // Tier 6, the end of the ladder (starmetal, and whatever a boss drops above it). Every tier below is a hue; this one is the absence of one: meteoric black plate with a hard sheen and
   // points of cold white light, a star-chart on a night sky. White is the one rarity colour no other tier can be mistaken for, and starmetal's form is a different SHAPE as well, not a recolour.
   { tint: 0x5a6080, trim: 0x9aa0bc, metal: 0.12, rough: 0.45, glow: 0xe8f0ff, glowI: 0.5, rung: 6, scale: 1.5, motes: 0xf0f4ff, form: 'star', accent: 0x1a1c26 },
+  // Tiers 7 and 8 (docs/combat-99.md 6.2): the Echo blades, past the end of the metal ladder. The ladder's hues are spent (white is the absence of one), so these climb the one scale left: the Echo bands'
+  // violet and orchid. Tier 7 is deep ultraviolet, tier 8 hot orchid; both are saturated and neither is the pale lavender of tier 4. These rows are the fallback; every Echo blade has its own entry below.
+  { tint: 0x5c4c8c, trim: 0x1e1836, metal: 0.35, rough: 0.35, glow: 0x8a5cf0, glowI: 0.6, rung: 7, scale: 1.8, motes: 0xa890ff, accent: 0x1a1626 },
+  { tint: 0x6a4c9c, trim: 0x20183c, metal: 0.35, rough: 0.3, glow: 0xcf6ef0, glowI: 0.65, rung: 8, scale: 1.9, motes: 0xe090ff, accent: 0x1a1426 },
 ];
 
 /** Beam, tooltip and border colour for tier 5: TIER_COLORS[5] in sim/items.ts should read this value. */
 export const TIER5_COLOR = 0x3ee0c0;
 /** And for tier 6: star-white, the one colour the ladder leaves (blue is 2 and 4, orange 3, jade 5). TIER_COLORS[6] in sim/items.ts. */
 export const TIER6_COLOR = 0xf2f0ff;
+/** Tiers 7 and 8: ultraviolet and orchid, the Echo bands' own two top hues. TIER_COLORS[7] and [8] in sim/items.ts. */
+export const TIER7_COLOR = 0x7a5cff;
+export const TIER8_COLOR = 0xe060ff;
 
 const A: Partial<Appearance> = { tint: 0x58887a, trim: 0x2a4238, metal: 0.3, rough: 0.4, glow: 0x3ee0c0, glowI: 0.5, rung: 5, form: 'adamant', motes: 0x3ee0c0, accent: 0x2b2a24 };
 const S: Partial<Appearance> = { tint: 0x8c8aa8, trim: 0x4a4866, metal: 0.05, rough: 0.7, glow: 0xd0c8ff, glowI: 0.45, rung: 5, form: 'storm', motes: 0xd8d0ff, accent: 0x2a2630 };
@@ -77,7 +86,7 @@ const B: Partial<Appearance> = { tint: 0xb08c42, trim: 0x52412a, metal: 0.4, rou
 const C: Partial<Appearance> = { tint: 0xbc6632, trim: 0x5e3018, metal: 0.3, rough: 0.7, rung: 1, accent: STRAP };
 
 /** The item-id stems each leather set may be filed under: the sim names Hide and Wolfskin `hide_` / `wolfskin_`, and the bible's "Marsh-hide" is not obviously one word. Both spellings carry the look. */
-const LEATHER_STEMS = { marsh: ['marshhide', 'marsh_hide'], thorn: ['thornhide'], moor: ['moorhide'] } as const;
+const LEATHER_STEMS = { marsh: ['marshhide', 'marsh_hide'], thorn: ['thornhide'], moor: ['moorhide'], echohide: ['echohide', 'echo_hide'] } as const;
 function leatherPair(form: keyof typeof LEATHER_STEMS, look: Partial<Appearance>): Record<string, Partial<Appearance>> {
   return Object.fromEntries(LEATHER_STEMS[form].flatMap(stem => [`${stem}_gloves`, `${stem}_boots`].map(id => [id, look])));
 }
@@ -114,6 +123,19 @@ export const ITEM_LOOKS: Record<string, Partial<Appearance>> = {
   ...leatherPair('marsh', { tint: 0x7c8c5c, trim: 0x4a5638, metal: 0.02, rough: 1, glow: 0x6ef0d4, glowI: 0.3, rung: 3, form: 'marsh', motes: 0 }),
   ...leatherPair('thorn', { tint: 0x6a523c, trim: 0xa89878, metal: 0.05, rough: 0.95, glow: 0x7ab0ff, glowI: 0.45, rung: 4, form: 'thorn', motes: 0x7ab0ff }),
   ...leatherPair('moor', { tint: 0xc2b49a, trim: 0x8a7c66, metal: 0.05, rough: 1, glow: 0xb4dcf0, glowI: 0.4, rung: 5, form: 'moor', motes: 0xb4dcf0 }),
+  // The last armour step (level 48): hands and feet in hide tanned with Echo marks. Blackened leather, a seam of arcane teal stitched through it and a few shards set along the cuff: the leather ladder's
+  // only dark set, so it cannot be taken for Moorhide's pale fleece one rung down.
+  ...leatherPair('echohide', { tint: 0x2c2c38, trim: 0x4a4a62, metal: 0.05, rough: 0.8, glow: 0x4fd6c8, glowI: 0.5, rung: 6, form: 'echohide', motes: 0x4fd6c8, accent: 0x181820 }),
+  // The seven Echo blades (docs/combat-99.md 6.2), ids as the sim will name them: one band hue each up the Echo ladder, one shape each (gear.ts `echoBlade`). 1-3 are tier 7, 4-7 tier 8.
+  ...Object.fromEntries(([
+    ['echo_blade_1', { tint: 0x8a9aa2, trim: 0x26343a, glow: 0x3fb8b0, scale: 1.7 , glowI: 0.3 }],
+    ['echo_blade_2', { tint: 0x7c8ca8, trim: 0x222c46, glow: 0x4f86e6, scale: 1.8 , glowI: 0.3 }],
+    ['echo_blade_3', { tint: 0x727aa8, trim: 0x262a4c, glow: 0x6a6cf0, scale: 1.85 , glowI: 0.3 }],
+    ['echo_blade_4', { tint: 0x5c4c8c, trim: 0x1e1836, glow: 0x8a5cf0, scale: 1.9 , glowI: 0.3 }],
+    ['echo_blade_5', { tint: 0x6a4c9c, trim: 0x20183c, glow: 0xa060f0, scale: 2.0 , glowI: 0.3 }],
+    ['echo_blade_6', { tint: 0x9a60b8, trim: 0x2a1838, glow: 0xcf6ef0, scale: 2.0 , glowI: 0.3 }],
+    ['echo_blade_7', { tint: 0x14121c, trim: 0x2a2236, glow: 0xe8a8ff, scale: 2.1, rough: 0.28 , glowI: 0.3 }],
+  ] as const).map(([id, look], i) => [id, { ...look, blade: i + 1, form: 'echo' as const }])),
   // The torch (HOM-148): the off hand's one item, and no rung of the ladder. Ash stake, an iron band, pitch at the head. It is the
   // one warm thing a player wears, and none of that warmth is on the stake: the light is a real light and a halo (gear.ts, render.ts).
   torch: { tint: 0x4a3b2e, trim: 0x3a3b40, metal: 0.05, rough: 0.95, glow: 0, glowI: 0, rung: 1, motes: 0, accent: 0x241c16 },
@@ -151,4 +173,5 @@ export function appearanceOf(id: string): Appearance {
   ap.gem ??= ap.glow || AMBER;
   return ap;
 }
+
 

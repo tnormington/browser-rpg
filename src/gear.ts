@@ -297,6 +297,74 @@ export class PlayerGear {
     m.emissive.setHex(0);
   }
 
+  /** An Echo shard: a long faceted stone in the set's own seam colour, standing at `pos` and leaning out along `lean` (radians round the Y axis, 0 = towards +Z) by a fixed tilt. Used by the Echo blades and the Echohide leather. */
+  private echoShard(r: number, len: number, p: Palette, parent: THREE.Object3D, pos: [number, number, number], lean = 0, tilt = 0.5) {
+    return this.part(new THREE.OctahedronGeometry(r).scale(1, len, 1), p.get('gem'), parent, pos, [Math.cos(lean) * tilt, 0, -Math.sin(lean) * tilt]);
+  }
+
+  /**
+   * The seven Echo blades (HOM-177, docs/combat-99.md 6.2), each a shape of its own on the sword model: the glb gives the grip and the blade's base
+   * silhouette and these parts change it. Authored in the blade's own units (1.15 tall, butt at the origin, broad across X, thin across Z), so every
+   * dimension is a fraction of a blade however far the item's `scale` stretches it. The thread is the Echo: shards, marks, and the afterimage.
+   * 1 a shard clamped at the guard; 2 three tally marks cut in the flat; 3 the blade split, its halves hanging either side; 4 a saw of shards down one edge under a
+   * crescent guard; 5 fans of feathers off the guard and shards orbiting the forte; 6 no steel at all, one long crystal; 7 dark to the edge, trailing three afterimages.
+   */
+  private echoBlade(n: number, p: Palette, root: THREE.Object3D, glb: THREE.Material[]) {
+    const trim = p.get('trim'), edge = p.get('edge'), vein = p.get('inlay'), gem = p.get('gem');
+    const shard = (r: number, len: number, pos: [number, number, number], rot?: [number, number, number]) => this.part(new THREE.OctahedronGeometry(r).scale(1, len, 1), gem, root, pos, rot);
+    const horn = (side: number, y: number, r: number, len: number, start: number, bend: number) => { this.part(curvedSpike(r, len, start, bend, 4), trim, root, [0, y, 0]).scale.x = side; }; // a crescent arm, up and out along ±X
+    switch (n) {
+      case 1:
+        shard(0.065, 2.2, [0, 0.2, 0]);                                              // the clamped shard, stood across the guard
+        this.part(new THREE.BoxGeometry(0.02, 0.5, 0.07), vein, root, [0, 0.65, 0]); // a seam down the blade's centre
+        this.part(new THREE.BoxGeometry(0.2, 0.04, 0.06), edge, root, [0, 0.2, 0]);  // the guard it is clamped to
+        break;
+      case 2:
+        for (const [i, y] of [0.46, 0.6, 0.74].entries()) this.part(new THREE.BoxGeometry(0.15 - i * 0.025, 0.02, 0.07), vein, root, [0, y, 0]); // three marks, each a notch shorter: a tally
+        this.part(new THREE.BoxGeometry(0.3, 0.05, 0.075), trim, root, [0, 0.2, 0]);   // a heavy bar guard
+        for (const s of [-1, 1]) shard(0.035, 1.8, [s * 0.17, 0.2, 0]);                // a shard at each end of it
+        break;
+      case 3:
+        for (const s of [-1, 1]) {                                                     // the blade split: a half hangs off each edge, parted from it
+          shard(0.04, 6.5, [s * 0.1, 0.72, 0], [0, 0, -s * 0.045]);
+          shard(0.02, 3, [s * 0.16, 0.5, 0], [0, 0, -s * 0.09]);
+        }
+        this.part(new THREE.BoxGeometry(0.26, 0.04, 0.06), edge, root, [0, 0.2, 0]);
+        this.part(new THREE.BoxGeometry(0.016, 0.5, 0.075), vein, root, [0, 0.7, 0]);
+        break;
+      case 4:
+        for (let i = 0; i < 5; i++) this.part(new THREE.ConeGeometry(0.05 - i * 0.004, 0.2 - i * 0.02, 4), gem, root, [-0.07, 0.42 + i * 0.14, 0], [0, 0, 0.9]); // teeth down the left edge, hooked up the blade
+        for (const s of [-1, 1]) horn(s, 0.2, 0.035, 0.3, 1.25, -0.9);                 // the crescent guard, tips up
+        this.part(new THREE.BoxGeometry(0.12, 0.04, 0.06), edge, root, [0, 0.2, 0]);
+        break;
+      case 5:
+        for (const s of [-1, 1]) for (const [i, [y, h]] of ([[0.18, 0.08], [0.2, 0.5], [0.22, 1.0]] as const).entries()) this.spikeOut(i === 1 ? gem : trim, root, [s * 0.05, y, 0], [s * 1, h, 0], 0.04, 0.2 + i * 0.07); // three feathers a side, fanned up off the guard
+        for (let i = 0; i < 4; i++) { const a = i * 1.7; shard(0.04, 2.2, [Math.sin(a) * 0.13, 0.42 + i * 0.17, Math.cos(a) * 0.13]); } // and shards turning round the blade
+        break;
+      case 6: {
+        root.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && glb.includes(m.material as THREE.Material) && (m.material as THREE.Material).name === 'Metal') m.visible = false; }); // no steel: the blade is the stone
+        this.part(new THREE.CylinderGeometry(0.0, 0.09, 1.1, 6).translate(0, 0.55, 0).scale(1.1, 1, 0.7), gem, root, [0, 0.2, 0]);
+        this.part(new THREE.BoxGeometry(0.02, 0.8, 0.16), vein, root, [0, 0.7, 0]);                  // a core of light down the crystal\n        for (const s of [-1, 1]) this.part(new THREE.CylinderGeometry(0.0, 0.055, 0.8, 6).translate(0, 0.4, 0), gem, root, [s * 0.06, 0.14, s * 0.04], [s * 0.2, 0, -s * 0.2]); // two more stones grown off the first
+        this.band(0.085, 0.085, 0.05, 'edge', p, root, [0, 0.18, 0]);
+        this.band(0.07, 0.07, 0.12, 'trim', p, root, [0, 0.08, 0]);
+        break;
+      }
+      case 7: {
+        const sh = new THREE.Shape();
+        sh.moveTo(-0.06, 0.2); sh.lineTo(-0.075, 0.95); sh.lineTo(0, 1.3); sh.lineTo(0.075, 0.95); sh.lineTo(0.06, 0.2);
+        for (const [k, a] of [0.3, 0.18, 0.1].entries()) {                             // each afterimage is the blade a moment ago: further round, fainter
+          const m = vein.clone(); m.transparent = true; m.opacity = a; m.depthWrite = false; p.list.push(m);
+          const g = this.part(new THREE.ExtrudeGeometry(sh, { depth: 0.01, bevelEnabled: false }), m, root, [0, 0, 0.02 * (k + 1)], [0, 0, 0.07 * (k + 1)]);
+          g.castShadow = g.receiveShadow = false;
+        }
+        const ring = this.part(new THREE.TorusGeometry(0.12, 0.01, 4, 20), vein, root, [0, 0.2, 0], [Math.PI / 2, 0, 0]); // a ring at the guard
+        ring.castShadow = false;
+        this.part(new THREE.BoxGeometry(0.18, 0.04, 0.06), edge, root, [0, 0.2, 0]);
+        break;
+      }
+    }
+  }
+
   private buildWeapon(id: string) {
     const sword = this.pieces.sword, hand = this.bones.get('MiddleHandR');
     if (!sword || !hand) return null;
@@ -313,6 +381,7 @@ export class PlayerGear {
       // the origin, so these are fractions of a blade however far the item's own `scale` stretches it.
       const p = this.palette(ap);
       this.jewel(0.05, p, blade.root, [0, 0.05, 0]);
+      if (ap.blade) this.echoBlade(ap.blade, p, blade.root, blade.materials);
       mats.push(...p.list);
     }
     hand.add(blade.root);
@@ -626,6 +695,10 @@ export class PlayerGear {
         this.band(0.105, 0.1, 0.1, 'trim', p, w, [0, -0.04, 0]);
         for (let i = 0; i < 5; i++) { const t = (i / 5) * Math.PI * 2; this.spikeOut(trim, w, [Math.sin(t) * 0.1, -0.04, Math.cos(t) * 0.1], [Math.sin(t), -0.5, Math.cos(t)], 0.04, 0.17); } // thorns round the wrist
         for (const x of [-0.04, 0, 0.04]) this.spikeOut(trim, w, [x, len * 0.35 + 0.02, 0.06], [0, 0.35, 1], 0.022, 0.1); // and on the knuckles
+      } else if (ap.form === 'echohide') {
+        this.band(0.105, 0.1, 0.1, 'trim', p, w, [0, -0.04, 0]);
+        for (let i = 0; i < 6; i++) this.echoShard(0.03, 2, p, w, [Math.sin(i * 1.047) * 0.115, -0.04, Math.cos(i * 1.047) * 0.115], i * 1.047); // Echo shards stood round the cuff, leaning out
+        for (const x of [-0.04, 0, 0.04]) this.part(new THREE.OctahedronGeometry(0.02).scale(1, 1.6, 1), p.get('gem'), w, [x, len * 0.35 + 0.03, 0.065]); // and a stud on each knuckle
       } else {
         this.band(0.1, 0.095, 0.1, 'strap', p, w, [0, -0.04, 0]); // a plain stitched cuff
       }
@@ -676,6 +749,9 @@ export class PlayerGear {
       } else if (ap.form === 'thorn') {
         for (let i = 0; i < 5; i++) { const t = (i / 5) * Math.PI * 2 + 0.3; this.spikeOut(trim, s, [Math.sin(t) * 0.12, 0.25, -0.03 + Math.cos(t) * 0.12], [Math.sin(t), 0.7, Math.cos(t)], 0.035, 0.17); } // a crown of thorns round the rim
         this.spikeOut(trim, s, [0, 0.06, -0.14], [0, -0.35, -1], 0.04, 0.2); // and a spur at the heel
+      } else if (ap.form === 'echohide') {
+        for (let i = 0; i < 6; i++) this.echoShard(0.032, 2.2, p, s, [Math.sin(i * 1.047) * 0.125, 0.25, -0.03 + Math.cos(i * 1.047) * 0.125], i * 1.047); // a ring of Echo shards round the rim
+        this.echoShard(0.04, 2.6, p, s, [0, 0.06, -0.14], Math.PI); // and one at the heel
       }
       shaft.add(s);
       this.mountPiece(root, foot, shaft, a);
@@ -755,4 +831,7 @@ export class PlayerGear {
     }
   }
 }
+
+
+
 

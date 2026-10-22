@@ -30,7 +30,7 @@ import {
   HARBOURMASTER, QUEST3_NAME, REWARD3, dialogueAt, harbourMarker, ERRAND_GOODS, QUEST4_NAME, REWARD4,
   BRINE_GOALS, QUEST5_NAME, REWARD5,
 } from './sim/quest';
-import { appearanceOf, ITEM_LOOKS, TIER_LOOKS, TIER5_COLOR, TIER6_COLOR } from './gear-look';
+import { appearanceOf, ITEM_LOOKS, TIER_LOOKS, TIER5_COLOR, TIER6_COLOR, TIER7_COLOR, TIER8_COLOR } from './gear-look';
 import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
 import { DOUBLE_JUMP_APEX, DOUBLE_JUMP_CEILING, DOUBLE_JUMP_COST, DOUBLE_JUMP_LEVEL, maxStamina } from './sim/agility';
@@ -2371,7 +2371,13 @@ section('HOM-81 the steel rung: smithed rather than mined, a Smithing ladder, an
   assert(mith.armor >= iron.armor * 2 && mith.reduction > iron.reduction + 0.15, `the set is ${mith.armor} armour (${(100 * mith.reduction).toFixed(0)}% off) against the iron the dead drop: ${iron.armor} (${(100 * iron.reduction).toFixed(0)}%)`);
   const top = TIER_LOOKS.length - 1;
   const warm = (hex: number) => ((hex >> 16) & 255) > ((hex & 255)) + 8;
-  assert(top === 6 && TIER_COLORS.length === top + 1 && TIER_COLORS[5] === TIER5_COLOR && TIER_COLORS[6] === TIER6_COLOR, 'the worn-look ladder runs to tier 6 and every tier has a colour');
+  assert(top === 8 && TIER_COLORS.length === top + 1 && TIER_COLORS[5] === TIER5_COLOR && TIER_COLORS[6] === TIER6_COLOR && TIER_COLORS[7] === TIER7_COLOR && TIER_COLORS[8] === TIER8_COLOR, 'the worn-look ladder runs to tier 8 and every tier has a colour');
+  // HOM-177: tiers 7 and 8 are two more colours nobody else uses, climbing the rungs; the seven Echo blades each have a shape of their own, 1-3 on tier 7 and 4-7 on tier 8, none sharing a hue
+  assert(new Set(TIER_COLORS).size === TIER_COLORS.length && TIER_LOOKS[7].rung > TIER_LOOKS[6].rung && TIER_LOOKS[8].rung > TIER_LOOKS[7].rung && !warm(TIER_LOOKS[7].glow) && !warm(TIER_LOOKS[8].glow), 'tiers 7 and 8 are colours of their own, a rung each, and the first is cold');
+  const echoBlades = [1, 2, 3, 4, 5, 6, 7].map(n => ITEM_LOOKS[`echo_blade_${n}`]);
+  assert(echoBlades.every((l, i) => l?.blade === i + 1 && l.form === 'echo') && new Set(echoBlades.map(l => l.glow)).size === 7 && new Set(echoBlades.map(l => l.tint)).size === 7, 'the seven Echo blades each have a look of their own, in seven hues');
+  assert(echoBlades.every(l => (l.glowI ?? 0) * linearPeak(l.glow!) <= EMISSIVE_CAP * 0.75), 'and none of them out-glows the cap');
+  for (const slot of ['gloves', 'boots']) assert(ITEM_LOOKS[`echohide_${slot}`]?.form === 'echohide' && ITEM_LOOKS[`echohide_${slot}`].glow, `the level-48 leather ${slot} have a form and a glint of their own`);
   // tier 6 is the end of the ladder: its own shape, its own colour (white, the one the other tiers leave), a glow that is cold and under the cap, and a starmetal set that is not the fallback
   assert(TIER_LOOKS[6].form === 'star' && TIER_LOOKS[6].rung > TIER_LOOKS[5].rung && !warm(TIER_LOOKS[6].glow) && TIER_LOOKS[6].glow !== TIER_LOOKS[5].glow && !TIER_COLORS.slice(0, 6).includes(TIER6_COLOR), 'tier 6 is star-white, a form of its own, and not a tier-5 recolour');
   for (const id of ['starmetal_helm', 'starmetal_chestplate', 'starmetal_greaves', 'starmetal_blade', 'crownbreaker'] as const) assert(id in ITEM_LOOKS && TIER_LOOKS[6].glowI * linearPeak(TIER_LOOKS[6].glow) <= EMISSIVE_CAP * 0.75, `${id} has a look of its own under the glow cap`);

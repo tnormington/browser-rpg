@@ -195,7 +195,7 @@ export const MARSHHIDE_SET = ['marshhide_gloves', 'marshhide_boots'] as const;
 export const THORNHIDE_SET = ['thornhide_gloves', 'thornhide_boots'] as const;
 export const MOORHIDE_SET = ['moorhide_gloves', 'moorhide_boots'] as const;
 
-export const TIER_COLORS = [0xc8c8c8, 0xe8e8e8, 0x4aa8ff, 0xffa030, 0xb48cff, 0x3ee0c0, 0xf2f0ff]; // material, common, good, rare, epic, legendary (spectral jade; art's TIER5_COLOR in gear-look.ts), mythic (star-white; TIER6_COLOR)
+export const TIER_COLORS = [0xc8c8c8, 0xe8e8e8, 0x4aa8ff, 0xffa030, 0xb48cff, 0x3ee0c0, 0xf2f0ff, 0x7a5cff, 0xe060ff]; // material, common, good, rare, epic, legendary (spectral jade; art's TIER5_COLOR in gear-look.ts), mythic (star-white; TIER6_COLOR), the Echo blades (ultraviolet, orchid; TIER7_COLOR, TIER8_COLOR)
 
 export interface DropEntry { id: string; qty?: [number, number]; weight?: number }
 export interface DropTable {
