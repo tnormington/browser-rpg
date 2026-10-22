@@ -5,7 +5,6 @@
 // take all three together.
 import type { GameEvent } from './sim';
 import { ABILITIES } from './sim/data';
-import { inCave, perchAt } from './sim/world';
 import { WEATHER_BEDS, bedFor, type WeatherLayer } from './ambience';
 import { VOICES, voiceOf } from './voices';
 import { Music } from './music';
@@ -86,6 +85,7 @@ const SOUNDS = {
   landGrass: { files: ['thud'], vol: 0.5, jitter: 0.05, rate: 1.1 },
   landCave:  { files: ['step-cave-1', 'step-cave-2'], vol: 0.5, jitter: 0.06, rate: 0.8 },
   landProp:  { files: ['thud'], vol: 0.45, jitter: 0.04, rate: 1.5 },   // a prop is hard and hollow, not turf: higher and shorter than the ground's thud
+  chestShut: { files: ['thud'], vol: 0.3, jitter: 0.04, rate: 0.5 },   // a lid that will not lift: dull and low, no coin behind it
   landKnock: { files: ['interrupt'], vol: 0.1, jitter: 0.1, rate: 0.5 },   // wood or stone answering under it
   chestLid:  { files: ['thud'], vol: 0.55, jitter: 0.03, rate: 0.7 },   // the lid
   chestCoin: { files: ['loot'], vol: 0.5, jitter: 0.03, delay: 0.14 },   // what is inside
@@ -299,10 +299,6 @@ function tone(freq: number, dur: number, type: OscillatorType, vol: number, slid
   o.stop(t + dur + 0.02);
 }
 
-/** Airtime of the hop in progress, for how hard it lands; undefined on a walk-off fall (or a save loaded mid-air), which lands at DEFAULT_AIRTIME. */
-let landAirtime: number | undefined;
-const DEFAULT_AIRTIME = 0.4;
-
 const arpeggio =(notes: number[], step: number, type: OscillatorType, vol: number) =>
   notes.forEach((f, i) => tone(f, step * 2.2, type, vol, f, i * step));
 
@@ -340,7 +336,10 @@ export function playEvents(events: GameEvent[], mount: string | null = null) {
         break;
       case 'catch': play('fish', [SOUNDS.fishCatch], { noGap: true }); break;
       case 'flight': play('flight', [ev.phase === 'start' ? SOUNDS.takeoff : SOUNDS.landing], { noGap: true }); break;
-      case 'telegraph': tone(110, ev.windup, 'sawtooth', 0.05, 220); break;
+      case 'telegraph':
+        if (ev.kind === 'sweep') { tone(70, ev.windup, 'sine', 0.14, 35); tone(105, ev.windup, 'triangle', 0.05, 52); }   // a low rumble that sinks: every other tell climbs, and this one is answered by leaving the ground
+        else tone(110, ev.windup, 'sawtooth', 0.05, 220);
+        break;
       case 'levelup': play('stinger', [SOUNDS.levelup]); break;
       case 'unlock': play('stinger', [SOUNDS.unlock]); break;
       case 'quest':
@@ -356,17 +355,15 @@ export function playEvents(events: GameEvent[], mount: string | null = null) {
       case 'jump':
         if (ev.double) { play('jump', [SOUNDS.hopAir], { noGap: true }); tone(520, 0.16, 'triangle', 0.07, 1040); }
         else play('jump', [SOUNDS.hop]);
-        landAirtime = ev.airtime;
         break;
-      case 'land': {
-        // Heavier for a longer hop; a fall off an edge raises no 'jump', so it gets the default. Landing on a prop is not landing on turf.
-        const weight = Math.min(1.4, 0.6 + (landAirtime ?? DEFAULT_AIRTIME));
-        const top = perchAt(ev.x, ev.z, Infinity)?.top ?? 0;
-        const layer = top > 0 ? SOUNDS.landProp : inCave(ev.x, ev.z) ? SOUNDS.landCave : SOUNDS.landGrass;
-        play('land', top > 0 ? [{ ...layer, vol: layer.vol * weight }, SOUNDS.landKnock] : [{ ...layer, vol: layer.vol * weight }]);
-        landAirtime = undefined;
+      case 'land': {   // the sim says how far it fell and what it fell on: a longer drop is heavier, and a prop is not turf
+        const weight = Math.min(1.4, 0.6 + ev.fall * 0.35);
+        const layer = ev.on === 'prop' ? SOUNDS.landProp : ev.on === 'cave' ? SOUNDS.landCave : SOUNDS.landGrass;
+        play('land', ev.on === 'prop' ? [{ ...layer, vol: layer.vol * weight }, SOUNDS.landKnock] : [{ ...layer, vol: layer.vol * weight }]);
         break;
       }
+      case 'chestnear': arpeggio([1319, 1760], 0.12, 'sine', 0.035); break;   // two soft high notes: something worth walking to
+      case 'chestfail': play('chest', [SOUNDS.chestShut], { noGap: true }); break;
       case 'crafted':
         if (ev.skill === 'cooking') { play('cook', [SOUNDS.cookDone]); break; }
         if (ev.skill === 'leatherworking') { play('leather', [SOUNDS.rackDone, SOUNDS.tack]); break; }
