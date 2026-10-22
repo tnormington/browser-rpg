@@ -137,6 +137,13 @@ for (const [width, height] of SIZES) {
       const rows = sp.querySelectorAll('.skillrow').length;
       if (rows < 10) fails.push(`skills: only ${rows} skills listed, enchanting is the tenth`);
       for (const e of sp.querySelectorAll('.skilltotal .skilllvl, .skilltotal .skillnote')) if (e.scrollWidth > e.clientWidth + 1) fails.push(`skills: the total level's "${e.textContent}" is cut off`);
+      // HOM-193: Agility's row says what the next verb is, below the gate (a distance) and above it (the keys); either way the line is there and none of it is cut
+      for (const level of [25, 1]) { // ending on 1, the longer line, so the no-scroll check below is made against the worst case
+        p.skills.agility.level = level; d.step(); await wait(150);
+        const note = [...sp.querySelectorAll('.skillrow')].find(r => r.textContent.includes('Agility'))?.querySelector('.skillnote');
+        if (!note || !note.textContent) fails.push(`skills: Agility says nothing about the double jump at level ${level}`);
+        else if (note.scrollWidth > note.clientWidth + 1) fails.push(`skills: Agility's "${note.textContent}" is cut off at level ${level}`);
+      }
       if (sp.scrollHeight > sp.clientHeight + 1) fails.push(`skills: ${rows} skills scroll by ${sp.scrollHeight - sp.clientHeight}px in a ${sp.clientHeight}px panel`);
     } else fails.push('skills: the panel did not open');
     await closeAll();

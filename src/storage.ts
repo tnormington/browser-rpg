@@ -5,6 +5,7 @@ import { deserialize, serialize } from './sim/save';
 
 const KEY = 'browser-rpg.save';
 const HELP_KEY = 'browser-rpg.help-seen';
+const HOARD_KEY = 'browser-rpg.hoard-told';
 const QUALITY_KEY = 'browser-rpg.quality';
 const BAR_KEY = 'browser-rpg.actionbar';
 const KEYS_KEY = 'browser-rpg.actionbar-keys';
@@ -24,11 +25,15 @@ export function saveGame(s: GameState): boolean {
 }
 
 export function wipeSave() {
-  try { localStorage.removeItem(KEY); localStorage.removeItem(HELP_KEY); localStorage.removeItem(BAR_KEY); localStorage.removeItem(KEYS_KEY); } catch { /* nothing to wipe */ }
+  try { localStorage.removeItem(KEY); localStorage.removeItem(HELP_KEY); localStorage.removeItem(HOARD_KEY); localStorage.removeItem(BAR_KEY); localStorage.removeItem(KEYS_KEY); } catch { /* nothing to wipe */ }
 }
 
 export const helpSeen = () => { try { return localStorage.getItem(HELP_KEY) !== null; } catch { return true; } };
 export const markHelpSeen = () => { try { localStorage.setItem(HELP_KEY, '1'); } catch { /* ignore */ } };
+
+/** Whether the player has been told, once, that a rooftop chest wants a second jump (agility-guide.ts hoardSight). Blocked storage reads as told: better silent than repeated. */
+export const hoardTold = () => { try { return localStorage.getItem(HOARD_KEY) !== null; } catch { return true; } };
+export const markHoardTold = () => { try { localStorage.setItem(HOARD_KEY, '1'); } catch { /* ignore */ } };
 
 export const loadQuality = (): Quality => { try { return localStorage.getItem(QUALITY_KEY) === 'low' ? 'low' : 'high'; } catch { return 'high'; } };
 export const saveQuality = (q: Quality) => { try { localStorage.setItem(QUALITY_KEY, q); } catch { /* ignore */ } };

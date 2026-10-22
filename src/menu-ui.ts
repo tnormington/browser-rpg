@@ -2,6 +2,8 @@
 import { el } from './dom';
 import type { Quality } from './post';
 import { helpSeen, markHelpSeen } from './storage';
+import { DOUBLE_JUMP_COST, DOUBLE_JUMP_LEVEL } from './sim/agility';
+import { CHEST_TOTAL } from './sim/chests';
 import { ECHO_STEPS, echoUnlocked, type EchoSetting } from './sim/echo';
 import type { GameState } from './sim';
 
@@ -23,7 +25,8 @@ const CONTROLS: [string, string][] = [
   ['Tab / click enemy', 'Target an enemy (Esc clears)'],
   ['X', 'Auto-attack on / off (the bar above the action bar is your swing timer). Strike and Cleave start it too.'],
   ['Space', 'Jump (hold to keep hopping). Agility leaves the ground harder, so the hop grows with the skill.'],
-  ['Shift', 'Sprint: run half as fast again while the stamina bar under your energy drains. Running flat out is what levels Agility, and Agility is how long the bar lasts.'],
+  ['Space again, in the air', `Double jump, from Agility ${DOUBLE_JUMP_LEVEL}: one more push off thin air for ${DOUBLE_JUMP_COST} stamina, high enough to land on a rooftop. Chests up on rooftops (hoards) need it.`],
+  ['Shift', 'Sprint: run half as fast again while the stamina bar under your energy drains. Running flat out is what levels Agility, and Agility is how long the bar lasts. K shows what the next level buys.'],
   ['B', 'Dodge-roll: a short burst along the ground that nothing can touch you during, paid for out of the same stamina bar. Not in the saddle, and not while a net holds you.'],
   ['Z', 'Mount up or dismount: a 1 second cast standing still, not in combat. Any hit or ability throws you off. The stablemasters in Thornwick and Highmoor sell the horses.'],
   ['1 2 3 4 5 6 Q E R F T 7 8', 'Your action bar, as it starts out. Abilities unlock as you level, trainers sell some, and three come from the capstone talents; P re-arranges them.'],
@@ -37,7 +40,9 @@ const CONTROLS: [string, string][] = [
   ['Click the forge / range / alembic / rack', 'Smith bars and weapons / cook fish at the inn / brew a potion from a herb and a vial (the provisioner sells vials) / tan hides and make gloves and boots in Highmoor'],
   ['G', 'Eat the best food in your bag: heals over 5 seconds, a hit spoils it, one food every 20 s. Pies make you Well Fed out of combat.'],
   ['I   C   K', 'Inventory + equipment, Character, Skills'],
-  ['J', 'World map: where the towns are, and which flight masters you have found'],
+  ['J', 'World map: where the towns are, which flight masters you have found, and how many hidden chests you have opened in each place'],
+  ['Click a hidden chest', `Open it from beside it, for coin and Agility XP. ${CHEST_TOTAL} are hidden in the world, off the road and up on steps and roofs; J counts the ones you have found.`],
+  ['Click a notice board', 'Take a bounty from a town board: kill a number of one kind of enemy, then hand it in at the board.'],
   ['Click a flight master', 'Fly to a town you have walked to, for gold (not in combat). Space skips the ride after 3 seconds.'],
   ['Right-click item', 'Drop it on the ground, destroy it, or sell it when at the merchant'],
   ['Click the merchant', 'Buy gear; shift-click a bag item to sell the stack on the spot'],

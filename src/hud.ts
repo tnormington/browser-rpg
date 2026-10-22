@@ -17,7 +17,8 @@ import { abilityOpen, cooldownOf, costOf, swingInterval } from './sim/combat';
 import { PROCS, procOn } from './sim/procs';
 import { VENDORS } from './sim/shop';
 import { mountById } from './sim/mounts';
-import { maxStamina } from './sim/agility';
+import { DOUBLE_JUMP_COST, DOUBLE_JUMP_LEVEL, maxStamina } from './sim/agility';
+import { chestRefusal, hoardRefusal, hoardSight } from './agility-guide';
 import { InventoryUi } from './inventory-ui';
 import { SkillsUi } from './skills-ui';
 import { TalentsUi } from './talents-ui';
@@ -37,7 +38,7 @@ import { Minimap } from './minimap';
 import { DockWindow, HudWindow, el, dragData, parseDrag } from './dom';
 import { abilityArt, enemyArt, faceRow, itemArt, paintArt, preloadItemArt, setFaceArt } from './art';
 import { Dock } from './dock';
-import { loadBar, loadBarKeys, saveBar, saveBarKeys } from './storage';
+import { hoardTold, loadBar, loadBarKeys, markHoardTold, saveBar, saveBarKeys } from './storage';
 import { BarEntry, BarLayout, DEFAULT_KEYS, barWorthy, bindKey, bindRefusal, keyLabel, loadoutDiffers, sameEntry, sanitizeBar, sanitizeKeys } from './bar-layout';
 
 const PUMMEL = ABILITIES.findIndex(a => a.kind === 'interrupt');
@@ -195,6 +196,9 @@ export class Hud {
   private unlockBanner: HTMLElement;
   private warn: HTMLElement;
   private unlockQueue = 0;
+  /** Agility as of the last frame, for the frame a level-up crosses the double jump's: the level-up event names only the level it landed on. Null until the first frame. */
+  private agilityLevel: number | null = null;
+  private hoardTold = hoardTold();
   private hurt: HTMLElement;
   private invUi: InventoryUi;
   private skillsUi: SkillsUi;
@@ -508,6 +512,27 @@ export class Hud {
     this.msgAge = 0;
   }
 
+  /**
+   * The one thing about Agility the game volunteers before it is asked (HOM-193): the first time the player comes up to a rooftop chest they cannot yet reach, it says
+   * what it needs and how far off that is. Once, ever, and never in a fight; every other telling is the player's own click or look.
+   */
+  private sightHoard(s: GameState) {
+    if (this.hoardTold || s.player.inCombat || !hoardSight(s)) return;
+    this.hoardTold = true;
+    markHoardTold();
+    const need = hoardRefusal(s.player); // the same words a click on it would get
+    this.say(need.say);
+    this.note(need.note, 'log-quest');
+  }
+
+  /** Agility reaching the double jump's level is a moment, in the family of an ability unlocking: a banner for the verb and a log line for the keys. */
+  private noteDoubleJump(level: number) {
+    if (this.agilityLevel === null || this.agilityLevel >= DOUBLE_JUMP_LEVEL || level < DOUBLE_JUMP_LEVEL) return;
+    this.popBanner(this.unlockBanner, 'DOUBLE JUMP');
+    this.unlockBanner.dataset.sub = `Press Space again in the air  -  ${DOUBLE_JUMP_COST} stamina`;
+    this.note(`Agility ${DOUBLE_JUMP_LEVEL}: you can double jump. Press Space, then Space again in the air (${DOUBLE_JUMP_COST} stamina). Chests on rooftops are within reach.`, 'log-lvl');
+  }
+
   private popBanner(b: HTMLElement, text: string) {
     b.textContent = text;
     b.classList.remove('show');
@@ -622,14 +647,22 @@ export class Hud {
       } else if (ev.t === 'door') {
         this.say(ev.blurb);
         this.note(ev.blurb, 'log-info');
+      } else if (ev.t === 'chestfail') {
+        const why = chestRefusal(s, ev.why); // a hoard says what it needs and how far off that is; the log keeps it, the screen only holds it a second
+        if (why) {
+          this.say(why.say);
+          if (why.note && this.log.lastElementChild?.textContent !== why.note) this.note(why.note, 'log-info'); // a second click is not a second paragraph
+        }
       } else if (ev.t === 'stuck') {
-        if (!events.some(x => x.t === 'gate' || x.t === 'door')) this.say("Can't reach that"); // a keeper turning you back has already said why
+        // a keeper turning you back, or a chest saying what it wants, has already said why
+        if (!events.some(x => x.t === 'gate' || x.t === 'door' || (x.t === 'chestfail' && chestRefusal(s, x.why)))) this.say("Can't reach that");
       } else if (ev.t === 'invfull') {
         this.say('Inventory full');
       } else if (ev.t === 'levelup') {
         this.popBanner(this.banner, `LEVEL UP!  ${SKILLS[ev.skill].name} ${ev.level}`);
         this.note(`Level up! ${SKILLS[ev.skill].name} is now level ${ev.level}`, 'log-lvl');
         if (ev.skill === 'combat') this.noteUnspentPoints(s);
+        if (ev.skill === 'agility') this.noteDoubleJump(ev.level);
       } else if (ev.t === 'talent') {
         const def = talentById(ev.id)!;
         this.say(`${def.name} rank ${ev.rank}`);
@@ -881,6 +914,8 @@ export class Hud {
       return true;
     });
 
+    this.sightHoard(s);
+    this.agilityLevel = p.skills.agility.level;
     this.minimap.update(s);
     this.invUi.update(s);
     this.skillsUi.update(s);

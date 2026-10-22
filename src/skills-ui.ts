@@ -4,12 +4,13 @@ import { SKILL_IDS, SKILLS, SkillId, totalLevel } from './sim/skills';
 import { mountById } from './sim/mounts';
 import { levelProgress } from './sim/xp';
 import { el } from './dom';
+import { agilityTip, doubleJumpNote } from './agility-guide';
 
 const MOUNT = mountById('destrier')!, GOAL = MOUNT.total!; // the one total level anything asks for: the second mount's
 export class SkillsUi {
   private panel: HTMLElement;
   private total: { sum: HTMLElement; fill: HTMLElement; note: HTMLElement };
-  private rows: { id: SkillId; lvl: HTMLElement; fill: HTMLElement; label: HTMLElement }[] = [];
+  private rows: { id: SkillId; lvl: HTMLElement; fill: HTMLElement; label: HTMLElement; row: HTMLElement; note?: HTMLElement }[] = [];
 
   constructor(root: HTMLElement) {
     this.panel = el(root, 'panel skillspanel');
@@ -27,7 +28,8 @@ export class SkillsUi {
       el(head, 'skillname', `${SKILLS[id].icon} ${SKILLS[id].name}`);
       const lvl = el(head, 'skilllvl');
       const bar = el(row, 'bar skillbar');
-      this.rows.push({ id, lvl, fill: el(bar, 'fill'), label: el(bar, 'label') });
+      // Agility is the one skill that buys verbs, so it is the one that says what the next one is: a distance to walk toward, as the total does for the Destrier
+      this.rows.push({ id, lvl, fill: el(bar, 'fill'), label: el(bar, 'label'), note: id === 'agility' ? el(row, 'skillnote') : undefined, row });
     }
     this.panel.style.display = 'none';
   }
@@ -49,6 +51,10 @@ export class SkillsUi {
       r.lvl.textContent = String(t.level);
       r.fill.style.width = `${prog.frac * 100}%`;
       r.label.textContent = prog.needed ? `${prog.into} / ${prog.needed} XP` : 'MAX';
+      if (r.note) {
+        r.note.textContent = doubleJumpNote(s.player);
+        r.row.title = agilityTip(s.player);
+      }
     }
   }
 }

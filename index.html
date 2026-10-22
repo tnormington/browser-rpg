@@ -208,6 +208,8 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .skillbar{--bar-h:12px;--fill:var(--fill-skill)}.skillbar.thin{--bar-h:5px}
 .skilltotal{margin-bottom:var(--sp-4);padding-bottom:var(--sp-3);border-bottom:1px solid var(--edge-dim)}.skilltotal .skillname{font-weight:bold}.skilllvl.done{color:var(--moss)}
 .skillnote{margin-top:var(--sp-2);font-size:var(--fs-sm);color:var(--ink-dim)}
+.skillrow .skillnote{color:var(--arcane)} /* the second jump's own light (it leaves a flash of it under the feet), so the line and the thing it names read as one */
+@media (max-height:760px){.skillrow .skillnote{position:absolute;z-index:2;top:calc(var(--pad) + var(--sp-2));right:var(--pad);margin:0}} /* the list is in columns and has no height to spare: Agility's line rides the title's free width instead of a row of its own */
 .talentpanel{order:5;width:760px}
 .ttrees{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-4)}
 .ttree{background:var(--iron-glass);border:1px solid var(--edge-dim);border-radius:var(--r);padding:var(--sp-3)}
