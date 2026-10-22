@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
 import { floorLift, roomIndices } from './floor-stack';
-import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, dungeonAt, inCave, regionAt } from './sim/world';
+import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, dungeonAt, inCave, perchAt, regionAt } from './sim/world';
 import { ABILITIES, ENEMY_TYPES, AUTO_RANGE, SPAWNS, GRAVITY, FALL_GRAVITY } from './sim/data';
 import { ITEMS, TIER_COLORS } from './sim/items';
 import { GATHER_STRIKE, NODE_TYPES, nodeById } from './sim/gathering';
@@ -242,6 +242,7 @@ const MOUTH_TOPS = [{ x: -21, y: 2.6, z: -27.8, w: 4.6 }, { x: -15, y: 2.6, z: -
 /** Enemy click volume: a vertical capsule as tall as the model on screen, wide enough for the widest of its body and its sim radius. A little generous on purpose. */
 const PICK_SPHERES = 4;
 const CAMERA_JUMP_FOLLOW = 0.5;
+const CAMERA_LIFT_EASE = 10;
 const CAMERA_FOV = 60;
 const MOUNT_FOV_OPEN = 6, MOUNT_CAMERA_PULL = 0.3, MOUNT_CAMERA_EASE = 3; // mounted: the lens opens by this many degrees, the camera backs off by this fraction, and both settle at this rate (per second)
 /**
@@ -372,6 +373,7 @@ export class Renderer {
   distance = 10;
   /** 0 on foot, 1 mounted: eased, so climbing up pulls the camera back and opens the lens rather than cutting. */
   private mountedBlend = 0;
+  private camLift = 0;
   private rideShown = false; // what the rider and the horse were last told
 
   constructor(parent: HTMLElement, s: GameState, quality: Quality = 'high') {
@@ -1995,8 +1997,10 @@ export class Renderer {
     }
 
     // orbit camera; y clamped above ground so it never clips through
-    // it rides half of a jump: a pure translation (the view angle never changes), so the hop reads without the horizon lurching
-    const cp = Math.cos(this.pitch), lift = pl.y * CAMERA_JUMP_FOLLOW;
+    // it rides the floor you stand on in full and half of a jump above it (eased, so stepping onto a perch does not pop): a pure translation (the view angle never changes), so the hop reads without the horizon lurching
+    const floor = perchAt(pl.x, pl.z, pl.y)?.top ?? 0;
+    this.camLift += (floor + (pl.y - floor) * CAMERA_JUMP_FOLLOW - this.camLift) * Math.min(1, dtFx * CAMERA_LIFT_EASE);
+    const cp = Math.cos(this.pitch), lift = this.camLift;
     if (pl.mounted !== this.rideShown) { this.rideShown = pl.mounted; this.setMounted(pl.mounted, moveSpeed(pl), bestMount(pl)?.id); }
     this.mountedBlend += ((pl.mounted ? 1 : 0) - this.mountedBlend) * Math.min(1, dtFx * MOUNT_CAMERA_EASE);
     const fov = CAMERA_FOV + this.mountedBlend * MOUNT_FOV_OPEN;
