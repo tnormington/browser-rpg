@@ -222,6 +222,12 @@ export const ITEM_SUBJECTS = {
   ...leatherSet('marshhide', 'marshhide_gloves', 'marshhide_boots'),
   ...leatherSet('thornhide', 'thornhide_gloves', 'thornhide_boots'),
   ...leatherSet('moorhide', 'moorhide_gloves', 'moorhide_boots'),
+
+  // The off hand. Two things to say twice. It is the one lit subject in the set, and the backdrop flood starts at the border
+  // and cannot get past a lit pixel, so the flame is asked for small and contained and the glow round it is refused by name.
+  // And "standing upright" is a place: asked for that, the model plants it in a cairn of stones, the same mistake a named
+  // light is. Hung at an angle with no foot to stand on, it is an object again.
+  torch: 'a hand-held wooden torch floating at a slight angle, a short ash stake bound with one iron band, a pitch-soaked rag head burning with a small contained orange flame, no stand, no base, no stones, no rocks, no glow, no halo, no sparks, no smoke',
 };
 
 // --- the abilities ----------------------------------------------------------------------------

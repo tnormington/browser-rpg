@@ -10,7 +10,7 @@ import { nearVendor } from './sim/shop';
 import { DockWindow, dragData, el, panelWindow, parseDrag } from './dom';
 import { SLOT_ICON, itemArt, itemGlyph, paintArt } from './art';
 
-const SLOT_LABEL: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs', hands: 'Hands', feet: 'Feet' };
+const SLOT_LABEL: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs', hands: 'Hands', feet: 'Feet', offhand: 'Off hand' };
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 
 type MenuRow = [label: string, run: (() => void) | null, cls?: string];

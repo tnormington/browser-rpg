@@ -114,6 +114,9 @@ export const ITEM_LOOKS: Record<string, Partial<Appearance>> = {
   ...leatherPair('marsh', { tint: 0x7c8c5c, trim: 0x4a5638, metal: 0.02, rough: 1, glow: 0x6ef0d4, glowI: 0.3, rung: 3, form: 'marsh', motes: 0 }),
   ...leatherPair('thorn', { tint: 0x6a523c, trim: 0xa89878, metal: 0.05, rough: 0.95, glow: 0x7ab0ff, glowI: 0.45, rung: 4, form: 'thorn', motes: 0x7ab0ff }),
   ...leatherPair('moor', { tint: 0xc2b49a, trim: 0x8a7c66, metal: 0.05, rough: 1, glow: 0xb4dcf0, glowI: 0.4, rung: 5, form: 'moor', motes: 0xb4dcf0 }),
+  // The torch (HOM-148): the off hand's one item, and no rung of the ladder. Ash stake, an iron band, pitch at the head. It is the
+  // one warm thing a player wears, and none of that warmth is on the stake: the light is a real light and a halo (gear.ts, render.ts).
+  torch: { tint: 0x4a3b2e, trim: 0x3a3b40, metal: 0.05, rough: 0.95, glow: 0, glowI: 0, rung: 1, motes: 0, accent: 0x241c16 },
   // named pieces: bespoke by form, each carries one cold glint and no more
   greywolf_hauberk: { tint: 0x6a7078, trim: 0x3e444c, metal: 0.05, rough: 1, glow: 0x6ef0d4, glowI: 0.5, rung: 5, form: 'greywolf' },
   // Leatherworking: two plain materials. Hide is the boar's brown; wolfskin is grey pelt in the Hauberk's colours, furred at the cuffs. Rung 1: no plate, no glow.

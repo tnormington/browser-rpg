@@ -80,7 +80,7 @@ export function paintArt(target: HTMLElement, url: string | null) {
 }
 
 /** What an equipment slot draws while it is empty, and what an item of that slot falls back to with no thumbnail. */
-export const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖', hands: '🧤', feet: '🥾' };
+export const SLOT_ICON: Record<EquipSlot, string> = { weapon: '🗡', head: '⛑', chest: '🛡', legs: '👖', hands: '🧤', feet: '🥾', offhand: '🔥' };
 /** The emoji an item with no thumbnail of its own falls back to — what the HUD drew before the art existed. */
 export const itemGlyph = (def: ItemDef) => def.slot ? SLOT_ICON[def.slot] : def.use ? '🍖' : '◆';
 

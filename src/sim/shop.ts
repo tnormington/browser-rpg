@@ -25,17 +25,23 @@ export const SHOP_REACH = 6; // centre to centre, like the forge
 export const BUY_MARKUP = 4; // the shop charges this many times an item's value: far above what it pays, so a round trip always loses gold
 export const MAX_GOLD = 1e9;
 
+/**
+ * The torch (HOM-148) is on every shelf in the game, which no tier of gear is: it is not a rung of anything, it costs next to nothing, and a
+ * player who has walked into a dungeon without one should be able to buy another wherever they come out.
+ */
+const TORCH = 'torch';
+
 /** What the merchant sells: gear the enemies already drop, never anything a recipe consumes. */
-export const SHOP_STOCK = ['rusty_blade', 'leather_cap', 'hide_jerkin', 'hide_leggings', 'iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves'] as const;
+export const SHOP_STOCK = ['rusty_blade', 'leather_cap', 'hide_jerkin', 'hide_leggings', 'iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', TORCH] as const;
 
 /** Saltmarrow's stock is the tier above Hale's (the bible: a town sells the previous tier's dropped gear), and again never anything a recipe consumes, bar the pie's pinch of sea salt. */
-export const HARBOUR_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword', 'sea_salt'] as const;
+export const HARBOUR_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword', 'sea_salt', TORCH] as const;
 
 /** Thornwick's is Saltmarrow's stock without the salt, and with the vial every potion is poured into: no tier of dropped gear exists above steel yet. */
-export const THORN_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword', VIAL] as const;
+export const THORN_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword', VIAL, TORCH] as const;
 
 /** Highmoor's is Thornwick's without the vial (bible 2.1: nothing added, leatherworking is self-supplied): no tier of dropped gear exists above steel yet. It exists for the bag and the mending. */
-export const HIGH_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword'] as const;
+export const HIGH_STOCK = ['iron_sword', 'iron_helm', 'iron_chestplate', 'iron_greaves', 'steel_sword', TORCH] as const;
 
 /** The Spire's is Highmoor's (bible 2.1: nothing added): no tier of dropped gear exists above steel, and the town's trade is the forge. It exists for the bag and the mending. */
 export const SPIRE_STOCK = HIGH_STOCK;

@@ -4,14 +4,16 @@ import { FISH, SEA_SALT, cookedId, pieId } from './fish';
 import { HERBS, POTION_PREMIUM, VIAL, VIAL_VALUE } from './herbs';
 import { Enchants, enchantFx } from './enchants';
 
-export type EquipSlot = 'weapon' | 'head' | 'chest' | 'legs' | 'hands' | 'feet';
-// `hands` and `feet` are the leatherworker's: the smith makes the other four (bible 3.2)
-export const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'head', 'chest', 'legs', 'hands', 'feet'];
+export type EquipSlot = 'weapon' | 'head' | 'chest' | 'legs' | 'hands' | 'feet' | 'offhand';
+// `hands` and `feet` are the leatherworker's: the smith makes the other four (bible 3.2). `offhand` is the free hand (HOM-148): nothing
+// is smithed for it and nothing it holds fights, so it never competes with the blade.
+export const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'head', 'chest', 'legs', 'hands', 'feet', 'offhand'];
 
 export interface ItemStats {
   damage?: number; // weapon: flat damage added to every direct hit (before level power)
   speed?: number;  // weapon: seconds between auto-attack swings (default BARE_SWING); sets the rhythm, not the damage per second
   armor?: number;  // armour: contributes to incoming damage reduction
+  light?: number;  // a carried light: how far it reaches, world units. The renderer hangs a flame on the player and brightens the cave by it
 }
 
 /**
@@ -55,6 +57,9 @@ const herbItems = (): Record<string, ItemDef> => ({
     [h.potion.id, { name: h.potion.name, stack: 20, dropWeight: 0, tier: 1, value: h.value + POTION_PREMIUM, desc: `Brewed from ${h.name}. Its effect is still to come.` }],
   ] as [string, ItemDef][])),
 });
+
+/** How far a lit torch reaches, world units. Wider than the cave's own lantern (render.ts CAVE_LIGHT), which is what carrying one is for. */
+export const TORCH_REACH = 26;
 
 export const ITEMS: Record<string, ItemDef> = {
   // materials (M3 smithing uses iron_ore + coal; they come from mining nodes, not drops)
@@ -160,6 +165,9 @@ export const ITEMS: Record<string, ItemDef> = {
   // the Cairn King's named piece (6.2): armour 24 as written, against the stormiron helm's 20. Tier 5, not the bible's 6: the ladder ends at 5 (TIER_COLORS, TIER_LOOKS), and a sixth rung is the
   // artist's, as is a bespoke look (it wears the tier-5 fallback). Sells for 4x the helm (6.1). Equip combat 30: the first level of the Hold's band, two under the King.
   kings_crown: { name: "The King's Crown", slot: 'head', stats: { armor: 24 }, stack: 1, dropWeight: 0, tier: 5, value: 920, req: { combat: 30 }, desc: "A circlet of grey iron, cold as the barrow it was buried in. The Cairn King wore it into the dark, and it still keeps the shape of his head." },
+  // the off hand (HOM-148): the one thing made for it, and the only item in the game whose stat is light rather than damage or armour. TORCH_REACH is
+  // what the renderer hangs on the player; a broken one gives nothing, like any other worn piece.
+  torch: { name: 'Torch', slot: 'offhand', stats: { light: TORCH_REACH }, stack: 1, dropWeight: 0, tier: 1, value: 6, desc: 'Pitch-soaked rag on an ash stake. Held in your off hand it burns wherever you carry it, and a cave stops being pitch dark.' },
 };
 
 /** The copper set, in smithing order: the bottom rung, made from Hale's own rock. */
@@ -357,6 +365,8 @@ export interface DerivedStats {
   armor: number;
   reduction: number;    // fraction of incoming damage removed, 0..MAX_REDUCTION
   swingInterval: number; // seconds between auto-attack swings: the weapon's speed, or BARE_SWING bare-handed
+  /** How far the light you carry reaches, world units; 0 with nothing lit. Rendering only: no rule reads it. */
+  light: number;
   /** What the slot enchants add (sim/enchants.ts): crit chance, energy a second, and the share of max health. Armour is folded into `armor`. */
   crit: number;
   energyRegen: number;
@@ -368,7 +378,7 @@ export const ARMOR_K = 40;        // reduction = armor / (armor + ARMOR_K)
 export const MAX_REDUCTION = 0.8;
 
 export type Equipment = Record<EquipSlot, string | null>;
-export const emptyEquipment = (): Equipment => ({ weapon: null, head: null, chest: null, legs: null, hands: null, feet: null });
+export const emptyEquipment = (): Equipment => ({ weapon: null, head: null, chest: null, legs: null, hands: null, feet: null, offhand: null });
 /** Durability points left, by item id. Absent means whole (MAX_DURABILITY): only a piece that has been worn down has an entry, so an old save needs none. */
 export type Durability = Record<string, number>;
 
@@ -378,7 +388,7 @@ export type Durability = Record<string, number>;
  */
 export function deriveStats(equipment: Equipment, durability: Durability = {}, enchants: Enchants = {}): DerivedStats {
   const fx = enchantFx(equipment, durability, enchants);
-  let weaponDamage = 0, armor = fx.armor, swingInterval = BARE_SWING;
+  let weaponDamage = 0, armor = fx.armor, swingInterval = BARE_SWING, light = 0;
   for (const slot of EQUIP_SLOTS) {
     const id = equipment[slot];
     const st = id && durability[id] !== 0 ? ITEMS[id]?.stats : undefined;
@@ -386,8 +396,9 @@ export function deriveStats(equipment: Equipment, durability: Durability = {}, e
     weaponDamage += st.damage ?? 0;
     armor += st.armor ?? 0;
     if (st.speed) swingInterval = st.speed;
+    light = Math.max(light, st.light ?? 0); // two lights do not add up: the brighter one is what you see by
   }
-  return { weaponDamage, armor, reduction: Math.min(MAX_REDUCTION, armor / (armor + ARMOR_K)), swingInterval, crit: fx.crit, energyRegen: fx.energyRegen, hpFrac: fx.hpFrac };
+  return { weaponDamage, armor, reduction: Math.min(MAX_REDUCTION, armor / (armor + ARMOR_K)), swingInterval, light, crit: fx.crit, energyRegen: fx.energyRegen, hpFrac: fx.hpFrac };
 }
 
 /** Human-readable stat lines for tooltips. */
@@ -396,6 +407,7 @@ export function describeStats(def: ItemDef): string[] {
   if (def.stats?.damage) out.push(`+${def.stats.damage} weapon damage`);
   if (def.stats?.speed) out.push(`${def.stats.speed.toFixed(1)}s swing`);
   if (def.stats?.armor) out.push(`+${def.stats.armor} armour`);
+  if (def.stats?.light) out.push(`Lights ${def.stats.light}m around you`);
   if (def.req?.combat) out.push(`Requires Combat ${def.req.combat}`);
   if (def.use?.heal) out.push(`Heals ${Math.round(def.use.heal * 100)}% of max health`);
   return out;

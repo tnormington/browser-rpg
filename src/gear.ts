@@ -8,15 +8,17 @@
 //   legs   -> the split-off leg mesh recoloured, plus generated greaves (rung 2+) and knee cops (rung 3+)
 //   hands  -> generated gloves: a cuff at the wrist and a mitt over the palm (hide, or wolf pelt with a fur ruff)
 //   feet   -> generated boots: a shaft over the ankle and a foot with a sole, a fur-topped shaft for wolfskin
+//   offhand-> a generated torch burning in the left fist, with the halo of lit air round its flame
 // Bare slots show skin. Looks come from gear-look.ts, keyed by item id with a tier fallback.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Equipment } from './sim/items';
 
 /** The slots that have a worn look: every equipment slot. */
-type WornSlot = 'weapon' | 'head' | 'chest' | 'legs' | 'hands' | 'feet';
+type WornSlot = 'weapon' | 'head' | 'chest' | 'legs' | 'hands' | 'feet' | 'offhand';
 import { Appearance, appearanceOf } from './gear-look';
 import { cappedIntensity } from './glow';
+import { haloMesh } from './halo';
 import { Instance, Prepared, smoothNormals, spawn } from './models';
 import { bakeUV, dress } from './surface';
 import type { Motes } from './fx';
@@ -24,6 +26,8 @@ import type { Motes } from './fx';
 const SKIN = 0xb89a7e;
 /** A gathering tool is nobody's gear: it has no item, no tier and no appearance, so its two finishes are fixed here. */
 const HAFT = 0x6a5235, TOOL_IRON = 0x8e949c;
+/** The torch's flame, the same ember the standing torches burn (props.ts). `EMITTER_DIFFUSE` is render.ts's rule: an emitter shows its own light, not the room's. */
+const FLAME = 0xff8a30, EMITTER_DIFFUSE = 0.15;
 const UP = new THREE.Vector3(0, 1, 0);
 const WHITE = new THREE.Color(0xffffff);
 /**
@@ -100,9 +104,9 @@ export class PlayerGear {
   private bind = new Map<string, THREE.Matrix4>();
   /** World units -> model units (the fit wrapper scales the rig down). */
   private k: number;
-  private slots: Record<WornSlot, Mounted> = { weapon: empty(), head: empty(), chest: empty(), legs: empty(), hands: empty(), feet: empty() };
+  private slots: Record<WornSlot, Mounted> = { weapon: empty(), head: empty(), chest: empty(), legs: empty(), hands: empty(), feet: empty(), offhand: empty() };
   private bodyMats = new Map<string, THREE.MeshStandardMaterial>();
-  private motes = { weapon: 0, head: 0, chest: 0, legs: 0, hands: 0, feet: 0 };
+  private motes = { weapon: 0, head: 0, chest: 0, legs: 0, hands: 0, feet: 0, offhand: 0 };
   /** Gathering tools, built the first time their skill is worked and kept in the fist, hidden: there are three of them. */
   private tools = new Map<string, THREE.Object3D>();
   private held: string | null = null;
@@ -678,6 +682,38 @@ export class PlayerGear {
     }
     return { group: root.userData.pieces ? root : null, materials: p.list };
   }
+
+  /**
+   * The off hand (HOM-148): a torch burning in the left fist. Authored along +Y with the grip at the origin and in world units,
+   * like a gathering tool, and turned to where the sword points -- forward and up -- so the flame stands clear of the shoulder
+   * instead of inside it. A third the size of the standing torch in props.ts, and built from the same four parts.
+   *
+   * It is the one worn piece that carries a halo. An emitter's own material is held under the bloom threshold (glow.ts), so the
+   * flame on its own is a flat shape; the lit air round it is the halo, and because a carried light has to move with the hand it
+   * is in, the halo is built into this group rather than into the scene's one merged mesh.
+   */
+  private buildOffhand(id: string) {
+    const hand = this.bones.get('MiddleHandL');
+    if (!hand) return null;
+    const ap = appearanceOf(id), p = this.palette(ap), g = new THREE.Group();
+    g.scale.setScalar(1 / hand.getWorldScale(this.tmp).x);
+    g.rotation.z = Math.PI * 0.75;
+    this.part(new THREE.CylinderGeometry(0.032, 0.042, 0.6, 8).translate(0, 0.2, 0), p.get('plate'), g, [0, 0, 0]); // the stake
+    this.band(0.048, 0.048, 0.045, 'trim', p, g, [0, 0.38, 0]);                                                     // the one iron band under the head
+    this.part(new THREE.CylinderGeometry(0.068, 0.05, 0.14, 6), p.get('strap'), g, [0, 0.52, 0]);                   // the pitch-soaked head
+    const flame = new THREE.MeshStandardMaterial({ color: FLAME, emissive: FLAME, emissiveIntensity: cappedIntensity(FLAME, 1), roughness: 0.6, metalness: 0 });
+    flame.color.multiplyScalar(EMITTER_DIFFUSE);
+    p.list.push(flame);
+    for (const [r, sy, x, y, z] of [[0.075, 1.9, 0, 0.66, 0], [0.045, 1.5, 0.015, 0.78, -0.012]] as const) {
+      const m = this.part(new THREE.OctahedronGeometry(r).scale(1, sy, 1), flame, g, [x, y, z]);
+      m.castShadow = m.receiveShadow = false; // a flame is light, not a thing that stands in it
+    }
+    const halo = haloMesh([{ id: 'torch', x: 0, y: 0.7, z: 0, scale: 0.8 }]); // smaller than the standing torch's: a brand in a fist is a smaller flame
+    if (halo) { halo.userData.own = true; g.add(halo); } // `own`: unmount frees its geometry, as it does every part built here
+    hand.add(g);
+    return { group: g, materials: p.list };
+  }
+
   private build(slot: WornSlot, id: string) {
     switch (slot) {
       case 'weapon': return this.buildWeapon(id);
@@ -686,6 +722,7 @@ export class PlayerGear {
       case 'legs': return this.buildLegs(id);
       case 'hands': return this.buildHands(id);
       case 'feet': return this.buildFeet(id);
+      case 'offhand': return this.buildOffhand(id);
     }
   }
 
@@ -694,7 +731,7 @@ export class PlayerGear {
    * A slot whose piece failed to load simply shows nothing extra (the body recolour still applies), so a missing GLB never breaks play.
    */
   sync(eq: Equipment, dt: number, motes?: Motes) {
-    for (const slot of ['weapon', 'head', 'chest', 'legs', 'hands', 'feet'] as const) {
+    for (const slot of ['weapon', 'head', 'chest', 'legs', 'hands', 'feet', 'offhand'] as const) {
       const id = eq[slot];
       if (id !== this.slots[slot].id) {
         this.unmount(slot);

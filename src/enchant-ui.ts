@@ -11,7 +11,7 @@ import { actionButton, el, titleRow } from './dom';
 import { itemThumb, materialChip } from './art';
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
-const SLOT_NAMES: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs', hands: 'Hands', feet: 'Feet' };
+const SLOT_NAMES: Record<EquipSlot, string> = { weapon: 'Weapon', head: 'Head', chest: 'Chest', legs: 'Legs', hands: 'Hands', feet: 'Feet', offhand: 'Off hand' };
 /** Gear of this tier or better asks twice before it is ground: a Crownbreaker is one click from dust otherwise. */
 const CONFIRM_TIER = 4;
 

@@ -132,6 +132,17 @@ const CAVE_LIGHT = {
 };
 /** Daylight values the cave lighting fades from (what the constructor sets up). */
 const DAY = { sun: 4.4, rim: 1.5, hemi: 0.4, env: 0.4, sky: 1 };
+/**
+ * A lit torch in the off hand (HOM-148). Three things, and they are three because one is not enough: the flame throws a real warm
+ * light that follows the player wherever they are, `hemi` and `env` lift what the cave's dark leaves of the room, and the fog is
+ * pushed back so the brightening is seen past the pool of light itself. The lift is scaled by caveDepth like everything else here --
+ * outdoors there is a sun, and a torch is a flame you carry, not a change of weather.
+ *
+ * The light rides over the player's head, as the lantern does and for the same reason: the knight is 2 units tall and his skin is
+ * the palest thing in the cave, so a flame carried at fist height washes him to a white cut-out. At y 4.6 the most his head can
+ * take is 0.34 (the skin) x 95 / (pi x 2.8^2) = 1.3, under LIT_CAP (glow.ts), so he keeps his own colours inside his own light.
+ */
+const TORCH_LIGHT = { color: 0xff8a30, intensity: 95, y: 4.6, hemi: 0.7, env: 0.3, fogFar: 12 };
 /** Held above the flame (the 1.7x brazier's flame tops out near y 3.4): a light inside or beside a prop bloomed the prop to white. See glow.ts minLightDistance. */
 const BRAZIER_LIGHT = { intensity: 260, distance: 24, y: 5.8 };
 /**
@@ -317,6 +328,8 @@ export class Renderer {
   private hemi!: THREE.HemisphereLight;
   private rim!: THREE.DirectionalLight;
   private lantern!: THREE.PointLight;
+  /** The light of a torch in the off hand, at zero when none is worn (HOM-148). Never added or removed: that recompiles every material. */
+  private torch!: THREE.PointLight;
   private brazierLights: THREE.PointLight[] = [];
   private caveFogColor = new THREE.Color(CAVE_LIGHT.fog.color);
   private caveFogHollow = new THREE.Color(CAVE_LIGHT.fog.color);
@@ -652,6 +665,9 @@ export class Renderer {
     // the light that follows the lantern (player, scaled by caveDepth): at zero outdoors, never added or removed (that would recompile every material)
     this.lantern = new THREE.PointLight(CAVE_LIGHT.lantern.color, 0, CAVE_LIGHT.lantern.distance);
     this.scene.add(this.lantern);
+    // and the one the player lights for themselves: its reach is the torch's own (ITEMS.torch), so the sim says how far it carries
+    this.torch = new THREE.PointLight(TORCH_LIGHT.color, 0);
+    this.scene.add(this.torch);
     this.buildGrotto();
     this.buildRotroot();
     this.buildCairnHold();
@@ -898,20 +914,25 @@ export class Renderer {
     return this.air;
   }
 
-  /** Daylight to cave dark by `depth` (the sim's caveDepth at the player): sun, sky, ambient and fog fade, the lantern comes up. */
-  private applyCaveLight(depth: number, x: number, z: number) {
+  /**
+   * Daylight to cave dark by `depth` (the sim's caveDepth at the player): sun, sky, ambient and fog fade, the lantern comes up.
+   * `reach` is how far the light the player carries throws (the sim's `stats.light`, 0 with nothing lit): a torch is a warm light
+   * that follows them anywhere, and underground it also lifts the room the dark leaves them.
+   */
+  private applyCaveLight(depth: number, x: number, z: number, reach: number, nowMs: number) {
     const mix = THREE.MathUtils.lerp;
     const w = this.weather.look;
+    const lit = reach > 0 ? 1 : 0;
     this.sun.intensity = mix(DAY.sun * w.sun, CAVE_LIGHT.sun, depth);
     this.rim.intensity = mix(DAY.rim, CAVE_LIGHT.rim, depth);
-    this.hemi.intensity = mix(DAY.hemi * w.hemi, CAVE_LIGHT.hemi, depth);
-    this.scene.environmentIntensity = mix(DAY.env * w.env, CAVE_LIGHT.env, depth);
+    this.hemi.intensity = mix(DAY.hemi * w.hemi, CAVE_LIGHT.hemi + TORCH_LIGHT.hemi * lit, depth);
+    this.scene.environmentIntensity = mix(DAY.env * w.env, CAVE_LIGHT.env + TORCH_LIGHT.env * lit, depth);
     const fog = this.scene.fog as THREE.Fog;
     const air = this.zoneAir(x, z);
     this.caveFogColor.lerp((DUNGEON_LOOK[dungeonAt(x, z)?.id ?? ''] ?? { fog: this.caveFogHollow }).fog, 0.05); // the Grotto's dark is green-black, the Rotroot's loam-black, the Hollow's blue-black
     fog.color.setHex(P.horizon).lerp(this.fogLift, w.lift).lerp(FEN_AIR.color, air.fen * 0.5).lerp(WOOD_AIR.color, air.wood * 0.4).lerp(this.caveFogColor, depth);
     fog.near = mix(w.fogNear + air.fen * 2 - air.wood * 2, CAVE_LIGHT.fog.near, depth);
-    fog.far = mix(w.fogFar + air.fen * 10 - air.wood * 7, CAVE_LIGHT.fog.far, depth);
+    fog.far = mix(w.fogFar + air.fen * 10 - air.wood * 7, CAVE_LIGHT.fog.far + TORCH_LIGHT.fogFar * lit, depth);
     // the sky and the rain go with the daylight: nothing of the weather reaches underground (rain is gone by the first few metres of cave), and
     // what is left of it is also what is left to be heard
     const outside = 1 - THREE.MathUtils.clamp(depth * 5, 0, 1);
@@ -921,6 +942,10 @@ export class Renderer {
     this.weatherHeard.wind = w.wind * outside;
     this.lantern.intensity = CAVE_LIGHT.lantern.intensity * depth;
     this.lantern.position.set(x, CAVE_LIGHT.lantern.y, z);
+    // the torch burns wherever you are, in or out of the cave, and flickers off the same two beats the braziers do
+    this.torch.distance = reach;
+    this.torch.intensity = lit * TORCH_LIGHT.intensity * (1 + 0.09 * Math.sin(nowMs / 95) + 0.06 * Math.sin(nowMs / 39));
+    this.torch.position.set(x, TORCH_LIGHT.y, z);
   }
 
   /** Quest giver: robed figure with a hood and staff, and a bobbing ! / ? marker above. */
@@ -1927,7 +1952,7 @@ export class Renderer {
     this.forgeLights.forEach((l, i) => { l.intensity = FORGE_LIGHT.intensity * (1 + 0.07 * Math.sin(nowMs / 90 + i * 2.1) + 0.05 * Math.sin(nowMs / 37 + i)); });
     this.weather.update(dtFx);
     this.skyClock += dtFx;
-    this.applyCaveLight(caveDepth(x, z), x, z);
+    this.applyCaveLight(caveDepth(x, z), x, z, pl.stats.light, nowMs);
     this.caveFlames.forEach(f => f.m.scale.set(1, 0.85 + 0.25 * Math.sin(nowMs / 110 + f.phase) + 0.1 * Math.sin(nowMs / 47 + f.phase), 1));
     tickHalos(nowMs / 1000); // every glow in the scene flickers off one clock
     for (const l of this.brazierLights) l.intensity = BRAZIER_LIGHT.intensity * (1 + 0.08 * Math.sin(nowMs / 100) + 0.05 * Math.sin(nowMs / 41));

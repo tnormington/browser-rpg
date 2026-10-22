@@ -77,7 +77,7 @@ section('The tanning rack: a hide is tanned, then cut into boots, and the boots 
 
 section('Two new slots, and the sets that fill them');
 {
-  assert(EQUIP_SLOTS.length === 6 && ITEMS.hide_gloves.slot === 'hands' && ITEMS.hide_boots.slot === 'feet', 'six slots: hands and feet are new');
+  assert(EQUIP_SLOTS.includes('hands') && EQUIP_SLOTS.includes('feet') && ITEMS.hide_gloves.slot === 'hands' && ITEMS.hide_boots.slot === 'feet', 'hands and feet are slots of their own');
   const smith = RECIPES.filter(r => (r.station ?? 'forge') === 'forge').flatMap(r => ITEMS[r.output.id].slot ? [ITEMS[r.output.id].slot] : []);
   assert(!smith.includes('hands') && !smith.includes('feet'), 'the smith makes none of them');
   const pairs: [typeof HIDE_SET | typeof WOLFSKIN_SET, number, number][] = [[HIDE_SET, 2, 3], [WOLFSKIN_SET, 5, 7]];

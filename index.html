@@ -183,7 +183,7 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .dhint{float:right;font-size:var(--fs-sm);font-weight:normal;color:var(--ink-dim)}
 .rgroup{margin:var(--sp-4) 0 var(--sp-2);padding-bottom:var(--sp-1);border-bottom:1px solid var(--edge);font-size:var(--fs-sm);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim)}.rgroup:first-child{margin-top:0}
 /* left to right in the dock: what a station or a shop opens (order 0), the lists that are read (skills, talents), then the sheet and the bag nearest the minimap */
-.invpanel{order:9;width:268px}.charpanel{order:8;width:210px}
+.invpanel{order:9;width:268px}.charpanel{order:8;width:276px}
 .invgold{color:var(--gold);margin:-3px 0 var(--sp-3)}
 .grid{display:grid;grid-template-columns:repeat(4,60px);gap:var(--sp-2)}
 .cell{position:relative;width:60px;height:60px;box-sizing:border-box;background:var(--iron-lift);border:2px solid var(--edge-dim);border-radius:var(--r);text-align:center;overflow:hidden;cursor:pointer}
@@ -191,9 +191,9 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .cell .icon{font-size:var(--fs-2xl);line-height:36px}.cell .icon.ghost{opacity:.25;color:var(--ink)}
 .cell .iname{position:absolute;bottom:1px;left:0;right:0;font-size:var(--fs-xs);line-height:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cell .qty{position:absolute;top:1px;left:3px;font-size:var(--fs-sm);font-weight:bold;color:var(--gold)}
-.equip{display:grid;grid-template-columns:repeat(3,60px);gap:var(--sp-3);justify-content:center;margin-bottom:var(--sp-4)} /* six slots, two rows of three: the stats under it stay in reach at 800x560 */
+.equip{display:grid;grid-template-columns:repeat(4,60px);gap:var(--sp-3);justify-content:center;margin-bottom:var(--sp-4)} /* seven slots, two rows of four: still two rows, so the stats under it stay in reach at 800x560 */
 .eqcell .eqlabel{position:absolute;top:1px;left:0;right:0;font-size:var(--fs-xs);opacity:.7}.eqcell .icon{line-height:56px}
-@media (max-height:760px){.charpanel{width:300px}.equip{grid-template-columns:repeat(6,44px);gap:var(--sp-2)}.equip .cell{width:44px;height:44px}.equip .eqcell .icon{font-size:var(--fs-xl);line-height:48px}} /* a short window: the six slots in one row, so the stats stay in reach */
+@media (max-height:760px){.charpanel{width:322px}.equip{grid-template-columns:repeat(7,40px);gap:var(--sp-2)}.equip .cell{width:40px;height:40px}.equip .eqcell .icon{font-size:var(--fs-xl);line-height:44px}} /* a short window: the seven slots in one row, so the stats stay in reach */
 .srow{display:flex;justify-content:space-between;margin-top:var(--sp-2)}.sv{color:var(--gold)}
 .tip{position:fixed;display:none;z-index:10;max-width:220px;pointer-events:none}
 .tname{font-weight:bold;font-size:var(--fs-lg)}.tslot{opacity:.6;font-size:var(--fs-sm)}.tstat{color:var(--moss);margin-top:var(--sp-1)}.tdesc{opacity:.7;margin-top:var(--sp-2);font-style:italic}.tcmp{margin-top:var(--sp-2)}.tcmp.bad{color:var(--bad)}.tcmp.good{color:var(--moss)}.thint{margin-top:var(--sp-2);opacity:.5;font-size:var(--fs-sm)}
