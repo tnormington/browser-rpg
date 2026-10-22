@@ -119,6 +119,9 @@ const TWIST_END = 0.85; // clip time at which the swing's hip turn has unwound
 export const LEAD = 0.06;
 const LAND_FADE = 0.08; // seconds the jump clip takes to give way to locomotion on touchdown (the usual FADE is 0.18)
 const DOUBLE_TUMBLE = 0.46; // seconds the double jump's somersault takes at most (it is shortened to fit a low one)
+const TUMBLE_LAND = 0.12; // seconds a somersault cut short by the ground takes to finish its turn
+/** The somersault's tuck, in the body's frame: knees drawn up to the chest, heels to the seat. A straight body going end over end is a falling plank. */
+const TUCKED: Record<'UpperLeg' | 'LowerLeg' | 'Foot', [number, number, number]> = { UpperLeg: [0.12, -0.35, 0.93], LowerLeg: [0.08, -0.85, -0.5], Foot: [0, -0.5, 1] };
 const HOP_FALL = 9.5; // how fast a plain hop is falling when it lands (u/s): a touchdown at this speed is weight 1
 
 const smooth = (a: number) => a * a * (3 - 2 * a);
@@ -151,7 +154,7 @@ export class Animator {
   private air = 0;      // 0..1: vertical speed while airborne, stretches the body
   private climb = 0;    // -1..1: the same, signed -- which way the hop's arms are swept
   private fall = 0;     // the fastest this hop has dropped (world units/s): how hard the touchdown lands
-  private tumble = { t: 0, dur: 0 }; // the double jump's somersault: runs 0..dur, idle once t >= dur
+  private tumble = { t: 0, dur: 0, rate: 1 }; // the double jump's somersault: runs 0..dur at `rate`, idle once t >= dur
   private hopping = false; // airborne on a jump: the arms are the hop's between takeoff and touchdown
   private hopArms = 0;  // 0..1: how much of them it actually has, eased toward `hopping` so neither handover snaps
   private deadT = 0;
@@ -191,12 +194,16 @@ export class Animator {
       if (e.action === this.current && !this.holding) { this.oneShot = false; this.loop(); }
     });
     this.spine = this.bones.get('Abdomen')?.quaternion.clone();
-    const legs = ['UpperLegL', 'UpperLegR'].map(n => this.bones.get(n));
-    if (legs[0] && legs[1]) {
-      root.updateWorldMatrix(true, true);
-      this.hipY = (root.worldToLocal(legs[0].getWorldPosition(_a)).y + root.worldToLocal(legs[1].getWorldPosition(_b)).y) / 2;
-    }
+    this.hipY = this.hipHeight();
     this.loop();
+  }
+
+  /** Where the hips are above the feet right now, in the wrapper's own units (the clip's pose included). 0 for a rig with no legs. */
+  private hipHeight(): number {
+    const legs = [this.bones.get('UpperLegL'), this.bones.get('UpperLegR')];
+    if (!legs[0] || !legs[1]) return 0;
+    this.root.updateWorldMatrix(true, true);
+    return (this.root.worldToLocal(legs[0].getWorldPosition(_a)).y + this.root.worldToLocal(legs[1].getWorldPosition(_b)).y) / 2;
   }
 
   /** Every rig attacks: with no attack clip it lunges into the blow procedurally. */
@@ -299,7 +306,7 @@ export class Animator {
    */
   doubleJump(left: number) {
     if (this.holding) return;
-    this.tumble = { t: 0, dur: Math.max(0.2, Math.min(DOUBLE_TUMBLE, left * 0.8)) };
+    this.tumble = { t: 0, dur: Math.max(0.2, Math.min(DOUBLE_TUMBLE, left * 0.8)), rate: 1 };
     this.land = { t: 0, dur: 0.1, peak: 0.25, amp: 0.45, dir: 1 };
     const c = this.def.jump && this.actions.get(this.def.jump);
     if (c) this.play(this.def.jump!, { once: true, fade: 0.08, start: c.getClip().duration * 0.3, speed: c.getClip().duration * 0.7 / left });
@@ -313,7 +320,9 @@ export class Animator {
    */
   touchdown(): number {
     const weight = Math.min(1.7, Math.max(0.35, this.fall / HOP_FALL));
-    this.air = 0; this.climb = 0; this.fall = 0; this.hopping = false; this.tumble.t = this.tumble.dur;
+    this.air = 0; this.climb = 0; this.fall = 0; this.hopping = false;
+    // ground met mid-turn (a rock, a step): finish the somersault quickly rather than snapping upright in a frame
+    this.tumble.rate = Math.max(1, (this.tumble.dur - this.tumble.t) / TUMBLE_LAND);
     this.land = { t: 0, dur: 0.12 + 0.05 * weight, peak: 0.3, amp: weight * 0.6, dir: 1 };
     // a quick hand-back: the jump clip ends arms-out, and at the default fade the leap's flung arms and the run's legs share the body for a fifth of a second
     if (this.def.jump && this.current === this.actions.get(this.def.jump) && !this.holding) { this.oneShot = false; this.loop(0, LAND_FADE); }
@@ -364,7 +373,8 @@ export class Animator {
     if (l && l.isRunning() && l.time >= l.getClip().duration - 0.12) { l.fadeOut(0.12); this.layer = null; }
     this.time += dt;
     this.primed = Math.max(0, this.primed - dt);
-    for (const p of [this.hit, this.lunge, this.land, this.twist, this.tumble]) p.t = Math.min(p.dur, p.t + dt);
+    for (const p of [this.hit, this.lunge, this.land, this.twist]) p.t = Math.min(p.dur, p.t + dt);
+    this.tumble.t = Math.min(this.tumble.dur, this.tumble.t + dt * this.tumble.rate);
     // dying in the air leaves no touchdown, so the fall is what ends the hop there
     this.hopArms += ((this.hopping && !this.holding ? 1 : 0) - this.hopArms) * Math.min(1, dt / JUMP_ARM_FADE);
     if (this.holding) this.deadT += dt;
@@ -393,13 +403,16 @@ export class Animator {
     // the double jump's somersault: quick off the push, easing to upright; the roll is about the hips, so the body turns in place instead of swinging round the feet
     const tk = this.tumble.t < this.tumble.dur ? this.tumble.t / this.tumble.dur : 1;
     const flipA = tk < 1 ? 2 * Math.PI * (1 - (1 - tk) ** 2.2) : 0, tuck = tk < 1 ? Math.sin(Math.PI * tk) : 0;
+    const sxz = 1 + squash * 0.6 - stretch * 0.4 + (tell ? tell.swell * w : 0);
+    const sy = 1 - squash + stretch - 0.06 * h - 0.08 * pre + (tell ? tell.swell * w * 0.5 - (tell.squat ?? 0) * w * (0.35 + 0.65 * folds) : 0);
+    // the pivot is where the hips are this frame, not where they stand at rest: the jump clip carries the body well above its bind height
+    const pivot = flipA ? this.hipHeight() * sy : 0;
     r.position.set(
       (tell ? tell.shake * w * Math.sin(this.time * 70) : 0) + shiver,
-      (fk > 0 ? d.lie! * smooth(fk) + hop : 0) + bob - (tell ? tell.sink * w : 0) + (this.seat ? this.seat.y - this.hipY + this.seatBob : 0) + this.hipY * (1 - Math.cos(flipA)),
-      lg - 0.3 * pre - 0.3 * h + slide + (this.seat?.z ?? 0) - this.hipY * Math.sin(flipA));
+      (fk > 0 ? d.lie! * smooth(fk) + hop : 0) + bob - (tell ? tell.sink * w : 0) + (this.seat ? this.seat.y - this.hipY + this.seatBob : 0) + pivot * (1 - Math.cos(flipA)),
+      lg - 0.3 * pre - 0.3 * h + slide + (this.seat?.z ?? 0) - pivot * Math.sin(flipA));
     r.rotation.set(0.15 * lg - 0.2 * pre - 0.38 * h - (tell ? tell.lean * w : 0) + flipA, 0, this.hit.dir * 0.16 * h + this.flip * fall * Math.PI / 2 + (tell?.roll ? tell.roll * w * folds : 0));
-    const sxz = 1 + squash * 0.6 - stretch * 0.4 + (tell ? tell.swell * w : 0) + 0.06 * tuck;
-    r.scale.set(sxz, 1 - squash + stretch - 0.06 * h - 0.08 * pre + (tell ? tell.swell * w * 0.5 - (tell.squat ?? 0) * w * (0.35 + 0.65 * folds) : 0) - 0.14 * tuck, sxz);
+    r.scale.set(sxz, sy, sxz);
     if (this.twist.t < TWIST_END) { // the swing's hip turn: wound back while the weapon is up, then through the blow and unwinding
       const t = this.twist.t, hit = this.twist.peak;
       const spin = (t < hit ? -0.3 + 0.7 * smooth(Math.max(0, t - hit + 0.22) / 0.22) : 0.4 * (1 - smooth((t - hit) / (TWIST_END - hit)))) * this.twist.amp;
@@ -416,6 +429,7 @@ export class Animator {
         this.aim(`LowerArm${side}`, `Palm${side}`, [dir[0] * mx, dir[1], dir[2] + JUMP_ELBOW], this.hopArms * 0.9);
       }
     }
+    if (tuck > 0.01) this.legs(TUCKED, smooth(Math.min(1, tuck * 1.5)));
     if (this.seat) this.sit();
     if (this.workKind) this.work(GATHERS[this.workKind]);
     if (tell && w > 0) for (const side of ['L', 'R'] as const) if (tell.arms[side]) this.aim(`UpperArm${side}`, `LowerArm${side}`, tell.arms[side]!, w);
@@ -460,8 +474,19 @@ export class Animator {
   private sit() {
     for (const side of ['L', 'R'] as const) {
       const mx = side === 'L' ? 1 : -1, mirror = ([x, y, z]: [number, number, number]): [number, number, number] => [x * mx, y, z];
-      this.aim(`UpperLeg${side}`, `LowerLeg${side}`, mirror(SEATED.UpperLeg), 1);
-      this.aim(`LowerLeg${side}`, `LowerLeg${side}_end`, mirror(SEATED.LowerLeg), 1);
+      this.aim(`UpperArm${side}`, `LowerArm${side}`, mirror(SEATED.UpperArm), 1);
+      this.aim(`LowerArm${side}`, `Palm${side}`, mirror(SEATED.LowerArm), 1);
+    }
+    this.legs(SEATED, 1);
+    this.bend(SEAT_LEAN);
+  }
+
+  /** Both legs toward `pose` (thigh, shin and toe directions in the body's frame, mirrored for the right), `weight` of the way from the clip's. */
+  private legs(pose: Record<'UpperLeg' | 'LowerLeg' | 'Foot', [number, number, number]>, weight: number) {
+    for (const side of ['L', 'R'] as const) {
+      const mx = side === 'L' ? 1 : -1, mirror = ([x, y, z]: [number, number, number]): [number, number, number] => [x * mx, y, z];
+      this.aim(`UpperLeg${side}`, `LowerLeg${side}`, mirror(pose.UpperLeg), weight);
+      this.aim(`LowerLeg${side}`, `LowerLeg${side}_end`, mirror(pose.LowerLeg), weight);
       // the foot is its own bone, not a child of the shin: carry it to the shin's end, then point the toes
       const foot = this.bones.get(`Foot${side}`), end = this.bones.get(`LowerLeg${side}_end`);
       if (foot?.parent && end) {
@@ -469,11 +494,8 @@ export class Animator {
         foot.parent.updateWorldMatrix(true, false);
         foot.position.copy(foot.parent.worldToLocal(end.getWorldPosition(_a)));
       }
-      this.aim(`Foot${side}`, `Foot${side}_end`, mirror(SEATED.Foot), 1);
-      this.aim(`UpperArm${side}`, `LowerArm${side}`, mirror(SEATED.UpperArm), 1);
-      this.aim(`LowerArm${side}`, `Palm${side}`, mirror(SEATED.LowerArm), 1);
+      this.aim(`Foot${side}`, `Foot${side}_end`, mirror(pose.Foot), weight);
     }
-    this.bend(SEAT_LEAN);
   }
 
   /**
