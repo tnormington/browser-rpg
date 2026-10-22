@@ -13,7 +13,7 @@ import { ResourceNode, createNodes, updateNodes } from './sim/gathering';
 import { beginCraft } from './sim/crafting';
 import { Buff, updateConsumables } from './sim/consumables';
 import type { Proc } from './sim/procs';
-import type { ChestTier } from './sim/chests';
+import { stepChestNear, type ChestFail, type ChestTier } from './sim/chests';
 import { ShopAction, applyShopAction } from './sim/shop';
 import { BountyAction, BountyState, applyBountyAction, newBounties } from './sim/bounties';
 import { AdminAction, applyAdminAction } from './sim/admin';
@@ -79,6 +79,7 @@ export interface Player {
   y: number; vy: number;
   stride: number;          // ground distance walked since the last footfall; starts at half a stride so the first foot lands quickly
   airborne: boolean;       // in flight: not standing on the ground or on a top. On a rock it is false at any height
+  apex: number;            // the highest y of this airtime, so a landing knows how far it fell (the walk-off kind raises no 'jump')
   airJumped: boolean;      // the double jump is spent for this hop; landing gives it back
   jumpHeld: boolean;       // the jump key was down last tick: a double jump needs a fresh press, or holding the key would spend it at once
   autoAttack: boolean;     // armed: swings at the target whenever the swing timer is up and the target is in reach
@@ -156,7 +157,9 @@ export type GameEvent =
   | { t: 'door'; dungeon: string; blurb: string }           // a shut dungeon door turned the player back: blurb says what opens it (at most one every two seconds)
   | { t: 'jump'; airtime: number; double?: true }                        // left the ground, and for how long: Agility raises the takeoff, so the clip is stretched over the hop actually taken
   | { t: 'roll'; x: number; z: number; facing: number }     // a dodge-roll started here, going that way
-  | { t: 'land'; x: number; z: number }                     // back on the ground
+  | { t: 'land'; x: number; z: number; fall: number; on: LandSurface } // back on the ground: `fall` is the drop from the highest point of the airtime to the floor, `on` what it lands on
+  | { t: 'chestnear'; id: string }                          // the player came within earshot of an unopened chest (once per approach)
+  | { t: 'chestfail'; why: ChestFail }                      // an open was refused; the 'stuck' shrug follows it
   | { t: 'step'; surface: 'grass' | 'cave' }                // a foot came down: once per STRIDE_DIST walked on the ground, not while airborne
   | { t: 'begin'; skill: SkillId; what: 'gather' | 'craft'; id: string } // an action was accepted and started (a cast of the line, a batch at the range): id is the node type or the recipe
   | { t: 'catch'; fish: string; node: number }          // a fishing cycle landed a fish (the 'loot' follows on the same tick)
@@ -214,6 +217,7 @@ export interface GameState {
   /** Town ids whose flight master has been found: the only places a flight can go (and, later, where a death wakes you). Hale is home. */
   found: string[];
   interact: Interact | null; // the node/forge being used this tick
+  chestsNear: string[];      // run state, not saved: the chests the player is inside the earshot ring of (sim/chests.ts stepChestNear)
   events: GameEvent[]; // cleared at the start of every step; presentation reads them after each step
 }
 
@@ -248,6 +252,8 @@ export interface Input {
   admin?: AdminAction[];
 }
 
+export type LandSurface = 'grass' | 'cave' | 'prop';
+
 export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, sprint: false, roll: false, inv: [], interact: null, craft: null, questAdvance: false, talent: null, talentReset: false };
 
 export function createState(seed = 1): GameState {
@@ -257,7 +263,7 @@ export function createState(seed = 1): GameState {
     rng: seed,
     player: {
       x: PLAYER_SPAWN.x, z: PLAYER_SPAWN.z, facing: Math.PI, moving: false,
-      y: 0, vy: 0, stride: STRIDE_DIST / 2, airborne: false, airJumped: false, jumpHeld: false, autoAttack: false, swing: 0, inCombat: false, recap: [],
+      y: 0, vy: 0, stride: STRIDE_DIST / 2, airborne: false, apex: 0, airJumped: false, jumpHeld: false, autoAttack: false, swing: 0, inCombat: false, recap: [],
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
       gcd: 0, cd: ABILITIES.map(() => 0), learned: [], mounts: [], mounted: false, unlocked: 1, queued: null, queuedOff: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
@@ -281,6 +287,7 @@ export function createState(seed = 1): GameState {
     bounties: newBounties(),
     found: [START_TOWN],
     interact: null,
+    chestsNear: [],
     events: [],
   };
   refreshPlayerStats(s, true);
@@ -324,6 +331,7 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     if (input.attack) { dismount(s); toggleAutoAttack(s); } // the attack key is a fight: it gets you off the horse on the same tick
     movePlayer(s, input, dt);
     updateMount(s);
+    stepChestNear(s);
     updateInteract(s);
     updateAction(s, dt);
     updateConsumables(s, dt);
@@ -409,8 +417,10 @@ function stepVertical(s: GameState, wantsJump: boolean, dt: number) {
   p.vy -= g * dt;
   // a descent lands on the highest top at or below where it started this tick, so a fast fall cannot tunnel through one
   const land = p.vy <= 0 ? (p.mounted ? 0 : perchAt(p.x, p.z, was)?.top ?? 0) : -Infinity;
+  p.apex = p.airborne ? Math.max(p.apex || 0, was, p.y) : Math.max(was, p.y); // `|| 0`: a save from before the field was kept
   if (p.y <= land) {
+    const on: LandSurface = land > 0 ? 'prop' : inCave(p.x, p.z) ? 'cave' : 'grass';
     p.y = land; p.vy = 0; p.airborne = false; p.airJumped = false;
-    s.events.push({ t: 'land', x: p.x, z: p.z });
+    s.events.push({ t: 'land', x: p.x, z: p.z, fall: Math.max(0, p.apex - land), on });
   } else p.airborne = true;
 }

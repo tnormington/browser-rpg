@@ -49,7 +49,12 @@ export function requestInteract(s: GameState, it: Interact) {
   p.action = null;
   const t = target(s, it);
   if (!t) { s.interact = null; return; }
-  if (Math.hypot(p.x - t.x, p.z - t.z) > t.r + PLAYER_RADIUS + REACH) { s.interact = null; s.events.push({ t: 'stuck' }); return; }
+  if (Math.hypot(p.x - t.x, p.z - t.z) > t.r + PLAYER_RADIUS + REACH) {
+    s.interact = null;
+    if (it.k === 'chest') s.events.push({ t: 'chestfail', why: 'far' }); // the same refusal openChest would give, raised here because the click never gets that far
+    s.events.push({ t: 'stuck' });
+    return;
+  }
   s.interact = it; // in reach: updateInteract starts it this tick
 }
 
@@ -71,7 +76,7 @@ export function updateInteract(s: GameState) {
   else if (it.k === 'vendor') s.events.push({ t: 'shop', vendor: (t as { id: string }).id });
   else if (it.k === 'flightmaster') s.events.push({ t: 'flightmaster', town: (t as { id: string }).id });
   else if (it.k === 'board') s.events.push({ t: 'board', town: (t as { id: string }).id });
-  else if (it.k === 'chest') { if (!openChest(s, it.id).ok) s.events.push({ t: 'stuck' }); } // a refusal (a rooftop chest from the ground, one already open) is the same shrug as being out of reach
+  else if (it.k === 'chest') { const o = openChest(s, it.id); if (!o.ok) s.events.push({ t: 'chestfail', why: o.why }, { t: 'stuck' }); } // a refusal (a rooftop chest from the ground, one already open) is the same shrug as being out of reach
   else beginGather(s, nodeById(s, it.id)!);
 }
 

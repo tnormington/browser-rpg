@@ -112,6 +112,25 @@ export function chestReward(tier: ChestTier, combatLevel: number, agilityLevel: 
   };
 }
 
+/** A chest is "near" inside NEAR_IN and stops being so past NEAR_OUT: the gap keeps a player pacing the edge from re-raising it every step. */
+export const CHEST_NEAR_IN = 4;
+export const CHEST_NEAR_OUT = 6;
+
+/**
+ * One `chestnear` per unopened chest per approach, for the sound of something worth finding. `s.chestsNear` is the set currently inside the
+ * ring (run state, not saved): a chest enters it on the way in and leaves it on the way out, so walking away and back is a new approach.
+ */
+export function stepChestNear(s: GameState) {
+  const p = s.player;
+  for (const c of CHESTS) {
+    const d = Math.hypot(p.x - c.x, p.z - c.z);
+    const was = s.chestsNear.indexOf(c.id);
+    const near = !p.dead && !isOpened(p, c.id) && Math.abs((perchAt(p.x, p.z, p.y)?.top ?? 0) - c.floor) <= FLOOR_TOL;
+    if (was < 0 && near && d <= CHEST_NEAR_IN) { s.chestsNear.push(c.id); s.events.push({ t: 'chestnear', id: c.id }); }
+    else if (was >= 0 && (!near || d > CHEST_NEAR_OUT)) s.chestsNear.splice(was, 1);
+  }
+}
+
 export type ChestFail = 'unknown' | 'opened' | 'dead' | 'far' | 'floor';
 export type ChestOutcome = { ok: true; gold: number; xp: number; opened: number; total: number } | { ok: false; why: ChestFail };
 
