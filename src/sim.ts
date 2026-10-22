@@ -20,13 +20,14 @@ import { AdminAction, applyAdminAction } from './sim/admin';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
 import { holdDoor } from './sim/dungeon';
+import { EchoSetting, setEcho } from './sim/echo';
 import { dismount, moveSpeed, toggleMount, updateMount } from './sim/mounts';
 import { DOUBLE_JUMP_COST, ROLL_SPEED, canDoubleJump, doubleJumpVelocity, jumpVelocity, maxStamina, rolling, startRoll, startSprint, updateAgility } from './sim/agility';
 import { START_TOWN, discoverMasters, startFlight, updateFlight } from './sim/flight';
 import { holdAtGates } from './sim/gates';
 import { updateWithering } from './sim/hazards';
 import { PLAYER_RADIUS, inCave, perchAt, regionAt, resolveCollisions } from './sim/world';
-import { ABILITIES, CastKind, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT, jumpAirtime } from './sim/data';
+import { ABILITIES, CastKind, ENEMY_TYPES, EnemyDef, SPAWNS, PLAYER_SPAWN, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT, jumpAirtime } from './sim/data';
 import {
   acquireFront, clearTarget, pressAbility, refreshPlayerStats, setTarget, tabTarget, toggleAutoAttack,
   updateEnemies, updatePlayerCombat, updatePlayerDeath,
@@ -68,6 +69,11 @@ export interface Enemy {
   netCd: number;     // seconds until the net may be thrown again
   netRun: number;    // seconds left of the retreat a landed net bought it: the only time a shooter gives ground
   roofFor: number;   // seconds the player it is chasing has stood on a rooftop: at ROOFTOP_GRACE it gives up (docs/action-layer.md 6, rule 3)
+  /** The level this is an Echo at (sim/echo.ts), or null for the authored thing. `row` is the stats it fights with: null is the species' own, and `defOf` is the one place that reads it. Fixed at each respawn, never mid-fight. */
+  echo: number | null;
+  row: EnemyDef | null;
+  /** The id of the enemy this one is the mate of (an Echo pair, 3.6), or null for one that stands at a spawn point of its own. A mate is made the first time it is wanted. */
+  mateOf: number | null;
 }
 
 /** One incoming hit remembered for the death recap. `at` is game seconds (tick * TICK_DT). */
@@ -106,6 +112,7 @@ export interface Player {
   inventory: Inventory;
   gold: number;            // currency: sold for, spent at the merchant. Not a bag item, so it never takes a slot
   chests: string[];        // ids of the chests opened (sim/chests.ts): none respawns, and the save keeps them
+  echo: EchoSetting;       // how far above you an Echo stands (sim/echo.ts): null is off. Saved; it does nothing before the Seal
   equipment: Equipment;
   durability: Durability;  // points left on worn-down gear, by item id (sim/durability.ts); absent = whole
   enchants: Enchants;      // slot enchants (sim/enchants.ts): they belong to the slot, so they stay when the item changes
@@ -164,7 +171,8 @@ export type GameEvent =
   | { t: 'begin'; skill: SkillId; what: 'gather' | 'craft'; id: string } // an action was accepted and started (a cast of the line, a batch at the range): id is the node type or the recipe
   | { t: 'catch'; fish: string; node: number }          // a fishing cycle landed a fish (the 'loot' follows on the same tick)
   | { t: 'gather'; skill: SkillId; node: number }           // a strike of a gather in progress (pick, axe): every GATHER_STRIKE seconds, before the yield
-  | { t: 'kill'; id: number; x: number; z: number; species: string }
+  | { t: 'kill'; id: number; x: number; z: number; species: string; gold?: number } // gold: what an Echo's level added to the purse (sim/echo.ts); absent on an authored kill
+  | { t: 'echo'; to: EchoSetting; ok: boolean }              // the Echo switch was pressed: what it is now, and whether the Seal let it move
   | { t: 'chest'; id: string; tier: ChestTier; place: string; x: number; z: number; gold: number; xp: number; opened: number; total: number } // a chest was opened (sim/chests.ts): what it paid, and the count of its place; the 'xp' for the Agility lamp follows on the same tick
   | { t: 'xp'; skill: SkillId; amount: number; x: number; z: number }
   | { t: 'levelup'; skill: SkillId; level: number }
@@ -237,6 +245,7 @@ export interface Input {
   roll?: boolean;                               // the roll key pressed this tick: a dodge-roll out of the same meter (sim/agility.ts)
   inv: InvAction[];                             // inventory/equipment actions this tick
   bounty?: BountyAction[];                      // accept / hand in / drop requests this tick, at the board the player stands at
+  echo?: EchoSetting;                           // the Echo switch, set to this (null is off); absent leaves it alone. Refused until the Seal is broken
   shop?: ShopAction[];                          // sell/buy requests this tick (optional like the others added after the first callers)
   enchant?: EnchantAction[];                    // disenchant / enchant requests this tick, at the rune circle
   interact: Interact | null;                    // node or forge clicked this tick: use it, if it is within reach
@@ -267,7 +276,7 @@ export function createState(seed = 1): GameState {
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
       gcd: 0, cd: ABILITIES.map(() => 0), learned: [], mounts: [], mounted: false, unlocked: 1, queued: null, queuedOff: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
-      skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, chests: [], equipment: emptyEquipment(), durability: {}, enchants: {}, stats: deriveStats(emptyEquipment()),
+      skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, chests: [], echo: null, equipment: emptyEquipment(), durability: {}, enchants: {}, stats: deriveStats(emptyEquipment()),
       talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [], procs: [], root: null,
       stamina: 0, sprinting: false, winded: false, sprinted: 0, rolling: 0, rollCd: 0, rollX: 0, rollZ: 1,
     },
@@ -279,6 +288,7 @@ export function createState(seed = 1): GameState {
       attackCd: 0, respawnIn: 0, deadFor: 0, hitFlash: 0, swing: 0, bleed: null, cast: null, stagger: 0,
       heavyCd: ENEMY_TYPES[sp.type].heavy?.first ?? 0, hazardCd: ENEMY_TYPES[sp.type].hazard?.first ?? 0, evadeFor: 0,
       netCd: ENEMY_TYPES[sp.type].net?.first ?? 0, netRun: 0, roofFor: 0, sweepCd: ENEMY_TYPES[sp.type].sweep?.first ?? 0,
+      echo: null, row: null, mateOf: null,
     })),
     drops: [],
     nextDropId: 1,
@@ -322,6 +332,7 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     for (const a of input.shop ?? []) applyShopAction(s, a);
     for (const a of input.enchant ?? []) applyEnchantAction(s, a);
     for (const a of input.bounty ?? []) applyBountyAction(s, a);
+    if (input.echo !== undefined) setEcho(s, input.echo);
     if (input.interact) requestInteract(s, input.interact);
     if (input.questAdvance) advanceQuest(s, input.questAdvance);
     if (input.craft) beginCraft(s, input.craft.recipe, input.craft.count);

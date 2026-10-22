@@ -89,6 +89,7 @@ export const ITEMS: Record<string, ItemDef> = {
   starmetal_bar: { name: 'Starmetal Bar', stack: 50, dropWeight: 0, tier: 0, value: 140, desc: 'Indigo-black and very cold. The last metal there is: armour and a blade are smithed from it.' },
   crown_shard: { name: 'Crown Shard', stack: 50, dropWeight: 0, tier: 0, value: 100, desc: "A splinter of the Cairn King's crown, grey and cold. Folded round starmetal, it makes a blade nothing else at the forge can." },
   // enchanting (bible 2.2, HOM-112): what a piece of gear is worth ground down at the Spire's rune circle (sim/enchanting.ts), and what a slot enchant is paid for in. Archmage Vael drops it by the handful
+  echo_mark: { name: 'Echo Mark', stack: 999, dropWeight: 0, tier: 4, value: 1, desc: 'Struck from a fight you have already won, at a level you have since passed. Elites and bosses that stand in the world again once the Seal is broken leave them.' },
   arcane_dust: { name: 'Arcane Dust', stack: 500, dropWeight: 0, tier: 0, value: 2, desc: "Cold, faintly glowing grit. Gear ground down at the Spire's rune circle leaves it, and a slot enchant is paid for with it." },
   [SEA_SALT]: { name: 'Sea Salt', stack: 50, dropWeight: 0, tier: 0, value: 2, desc: 'Coarse grey salt from the Saltmarrow pans. A pie wants a pinch.' },
   ...fishItems(),

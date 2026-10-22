@@ -19,6 +19,7 @@ import { mountById } from './mounts';
 import { chestById } from './chests';
 import { ActiveBounty, MAX_ACTIVE, MAX_GOAL, bountyById, targetSig } from './bounties';
 import { maxStamina } from './agility';
+import { dressWorld, echoSetting, echoUnlocked } from './echo';
 import { mountsAllowed } from './world';
 
 export const SAVE_VERSION = 1;
@@ -58,6 +59,7 @@ interface SaveFile {
     gold?: number;                    // absent in saves from before the economy: nobody had any
     buffs?: { id: string; left: number }[]; // absent in saves from before cooking: nobody was Well Fed
     chests?: string[];                // chests opened, by id (sim/chests.ts); absent in saves from before them: none were
+    echo?: number | null;             // the Echo switch (sim/echo.ts); absent in saves from before it: off
   };
   bounties?: { active: { id: string; sig: string; kills: number; goal: number; gold: number; xp: number }[]; done: Record<string, number> }; // the boards' objectives (sim/bounties.ts); absent in saves from before them: none carried, none handed in
   found?: string[]; // flight masters found, by town id: absent in saves from before flights (only home is found)
@@ -92,11 +94,12 @@ export function serialize(s: GameState): string {
       mounts: [...p.mounts],
       mounted: p.mounted,
       chests: [...p.chests],
+      echo: p.echo,
     },
     bounties: { active: s.bounties.active.map(a => ({ ...a })), done: { ...s.bounties.done } },
     found: [...s.found],
     quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second, third: s.quest.third, fourth: s.quest.fourth, fifth: s.quest.fifth, sixth: s.quest.sixth, seventh: s.quest.seventh, eighth: s.quest.eighth },
-    enemies: s.enemies.map(e => ({ id: e.id, type: e.type, deadIn: e.state === 'dead' ? Math.max(0, e.respawnIn) : 0 })),
+    enemies: s.enemies.filter(e => e.mateOf === null).map(e => ({ id: e.id, type: e.type, deadIn: e.state === 'dead' ? Math.max(0, e.respawnIn) : 0 })),
     nodes: s.nodes.map(n => ({ id: n.id, type: n.type, charges: n.charges, respawnIn: n.respawnIn })),
     drops: s.drops.map(d => ({ id: d.id, item: d.item, qty: d.qty, x: d.x, z: d.z, age: d.age })),
   };
@@ -275,6 +278,9 @@ export function deserialize(raw: string): GameState | null {
       if (!e || num(fe.deadIn, 0, 1e10, 'deadIn') <= 0) continue;
       e.state = 'dead'; e.hp = 0; e.respawnIn = fe.deadIn; e.deadFor = 99; // 99: already fallen, so it is drawn hidden
     }
+    // the Echo switch: held to the cap, and off for a character who has not broken the Seal whatever the file says. Then every enemy still standing is dressed as if it had just respawned (the dead come back in it)
+    p.echo = echoUnlocked(s) ? echoSetting(fp.echo) : null;
+    dressWorld(s);
     for (const fn of f.nodes) {
       const n = s.nodes.find(x => x.id === fn?.id && x.type === fn?.type);
       if (!n) continue;

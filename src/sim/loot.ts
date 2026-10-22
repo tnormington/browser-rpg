@@ -24,15 +24,19 @@ export function rollDrops(s: GameState, enemyType: string, x: number, z: number)
     if (hit < 0) continue; // landed in the "nothing" band, which sits after all entries
     const e = table.entries[hit];
     const [lo, hi] = e.qty ?? [1, 1];
-    const qty = lo + Math.floor(nextRandom(s) * (hi - lo + 1));
-    const ang = nextRandom(s) * Math.PI * 2;
-    const drop: GroundDrop = {
-      id: s.nextDropId++, item: e.id, qty, age: 0, blocked: false,
-      x: x + Math.sin(ang) * 1.1, z: z + Math.cos(ang) * 1.1,
-    };
-    s.drops.push(drop);
-    s.events.push({ t: 'drop', id: drop.id, item: drop.item, x: drop.x, z: drop.z });
+    dropAt(s, e.id, lo + Math.floor(nextRandom(s) * (hi - lo + 1)), x, z);
   }
+}
+
+/** Put `qty` of an item on the ground a pace from (x, z), in a direction the state's own dice choose. */
+export function dropAt(s: GameState, item: string, qty: number, x: number, z: number) {
+  const ang = nextRandom(s) * Math.PI * 2;
+  const drop: GroundDrop = {
+    id: s.nextDropId++, item, qty, age: 0, blocked: false,
+    x: x + Math.sin(ang) * 1.1, z: z + Math.cos(ang) * 1.1,
+  };
+  s.drops.push(drop);
+  s.events.push({ t: 'drop', id: drop.id, item: drop.item, x: drop.x, z: drop.z });
 }
 
 export function updateDrops(s: GameState, dt: number) {

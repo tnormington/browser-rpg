@@ -1,5 +1,5 @@
 // Combat rules: targeting, abilities, damage, enemy AI, death and respawn. Pure sim, no DOM/Three.
-import type { GameState, Enemy, EnemyState, Player } from '../sim';
+import type { GameState, GameEvent, Enemy, EnemyState, Player } from '../sim';
 import { MAX_REDUCTION } from './items';
 import { EXECUTE_BONUS, WOUNDED_UNDER } from './talents';
 import { grantXp } from './skills';
@@ -12,6 +12,7 @@ import { refreshGearStats } from './inventory';
 import { rollDrops } from './loot';
 import { questOnKill, questReached } from './quest';
 import { bountyOnKill } from './bounties';
+import { dress, echoLoot, partnerOf, retireMate } from './echo';
 import { nextRandom } from './rng';
 import { PLAYER_RADIUS, clampToWorld, inSafeZone, nearestTown, perchAt, resolveCollisions, sameSideOfDoor } from './world';
 import { clearLine } from './sight';
@@ -274,8 +275,10 @@ function killEnemy(s: GameState, e: Enemy) {
   e.stagger = 0;
   e.netRun = 0;
   dropTarget(s, e.id, 'dead');
-  s.events.push({ t: 'kill', id: e.id, x: e.x, z: e.z, species: e.type });
+  const kill: Extract<GameEvent, { t: 'kill' }> = { t: 'kill', id: e.id, x: e.x, z: e.z, species: e.type };
+  s.events.push(kill);
   rollDrops(s, e.type, e.x, e.z);
+  if (e.echo !== null) kill.gold = echoLoot(s, e); // the original's table, and what its level adds to it
   questOnKill(s, e.type);
   bountyOnKill(s, e.type, e.region);
   const xp = Math.max(1, Math.round(def.xp * xpParity(def.level, s.player.combat.level))); // the rate at the level the player is when it dies
@@ -564,6 +567,8 @@ function aggro(s: GameState, e: Enemy) {
   if (def.hazard) e.hazardCd = Math.max(e.hazardCd, def.hazard.first);
   if (def.sweep) e.sweepCd = Math.max(e.sweepCd, def.sweep.first);
   if (def.pack) for (const o of s.enemies) if (o !== e && o.type === e.type && o.state === 'idle' && dist(o, e) <= def.pack && clearLine(o, e)) aggro(s, o);
+  const mate = partnerOf(s, e); // an Echo pair arrives together
+  if (mate?.state === 'idle') aggro(s, mate);
 }
 
 /** Damage to the player from `src` (an enemy type, or the ground's own id; `srcId` is the enemy's id when there is one): the one place a hit lands, so the recap and the events agree. */
@@ -703,6 +708,7 @@ export function updateEnemies(s: GameState, dt: number) {
       if (retired) { e.respawnIn = def.respawn; continue; }
       e.respawnIn -= dt;
       if (e.respawnIn <= 0) {
+        if (!dress(s, e)) { retireMate(e); continue; } // the row it comes back in: the authored one, or an Echo (sim/echo.ts); a mate with no pair stays down
         e.hp = e.maxHp; e.x = e.spawnX; e.z = e.spawnZ; e.state = 'idle'; e.attackCd = 0;
       }
       continue;

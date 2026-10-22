@@ -463,8 +463,8 @@ export const ENEMY_TYPES: Record<string, EnemyDef> = {
     look: { model: 'hexer', scale: 1.6, tint: 0x6a5aa8 } },
 };
 
-/** The stats of this enemy: the one place an instance's type becomes a row, so a spawn that differs from its species has one seam to change. */
-export const defOf = (enemy: { type: string }): EnemyDef => ENEMY_TYPES[enemy.type];
+/** The stats of this enemy: the one place an instance's type becomes a row, so a spawn that differs from its species has one seam to change. An Echo carries its own (sim/echo.ts). */
+export const defOf = (enemy: { type: string; row?: EnemyDef | null }): EnemyDef => enemy.row ?? ENEMY_TYPES[enemy.type];
 
 /**
  * The sweep (docs/action-layer.md 2): 23 solo melee fighters from level 10, none in a pack, none a caster, none in a dungeon. A single for trash, a pair
