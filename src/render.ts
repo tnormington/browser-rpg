@@ -20,7 +20,8 @@ import { SILHOUETTES, Silhouette, mergeParts } from './creatures';
 import { PROPS, PropId } from './props';
 import { PlayerGear } from './gear';
 import { MountRig, MOUNT_LOOKS, mountLookId } from './mount';
-import { bestMount, moveSpeed } from './sim/mounts';
+import { FOOT_SPEED, bestMount, moveSpeed } from './sim/mounts';
+import { SPRINT_SPEED } from './sim/agility';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { HaloSpot, haloMesh, tickHalos } from './halo';
 import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
@@ -1845,7 +1846,7 @@ export class Renderer {
     const workSkill = work ? NODE_TYPES[work.type].skill : null;
     if (pa) {
       if (pl.dead !== this.playerWasDead) { if (pl.dead) pa.die(); else pa.revive(); this.playerWasDead = pl.dead; }
-      pa.locomotion(pl.moving && !pl.dead, 6);
+      pa.locomotion(pl.moving && !pl.dead, pl.sprinting ? SPRINT_SPEED : FOOT_SPEED); // a sprint plays the same run clip faster, so the legs keep up with the ground
       pa.gather(workSkill, act ? (act.t % GATHER_STRIKE) / GATHER_STRIKE : 0);
       for (const rig of this.mounts.values()) if (rig.root.visible) { rig.update(dtFx, pl.moving && !pl.dead); pa.rideBob(rig.bob); }
       pa.update(dtFx);

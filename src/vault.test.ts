@@ -50,9 +50,9 @@ const equipFromBag = (s: GameState, id: string) => { bag(s, id); tick(s, { inv: 
 // ---------------------------------------------------------------------------
 section('the tenth skill and the rune circle');
 {
-  assert(SKILL_IDS.length === 10 && SKILL_IDS[9] === 'enchanting' && !!SKILLS.enchanting.name, 'Enchanting is the tenth skill');
+  assert(SKILL_IDS[9] === 'enchanting' && !!SKILLS.enchanting.name, 'Enchanting is the tenth skill');
   const s = quiet(1);
-  assert(s.player.skills.enchanting.level === 1 && totalLevel(s.player.skills) === 10, 'it starts at 1, and the total level counts it');
+  assert(s.player.skills.enchanting.level === 1 && totalLevel(s.player.skills) === SKILL_IDS.length, 'it starts at 1, and the total level counts it');
   assert(!!STATIONS.circle && stationSites('circle').length === 1 && STATIONS.circle.at === LANDMARKS.circle && regionAt(LANDMARKS.circle.x, LANDMARKS.circle.z)?.id === 'spire', 'the rune circle is a station, in the Spire');
   assert(Math.hypot(LANDMARKS.circle.x - LANDMARKS.forgeSpire.x, LANDMARKS.circle.z - LANDMARKS.forgeSpire.z) > 20 && Math.hypot(LANDMARKS.circle.x - LANDMARKS.spireSquare.x, LANDMARKS.circle.z - LANDMARKS.spireSquare.z) < 35, 'across the square from the forge, inside the town\'s safe circle');
   assert(regionById('spire').obstacles.some(o => o.kind === 'circle' && o.x === LANDMARKS.circle.x && o.z === LANDMARKS.circle.z), 'and a solid thing you stand beside');

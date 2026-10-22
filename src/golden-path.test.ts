@@ -641,7 +641,7 @@ function grindCombat(s: GameState, level: number) {
 section('M3 skills: parallel tracks on the RuneScape curve');
 {
   const s = createState(1);
-  assert(SKILL_IDS.length === 10 && ['combat', 'mining', 'woodcutting', 'smithing', 'fishing', 'cooking', 'herbalism', 'alchemy', 'leatherworking', 'enchanting'].every(k => SKILLS[k as never]), 'skills: Combat, Mining, Woodcutting, Smithing, Fishing, Cooking, Herbalism, Alchemy, Leatherworking, Enchanting');
+  assert(SKILL_IDS.length === 11 && ['combat', 'mining', 'woodcutting', 'smithing', 'fishing', 'cooking', 'herbalism', 'alchemy', 'leatherworking', 'enchanting', 'agility'].every(k => SKILLS[k as never]), 'skills: Combat, Mining, Woodcutting, Smithing, Fishing, Cooking, Herbalism, Alchemy, Leatherworking, Enchanting, Agility');
   assert(SKILL_IDS.every(k => s.player.skills[k].level === 1 && s.player.skills[k].xp === 0), 'every skill starts at level 1, 0 xp');
   assert(s.player.skills.combat === s.player.combat, 'combat skill is the same track combat code reads');
   grantXp(s, 'mining', 100, 0, 0);

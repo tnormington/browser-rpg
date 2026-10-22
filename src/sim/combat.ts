@@ -3,6 +3,7 @@ import type { GameState, Enemy, EnemyState, Player } from '../sim';
 import { MAX_REDUCTION } from './items';
 import { EXECUTE_BONUS, WOUNDED_UNDER } from './talents';
 import { grantXp } from './skills';
+import { maxStamina } from './agility';
 import { applyBuff, breakFood, buffedDamage, buffedOutgoing, clearBuffs, maxHpOf } from './consumables';
 import { PROCS, clearProcs, procOn, rollProcs, spendProc, updateProcs } from './procs';
 import { ITEMS, EQUIP_SLOTS } from './items';
@@ -503,6 +504,8 @@ export function updatePlayerDeath(s: GameState, dt: number) {
   p.x = town.grave.x; p.z = town.grave.z; p.facing = Math.PI; p.moving = false;
   refreshPlayerStats(s, true);
   p.energy = p.maxEnergy;
+  p.stamina = maxStamina(p); // you wake with your breath back, like your health
+  p.winded = false;
   p.cd.fill(0);
   p.gcd = 0;
   p.outOfCombat = OOC_DELAY;

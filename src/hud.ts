@@ -16,6 +16,7 @@ import { abilityOpen, cooldownOf, costOf, swingInterval } from './sim/combat';
 import { PROCS, procOn } from './sim/procs';
 import { VENDORS } from './sim/shop';
 import { mountById } from './sim/mounts';
+import { maxStamina } from './sim/agility';
 import { InventoryUi } from './inventory-ui';
 import { SkillsUi } from './skills-ui';
 import { TalentsUi } from './talents-ui';
@@ -156,6 +157,7 @@ export class Hud {
   private playerLvl: HTMLElement;
   private hp: ReturnType<typeof bar>;
   private energy: ReturnType<typeof bar>;
+  private stamina: ReturnType<typeof bar>;
   private xp: ReturnType<typeof bar>;
   private targetFrame: HTMLElement;
   private targetFace: HTMLElement;
@@ -225,6 +227,7 @@ export class Hud {
     this.statusEl = el(pf, 'status');
     this.hp = bar(pf, 'hp');
     this.energy = bar(pf, 'energy');
+    this.stamina = bar(pf, 'stamina');
     this.playerStatus = new StatusRow(el(pf, 'buffs'));
 
     this.targetFrame = el(this.root, 'chrome frame target');
@@ -713,6 +716,12 @@ export class Hud {
     this.playerStatus.update(playerStatuses(p));
     this.setBar(this.hp, p.hp / p.maxHp, `${Math.ceil(p.hp)} / ${p.maxHp}`);
     this.setBar(this.energy, p.energy / p.maxEnergy, `${Math.floor(p.energy)}`);
+    // stamina: what is left to sprint on. Lit while running flat out, and greyed while you get your breath back
+    const stam = maxStamina(p);
+    this.setBar(this.stamina, p.stamina / stam, `${Math.floor(p.stamina)}`);
+    const staminaBar = this.stamina.fill.parentElement!;
+    staminaBar.classList.toggle('running', p.sprinting);
+    staminaBar.classList.toggle('winded', p.winded);
     const track = p.skills[this.xpSkill], skill = SKILLS[this.xpSkill], prog = levelProgress(track);
     this.xp.fill.parentElement!.classList.toggle('skill', this.xpSkill !== 'combat');
     this.setBar(this.xp, prog.frac, `${skill.icon} ${skill.name} ${track.level}  -  ${prog.needed ? `${prog.into} / ${prog.needed} XP` : 'MAX'}`);

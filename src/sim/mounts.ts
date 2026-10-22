@@ -2,6 +2,7 @@
 // The player carries a `mounts` list (ids, saved) and one `mounted` flag; with several owned the fastest is the one ridden, so a second mount is a row in MOUNTS and nothing else.
 // Getting on is a timed action like a gather (moving, a hit, or any other work breaks it); getting off is free and happens whenever the player acts or is hurt.
 import type { GameState } from '../sim';
+import { SPRINT_SPEED } from './agility';
 import { mountsAllowed } from './world';
 
 export const FOOT_SPEED = 6;
@@ -19,8 +20,8 @@ export const mountsSoldBy = (vendor: string) => MOUNTS.filter(m => m.vendor === 
 
 /** The fastest mount owned, if any. */
 export const bestMount = (p: GameState['player']) => MOUNTS.filter(m => p.mounts.includes(m.id)).sort((a, b) => b.speed - a.speed)[0];
-/** Units a second the player covers: the one movement constant. */
-export const moveSpeed = (p: GameState['player']) => (p.mounted && bestMount(p)?.speed) || FOOT_SPEED;
+/** Units a second the player covers: the one movement constant. On foot, shift held and breath left makes it a sprint (sim/agility.ts). */
+export const moveSpeed = (p: GameState['player']) => (p.mounted && bestMount(p)?.speed) || (p.sprinting ? SPRINT_SPEED : FOOT_SPEED);
 
 const refuse = (s: GameState, what: string) => void s.events.push({ t: 'actionfail', reason: 'mount', need: 0, what });
 

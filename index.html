@@ -42,6 +42,7 @@
   --fill-hp:linear-gradient(#6f8f56,#4a6a3a);--fill-energy:linear-gradient(#b08a3a,#7a5e24);--fill-blood:linear-gradient(#c23a32,#7e1f1c);
   --fill-xp:linear-gradient(#6b4aa0,#43306a);--fill-skill:linear-gradient(#5a7a96,#3a566e);--fill-cast:linear-gradient(#c0883a,#85591f);--fill-ride:linear-gradient(#a08a44,#6a5a22);
   --fill-fire:linear-gradient(#e0883a,#a04a14);--fill-steel:linear-gradient(#7d8794,#4c5662);--fill-gold:linear-gradient(#e8c460,#a8802a);--fill-gold-hi:linear-gradient(#f4dc8a,#d0a640);
+  --fill-stamina:linear-gradient(#5e9aa0,#36666c);--fill-stamina-hi:linear-gradient(#7fc4ca,#46868e);
   --serif:Georgia,'Palatino Linotype',serif;
   --fs-xs:9px;--fs-sm:11px;--fs-md:13px;--fs-lg:15px;--fs-xl:18px;--fs-2xl:22px;--fs-3xl:30px;--fs-4xl:42px;--fs-5xl:56px;
   --sp-1:2px;--sp-2:4px;--sp-3:6px;--sp-4:8px;--sp-5:12px;--sp-6:16px;--gutter:12px;
@@ -92,7 +93,7 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .frame.target{--tface:56px;width:calc(var(--fw) + var(--tface) + var(--sp-5))}
 .frame.target .facerow{gap:var(--sp-5);margin-bottom:0;align-items:center}
 .frame.target .face{width:var(--tface);height:var(--tface)}
-.frame .bar{--bar-h:16px;margin-top:var(--sp-2)}.frame .energy,.frame .enemycast{--bar-h:14px}
+.frame .bar{--bar-h:16px;margin-top:var(--sp-2)}.frame .energy,.frame .stamina,.frame .enemycast{--bar-h:14px}
 .minimap{position:absolute;top:var(--gutter);right:var(--gutter);width:140px;height:140px;border-radius:50%;background:var(--iron-solid);border:2px solid var(--edge);box-shadow:var(--lift-1);overflow:hidden}
 .minimap canvas{display:block;width:140px;height:140px}
 .mmzone{position:absolute;left:0;right:0;bottom:5px;text-align:center;font-size:var(--fs-sm);color:var(--gold);letter-spacing:.04em}
@@ -100,6 +101,8 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .frame.player .name{grid-column:1}.frame .gold{grid-column:2;color:var(--gold);font-size:var(--fs-sm)}
 .frame .status{position:absolute;right:0;bottom:calc(100% + var(--sp-2));color:var(--moss);font-size:var(--fs-sm);text-shadow:0 0 3px #000,0 1px 2px #000}
 .hp{--fill:var(--fill-hp)}.energy{--fill:var(--fill-energy)}.enemyhp{--fill:var(--fill-blood)}
+/* sprint's meter: lit while running flat out, grey while the breath comes back and sprint will not answer */
+.stamina{--fill:var(--fill-stamina)}.stamina.running{--fill:var(--fill-stamina-hi)}.stamina.winded{--fill:var(--fill-steel);opacity:.65}
 .xp{--bar-h:12px;position:absolute;left:12%;right:max(12%,350px);bottom:6px;margin-top:0;--fill:var(--fill-xp)}
 .xp.skill{--fill:var(--fill-skill)} /* the bar is following a gathering/crafting skill, not combat */
 /* buffs and debuffs under a unit frame: icon, seconds left, and a bar that empties over the effect's run */

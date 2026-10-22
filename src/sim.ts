@@ -19,6 +19,7 @@ import { Action, Interact, requestInteract, updateAction, updateInteract } from 
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
 import { holdDoor } from './sim/dungeon';
 import { dismount, moveSpeed, toggleMount, updateMount } from './sim/mounts';
+import { maxStamina, startSprint, updateAgility } from './sim/agility';
 import { START_TOWN, discoverMasters, startFlight, updateFlight } from './sim/flight';
 import { holdAtGates } from './sim/gates';
 import { updateWithering } from './sim/hazards';
@@ -111,6 +112,11 @@ export interface Player {
   procs: Proc[];
   /** Held where you stand by a net: no walking for `left` more seconds. Turning, swinging and casting are untouched. Transient, so a save never carries one. */
   root: { left: number; total: number; name: string } | null;
+  /** Breath for sprinting (sim/agility.ts). The ceiling is maxStamina(p), which Agility raises; this is what is left of it. */
+  stamina: number;
+  sprinting: boolean;      // running flat out this tick: what moveSpeed and the run animation read. Transient
+  winded: boolean;         // the meter was run dry: no sprinting until it is WINDED_UNTIL full again. Transient
+  sprinted: number;        // ground covered at a sprint since the last XP was handed over. Transient
 }
 
 export type GameEvent =
@@ -206,6 +212,7 @@ export interface Input {
   attack?: boolean;                             // the attack key this tick: with no target, acquire the nearest hostile in front; then toggle auto-attack
   acquire?: boolean;                            // forgiving click: target the nearest hostile in front of the player (always, even with a target held)
   jump?: boolean;                               // jump if on the ground (held = bunny-hop on landing)
+  sprint?: boolean;                             // shift held this tick: run flat out while there is stamina for it (sim/agility.ts)
   inv: InvAction[];                             // inventory/equipment actions this tick
   shop?: ShopAction[];                          // sell/buy requests this tick (optional like the others added after the first callers)
   enchant?: EnchantAction[];                    // disenchant / enchant requests this tick, at the rune circle
@@ -222,7 +229,7 @@ export interface Input {
   admin?: AdminAction[];
 }
 
-export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, inv: [], interact: null, craft: null, questAdvance: false, talent: null, talentReset: false };
+export const NO_INPUT: Input = { dirX: 0, dirZ: 0, clickEnemy: null, tab: false, clearTarget: false, ability: null, attack: false, acquire: false, jump: false, sprint: false, inv: [], interact: null, craft: null, questAdvance: false, talent: null, talentReset: false };
 
 export function createState(seed = 1): GameState {
   const skills = newSkills();
@@ -237,6 +244,7 @@ export function createState(seed = 1): GameState {
       dead: false, respawnIn: 0, outOfCombat: 99,
       skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), durability: {}, enchants: {}, stats: deriveStats(emptyEquipment()),
       talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [], procs: [], root: null,
+      stamina: 0, sprinting: false, winded: false, sprinted: 0,
     },
     targetId: null,
     tab: null,
@@ -257,6 +265,7 @@ export function createState(seed = 1): GameState {
   };
   refreshPlayerStats(s, true);
   s.player.energy = s.player.maxEnergy;
+  s.player.stamina = maxStamina(s.player);
   return s;
 }
 
@@ -310,11 +319,13 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
 }
 
 function movePlayer(s: GameState, input: Input, dt: number) {
-  const p = s.player, speed = moveSpeed(p);
+  const p = s.player;
   let dx = input.dirX, dz = input.dirZ;
   if (p.root) dx = dz = 0; // netted: your feet are the one thing the net holds, so the keys go nowhere
   const len = Math.hypot(dx, dz);
   if (len > 1) { dx /= len; dz /= len; }
+  startSprint(s, input.sprint === true, len > 1e-4); // before the speed is read: sprinting is what makes it 9 rather than 6
+  const speed = moveSpeed(p);
   const px = p.x, pz = p.z;
   p.x += dx * speed * dt;
   p.z += dz * speed * dt;
@@ -326,6 +337,7 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   p.moving = moved > 1e-4;
   if (len > 1e-4) p.facing = Math.atan2(dx, dz);
   if (input.face != null) p.facing = input.face; // steering beats the walk: strafing with the mouse keeps you facing the camera
+  updateAgility(s, moved, dt); // the ground actually covered is what the meter is charged for, and what the skill is paid for
   stepVertical(s, input.jump === true, dt);
   stepStride(s, moved);
 }

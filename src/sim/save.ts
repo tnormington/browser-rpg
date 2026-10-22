@@ -16,13 +16,14 @@ import { nearestTown, resolveCollisions } from './world';
 import { MAX_GOLD } from './shop';
 import { landingSpot, masterById } from './flight';
 import { mountById } from './mounts';
+import { maxStamina } from './agility';
 import { mountsAllowed } from './world';
 
 export const SAVE_VERSION = 1;
 /** Nothing is further than this from the origin: the world is a few thousand units across at most (Saltmarrow ends near x = 970). */
 const WORLD_LIMIT = 10000;
 /** Skills added after the first save format: a save without them starts them at 0 xp. */
-const LATE_SKILLS: SkillId[] = ['fishing', 'cooking', 'herbalism', 'alchemy', 'leatherworking', 'enchanting'];
+const LATE_SKILLS: SkillId[] = ['fishing', 'cooking', 'herbalism', 'alchemy', 'leatherworking', 'enchanting', 'agility'];
 /**
  * Items that were renamed rather than retired, by their old id. The mithril rung became steel in HOM-81 at the same stats and the same
  * recipe shape, so a character who was wearing it keeps wearing it instead of having their save refused. Ore and bars have no steel
@@ -42,6 +43,7 @@ interface SaveFile {
   nextDropId: number;
   player: {
     x: number; z: number; facing: number; hp: number; energy: number;
+    stamina?: number;                    // breath left for sprinting; absent in saves from before Agility: you wake with a full meter
     xp: Record<string, number>;
     inventory: ({ id: string; qty: number } | null)[];
     equipment: Record<string, string | null>;
@@ -73,7 +75,7 @@ export function serialize(s: GameState): string {
     nextDropId: s.nextDropId,
     player: {
       x: at.x, z: at.z, facing: p.facing,
-      hp: p.dead ? p.maxHp : p.hp, energy: p.energy,
+      hp: p.dead ? p.maxHp : p.hp, energy: p.energy, stamina: p.stamina,
       xp: Object.fromEntries(SKILL_IDS.map(id => [id, p.skills[id].xp])),
       inventory: p.inventory.map(st => st && { id: st.id, qty: st.qty }),
       equipment: { ...p.equipment },
@@ -194,6 +196,8 @@ export function deserialize(raw: string): GameState | null {
     p.mounted = fp.mounted === true && p.mounts.length > 0 && mountsAllowed(p.x, p.z); // a saddle that is no longer yours, or is in a dungeon room, is empty
     p.hp = Math.min(p.maxHp, Math.max(1, num(fp.hp, 0, 1e6, 'hp')));
     p.energy = Math.min(p.maxEnergy, num(fp.energy, 0, 1e6, 'energy'));
+    // the ceiling follows the Agility level loaded above, so a save made at a lower level cannot carry a longer meter in
+    p.stamina = fp.stamina === undefined ? maxStamina(p) : Math.min(maxStamina(p), num(fp.stamina, 0, 1e6, 'stamina'));
 
     if (f.found !== undefined) {
       if (!Array.isArray(f.found)) return null;

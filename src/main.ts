@@ -236,6 +236,8 @@ function readInput(): Input {
     attack: pendingAttack,
     mount: pendingMount,
     jump: (pendingJump || keys.has('Space')) && !hud.modalOpen,
+    sprint: keys.has('ShiftLeft') || keys.has('ShiftRight'), // held, like the walk keys: let go and you are back to a jog
+
     clearTarget: pendingClear,
     ability: pendingAbilities.shift() ?? null,
     inv: pendingInv.splice(0),
