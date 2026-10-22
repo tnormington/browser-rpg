@@ -44,7 +44,10 @@ export function setEcho(s: GameState, to: EchoSetting): boolean {
 
 // ---------- the model (docs/world-design.md 3.4, extended; section 3.5) ----------
 
-/** Every Echo trash fight is this long (level 41's), instead of the bible's 0.2 s a level to 26 s at 99: the pace is kills, and a second on a kill is an hour on the road. */
+/**
+ * Every Echo trash fight is this long (level 41's), instead of the bible's 0.2 s a level to 26 s at 99: the pace is kills, and a second on a kill is an hour on the road. It is the fight of the
+ * character the Echo is priced against (`ECHO_TALENTS`: the points a player of the level has been given, spent), and not of the bare line, which would take 1.1 to 2.0 times as long.
+ */
 export const ECHO_TTK = 14.2;
 /** The bible's rows from this level up are the model's output (HOM-62 restated them); the rows under it are the ones it says "stand as shipped". */
 export const MODEL_FROM = 17;
@@ -74,6 +77,26 @@ export const hpRatio = (from: number, to: number) => (ECHO_TTK + 1) * dps(to, we
 export const damageRatio = (from: number, to: number) =>
   (maxHpForLevel(to) / (ECHO_TTK * (1 - reduction(echoArmour(to))))) / (maxHpForLevel(from) / (ttkTemplate(from) * (1 - reduction(armourLine(from)))));
 
+/**
+ * HOM-192: the character the Echo is priced against. The bible's model is the line weapon and the line armour and nothing else: no talent. A player of level L has spent `talentPoints(L)` of them, and
+ * a bot that does kills 1.1x as fast at 42, 1.5x at 60, 1.8x at 80 and 2.0x at 90 (docs/combat-99.md 10.1), so an Echo sized for the line fell in 8 s and not 14.2. The talents are priced in
+ * and the six abilities are not (they are a button a player has to press, and are paid out as a dividend: 10.3). The reference is the median of the six orders the three trees can be filled in,
+ * which is the build that takes the Bulwark first and then Fury: the three orders that start with Fury kill a third faster at 42 to 70 and the three that end with it a fifth slower, and by 80
+ * (when 98 points have filled most of every tree) they are one number. The curve is an HP multiple and not a DPS one: the fight is `HP / DPS - 1 s`, so it is a little under the gain.
+ */
+export const ECHO_TALENTS = {
+  build: ['bulwark', 'fury', 'hunt'] as readonly ('fury' | 'bulwark' | 'hunt')[],
+  /** [level, HP multiple]: linear between, flat from the last. The curve is concave (the talents that matter most are the early ranks of each tree) and is a fit to a bot, so it is a table and not a formula. */
+  curve: [[42, 1.15], [50, 1.4], [60, 1.53], [70, 1.53], [80, 1.65], [90, 1.9]] as readonly (readonly [number, number])[],
+};
+/** The longer the fight the more of the build is spent on one target: an elite's fight is 17 % shorter under the same talents than a trash row's would scale, a boss's 25 % (fitted at 42 to 99). */
+export const ECHO_ROLE_TALENTS: Record<EnemyRole, number> = { trash: 1, elite: 1.17, rare: 1.17, boss: 1.25 };
+/** The multiple of the line's health an Echo of `role` at `level` has, for the talents a player of that level has spent. */
+export function talentRatio(level: number, role: EnemyRole) {
+  const c = ECHO_TALENTS.curve, i = c.findIndex(([l]) => l > level);
+  const base = i < 0 ? c[c.length - 1][1] : i === 0 ? c[0][1] : c[i - 1][1] + (c[i][1] - c[i - 1][1]) * (level - c[i - 1][0]) / (c[i][0] - c[i - 1][0]);
+  return base * ECHO_ROLE_TALENTS[role];
+}
 // ---------- roles ----------
 
 /**
@@ -138,10 +161,13 @@ export function anchoredHp(def: EnemyDef): number {
  * `unansweredFight` is how the cost of a fight is counted; `buildRow` is where the swings are cut to it.
  */
 export interface Tell { name: string; windup: number; every: number; first: number; radius: number }
-/** 56 to 69: the Seer's mark, a circle fixed under the player that a moving player is long gone from. */
-export const ECHO_MARK: Tell & { from: number; share: number; stake: number; range: number } = { from: 56, share: 0.15, stake: 1.6, name: 'Withering Ground', windup: 1.2, every: 8, first: 2.5, radius: 3, range: 14 };
+/**
+ * 56 to 69: the Seer's mark, a circle fixed under the player that a moving player is long gone from. `stake` is what an ignored tell hits for, as a multiple of its share (HOM-181 ruled 1.6 and 2.2 for a
+ * player with no talents; the character an Echo is priced against takes 0.69 of what the line takes in the same fight, so HOM-192 re-bases them to 3 and 4 and the demand is what it was: 10.5).
+ */
+export const ECHO_MARK: Tell & { from: number; share: number; stake: number; range: number } = { from: 56, share: 0.15, stake: 3, name: 'Withering Ground', windup: 1.2, every: 8, first: 2.5, radius: 3, range: 14 };
 /** 70 to 83, on every melee row: the Ogre's slam, read the telegraph (Pummel it, or step out). `first` keeps it off the sweep's 5 s, so the two do not land on one beat. */
-export const ECHO_SLAM: Tell & { from: number; share: number; stake: number } = { from: 70, share: 0.3, stake: 2.2, name: 'Boulder Slam', windup: 1.7, every: 12, first: 7, radius: 5 };
+export const ECHO_SLAM: Tell & { from: number; share: number; stake: number } = { from: 70, share: 0.3, stake: 4, name: 'Boulder Slam', windup: 1.7, every: 12, first: 7, radius: 5 };
 /** 84 to 99: each trash row arrives with a mate, at 3.4's pair discount. A row that already comes in a group (a camp, a pair) is its own pair, and does not get a second. */
 export const ECHO_PAIR = { from: 84, hp: 0.85, hit: 0.7, xp: 0.88 };
 
@@ -207,7 +233,7 @@ export function echoRow(def: EnemyDef, level: number, staked = true): EnemyDef {
 
 function buildRow(def: EnemyDef, E: number, staked: boolean): EnemyDef {
   const role = roleOf(def), b = def.level;
-  const row: EnemyDef = { ...def, level: E, hp: Math.round(anchoredHp(def) * hpRatio(b, E)), xp: enemyXp(E, role) };
+  const row: EnemyDef = { ...def, level: E, hp: Math.round(anchoredHp(def) * hpRatio(b, E) * talentRatio(E, role)), xp: enemyXp(E, role) };
   scaleHits(row, def, damageRatio(b, E));
   if (role === 'trash') addTells(row, E, staked);
   if (isPaired(def, E)) { // after the tells are sized: the discount is on the whole of the member, so a tell stays worth the same share of it

@@ -11,12 +11,12 @@ import { PLAYER_SPAWN } from './sim/data';
 import { deserialize, serialize } from './sim/save';
 import { enemyXp, ROLE_XP } from './sim/enemy-xp';
 import { xpForLevel } from './sim/xp';
-import { refreshPlayerStats } from './sim/combat';
+import { cooldownOf, refreshPlayerStats } from './sim/combat';
 import {
   ECHO_LEAD, ECHO_MARK, ECHO_MARKS, ECHO_MARK_ITEM, ECHO_MAX_OFFSET, ECHO_MIN_LEVEL, ECHO_PAIR, ECHO_SLAM, ECHO_STEPS, ECHO_TTK, MODEL_FROM, ROLES,
-  anchoredHp, armourLine, damageRatio, dps, dress, echoArmour, echoRow, echoSetting, expectedDropValue, hpRatio, isPaired, modelHit, modelHp, roleOf, setEcho, ttkTemplate, unansweredFight, weaponLine,
+  ECHO_TALENTS, anchoredHp, armourLine, damageRatio, dps, dress, echoArmour, echoRow, echoSetting, expectedDropValue, hpRatio, isPaired, modelHit, modelHp, roleOf, setEcho, talentRatio, ttkTemplate, unansweredFight, weaponLine,
 } from './sim/echo';
-import { ANSWERS_NOTHING, Policy, REFERENCE, arena, fight, withoutProcs } from './echo-bot';
+import { ANSWERS_NOTHING, Policy, REFERENCE, WITH_KIT, arena, characters, dressKit, fight, pulls, withoutProcs } from './echo-bot';
 
 let checks = 0;
 function assert(cond: unknown, msg: string): asserts cond {
@@ -135,19 +135,19 @@ section('check 3 (the rows): the model reproduces the Rune Golem to the digit, a
     ['spire_warden', 70, 38255, 306, 1323], ['stonehorn', 99, 72170, 391, 1623], ['archmage_vael', 99, 192463, 234, 1881], ['spire_warden', 99, 72185, 423, null],
   ];
   for (const [id, E, hp, hit, heavy] of cases) {
-    const r = row(id, E);
-    assert(Math.abs(r.hp - hp) <= 2 && Math.abs(r.damage - hit) <= 1 && (heavy === null || Math.abs(r.heavy!.damage - heavy) <= 2), `${T[id].name} at ${E}: ${r.hp} HP, hit ${r.damage}${heavy ? `, heavy ${r.heavy!.damage}` : ''} (the table's ${hp}, ${hit}${heavy ? `, ${heavy}` : ''})`);
+    const r = row(id, E), tal = talentRatio(E, ROLES[id]); // HOM-192: the table's HP is the line's; the row is that times the talents a player of the level has spent (section 10.1)
+    assert(Math.abs(r.hp / tal - hp) <= 2 && Math.abs(r.damage - hit) <= 1 && (heavy === null || Math.abs(r.heavy!.damage - heavy) <= 2), `${T[id].name} at ${E}: ${r.hp} HP is the table's ${hp} x ${tal.toFixed(2)} (the talents), hit ${r.damage}${heavy ? `, heavy ${r.heavy!.damage}` : ''} (the table's ${hit}${heavy ? `, ${heavy}` : ''})`);
     assert(r.xp === enemyXp(E, ROLES[id]) && r.level === E && r.respawn === T[id].respawn && r.look === T[id].look, `...XP ${r.xp} by enemyXp, level ${E}, and the original's respawn and look`);
   }
-  assert(Math.abs(row('rune_golem', 56).hp - 8559) <= 2, 'the golem at 56 is 8,559 HP (the table\'s)');
+  assert(Math.abs(row('rune_golem', 56).hp / talentRatio(56, 'trash') - 8559) <= 2, `the golem at 56 is 8,559 HP (the table's) x ${talentRatio(56, 'trash').toFixed(2)}, the talents`);
   assert(Math.abs(echoRow(T.archmage_vael, 99).heavy!.damage / T.archmage_vael.heavy!.damage / damageRatio(41, 99) - 1) < 0.01 && Math.abs(echoRow(T.archmage_vael, 99).hazard!.damage / T.archmage_vael.hazard!.damage / damageRatio(41, 99) - 1) < 0.01,
     'every hit scales alike: the nova and the Rune Storm keep their share of the player\'s health as the swing does');
   // the template's own HP, at every E and for the four rows of the check: (TTK + 1) x DPS x the row's role multiple, within 2 %
   for (const id of ['marsh_hog', 'rune_golem', 'spire_warden', 'archmage_vael']) {
     const mult = { trash: 1, elite: 3, rare: 4, boss: 8 }[ROLES[id]];
     for (const E of [42, 60, 80, 99]) {
-      const want = (ECHO_TTK + 1) * dps(E, weaponLine(E)) * mult * (isPaired(T[id], E) ? ECHO_PAIR.hp : 1);
-      assert(within(echoRow(T[id], E).hp, want, 0.02), `${T[id].name} at ${E}: ${echoRow(T[id], E).hp} HP is (14.2 + 1) x DPS ${dps(E, weaponLine(E)).toFixed(0)}${mult > 1 ? ` x ${mult}` : ''}${isPaired(T[id], E) ? ' x 0.85 (a pair)' : ''} within 2 %`);
+      const want = (ECHO_TTK + 1) * dps(E, weaponLine(E)) * mult * (isPaired(T[id], E) ? ECHO_PAIR.hp : 1) * talentRatio(E, ROLES[id]);
+      assert(within(echoRow(T[id], E).hp, want, 0.02), `${T[id].name} at ${E}: ${echoRow(T[id], E).hp} HP is (14.2 + 1) x DPS ${dps(E, weaponLine(E)).toFixed(0)}${mult > 1 ? ` x ${mult}` : ''}${isPaired(T[id], E) ? ' x 0.85 (a pair)' : ''} x ${talentRatio(E, ROLES[id]).toFixed(2)} (the talents) within 2 %`);
     }
   }
   assert(echoRow(T.rune_golem, 60) === echoRow(T.rune_golem, 60) && echoRow(T.rune_golem, 60) !== T.rune_golem && T.rune_golem.hp === 4215 && !T.rune_golem.hazard, 'a row is built once, and the authored one is not touched');
@@ -162,13 +162,13 @@ section('the tell ladder, as data: a mark from 56, a slam on every melee row fro
   assert(golem(69).hazard !== undefined && !golem(69).heavy && !isPaired(T.rune_golem, 69), 'and still no more at 69');
   assert(golem(70).heavy?.name === ECHO_SLAM.name && golem(70).heavy!.windup === 1.7 && golem(70).hazard !== undefined, 'at 70 it gains the Ogre\'s slam, 1.7 s wind-up, on top');
   assert(!isPaired(T.rune_golem, 83) && isPaired(T.rune_golem, 84) && isPaired(T.marsh_hog, 99), 'at 84 a trash row comes in twos');
-  assert(golem(99).hp === Math.round(golem(99).hp) && golem(84).hp < 0.9 * (hpRatio(38, 84) * T.rune_golem.hp), 'and each of the pair has 0.85 of the health');
+  assert(golem(99).hp === Math.round(golem(99).hp) && golem(84).hp < 0.9 * (hpRatio(38, 84) * talentRatio(84, 'trash') * T.rune_golem.hp), 'and each of the pair has 0.85 of the health');
   const foot = (E: number) => echoRow(T.footpad, E);
   assert(foot(60).hazard?.name === ECHO_MARK.name && !foot(80).heavy && foot(80).ranged !== undefined, 'a shooter gains the mark and never the slam');
   assert(echoRow(T.tide_hag, 60).hazard!.name === 'Undertow' && echoRow(T.bog_witch, 99).hazard!.name === 'Withering Ground' && echoRow(T.bog_witch, 99).hazard!.every === 5, 'a caster that already marks the ground keeps its own mark');
   assert(!isPaired(T.road_wolf, 99) && !isPaired(T.dune_hound, 99) && !isPaired(T.fen_stalker, 99), 'a row that already comes in a group is its own pair');
   const named = Object.keys(T).filter(i => ROLES[i] !== 'trash');
-  assert(named.every(id => !isPaired(T[id], 99) && !!echoRow(T[id], 99).heavy === !!T[id].heavy && !!echoRow(T[id], 99).hazard === !!T[id].hazard && echoRow(T[id], 99).hp === Math.round(anchoredHp(T[id]) * hpRatio(T[id].level, 99))),
+  assert(named.every(id => !isPaired(T[id], 99) && !!echoRow(T[id], 99).heavy === !!T[id].heavy && !!echoRow(T[id], 99).hazard === !!T[id].hazard && echoRow(T[id], 99).hp === Math.round(anchoredHp(T[id]) * hpRatio(T[id].level, 99) * talentRatio(99, ROLES[id]))),
     `the ${named.length} elites, rares and bosses gain nothing from the ladder: they already carry a slam and a mark, and come alone`);
   const melee = Object.keys(T).filter(i => ROLES[i] === 'trash' && !T[i].ranged);
   assert(melee.every(id => echoRow(T[id], 70).heavy?.name === ECHO_SLAM.name && echoRow(T[id], 69).heavy === undefined), `every one of the ${melee.length} melee trash rows slams from 70`);}
@@ -187,7 +187,7 @@ section('the tells take their share out of the swings: what a player who answers
   }
   assert(worst < 0.02, `all ${trash.length} trash rows at 56, 60, 70 and 80 cost what they cost at 42 to within ${(100 * worst).toFixed(1)} % on Easy (${worstId}, by the enemy's own schedule)`);
   // ...and on Standard and Hard the swings are the same and an ignored tell hits for its stake: the player who answers pays what he paid, the one who does not pays the stake on every landing
-  assert(ECHO_MARK.stake === 1.6 && ECHO_SLAM.stake === 2.2, 'the stakes are 1.6 on the mark and 2.2 on the slam (section 3.10)');
+  assert(ECHO_MARK.stake === 3 && ECHO_SLAM.stake === 4, 'the stakes are 3 on the mark and 4 on the slam (section 3.10 had 1.6 and 2.2 for a player with no talents; 10.3 re-bases them)');
   let worstSwing = 0, worstStake = 0, tells = 0;
   for (const id of trash) for (const E of [60, 70, 80]) {
     const plain = echoRow(T[id], E, false), staked = echoRow(T[id], E, true);
@@ -208,6 +208,8 @@ section('the tells take their share out of the swings: what a player who answers
 }
 
 // ---------------------------------------------------------------------------
+/** What the talents' character takes of what the line takes in the same fight (Bastion's 15 % more health, Thick Skin on a slam, Guardian under half), measured on a golem at 42 to 99 as 0.65 to 0.72 (10.1). A test's constant: nothing in the sim reads it. */
+const TAKES = 0.69;
 /** Easy's row at an equal level: the ladder with no stake on it, on the enemy and on the mate it called (which is dressed again, as Standard's, when it stands up, so it is stood up here). */
 function unstake(s: GameState, e: Enemy, E: number) {
   for (const x of s.enemies) {
@@ -216,7 +218,7 @@ function unstake(s: GameState, e: Enemy, E: number) {
     Object.assign(x, { state: 'idle', respawnIn: 0, deadFor: 0, x: x.spawnX, z: x.spawnZ, attackCd: 0 });
   }
 }/** What a policy loses and takes, on the real sim at one decision a tick, over `n` seeds. `E` is an Echo of that level; null is the template at its own level (its HP the model's, its numbers the authored ones). */
-function measure(type: string, E: number | null, policy: Policy, n: number, staked = true) {
+function measure(type: string, E: number | null, policy: Policy, n: number, staked = true, talents = E !== null) {
   const def = T[type], b = def.level, ttk: number[] = [], loss: number[] = [];
   let died = 0;
   for (let seed = 1; seed <= n; seed++) {
@@ -225,6 +227,8 @@ function measure(type: string, E: number | null, policy: Policy, n: number, stak
       if (E === null) { e.row = { ...def, hp: Math.round(anchoredHp(def)) }; e.maxHp = e.row.hp; } // the template: the row as the model would have built it
       else { s.quest.eighth = 'done'; s.player.echo = 0; dress(s, e); if (!staked) unstake(s, e, E); }
     });
+    // HOM-192: an Echo is priced against the character a player of the level is: the points they have been given, spent in the reference order (the line gear stands). The template is the bible's bare line.
+    if (talents) dressKit(a.s, { talents: true, gear: false });
     const f = fight(a, policy);
     if (f.died) died++;
     if (f.ttk !== null) ttk.push(f.ttk);
@@ -247,9 +251,10 @@ withoutProcs(() => {
       const m = measure(id, E, policy, n, !trash), pair = isPaired(T[id], E); // a trash row is measured as Easy lays it: the pace model's cost, with the stake off
       const bodies = pair ? 2 * ECHO_PAIR.hp : 1;
       const wantTtk = trash ? bodies * ECHO_TTK : base.ttk * (mult * (ECHO_TTK + 1) - 1) / (mult * (ttkTemplate(T[id].level) + 1) - 1);
-      const wantLoss = base.loss * (pair ? 3 * ECHO_PAIR.hp * ECHO_PAIR.hit : 1);
+      const wantLoss = base.loss * TAKES * (pair ? 3 * ECHO_PAIR.hp * ECHO_PAIR.hit : 1);
       assert(m.died === 0 && within(m.ttk, wantTtk, 0.08), `${T[id].name} at ${E}${pair ? ' (a pair)' : ''}: ${m.ttk.toFixed(1)} s against ${wantTtk.toFixed(1)}${trash ? ` (${bodies > 1 ? `2 x 0.85 x ` : ''}14.2)` : ' (the template\'s, scaled by the model)'}, within 8 %`);
-      assert(Math.abs(m.loss - wantLoss) <= 4, `...and it costs ${m.loss.toFixed(1)} % of health against the template's ${wantLoss.toFixed(1)}${pair ? ' (a pair is 3 x 0.85 x 0.7 of one body)' : ''}, within 4 points`);
+      // the loss is held for trash only (HOM-192): an elite or a boss against a character who presses Pummel on a one-second cooldown is not a fight the template's share describes (10.4)
+      if (trash) assert(Math.abs(m.loss - wantLoss) <= 4, `...and it costs ${m.loss.toFixed(1)} % of health against the template's ${(base.loss * (pair ? 3 * ECHO_PAIR.hp * ECHO_PAIR.hit : 1)).toFixed(1)} x ${TAKES} = ${wantLoss.toFixed(1)}${pair ? ' (a pair is 3 x 0.85 x 0.7 of one body)' : ''}, within 4 points`);
     }
   }
   // the ladder pays the player who answers it: the same fight with a Pummel and a step out of every slam and mark costs less than the one with no answer, and by more as the rungs come
@@ -270,8 +275,8 @@ withoutProcs(() => {
   const g = (E: number, p: Policy, staked = true) => measure('rune_golem', E, p, 16, staked);
   for (const [E, lo, hi, answers] of [[60, 32, 40, [18, 25]], [80, 42, 52, [11, 20]]] as const) {
     const none = g(E, ANSWERS_NOTHING), ref = g(E, REFERENCE), easy = g(E, ANSWERS_NOTHING, false);
-    assert(none.loss >= lo && none.loss <= hi && ref.loss >= answers[0] && ref.loss <= answers[1] && none.died === 0 && Math.abs(easy.loss - 30) <= 4,
-      `a golem at ${E}: ${none.loss.toFixed(1)} % to a player who answers nothing (${lo} to ${hi}), ${ref.loss.toFixed(1)} % to one who answers (${answers[0]} to ${answers[1]}, as it was), and ${easy.loss.toFixed(1)} % on Easy (the pace model's 30)`);
+    assert(none.loss >= lo && none.loss <= hi && ref.loss >= answers[0] && ref.loss <= answers[1] && none.died === 0 && Math.abs(easy.loss - 30 * TAKES) <= 4,
+      `a golem at ${E}: ${none.loss.toFixed(1)} % to a player who answers nothing (${lo} to ${hi}), ${ref.loss.toFixed(1)} % to one who answers (${answers[0]} to ${answers[1]}, as it was), and ${easy.loss.toFixed(1)} % on Easy (the pace model's 30 x ${TAKES} for the talents)`);
   }
   // ...and the setting is what picks the row: Easy lays the plain ladder, Standard and Hard the staked one
   const dressed = (d: -3 | 0 | 3) => defOf(stand(world(70, d), 'rune_golem'));
@@ -441,5 +446,52 @@ section('check 4: a character who has not broken the Seal sees nothing');
   // the golden path is the other half of this check: it runs on a fresh state, and `npm run verify` runs it first.
   assert(Object.keys(T).every(id => defOf({ type: id }) === T[id]), 'defOf of an enemy with no row is the species\' own row, by identity');
 }
+
+// ---------------------------------------------------------------------------
+section('HOM-192: an Echo is priced against the character a level has, and the six abilities are a dividend on top');
+withoutProcs(() => {
+  // 1. the price is a monotone curve through the measured knots, and a longer fight is priced a little higher
+  const knots = ECHO_TALENTS.curve;
+  assert(knots.every(([l, k], i) => i === 0 || (l > knots[i - 1][0] && k >= knots[i - 1][1])) && talentRatio(41, 'trash') === knots[0][1] && talentRatio(120, 'trash') === knots[knots.length - 1][1],
+    `the HP multiple for the talents rises with the level (x${knots[0][1]} at ${knots[0][0]} to x${knots[knots.length - 1][1]} at ${knots[knots.length - 1][0]}) and holds flat past either end`);
+  assert(talentRatio(60, 'elite') > talentRatio(60, 'trash') && talentRatio(60, 'boss') > talentRatio(60, 'elite') && Math.abs(talentRatio(55, 'trash') - (talentRatio(50, 'trash') + talentRatio(60, 'trash')) / 2) < 0.02, 'an elite is priced above a trash row and a boss above an elite, and the curve is linear between its knots');
+  // 2. the price is real: the same Echo takes a character with no talent far longer than 14.2 s, which is the whole of what HOM-192 priced in (1.1x at 42, 2x at 90)
+  const bare = (E: number) => measure('rune_golem', E, ANSWERS_NOTHING, 8, false, false), talented = (E: number) => measure('rune_golem', E, ANSWERS_NOTHING, 8, false, true);
+  for (const [E, lo, hi] of [[42, 1.0, 1.4], [60, 1.3, 1.8], [80, 1.5, 2.1]] as const) {
+    const a = bare(E), b = talented(E);
+    assert(b.ttk > 11 && a.ttk / b.ttk >= lo && a.ttk / b.ttk <= hi, `a golem at ${E}: ${a.ttk.toFixed(1)} s to a character with no talent and ${b.ttk.toFixed(1)} s to the one it is priced for, x${(a.ttk / b.ttk).toFixed(2)} (${lo} to ${hi})`);
+  }
+  // 3. the six abilities are a dividend on a fight that is still a fight: no floor under 10 s from 60 to 80, steady state, with the cooldowns carried from pull to pull (the first pull has them all ready)
+  const who = characters(false), steady = (E: number, arm: string) => { const r = [1, 2].flatMap(seed => pulls('rune_golem', E, who[arm], seed, 6).slice(1)); return { ttk: mean(r.map(x => x.ttk)), loop: mean(r.map(x => x.ttk + x.gap)), died: r.some(x => x.died) }; };
+  for (const E of [60, 80]) {
+    const t = steady(E, 'talents'), f = steady(E, 'full');
+    assert(!f.died && f.ttk >= 9.5 && f.ttk <= 0.95 * t.ttk && f.loop < t.loop, `a golem at ${E}: ${f.ttk.toFixed(1)} s steady with the six abilities against ${t.ttk.toFixed(1)} with the talents alone (the dividend: ${(100 * (1 - f.ttk / t.ttk)).toFixed(0)} %), no 6-second floor`);
+  }
+  // 4. the ladder is a demand on the character it is priced for: a reader earns 1.3 to 1.6x the XP an hour at 75 (the document's 1.4), and a step out of the slam beats a Pummel
+  const loop = (E: number, arm: string) => steady(E, arm).loop;
+  const ratio = loop(75, 'tnone') / loop(75, 'talents');
+  assert(ratio >= 1.25 && ratio <= 1.6, `at 75 a player who answers nothing takes ${ratio.toFixed(2)}x as long a kill as one who answers (HOM-181 ruled 1.4; the stakes are re-based so the talents' 0.69 does not take it away)`);
+  const none = measure('rune_golem', 75, ANSWERS_NOTHING, 12), step = measure('rune_golem', 75, { pummel: false, dodge: 'all' }, 12), pummel = measure('rune_golem', 75, { pummel: true, dodge: 'none' }, 12);
+  assert(step.loss < pummel.loss - 3 && pummel.loss < none.loss - 10 && none.died === 0, `at 75 ignoring costs ${none.loss.toFixed(0)} %, a Pummel on every wind-up ${pummel.loss.toFixed(0)} % and stepping out of the slam ${step.loss.toFixed(0)} %: the dodge is worth more than the interrupt, which the bench's Pummel-first bot never shows`);
+  // 5. Rampart is the answer for a build with no Pummel to spare and no step: it is pressed, once a fight, and takes a third of the loss away (a Fury and Hunt build, nothing answered)
+  const ramp = (kit: boolean) => {
+    const out = [1, 2, 3, 4, 5, 6].map(seed => {
+      const a = arena(seed, 'rune_golem', 75, weaponLine(75), echoArmour(75), (s, e) => { s.quest.eighth = 'done'; s.player.echo = 0; dress(s, e); });
+      dressKit(a.s, { talents: true, gear: false, build: ['fury', 'hunt'] });
+      let presses = 0; const push = a.s.events.push.bind(a.s.events);
+      a.s.events.push = (...evs) => { for (const ev of evs) if (ev.t === 'cast' && ev.slot === 16) presses++; return push(...evs); };
+      const f = fight(a, kit ? { ...WITH_KIT, pummel: false, dodge: 'none' } : { pummel: false, dodge: 'none' });
+      return { loss: f.lossPct, presses };
+    });
+    return { loss: mean(out.map(o => o.loss)), presses: mean(out.map(o => o.presses)) };
+  };
+  const with_ = ramp(true), without = ramp(false);
+  assert(with_.presses >= 0.9 && without.presses === 0 && with_.loss < 0.7 * without.loss, `Rampart, pressed ${with_.presses.toFixed(1)} times a fight by a build with no Counterstrike and no step: ${with_.loss.toFixed(0)} % against ${without.loss.toFixed(0)} % with the six abilities left on the shelf`);
+  // 6. what the bench's Pummel-first bot cannot see (10.5): with Counterstrike and two ranks of Stalwart a Pummel is on a 1 s cooldown and gives back 30 energy, so a caster that is Pummelled at every wind-up never lands one. Pinned so a change is a decision.
+  const s = world(60, 0); dressKit(s, { talents: true, gear: false });
+  assert(cooldownOf(s.player, 5) === 1 && s.player.talentFx.pummelEnergy === 30, 'Pummel with Counterstrike and Stalwart is a 1 s cooldown that pays back 30 energy (docs/combat-99.md 10.5: the lever if a playtest finds it too much)');
+  const witch = measure('bog_witch', 60, REFERENCE, 8, true, true);
+  assert(witch.loss < 3 && witch.died === 0, `...and a Bog Witch at 60 costs a player who presses it at every wind-up ${witch.loss.toFixed(1)} % of health`);
+});
 
 console.log(`\n${checks} checks passed`);
