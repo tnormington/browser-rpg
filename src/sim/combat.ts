@@ -12,7 +12,7 @@ import { refreshGearStats } from './inventory';
 import { rollDrops } from './loot';
 import { questOnKill, questReached } from './quest';
 import { nextRandom } from './rng';
-import { PLAYER_RADIUS, clampToWorld, inSafeZone, nearestTown, resolveCollisions, sameSideOfDoor } from './world';
+import { PLAYER_RADIUS, clampToWorld, inSafeZone, nearestTown, perchAt, resolveCollisions, sameSideOfDoor } from './world';
 import { clearLine } from './sight';
 import { isFlying } from './flight';
 import { dismount } from './mounts';
@@ -24,6 +24,13 @@ import {
 } from './data';
 
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
+
+/** How far off the floor a player must be for a ground shockwave (a slam, a marked patch) to pass under them: a hop clears it, a crouch does not. */
+export const SLAM_CLEARANCE = 0.4;
+/** In the air, clear of the ground: the one question a shockwave asks. Swings, bolts and nets do not ask it, so a hop is a dodge for exactly the slams. */
+const clearsGround = (p: { airborne: boolean; y: number }) => p.airborne && p.y >= SLAM_CLEARANCE;
+/** The standable prop the player is standing on, or null. Enemies cannot follow onto it, so it is where they reach to instead (see updateEnemies). */
+const perchOf = (p: { x: number; z: number; y: number; airborne: boolean }) => p.airborne || p.y <= 0 ? null : perchAt(p.x, p.z, p.y);
 /** How far to one side of the player a blocked shooter aims while it works round the cover between them (see updateRanged). */
 const ROUND_OFFSET = 3;
 /** A melee fighter that also throws (a `ranged` and a `heavy`) throws at a player further off than its reach plus this. */
@@ -580,12 +587,12 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
     const h = def.hazard!;
     e.hazardCd = h.every;
     s.events.push({ t: 'slam', id: e.id, x: c.x!, z: c.z!, radius: h.radius });
-    if (!p.dead && dist({ x: c.x!, z: c.z! }, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage, true), h.name, true);
+    if (!p.dead && !clearsGround(p) && dist({ x: c.x!, z: c.z! }, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage, true), h.name, true);
   } else if (c.kind === 'heavy') {
     const h = def.heavy!;
     e.heavyCd = h.every;
     s.events.push({ t: 'slam', id: e.id, x: e.x, z: e.z, radius: h.radius });
-    if (!p.dead && dist(e, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage, true), h.name, true);
+    if (!p.dead && !clearsGround(p) && dist(e, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage, true), h.name, true);
   } else if (c.kind === 'net') {
     const n = def.net!;
     e.netCd = n.every;
@@ -700,8 +707,9 @@ export function updateEnemies(s: GameState, dt: number) {
       } else if (def.ranged && dp > def.attackRange + THROW_GAP && dp <= def.ranged.range && e.attackCd <= 0 && clearLine(e, p)) {
         startCast(s, e, 'bolt', def.ranged.windup); // a melee fighter that also throws (Captain Marrow): at a player who stands off; one who stays in reach is hit, not shot
       } else {
-        stepToward(e, p.x, p.z, def.speed, dt, def.attackRange * 0.9);
-        if (dist(e, p) <= def.attackRange && e.attackCd <= 0) {
+        const perch = perchOf(p); // a rock under the player's feet is part of the player: close in on its rim, and reach across it
+        stepToward(e, p.x, p.z, def.speed, dt, def.attackRange * 0.9 + (perch?.r ?? 0));
+        if (dist(e, p) - (perch?.r ?? 0) <= def.attackRange && e.attackCd <= 0) {
           if (def.heavy && e.heavyCd <= 0) startCast(s, e, 'heavy', def.heavy.windup);
           else {
             e.attackCd = def.attackInterval;

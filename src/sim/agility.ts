@@ -80,6 +80,16 @@ export const JUMP_LIFT = 0.25;
 export const jumpVelocity = (p: Player) => JUMP_VELOCITY * (1 + JUMP_LIFT * ladder(p));
 
 /**
+ * The double jump (HOM-151): one more takeoff in the air per hop, behind an Agility level. These three are placeholders until
+ * the bible's action layer (HOM-150) rules on them -- the capability is what is built, and each number is one line here.
+ * The second push replaces the vertical speed rather than adding to it, at this share of a full takeoff.
+ */
+export const DOUBLE_JUMP_LEVEL = 10;
+export const DOUBLE_JUMP_SHARE = 0.85;
+export const DOUBLE_JUMP_COST = 0; // stamina; free until the bible says otherwise
+export const canDoubleJump = (p: Player) => p.skills.agility.level >= DOUBLE_JUMP_LEVEL && p.stamina >= DOUBLE_JUMP_COST;
+
+/**
  * The dodge-roll: a burst along the ground that nothing can touch you during, paid for out of the sprint meter.
  * Agility governs it the same way it governs sprinting — not by making a roll cheaper or safer, but by making the
  * meter it is paid from bigger, so a low-Agility player counts their rolls and a high one stops having to. The

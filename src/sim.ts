@@ -1,4 +1,4 @@
-// Authoritative simulation. No Three.js / DOM imports: this module must be able to run server-side.
+﻿// Authoritative simulation. No Three.js / DOM imports: this module must be able to run server-side.
 // Rules live in src/sim/*; this file owns state shape and the fixed-step driver.
 
 import { XpTrack } from './sim/xp';
@@ -19,11 +19,11 @@ import { Action, Interact, requestInteract, updateAction, updateInteract } from 
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
 import { holdDoor } from './sim/dungeon';
 import { dismount, moveSpeed, toggleMount, updateMount } from './sim/mounts';
-import { ROLL_SPEED, jumpVelocity, maxStamina, rolling, startRoll, startSprint, updateAgility } from './sim/agility';
+import { DOUBLE_JUMP_COST, DOUBLE_JUMP_SHARE, ROLL_SPEED, canDoubleJump, jumpVelocity, maxStamina, rolling, startRoll, startSprint, updateAgility } from './sim/agility';
 import { START_TOWN, discoverMasters, startFlight, updateFlight } from './sim/flight';
 import { holdAtGates } from './sim/gates';
 import { updateWithering } from './sim/hazards';
-import { PLAYER_RADIUS, inCave, regionAt, resolveCollisions } from './sim/world';
+import { PLAYER_RADIUS, inCave, perchAt, regionAt, resolveCollisions } from './sim/world';
 import { ABILITIES, CastKind, ENEMY_TYPES, SPAWNS, PLAYER_SPAWN, GRAVITY, FALL_GRAVITY, TICK_RATE, TICK_DT, jumpAirtime } from './sim/data';
 import {
   acquireFront, clearTarget, pressAbility, refreshPlayerStats, setTarget, tabTarget, toggleAutoAttack,
@@ -71,10 +71,12 @@ export interface RecapEntry { src: string; what: string; amount: number; heavy: 
 
 export interface Player {
   x: number; z: number; facing: number; moving: boolean;
-  /** Height above the (flat) ground, world units. 0 on the ground. Presentation only: no rule reads it. */
+  /** Height in world units: 0 on the ground, a prop's `top` while standing on it (sim/world.ts). Landing, falling and a few attacks read it. */
   y: number; vy: number;
   stride: number;          // ground distance walked since the last footfall; starts at half a stride so the first foot lands quickly
-  airborne: boolean;       // y > 0 after this tick's integration: what the renderer reads
+  airborne: boolean;       // in flight: not standing on the ground or on a top. On a rock it is false at any height
+  airJumped: boolean;      // the double jump is spent for this hop; landing gives it back
+  jumpHeld: boolean;       // the jump key was down last tick: a double jump needs a fresh press, or holding the key would spend it at once
   autoAttack: boolean;     // armed: swings at the target whenever the swing timer is up and the target is in reach
   swing: number;           // seconds until the next swing may land; counts down to 0 and waits there for the target to be in reach. Interval is stats.swingInterval
   inCombat: boolean;       // recent damage either way, or something hostile is chasing you
@@ -147,7 +149,7 @@ export type GameEvent =
   | { t: 'stuck' }                                          // something was clicked from too far off to touch: the HUD says so
   | { t: 'gate'; id: string; keeper: string; text: string; need: number } // a hard gate turned the player back: the keeper's line, and the combat level it asks for
   | { t: 'door'; dungeon: string; blurb: string }           // a shut dungeon door turned the player back: blurb says what opens it (at most one every two seconds)
-  | { t: 'jump'; airtime: number }                          // left the ground, and for how long: Agility raises the takeoff, so the clip is stretched over the hop actually taken
+  | { t: 'jump'; airtime: number; double?: true }                        // left the ground, and for how long: Agility raises the takeoff, so the clip is stretched over the hop actually taken
   | { t: 'roll'; x: number; z: number; facing: number }     // a dodge-roll started here, going that way
   | { t: 'land'; x: number; z: number }                     // back on the ground
   | { t: 'step'; surface: 'grass' | 'cave' }                // a foot came down: once per STRIDE_DIST walked on the ground, not while airborne
@@ -244,7 +246,7 @@ export function createState(seed = 1): GameState {
     rng: seed,
     player: {
       x: PLAYER_SPAWN.x, z: PLAYER_SPAWN.z, facing: Math.PI, moving: false,
-      y: 0, vy: 0, stride: STRIDE_DIST / 2, airborne: false, autoAttack: false, swing: 0, inCombat: false, recap: [],
+      y: 0, vy: 0, stride: STRIDE_DIST / 2, airborne: false, airJumped: false, jumpHeld: false, autoAttack: false, swing: 0, inCombat: false, recap: [],
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
       gcd: 0, cd: ABILITIES.map(() => 0), learned: [], mounts: [], mounted: false, unlocked: 1, queued: null, queuedOff: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
@@ -355,7 +357,7 @@ function movePlayer(s: GameState, input: Input, dt: number) {
 /** Footfalls: one `step` per STRIDE_DIST of ground covered, so the cadence follows speed. Airborne or standing resets to mid-stride. */
 function stepStride(s: GameState, moved: number) {
   const p = s.player;
-  if (!p.moving || p.y > 0) { p.stride = STRIDE_DIST / 2; return; }
+  if (!p.moving || p.airborne) { p.stride = STRIDE_DIST / 2; return; }
   p.stride += moved;
   if (p.stride < STRIDE_DIST) return;
   p.stride -= STRIDE_DIST;
@@ -363,22 +365,35 @@ function stepStride(s: GameState, moved: number) {
 }
 
 /**
- * The jump. Vertical position and velocity only: the world is flat, nothing reads `y`, and horizontal movement above is
- * untouched by it, so a jump changes where the player is drawn and nothing about where they can go or what can hit them.
+ * The jump. The floor under the player is the ground (0) or the top of a prop they are over (see `perchAt`): a descent lands on
+ * the highest top it crossed, a walk off an edge falls at FALL_GRAVITY, and a takeoff from a top is measured from the top.
+ * Horizontal movement is untouched by it: the only thing `y` changes there is whether a footprint blocks (resolveCollisions).
  * Gravity is semi-implicit Euler on the fixed step, so the arc is the same every run.
  */
 function stepVertical(s: GameState, wantsJump: boolean, dt: number) {
   const p = s.player;
-  if (wantsJump && p.y === 0 && p.vy === 0) {
+  const press = wantsJump && !p.jumpHeld; // the edge of the key: a held key hops on landing, but only a press spends the double jump
+  p.jumpHeld = wantsJump;
+  const floor = perchAt(p.x, p.z, p.y)?.top ?? 0;
+  const grounded = p.vy === 0 && p.y <= floor;
+  if (grounded) { p.y = floor; p.airJumped = false; }
+  if (wantsJump && grounded) {
     p.vy = jumpVelocity(p); // Agility pushes off harder, and height goes as the square of it
     p.action = null; // like moving, hopping breaks the concentration of a gather or craft
     s.events.push({ t: 'jump', airtime: jumpAirtime(p.vy) });
-  }
-  if (p.y === 0 && p.vy === 0) { p.airborne = false; return; }
+  } else if (press && !grounded && !p.airJumped && canDoubleJump(p)) {
+    p.airJumped = true;
+    p.stamina -= DOUBLE_JUMP_COST;
+    p.vy = jumpVelocity(p) * DOUBLE_JUMP_SHARE;
+    s.events.push({ t: 'jump', airtime: jumpAirtime(p.vy), double: true });
+  } else if (grounded) { p.airborne = false; return; }
+  const was = p.y;
   p.vy -= (p.vy > 0 ? GRAVITY : FALL_GRAVITY) * dt; // the fall is the quicker half: see the note on GRAVITY
   p.y += p.vy * dt;
-  if (p.y <= 0) {
-    p.y = 0; p.vy = 0; p.airborne = false;
+  // a descent lands on the highest top at or below where it started this tick, so a fast fall cannot tunnel through one
+  const land = p.vy <= 0 ? perchAt(p.x, p.z, was)?.top ?? 0 : -Infinity;
+  if (p.y <= land) {
+    p.y = land; p.vy = 0; p.airborne = false; p.airJumped = false;
     s.events.push({ t: 'land', x: p.x, z: p.z });
   } else p.airborne = true;
 }

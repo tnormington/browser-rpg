@@ -32,6 +32,7 @@ import {
 import { appearanceOf, ITEM_LOOKS, TIER_LOOKS, TIER5_COLOR, TIER6_COLOR } from './gear-look';
 import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
+import { DOUBLE_JUMP_COST, DOUBLE_JUMP_LEVEL, maxStamina } from './sim/agility';
 import { clearLine } from './sim/sight';
 import { playerStatuses } from './sim/status';
 import {
@@ -1672,7 +1673,9 @@ section('HOM-16 jump: leaves the ground, lands, and changes nothing about reach 
   assert(route(false) === route(true), 'every x/z of a long walk (tree collision, a turn across the clearing) is identical whether or not the player jumps the whole way');
 }
 {
-  // it does not dodge: the slam telegraph, the heavy hit and ordinary swings all land on an airborne player
+  // HOM-151 INVERTED (was "it does not dodge: the slam telegraph, the heavy hit and ordinary swings all land on an airborne player").
+  // A slam is a shockwave along the ground, so a player clear of the floor when it lands is not hit: that is the reason to jump in a fight.
+  // Ordinary swings are the half of the old test that stands: they still land on a player who is hopping (below).
   const mk = (seed: number) => {
     const s = quietState(seed);
     atLevel(s, 5);
@@ -1683,21 +1686,28 @@ section('HOM-16 jump: leaves the ground, lands, and changes nothing about reach 
     return { s, b };
   };
   const def = ENEMY_TYPES.brute.heavy!;
-  const slams: { dmg: number; air: boolean }[] = [];
-  for (let seed = 405; seed < 413; seed++) { // a hop lasts about half a second: different seeds put the slam at different points of it
-    const { s, b } = mk(seed);
-    for (let i = 0; i < 400 && !b.cast; i++) tick(s, { jump: true });
-    s.player.hp = s.player.maxHp;
-    let got: { dmg: number; air: boolean } | null = null;
-    for (let i = 0; i < 90 && !got; i++) {
-      tick(s, { jump: i % 3 !== seed % 3 || i < seed % 7 });
-      for (const ev of s.events) if (ev.t === 'hit' && ev.target === 'player' && ev.heavy) got = { dmg: ev.amount, air: s.player.airborne };
-    }
-    if (got) slams.push(got);
-  }
   const full = Math.round(def.damage * (1 - deriveStats(emptyEquipment()).reduction));
-  assert(slams.length === 8 && slams.every(x => x && x.dmg === full), `a player who is hopping through the whole wind-up takes the full Crushing Slam every time (${slams.map(x => x?.dmg).join('/')})`);
-  assert(slams.some(x => x && x.air), 'and in at least one of those the slam landed while the player was in the air');
+  /** Wait for the wind-up, hop when `hopLeft` seconds of it remain (never, if null), and report what the slam did. */
+  const slam = (seed: number, hopLeft: number | null) => {
+    const { s, b } = mk(seed);
+    for (let i = 0; i < 400 && !b.cast; i++) tick(s);
+    s.player.hp = s.player.maxHp;
+    let dmg = 0, airAtLanding = false, hasHopped = false;
+    for (let i = 0; i < 90 && !hasEvent(s, e => e.t === 'slam'); i++) {
+      const hop: boolean = hopLeft !== null && !hasHopped && b.cast !== null && b.cast.total - b.cast.t <= hopLeft;
+      hasHopped ||= hop;
+      tick(s, { jump: hop });
+      for (const ev of s.events) if (ev.t === 'hit' && ev.target === 'player' && ev.heavy) dmg = ev.amount;
+      if (hasEvent(s, e => e.t === 'slam')) airAtLanding = s.player.airborne;
+    }
+    return { dmg, airAtLanding };
+  };
+  const stood = slam(405, null);
+  assert(stood.dmg === full && !stood.airAtLanding, `a player who stands through the wind-up takes the full Crushing Slam (${stood.dmg})`);
+  const hopped = slam(405, 0.25);
+  assert(hopped.airAtLanding && hopped.dmg === 0, 'a player who hops so they are in the air when it lands is not hit by it');
+  const early = slam(405, 1.2);
+  assert(!early.airAtLanding && early.dmg === full, 'a hop that is over before the slam lands is no dodge: it is the timing that is the skill');
   const m = mk(406);
   const before = m.s.player.hp;
   let melee = 0;
@@ -1740,6 +1750,111 @@ section('HOM-16 jump: leaves the ground, lands, and changes nothing about reach 
   assert(g.player.action === null, 'jumping cancels a gather in progress');
 }
 
+// ---------------------------------------------------------------------------
+section('HOM-151 y is real: standing on a top, falling off it, the double jump, and what the world does about a player on a rock');
+{
+  // a rock you can stand on: the one prop with a `top` here is a test fixture, placed on open ground
+  const rock = { x: 0, z: 0, r: 1.2, top: 1.0 };
+  COLLIDERS.push(rock);
+  try {
+    const touching = rock.x - (rock.r + PLAYER_RADIUS); // x where a walker stops against it
+    const fresh = (seed: number) => { const g = quietState(seed); g.player.x = touching - 2; g.player.z = 0; return g; };
+
+    // walking at it still stops at the footprint, exactly as before: the top is for jumping, not walking
+    const w = fresh(1501);
+    run(w, 1.5, { dirX: 1 });
+    assert(Math.abs(w.player.x - touching) < 1e-6 && w.player.y === 0, 'walking into a standable rock stops against it at the same distance as any rock: y stays 0');
+
+    // a hop from beside it lands on it
+    const g = fresh(1502);
+    g.player.x = touching;
+    let landed = 0, peak = 0;
+    for (let n = 0; n < 60 && landed === 0; n++) { tick(g, { dirX: n < 1 ? 0 : 1, jump: n === 0 }); peak = Math.max(peak, g.player.y); if (hasEvent(g, e => e.t === 'land')) landed++; }
+    assert(landed === 1 && g.player.y === rock.top && g.player.vy === 0 && !g.player.airborne, `a hop from the foot of it lands on its top (y ${g.player.y}), standing, not in flight`);
+    assert(Math.hypot(g.player.x - rock.x, g.player.z - rock.z) < rock.r + 0.3, 'inside the footprint: the rock does not push a body on top of it out');
+    run(g, 2);
+    assert(g.player.y === rock.top && !g.player.airborne && !hasEvent(g, e => e.t === 'land'), 'it stays there, with no landing event every tick');
+
+    // walking across the top, then off the edge: it falls at FALL_GRAVITY and lands on the ground
+    const edge = (g.player.x - rock.x) + rock.r + 0.5; // distance to walk, east, to be well off the far rim
+    let fell = false, lowest = rock.top, land = false, falling: number[] = [];
+    for (let n = 0; n < 120 && !land; n++) {
+      tick(g, { dirX: 1 });
+      if (g.player.airborne) { fell = true; falling.push(g.player.vy); }
+      if (g.player.y < lowest && !land) lowest = g.player.y;
+      if (hasEvent(g, e => e.t === 'land')) land = true;
+    }
+    assert(fell && land && g.player.y === 0 && g.player.x > rock.x + rock.r && edge > 0, 'walking off the far edge falls to the ground');
+    assert(falling.length > 3 && falling[0] === -FALL_GRAVITY * TICK_DT, `...and the fall begins from rest at FALL_GRAVITY (${falling[0]?.toFixed(2)} u/s after the first tick)`);
+
+    // a jump from a top is measured from the top
+    const h = fresh(1503);
+    h.player.x = rock.x; h.player.y = rock.top;
+    let hp = 0;
+    for (let n = 0; n < 60; n++) { tick(h, { jump: n === 0 }); hp = Math.max(hp, h.player.y); if (n > 3 && !h.player.airborne) break; }
+    assert(Math.abs(hp - (rock.top + JUMP_HEIGHT)) < 0.25 && h.player.y === rock.top, `a hop from the top peaks ${hp.toFixed(2)}u up (top ${rock.top} + ${JUMP_HEIGHT.toFixed(2)}) and lands back on it`);
+
+    // a body above the top flies over the rock rather than being pushed off it
+    const o = fresh(1504);
+    o.player.x = touching - 0.3; o.player.y = rock.top + 0.05; o.player.vy = 6;
+    for (let n = 0; n < 4; n++) tick(o, { dirX: 1 });
+    assert(o.player.x > touching, 'at or above the top the footprint is not a wall');
+
+    // saved while standing on it: the save has no height, and reloads on the ground *outside* the rock, not inside it
+    const sv = fresh(1505);
+    sv.player.x = rock.x; sv.player.y = rock.top; sv.player.z = rock.z;
+    tick(sv);
+    assert(sv.player.y === rock.top && !sv.player.airborne, 'standing on the rock at save time');
+    const l = deserialize(serialize(sv))!;
+    assert(l !== null && l.player.y === 0 && !l.player.airborne && Math.hypot(l.player.x - rock.x, l.player.z - rock.z) >= rock.r + PLAYER_RADIUS - 1e-6, 'a save made on a rock reloads on the ground beside it, not inside it');
+
+    // the anti-kite rule (conservative until HOM-150 rules): a rock under the player is part of the player, so a melee enemy that cannot step on it
+    // still reaches across it. Standing on a rock is not a free fight.
+    const k = quietState(1506);
+    const wolf = enemyOf(k, 'wolf');
+    placeAt(wolf, 7, 0); wolf.attackCd = 0; wolf.state = 'chase'; wolf.spawnX = 7; wolf.spawnZ = 0;
+    k.player.x = rock.x; k.player.z = rock.z; k.player.y = rock.top; k.player.hp = k.player.maxHp = 1e6;
+    let bites = 0;
+    for (let n = 0; n < 6 * 30; n++) { tick(k); for (const ev of k.events) if (ev.t === 'hit' && ev.target === 'player') bites++; }
+    assert(bites >= 2, `a wolf bites a player standing in the middle of a rock it cannot enter (${bites} bites in 6s)`);
+    assert(Math.hypot(wolf.x - rock.x, wolf.z - rock.z) >= rock.r + ENEMY_TYPES.wolf.radius - 1e-6, 'and it does so from outside the footprint: the enemy still cannot climb it');
+  } finally { COLLIDERS.splice(COLLIDERS.indexOf(rock), 1); }
+}
+{
+  // the double jump: a second takeoff in the air, once per hop, behind Agility, on a fresh press
+  const ticksOf = (s: GameState, input: (n: number) => boolean, count: number) => {
+    const out = { jumps: 0, doubles: 0, peak: 0 };
+    for (let n = 0; n < count; n++) {
+      tick(s, { jump: input(n) });
+      for (const ev of s.events) if (ev.t === 'jump') { out.jumps++; if (ev.double) out.doubles++; }
+      out.peak = Math.max(out.peak, s.player.y);
+    }
+    return out;
+  };
+  // pressed at takeoff and again at the apex (tick 0 and tick 9: 0.3s up), released between
+  const press = (n: number) => n === 0 || n === 9;
+  const low = quietState(1510);
+  const lo = ticksOf(low, press, 40);
+  assert(low.player.skills.agility.level < DOUBLE_JUMP_LEVEL && lo.jumps === 1 && lo.doubles === 0 && Math.abs(lo.peak - JUMP_HEIGHT) < 0.25, `below Agility ${DOUBLE_JUMP_LEVEL} a press in the air does nothing (one jump, peak ${lo.peak.toFixed(2)})`);
+  const hi = quietState(1511);
+  hi.player.skills.agility.level = DOUBLE_JUMP_LEVEL;
+  const up = ticksOf(hi, press, 60);
+  assert(up.jumps === 2 && up.doubles === 1, `at Agility ${DOUBLE_JUMP_LEVEL} the second press is a double jump (${up.jumps} takeoffs, ${up.doubles} double)`);
+  assert(up.peak > lo.peak + 0.5, `...and it carries higher than the hop alone (${up.peak.toFixed(2)}u against ${lo.peak.toFixed(2)}u)`);
+  // once per hop: a third press does nothing; landing gives it back
+  const thrice = quietState(1512);
+  thrice.player.skills.agility.level = DOUBLE_JUMP_LEVEL;
+  const th = ticksOf(thrice, n => n === 0 || n === 9 || n === 18, 24);
+  assert(th.jumps === 2 && th.doubles === 1, 'one double jump per hop: a third press in the air does nothing');
+  const again = ticksOf(thrice, n => n === 30 || n === 39, 60);
+  assert(again.doubles === 1, 'and it is back after landing');
+  // holding the key does not spend it: a held key hops on landing and that is all
+  const held = quietState(1513);
+  held.player.skills.agility.level = 50;
+  const hd = ticksOf(held, () => true, 5 * 30);
+  assert(hd.jumps >= 4 && hd.doubles === 0, `a held jump key only bunny-hops (${hd.jumps} hops, ${hd.doubles} double)`);
+  assert(DOUBLE_JUMP_COST === 0 || hi.player.stamina <= maxStamina(hi.player), 'the double jump costs what DOUBLE_JUMP_COST says (nothing, for now)');
+}
 // ---------------------------------------------------------------------------
 section('HOM-16 combat state, queueing into cooldowns, and the death recap');
 {

@@ -14,7 +14,15 @@ export const PLAYER_RADIUS = 0.5;
 
 /** What an obstacle is, for whatever draws it: the sim only ever reads the circle. Absent means a rock (or, in the clearing, whatever it always was). */
 export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'rack' | 'barrow' | 'forge' | 'ruin' | 'circle' | 'signpost' | 'shrine' | 'wayfire' | 'tower';
-export interface Obstacle { x: number; z: number; r: number; kind?: PropKind }
+export interface Obstacle {
+  x: number; z: number; r: number; kind?: PropKind;
+  /**
+   * Height of a flat top you can stand on (HOM-151). Absent means the prop is only a wall. Collision on the ground plane is the
+   * same either way and routing (path.ts) never sees it: a top is reached by jumping, not by walking, and a body whose `y` is
+   * at or above it is not blocked by the footprint at all.
+   */
+  top?: number;
+}
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 export interface Pt { x: number; z: number }
 
@@ -1215,17 +1223,40 @@ export function caveWallPoints(step = 3): { x: number; z: number }[] {
   return out;
 }
 
+/** Slack on "at or above a top", so a body resting exactly on one is never judged to be inside it by a rounding error. */
+export const TOP_EPS = 1e-6;
+/**
+ * How far past a standable prop's rim a body's centre may be and still be standing on it. The ground-plane push leaves a body
+ * touching the rim at PLAYER_RADIUS, so this is what lets a hop that clips the edge land rather than slide off.
+ */
+export const STAND_LIP = 0.3;
+
+/**
+ * The prop with a top that a body at (x, z) and height `y` is over, standing on or about to land on: the highest one whose top is
+ * at or below `y`. Null when there is none, i.e. the floor is the ground.
+ */
+export function perchAt(x: number, z: number, y: number): Obstacle | null {
+  let best: Obstacle | null = null;
+  for (const o of collidersAt(x, z)) {
+    if (o.top === undefined || o.top > y + TOP_EPS || (best && o.top <= best.top!)) continue;
+    if (Math.hypot(x - o.x, z - o.z) < o.r + STAND_LIP) best = o;
+  }
+  return best;
+}
+
 /**
  * Push a circle of the given radius out of the world edge and all obstacles (mutates p). Rocks set side by side, or close to a
  * wall, can shove a body into the next one, so anything that moved it gets another pass, with the walls getting the last word:
  * nothing ever ends up off the floor, and a body between two rocks settles instead of being nudged every tick.
  */
-export function resolveCollisions(p: { x: number; z: number }, radius = PLAYER_RADIUS) {
+export function resolveCollisions(p: { x: number; z: number; y?: number }, radius = PLAYER_RADIUS) {
   const c = clampToWorld(p, radius);
   p.x = c.x; p.z = c.z;
+  const y = p.y ?? 0; // only the player has a height: everything else is on the ground and meets every footprint
   for (let pass = 0; pass < 3; pass++) {
     let pushed = false;
     for (const o of collidersAt(p.x, p.z)) {
+      if (o.top !== undefined && y >= o.top - TOP_EPS) continue; // above its top: over the prop, not against it
       const ox = p.x - o.x, oz = p.z - o.z;
       const d = Math.hypot(ox, oz), min = o.r + radius;
       if (d < min) {
