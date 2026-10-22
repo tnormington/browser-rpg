@@ -228,7 +228,7 @@ section('A higher hop: nothing reads y, so the whole reward is seeing it');
     'each hop tells the renderer its own airtime, so the clip is stretched over the one actually taken rather than a constant');
 }
 
-section('Ctrl is a dodge-roll, and the sprint meter is what pays for it');
+section('B is a dodge-roll, and the sprint meter is what pays for it');
 {
   const s = quiet(), from = { x: s.player.x, z: s.player.z };
   tick(s, { dirX: 1, roll: true });

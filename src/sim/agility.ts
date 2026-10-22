@@ -4,7 +4,7 @@
 // makes the skill its own training: you level it by using it, the way mining levels on rocks.
 //
 // Three more things the level buys, at the bottom of the file: a net lets go of you sooner, you leave the ground harder,
-// and Ctrl is a dodge-roll paid out of the same meter. None of them touch a damage number -- Agility is about your feet.
+// and B is a dodge-roll paid out of the same meter. None of them touch a damage number -- Agility is about your feet.
 import type { GameState, Player } from '../sim';
 import { grantXp } from './skills';
 import { MAX_LEVEL } from './xp';

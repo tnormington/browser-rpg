@@ -116,7 +116,6 @@ addEventListener('keydown', e => {
   unlockAudio();
   if (state.player.action?.k === 'flight') return; // the ride owns the screen: no key does anything until it lands
   if (e.code === 'Space' && !hud.modalOpen) { e.preventDefault(); if (!e.repeat) pendingJump = true; return; } // latched here so a tap shorter than a tick still jumps; never scrolls or presses a focused button
-  if ((e.code === 'ControlLeft' || e.code === 'ControlRight') && !hud.modalOpen) { if (!e.repeat) pendingRoll = true; return; } // latched like the jump: a roll is one press, not a hold
   if (e.repeat) return;
   // the action bar comes first: it owns its keys, and both the layout and the keys themselves are the player's own
   const barSlot = hud.slotForKey(e.code);
@@ -128,6 +127,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyJ') hud.toggleMap();
   else if (e.code === 'KeyG') eatBest();
   else if (e.code === 'KeyZ') pendingMount = true;
+  else if (e.code === 'KeyB') pendingRoll = true; // a tap, not a hold: Ctrl would have been the natural key, but Ctrl+W is the browser's and closes the game
   else if (e.code === 'KeyV') pendingInteract = { k: 'npc' };
   else if (e.code === 'KeyM') hud.say(toggleMute() ? 'Sound off' : 'Sound on');
   else if (e.code === 'KeyI') hud.toggle('inv');

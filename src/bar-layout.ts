@@ -7,13 +7,14 @@ export type BarEntry = { k: 'ability'; i: number } | { k: 'item'; id: string };
 export type BarLayout = (BarEntry | null)[];
 
 /** The keys a fresh player gets, one per slot. The bar is as long as this list, and lays itself out from it. */
-export const DEFAULT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyT', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'KeyB'];
+export const DEFAULT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyT', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'KeyY'];
 
 /** Keys the rest of the game owns (main.ts): binding one to a slot would take movement, the camera or a panel away. */
 export const RESERVED_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
   'Space', 'Tab', 'Escape',
   'KeyX', 'KeyH', 'KeyJ', 'KeyG', 'KeyZ', 'KeyV', 'KeyM', 'KeyI', 'KeyC', 'KeyK', 'KeyN', 'KeyP',
+  'KeyB', // the dodge-roll (HOM-147), which joins Z X C V in the row the game already owns; the last slot starts on Y instead
 ]);
 
 /** The shapes of `KeyboardEvent.code` a slot may take: letters, digits, the numpad digits and the punctuation keys. */

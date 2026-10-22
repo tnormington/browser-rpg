@@ -66,17 +66,17 @@ section('Which keys a slot may take');
   assert(DEFAULT_KEYS.length === SLOT_COUNT, 'every slot starts with a key');
   assert(new Set(DEFAULT_KEYS).size === SLOT_COUNT, 'and no two slots start on the same one');
   assert(DEFAULT_KEYS.every(k => !bindRefusal(k)), 'the keys the bar starts with are all keys it would accept');
-  assert(!bindRefusal('KeyB') && !bindRefusal('Digit9') && !bindRefusal('Semicolon'), 'a free letter, digit or punctuation key is fine');
-  for (const code of ['KeyW', 'Space', 'KeyI', 'Escape']) assert(bindRefusal(code), `${keyLabel(code)} is refused: the game already owns it`);
+  assert(!bindRefusal('KeyL') && !bindRefusal('Digit9') && !bindRefusal('Semicolon'), 'a free letter, digit or punctuation key is fine');
+  for (const code of ['KeyW', 'Space', 'KeyI', 'Escape', 'KeyB']) assert(bindRefusal(code), `${keyLabel(code)} is refused: the game already owns it`);
   assert(RESERVED_KEYS.has('Tab') && bindRefusal('Tab'), 'Tab is refused too: it is how you target');
   assert(bindRefusal('F5') && bindRefusal('ShiftLeft') && bindRefusal(''), 'a function key, a modifier on its own and no key at all are all refused');
 }
 
 section('Binding a key takes it off wherever it was');
 {
-  const keys = bindKey([...DEFAULT_KEYS], 5, 'KeyB');
-  assert(keys[5] === 'KeyB', 'the slot gets the key');
-  assert(keys.filter(k => k === 'KeyB').length === 1, 'and it is the only slot with it');
+  const keys = bindKey([...DEFAULT_KEYS], 5, 'KeyL');
+  assert(keys[5] === 'KeyL', 'the slot gets the key');
+  assert(keys.filter(k => k === 'KeyL').length === 1, 'and it is the only slot with it');
   assert(keys[6] === DEFAULT_KEYS[6], 'a slot that had nothing to do with it is untouched');
 
   const moved = bindKey([...DEFAULT_KEYS], 0, DEFAULT_KEYS[6]);
@@ -87,11 +87,11 @@ section('Binding a key takes it off wherever it was');
 section('Stored keys are checked the same way');
 {
   assert(JSON.stringify(keysOf(null)) === JSON.stringify(DEFAULT_KEYS), 'nothing stored gives the default keys');
-  assert(JSON.stringify(keysOf(['KeyB'])) === JSON.stringify(DEFAULT_KEYS), 'a list of the wrong length is thrown away whole');
+  assert(JSON.stringify(keysOf(['KeyL'])) === JSON.stringify(DEFAULT_KEYS), 'a list of the wrong length is thrown away whole');
 
-  const mixed = keysOf(Array.from({ length: SLOT_COUNT }, (_, i) => (i === 0 ? 'KeyW' : i === 1 ? 'KeyB' : i === 2 ? 'KeyB' : '')));
+  const mixed = keysOf(Array.from({ length: SLOT_COUNT }, (_, i) => (i === 0 ? 'KeyW' : i === 1 ? 'KeyL' : i === 2 ? 'KeyL' : '')));
   assert(mixed[0] === '', 'a key the game now owns (an older build bound it) leaves that slot unbound');
-  assert(mixed[1] === 'KeyB' && mixed[2] === '', 'a repeat keeps the first slot and unbinds the second');
+  assert(mixed[1] === 'KeyL' && mixed[2] === '', 'a repeat keeps the first slot and unbinds the second');
   assert(mixed.length === SLOT_COUNT, 'and the list is still one entry per slot');
 }
 
