@@ -13,13 +13,14 @@ import { ResourceNode, createNodes, updateNodes } from './sim/gathering';
 import { beginCraft } from './sim/crafting';
 import { Buff, updateConsumables } from './sim/consumables';
 import type { Proc } from './sim/procs';
+import type { ChestTier } from './sim/chests';
 import { ShopAction, applyShopAction } from './sim/shop';
 import { AdminAction, applyAdminAction } from './sim/admin';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
 import { holdDoor } from './sim/dungeon';
 import { dismount, moveSpeed, toggleMount, updateMount } from './sim/mounts';
-import { DOUBLE_JUMP_COST, DOUBLE_JUMP_SHARE, ROLL_SPEED, canDoubleJump, jumpVelocity, maxStamina, rolling, startRoll, startSprint, updateAgility } from './sim/agility';
+import { DOUBLE_JUMP_COST, ROLL_SPEED, canDoubleJump, doubleJumpVelocity, jumpVelocity, maxStamina, rolling, startRoll, startSprint, updateAgility } from './sim/agility';
 import { START_TOWN, discoverMasters, startFlight, updateFlight } from './sim/flight';
 import { holdAtGates } from './sim/gates';
 import { updateWithering } from './sim/hazards';
@@ -100,6 +101,7 @@ export interface Player {
   action: Action | null;   // the one timed gather/craft/flight in progress
   inventory: Inventory;
   gold: number;            // currency: sold for, spent at the merchant. Not a bag item, so it never takes a slot
+  chests: string[];        // ids of the chests opened (sim/chests.ts): none respawns, and the save keeps them
   equipment: Equipment;
   durability: Durability;  // points left on worn-down gear, by item id (sim/durability.ts); absent = whole
   enchants: Enchants;      // slot enchants (sim/enchants.ts): they belong to the slot, so they stay when the item changes
@@ -157,6 +159,7 @@ export type GameEvent =
   | { t: 'catch'; fish: string; node: number }          // a fishing cycle landed a fish (the 'loot' follows on the same tick)
   | { t: 'gather'; skill: SkillId; node: number }           // a strike of a gather in progress (pick, axe): every GATHER_STRIKE seconds, before the yield
   | { t: 'kill'; id: number; x: number; z: number; species: string }
+  | { t: 'chest'; id: string; tier: ChestTier; place: string; x: number; z: number; gold: number; xp: number; opened: number; total: number } // a chest was opened (sim/chests.ts): what it paid, and the count of its place; the 'xp' for the Agility lamp follows on the same tick
   | { t: 'xp'; skill: SkillId; amount: number; x: number; z: number }
   | { t: 'levelup'; skill: SkillId; level: number }
   | { t: 'actionfail'; reason: 'level' | 'req' | 'depleted' | 'full' | 'materials' | 'range' | 'gold' | 'cooldown' | 'combat' | 'mount'; skill?: SkillId; need: number; what: string; station?: string } // skill: absent for a failed trade or a refused meal; station: what a 'range' failure was too far from
@@ -250,7 +253,7 @@ export function createState(seed = 1): GameState {
       hp: 0, maxHp: 0, energy: 0, maxEnergy: 0,
       gcd: 0, cd: ABILITIES.map(() => 0), learned: [], mounts: [], mounted: false, unlocked: 1, queued: null, queuedOff: null, cast: 0,
       dead: false, respawnIn: 0, outOfCombat: 99,
-      skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, equipment: emptyEquipment(), durability: {}, enchants: {}, stats: deriveStats(emptyEquipment()),
+      skills, combat: skills.combat, action: null, inventory: newInventory(), gold: 0, chests: [], equipment: emptyEquipment(), durability: {}, enchants: {}, stats: deriveStats(emptyEquipment()),
       talents: newTalents(), talentFx: deriveTalents(newTalents()), food: null, foodCd: 0, buffs: [], procs: [], root: null,
       stamina: 0, sprinting: false, winded: false, sprinted: 0, rolling: 0, rollCd: 0, rollX: 0, rollZ: 1,
     },
@@ -381,15 +384,18 @@ function stepVertical(s: GameState, wantsJump: boolean, dt: number) {
     p.vy = jumpVelocity(p); // Agility pushes off harder, and height goes as the square of it
     p.action = null; // like moving, hopping breaks the concentration of a gather or craft
     s.events.push({ t: 'jump', airtime: jumpAirtime(p.vy) });
-  } else if (press && !grounded && !p.airJumped && canDoubleJump(p)) {
+  } else if (press && !grounded && !p.airJumped && canDoubleJump(p, p.y - floor)) {
     p.airJumped = true;
     p.stamina -= DOUBLE_JUMP_COST;
-    p.vy = jumpVelocity(p) * DOUBLE_JUMP_SHARE;
+    p.vy = doubleJumpVelocity(p.y - floor); // a fixed apex above the floor, whatever the Agility or the press time
     s.events.push({ t: 'jump', airtime: jumpAirtime(p.vy), double: true });
   } else if (grounded) { p.airborne = false; return; }
   const was = p.y;
-  p.vy -= (p.vy > 0 ? GRAVITY : FALL_GRAVITY) * dt; // the fall is the quicker half: see the note on GRAVITY
-  p.y += p.vy * dt;
+  const g = p.vy > 0 ? GRAVITY : FALL_GRAVITY; // the fall is the quicker half: see the note on GRAVITY
+  // The exact step for a constant g, not semi-implicit Euler: Euler on this step loses v dt / 2 off every rise (0.15 of a 1.35 hop, 0.23 of the
+  // double jump's 3.2), which turned the 0.238 s window over a 1.1 sweep into 0.133 s. Now the arc is the parabola JUMP_HEIGHT says it is.
+  p.y += p.vy * dt - 0.5 * g * dt * dt;
+  p.vy -= g * dt;
   // a descent lands on the highest top at or below where it started this tick, so a fast fall cannot tunnel through one
   const land = p.vy <= 0 ? perchAt(p.x, p.z, was)?.top ?? 0 : -Infinity;
   if (p.y <= land) {

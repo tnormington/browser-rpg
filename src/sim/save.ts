@@ -16,6 +16,7 @@ import { nearestTown, resolveCollisions } from './world';
 import { MAX_GOLD } from './shop';
 import { landingSpot, masterById } from './flight';
 import { mountById } from './mounts';
+import { chestById } from './chests';
 import { maxStamina } from './agility';
 import { mountsAllowed } from './world';
 
@@ -55,6 +56,7 @@ interface SaveFile {
     mounted?: boolean;                // riding when saved
     gold?: number;                    // absent in saves from before the economy: nobody had any
     buffs?: { id: string; left: number }[]; // absent in saves from before cooking: nobody was Well Fed
+    chests?: string[];                // chests opened, by id (sim/chests.ts); absent in saves from before them: none were
   };
   found?: string[]; // flight masters found, by town id: absent in saves from before flights (only home is found)
   quest: { stage: QuestStage; kills: Record<string, number>; second?: Quest2Stage; third?: Quest3Stage; fourth?: Quest4Stage; fifth?: Quest5Stage; sixth?: Quest6Stage; seventh?: Quest7Stage; eighth?: Quest8Stage }; // `second` is absent in saves from before the cave, `third` in saves from before the road
@@ -87,6 +89,7 @@ export function serialize(s: GameState): string {
       learned: [...p.learned],
       mounts: [...p.mounts],
       mounted: p.mounted,
+      chests: [...p.chests],
     },
     found: [...s.found],
     quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second, third: s.quest.third, fourth: s.quest.fourth, fifth: s.quest.fifth, sixth: s.quest.sixth, seventh: s.quest.seventh, eighth: s.quest.eighth },
@@ -180,6 +183,14 @@ export function deserialize(raw: string): GameState | null {
       }
     }
     if (fp.gold !== undefined) p.gold = num(fp.gold, 0, MAX_GOLD, 'gold');
+    // chests: matched by id, so a chest the placements no longer have is ignored rather than refusing the save (the way enemies and nodes are)
+    if (fp.chests !== undefined) {
+      if (!Array.isArray(fp.chests)) return null;
+      for (const id of fp.chests) {
+        if (typeof id !== 'string') throw new Error('bad chest');
+        if (chestById(id) && !p.chests.includes(id)) p.chests.push(id);
+      }
+    }
     if (fp.buffs !== undefined) {
       if (!Array.isArray(fp.buffs)) return null;
       for (const b of fp.buffs) {

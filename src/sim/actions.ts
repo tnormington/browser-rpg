@@ -23,7 +23,7 @@ const RANGE_R = 0.9; // the hearth is a prop, not a collider: this is only how c
 const ALEMBIC_R = 1.3; // the bench is a collider of this radius (world.ts)
 const RACK_R = 1.6; // the tanning rack is a collider of this radius (world.ts)
 const CIRCLE_R = 1.8; // the rune circle is a collider of this radius (world.ts)
-const REACH = 1.5; // gap between the player's edge and the thing's edge that still counts as touching
+export const REACH = 1.5; // gap between the player's edge and the thing's edge that still counts as touching
 
 /** Where the thing is and how big. */
 function target(s: GameState, it: Interact) {

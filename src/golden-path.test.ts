@@ -1,4 +1,4 @@
-// Headless verification: drives the sim with synthetic input. Run with `npm run verify`.
+﻿// Headless verification: drives the sim with synthetic input. Run with `npm run verify`.
 // Exits non-zero on the first failed assertion. Extended every milestone.
 import { createState, step, NO_INPUT, TICK_DT, Input, GameState, Enemy } from './sim';
 import { addItem, countItem, removeItem, INVENTORY_SIZE } from './sim/inventory';
@@ -15,7 +15,7 @@ import { RECIPES, FORGE_REACH, recipeById, stationSites } from './sim/crafting';
 import {
   CAVE_DOOR_Z, CAVE_PILLARS, CAVE_ROCKS, CAVE_ROOMS, COLLIDERS, LANDMARKS, PLAYER_RADIUS, ROCKS, TREES, WORLD_HALF,
   GREYWATER, REGIONS, SALTMARROW, THORNWICK, TOWNS, caveDepth, caveWallPoints, clampToWorld, inCave, regionAt, resolveCollisions, sameSideOfDoor,
-  DUNGEONS, dungeonAt, dungeonById, mountsAllowed,
+  DUNGEONS, dungeonAt, dungeonById, mountsAllowed, SAFE_ZONES,
 } from './sim/world';
 import { roadDist } from './sim/road';
 import { dungeonOpen } from './sim/dungeon';
@@ -32,14 +32,15 @@ import {
 import { appearanceOf, ITEM_LOOKS, TIER_LOOKS, TIER5_COLOR, TIER6_COLOR } from './gear-look';
 import { BLOOM_THRESHOLD, EMISSIVE_CAP, cappedIntensity, linearPeak, minLightDistance } from './glow';
 import { SAVE_VERSION, deserialize, serialize } from './sim/save';
-import { DOUBLE_JUMP_COST, DOUBLE_JUMP_LEVEL, maxStamina } from './sim/agility';
+import { DOUBLE_JUMP_APEX, DOUBLE_JUMP_CEILING, DOUBLE_JUMP_COST, DOUBLE_JUMP_LEVEL, maxStamina } from './sim/agility';
+import { CHESTS, CHEST_R, CHEST_TOTAL, LAMP_CAP, PLACES, chestCount, chestReward, chestsIn, isOpened, openChest, placeById, type ChestDef } from './sim/chests';
 import { clearLine } from './sim/sight';
 import { playerStatuses } from './sim/status';
 import {
   EXECUTE_BONUS, EXECUTE_UNDER, TALENTS, TALENT_START_LEVEL, TIER_COST, TREE_IDS, WOUNDED_UNDER,
   abilityFromTalent, deriveTalents, refreshTalents, spentIn, spentTotal, talentById, talentPoints,
 } from './sim/talents';
-import { abilityOpen, reductionOf } from './sim/combat';
+import { SWEEP_CLEAR, abilityOpen, reductionOf } from './sim/combat';
 import { PROCS } from './sim/procs';
 import { SHOP_STOCK, VENDOR, SHOP_REACH, BUY_MARKUP, buyPrice, HARBOUR_STOCK, HARBOUR_VENDOR } from './sim/shop';
 
@@ -1673,9 +1674,9 @@ section('HOM-16 jump: leaves the ground, lands, and changes nothing about reach 
   assert(route(false) === route(true), 'every x/z of a long walk (tree collision, a turn across the clearing) is identical whether or not the player jumps the whole way');
 }
 {
-  // HOM-151 INVERTED (was "it does not dodge: the slam telegraph, the heavy hit and ordinary swings all land on an airborne player").
-  // A slam is a shockwave along the ground, so a player clear of the floor when it lands is not hit: that is the reason to jump in a fight.
-  // Ordinary swings are the half of the old test that stands: they still land on a player who is hopping (below).
+  // it does not dodge: the slam telegraph, the heavy hit and ordinary swings all land on an airborne player.
+  // HOM-151 inverted this (a slam passed under a hop); docs/action-layer.md 8.1 puts it back: the hop's dodge belongs to the low swing (the
+  // sweep) and the net, so a slam is answered by the roll, the interrupt or the legs, and jumping through it is not an answer.
   const mk = (seed: number) => {
     const s = quietState(seed);
     atLevel(s, 5);
@@ -1686,28 +1687,21 @@ section('HOM-16 jump: leaves the ground, lands, and changes nothing about reach 
     return { s, b };
   };
   const def = ENEMY_TYPES.brute.heavy!;
-  const full = Math.round(def.damage * (1 - deriveStats(emptyEquipment()).reduction));
-  /** Wait for the wind-up, hop when `hopLeft` seconds of it remain (never, if null), and report what the slam did. */
-  const slam = (seed: number, hopLeft: number | null) => {
+  const slams: { dmg: number; air: boolean }[] = [];
+  for (let seed = 405; seed < 413; seed++) { // a hop lasts about half a second: different seeds put the slam at different points of it
     const { s, b } = mk(seed);
-    for (let i = 0; i < 400 && !b.cast; i++) tick(s);
+    for (let i = 0; i < 400 && !b.cast; i++) tick(s, { jump: true });
     s.player.hp = s.player.maxHp;
-    let dmg = 0, airAtLanding = false, hasHopped = false;
-    for (let i = 0; i < 90 && !hasEvent(s, e => e.t === 'slam'); i++) {
-      const hop: boolean = hopLeft !== null && !hasHopped && b.cast !== null && b.cast.total - b.cast.t <= hopLeft;
-      hasHopped ||= hop;
-      tick(s, { jump: hop });
-      for (const ev of s.events) if (ev.t === 'hit' && ev.target === 'player' && ev.heavy) dmg = ev.amount;
-      if (hasEvent(s, e => e.t === 'slam')) airAtLanding = s.player.airborne;
+    let got: { dmg: number; air: boolean } | null = null;
+    for (let i = 0; i < 90 && !got; i++) {
+      tick(s, { jump: i % 3 !== seed % 3 || i < seed % 7 });
+      for (const ev of s.events) if (ev.t === 'hit' && ev.target === 'player' && ev.heavy) got = { dmg: ev.amount, air: s.player.airborne };
     }
-    return { dmg, airAtLanding };
-  };
-  const stood = slam(405, null);
-  assert(stood.dmg === full && !stood.airAtLanding, `a player who stands through the wind-up takes the full Crushing Slam (${stood.dmg})`);
-  const hopped = slam(405, 0.25);
-  assert(hopped.airAtLanding && hopped.dmg === 0, 'a player who hops so they are in the air when it lands is not hit by it');
-  const early = slam(405, 1.2);
-  assert(!early.airAtLanding && early.dmg === full, 'a hop that is over before the slam lands is no dodge: it is the timing that is the skill');
+    if (got) slams.push(got);
+  }
+  const full = Math.round(def.damage * (1 - deriveStats(emptyEquipment()).reduction));
+  assert(slams.length === 8 && slams.every(x => x && x.dmg === full), `a player who is hopping through the whole wind-up takes the full Crushing Slam every time (${slams.map(x => x?.dmg).join('/')})`);
+  assert(slams.some(x => x && x.air), 'and in at least one of those the slam landed while the player was in the air');
   const m = mk(406);
   const before = m.s.player.hp;
   let melee = 0;
@@ -1836,24 +1830,142 @@ section('HOM-151 y is real: standing on a top, falling off it, the double jump, 
   const low = quietState(1510);
   const lo = ticksOf(low, press, 40);
   assert(low.player.skills.agility.level < DOUBLE_JUMP_LEVEL && lo.jumps === 1 && lo.doubles === 0 && Math.abs(lo.peak - JUMP_HEIGHT) < 0.25, `below Agility ${DOUBLE_JUMP_LEVEL} a press in the air does nothing (one jump, peak ${lo.peak.toFixed(2)})`);
-  const hi = quietState(1511);
-  hi.player.skills.agility.level = DOUBLE_JUMP_LEVEL;
+  /** A player at this Agility level with a full meter: the double jump costs breath, and a fresh state has none. */
+  const skilled = (seed: number, level: number) => { const g = quietState(seed); g.player.skills.agility.level = level; g.player.stamina = maxStamina(g.player); return g; };
+  const hi = skilled(1511, DOUBLE_JUMP_LEVEL);
   const up = ticksOf(hi, press, 60);
   assert(up.jumps === 2 && up.doubles === 1, `at Agility ${DOUBLE_JUMP_LEVEL} the second press is a double jump (${up.jumps} takeoffs, ${up.doubles} double)`);
   assert(up.peak > lo.peak + 0.5, `...and it carries higher than the hop alone (${up.peak.toFixed(2)}u against ${lo.peak.toFixed(2)}u)`);
   // once per hop: a third press does nothing; landing gives it back
-  const thrice = quietState(1512);
-  thrice.player.skills.agility.level = DOUBLE_JUMP_LEVEL;
+  const thrice = skilled(1512, DOUBLE_JUMP_LEVEL);
   const th = ticksOf(thrice, n => n === 0 || n === 9 || n === 18, 24);
   assert(th.jumps === 2 && th.doubles === 1, 'one double jump per hop: a third press in the air does nothing');
   const again = ticksOf(thrice, n => n === 30 || n === 39, 60);
   assert(again.doubles === 1, 'and it is back after landing');
   // holding the key does not spend it: a held key hops on landing and that is all
-  const held = quietState(1513);
-  held.player.skills.agility.level = 50;
+  const held = skilled(1513, 50);
   const hd = ticksOf(held, () => true, 5 * 30);
   assert(hd.jumps >= 4 && hd.doubles === 0, `a held jump key only bunny-hops (${hd.jumps} hops, ${hd.doubles} double)`);
-  assert(DOUBLE_JUMP_COST === 0 || hi.player.stamina <= maxStamina(hi.player), 'the double jump costs what DOUBLE_JUMP_COST says (nothing, for now)');
+
+  // docs/action-layer.md 4: level 25, 40 breath, and a fixed apex of 3.2 above the floor, whatever the Agility or the press time
+  assert(DOUBLE_JUMP_LEVEL === 25 && DOUBLE_JUMP_COST === 40 && DOUBLE_JUMP_APEX === 3.2 && DOUBLE_JUMP_CEILING === 2.9, 'the double jump is Agility 25, 40 breath, apex 3.2, nothing above 2.9');
+  const nearly = skilled(1514, DOUBLE_JUMP_LEVEL - 1);
+  assert(ticksOf(nearly, press, 60).doubles === 0, `Agility ${DOUBLE_JUMP_LEVEL - 1} has no double jump`);
+  for (const lvl of [25, 50, 99]) for (const at of [4, 9, 14]) { // three press times: on the way up, near the apex, just past it
+    const g = skilled(1520 + lvl + at, lvl);
+    const r = ticksOf(g, n => n === 0 || n === at, 70);
+    assert(r.doubles === 1 && Math.abs(r.peak - DOUBLE_JUMP_APEX) < 0.02, `Agility ${lvl}, pressed ${at} ticks up: the second push peaks at ${r.peak.toFixed(3)} (3.2 within 0.02)`);
+  }
+  const spent = skilled(1530, 25);
+  const before = spent.player.stamina;
+  tick(spent, { jump: true }); tick(spent, { jump: false }); for (let n = 0; n < 6; n++) tick(spent, { jump: false });
+  const mid = spent.player.stamina;
+  tick(spent, { jump: true });
+  assert(spent.player.airJumped && mid - spent.player.stamina >= DOUBLE_JUMP_COST - 2, `a double jump spends ${DOUBLE_JUMP_COST} breath (${(mid - spent.player.stamina).toFixed(1)} off ${before.toFixed(0)})`);
+  const winded = skilled(1531, 25);
+  winded.player.stamina = 0; // the meter refills about a unit a tick, so the second press comes two ticks in, while it is still far short of the cost
+  assert(ticksOf(winded, n => n === 0 || n === 2, 60).doubles === 0, 'with less breath than it costs there is no double jump');
+  const high = skilled(1532, 25);
+  high.player.y = 3.0; high.player.vy = 0.1; high.player.airborne = true; // above DOUBLE_JUMP_CEILING: a press does nothing and is not spent
+  tick(high, { jump: true });
+  assert(!high.player.airJumped && !hasEvent(high, e => e.t === 'jump'), 'a press above 2.9 above the floor does nothing, and does not spend the double jump');
+}
+{
+  // the arcs the windows in docs/action-layer.md 2.3 were worked out on: the step is the exact parabola, so JUMP_HEIGHT is the peak (Euler lost 0.15 of it)
+  const window = (level: number) => {
+    const g = quietState(1540); g.player.skills.agility.level = level;
+    let peak = 0, above = 0;
+    for (let n = 0; n < 60; n++) { tick(g, { jump: n === 0 }); peak = Math.max(peak, g.player.y); if (g.player.y >= SWEEP_CLEAR) above++; }
+    return { peak, secs: above * TICK_DT };
+  };
+  const one = window(1), top = window(99);
+  assert(Math.abs(one.peak - JUMP_HEIGHT) < 0.01 && JUMP_HEIGHT === 1.35, `a hop at Agility 1 peaks at ${one.peak.toFixed(3)} (JUMP_HEIGHT ${JUMP_HEIGHT})`);
+  assert(Math.abs(one.secs - 0.238) < 0.01, `...and is above the 1.1 clearance for ${one.secs.toFixed(3)} s at Agility 1 (the doc's 0.238, seven ticks)`);
+  assert(Math.abs(top.secs - 0.479) < 0.03, `...and ${top.secs.toFixed(3)} s at Agility 99 (the doc's 0.479, within a tick)`);
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-158 the chests: placement, reward, opening once, and the save');
+{
+  assert(CHESTS.length <= CHEST_TOTAL && new Set(CHESTS.map(c => c.id)).size === CHESTS.length, `chest ids are unique (${CHESTS.length} placed of the ${CHEST_TOTAL} planned)`);
+  assert(PLACES.length === 14 && new Set(PLACES.flatMap(p => p.regions)).size === PLACES.flatMap(p => p.regions).length && PLACES.flatMap(p => p.regions).every(id => REGIONS.some(r => r.id === id)), 'fourteen places, each region in exactly one, every one a real region');
+  assert(CHESTS.every(c => placeById(c.place) && c.floor === 0 && c.tier === 'stash'), 'what is placed so far is stashes on the ground: a cache needs a step and a hoard a rooftop, and the world has no prop with a top to give them');
+  const perPlace: Record<string, number> = { hale: 1, hollow: 1, greywater: 2, saltmarrow: 1, grotto: 1, dunmere: 2, thornwick: 1, rotroot: 1, barrowdowns: 2, highmoor: 1, cairnhold: 1, cairnwaste: 2, spire: 1, vault: 1 };
+  assert(PLACES.every(p => chestsIn(p.id).length === perPlace[p.id]) && CHESTS.length === 18, '18 stashes, the per-place counts of 7.1');
+
+  const s0 = createState(1);
+  const spawns = s0.enemies.map(e => ({ x: e.spawnX, z: e.spawnZ }));
+  const bosses = s0.enemies.filter(e => ENEMY_TYPES[e.type].respawn >= 300).map(e => ({ x: e.spawnX, z: e.spawnZ }));
+  const near = (a: { x: number; z: number }, list: { x: number; z: number; r?: number }[]) => Math.min(...list.map(b => Math.hypot(a.x - b.x, a.z - b.z) - (b.r ?? 0)));
+  for (const c of CHESTS) {
+    const place = placeById(c.place)!, cave = inCave(c.x, c.z);
+    const home = REGIONS.filter(r => place.regions.includes(r.id)).some(r => r.footprint.some(f => c.x >= f.x0 && c.x <= f.x1 && c.z >= f.z0 && c.z <= f.z1));
+    const solid = near(c, COLLIDERS), dSpawn = near(c, spawns);
+    const clear = clampToWorld({ x: c.x, z: c.z });
+    const roadRegion = REGIONS.find(r => r.road && place.regions.includes(r.id));
+    const offRoad = roadRegion?.road ? roadDist(roadRegion.road, c.x, c.z) : null;
+    const ok = home && solid >= 1.8 && solid <= 4.5 && clear.x === c.x && clear.z === c.z && near(c, SAFE_ZONES) > 0 && near(c, bosses) >= 14
+      && dSpawn >= (cave ? 8 : 16) && (offRoad === null || (offRoad >= 15 && offRoad <= 60));
+    assert(ok, `${c.id}: in its place, 2 to 4 u from something solid (${solid.toFixed(1)}), ${dSpawn.toFixed(0)} u from a spawn, off the road ${offRoad === null ? 'n/a' : offRoad.toFixed(0)}, outside every safe circle, 14 u from a boss`);
+  }
+  const open = CHESTS.filter(c => !inCave(c.x, c.z));
+  assert(open.every((a, i) => open.every((b, j) => i === j || a.place !== b.place || Math.hypot(a.x - b.x, a.z - b.z) >= 100)), 'no two chests of one place in open country are closer than 100 u');
+  const rooms = CHESTS.filter(c => inCave(c.x, c.z)).map(c => CAVE_ROOMS.findIndex(r => c.x >= r.rect.x0 && c.x <= r.rect.x1 && c.z >= r.rect.z0 && c.z <= r.rect.z1));
+  assert(rooms.every(r => r >= 0) && new Set(rooms).size === rooms.length, 'a dungeon holds at most one chest to a room');
+
+  // what they pay: coin on the player's combat level, the lamp on their Agility, whatever the region
+  assert([5, 20, 40].every(L => chestReward('stash', L, 1).gold === Math.round(0.5 * (0.6 * L + 3)) && chestReward('cache', L, 1).gold === chestReward('stash', L, 1).gold && chestReward('hoard', L, 1).gold === Math.round(0.6 * L + 3)),
+    `coin is 0.5 / 0.5 / 1.0 x (0.6 L + 3): ${[5, 20, 40].map(L => `L${L} ${chestReward('stash', L, 1).gold}/${chestReward('cache', L, 1).gold}/${chestReward('hoard', L, 1).gold}`).join(', ')}`);
+  const span = (a: number) => xpForLevel(a + 1) - xpForLevel(a);
+  assert(chestReward('stash', 30, 40).xp === 0 && chestReward('cache', 30, 20).xp === Math.round(span(20) / 2) && chestReward('hoard', 30, 20).xp === span(20), 'a stash pays no Agility XP, a cache half a level and a hoard a whole one');
+  assert(chestReward('cache', 30, 20).xp === 274 && chestReward('cache', 30, 40).xp === 1974 && span(50) === 10612, 'the doc\'s figures: a cache is 274 XP at Agility 20 and 1,974 at 40, and the span of level 50 is 10,612');
+  assert(chestReward('hoard', 30, 49).xp === span(49) && chestReward('hoard', 30, 50).xp === LAMP_CAP && chestReward('hoard', 30, 90).xp === LAMP_CAP, 'a lamp never pays more than 10,000: the cap bites a hoard from Agility 50');
+  assert(chestReward('hoard', 30, 99).xp === 0, 'and at Agility 99 there is no level left to pay a share of');
+  assert(chestReward('stash', 6, 1).gold === chestReward('stash', 6, 99).gold && chestReward('hoard', 40, 1).gold > chestReward('hoard', 6, 1).gold, 'coin follows the player\'s level, not the chest\'s: no chest decays as the player outlevels it');
+
+  // opening one: from beside it, once
+  const c0 = CHESTS[2]; // the Greywater stash
+  const s = quietState(1601);
+  atLevel(s, 20);
+  s.player.x = c0.x + 8; s.player.z = c0.z;
+  assert(JSON.stringify(openChest(s, c0.id)) === JSON.stringify({ ok: false, why: 'far' }) && s.player.chests.length === 0 && s.player.gold === 0, 'out of reach, a chest stays shut and pays nothing');
+  assert(JSON.stringify(openChest(s, 'no-such-chest')) === JSON.stringify({ ok: false, why: 'unknown' }), 'an id that is not a chest is refused');
+  s.player.x = c0.x + CHEST_R + PLAYER_RADIUS + 1.4; s.player.z = c0.z;
+  const got = openChest(s, c0.id);
+  assert(got.ok && got.gold === chestReward('stash', 20, 1).gold && s.player.gold === got.gold && got.xp === 0 && isOpened(s.player, c0.id), `within reach it opens and pays ${got.ok ? got.gold : '?'} gold`);
+  const ev = s.events.find(e => e.t === 'chest');
+  assert(ev?.t === 'chest' && ev.id === c0.id && ev.tier === 'stash' && ev.place === 'greywater' && ev.opened === 1 && ev.total === 2 && ev.gold === s.player.gold, 'the chest event says what it paid and the count of its place (1 / 2)');
+  s.events.length = 0;
+  assert(JSON.stringify(openChest(s, c0.id)) === JSON.stringify({ ok: false, why: 'opened' }) && s.player.gold === got.gold && !hasEvent(s, () => true) && chestCount(s.player).opened === 1, 'opening it twice pays once');
+  assert(chestCount(s.player, 'greywater').opened === 1 && chestCount(s.player, 'dunmere').opened === 0 && chestCount(s.player).opened === 1 && chestCount(s.player).total === CHESTS.length, 'the counters: one of two in Greywater, none in Dunmere, one of all');
+  const dead = quietState(1602); dead.player.x = c0.x; dead.player.z = c0.z; dead.player.dead = true;
+  assert(JSON.stringify(openChest(dead, c0.id)) === JSON.stringify({ ok: false, why: 'dead' }), 'the dead open nothing');
+
+  // the save keeps them, drops an id the placements no longer have, and refuses a malformed field
+  const back = deserialize(serialize(s))!;
+  assert(back !== null && back.player.chests.join() === c0.id && back.player.gold === s.player.gold, 'a save round-trips player.chests');
+  const raw = JSON.parse(serialize(s));
+  raw.player.chests = [c0.id, c0.id, 'a-chest-that-was-removed'];
+  assert(deserialize(JSON.stringify(raw))!.player.chests.join() === c0.id, 'a duplicate or an unplaced id in a save is ignored, not carried');
+  delete raw.player.chests;
+  assert(deserialize(JSON.stringify(raw))!.player.chests.length === 0, 'a save from before the chests has opened none');
+  raw.player.chests = 'all of them';
+  assert(deserialize(JSON.stringify(raw)) === null, 'and a save whose chests are not a list is refused');
+
+  // a rooftop chest, as a fixture on a rock with a top: opened from the floor it stands on, and not through its footprint from the ground
+  const rock = { x: 0, z: 0, r: 1.2, top: 2.8 };
+  const roof: ChestDef = { id: 'fixture-roof', place: 'hale', tier: 'hoard', x: 0.4, z: 0, floor: 2.8 };
+  COLLIDERS.push(rock); CHESTS.push(roof);
+  try {
+    const g = quietState(1603);
+    atLevel(g, 30); g.player.skills.agility.xp = xpForLevel(30); g.player.skills.agility.level = 30;
+    g.player.x = -(rock.r + PLAYER_RADIUS); g.player.z = 0; // on the ground at the foot of it: in reach of the chest, a floor below it
+    assert(JSON.stringify(openChest(g, roof.id)) === JSON.stringify({ ok: false, why: 'floor' }) && g.player.chests.length === 0, 'a player on the ground cannot open a chest on a rooftop through its footprint');
+    g.player.x = 0; g.player.y = rock.top; // on the roof
+    const r = openChest(g, roof.id);
+    assert(r.ok && r.gold === chestReward('hoard', 30, 30).gold && r.xp === span(30) && g.player.skills.agility.xp >= xpForLevel(31), `from the roof it opens, and the hoard pays a whole level of Agility (${r.ok ? r.xp : 0} XP, to level ${g.player.skills.agility.level})`);
+    assert(g.events.some(e => e.t === 'levelup' && e.skill === 'agility' && e.level === 31), 'and the level it pays is announced like any other');
+  } finally { COLLIDERS.splice(COLLIDERS.indexOf(rock), 1); CHESTS.splice(CHESTS.indexOf(roof), 1); }
 }
 // ---------------------------------------------------------------------------
 section('HOM-16 combat state, queueing into cooldowns, and the death recap');
@@ -4219,6 +4331,26 @@ section('HOM-73 shooters hold their ground, and the net is the one thing that ma
     let blocked = false;
     for (let i = 0; i < 60 && e.cast; i++) { tick(s); blocked ||= hasEvent(s, ev => ev.t === 'blocked'); }
     assert(blocked && s.player.root === null, 'stepping behind the stone wastes the net, as it wastes a bolt');
+  }
+
+  // docs/action-layer.md 8.4.2: a net is thrown low, so a player above the 1.1 clearance when it resolves is missed; a slam is not low, so 3.0 u up still takes it
+  {
+    const cast = (type: string, kind: string, y: number) => {
+      const { s, e } = duel(98, type);
+      atLevel(s, 15);
+      tick(s, { clickEnemy: e.id });
+      for (let i = 0; i < 900 && e.cast?.kind !== kind; i++) { s.player.x = 0; s.player.z = 2; tick(s); }
+      assert(e.cast?.kind === kind, `a ${type} winds up a ${kind}`);
+      e.cast!.t = e.cast!.total - 0.01; // resolves on the next tick
+      s.player.y = y; s.player.vy = 0; s.player.airborne = y > 0;
+      s.player.hp = s.player.maxHp;
+      tick(s);
+      return { s, e };
+    };
+    assert(cast('drowned_sailor', 'net', 1.2).s.player.root === null, 'a net resolving while the player is 1.2 up passes under them');
+    assert(cast('drowned_sailor', 'net', 0.9).s.player.root !== null, '...and one resolving at 0.9 up (a hop that is not high enough) still holds them');
+    const slam = cast('brute', 'heavy', 3.0);
+    assert(slam.s.events.some(ev => ev.t === 'hit' && ev.target === 'player' && ev.heavy), 'a slam resolving while the player is 3.0 up still lands');
   }
 
   // death clears it, so you never wake up in a net

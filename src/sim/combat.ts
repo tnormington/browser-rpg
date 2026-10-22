@@ -25,10 +25,13 @@ import {
 
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
 
-/** How far off the floor a player must be for a ground shockwave (a slam, a marked patch) to pass under them: a hop clears it, a crouch does not. */
-export const SLAM_CLEARANCE = 0.4;
-/** In the air, clear of the ground: the one question a shockwave asks. Swings, bolts and nets do not ask it, so a hop is a dodge for exactly the slams. */
-const clearsGround = (p: { airborne: boolean; y: number }) => p.airborne && p.y >= SLAM_CLEARANCE;
+/**
+ * How far above the floor under them a player must be for a low attack to pass beneath: a hop at Agility 1 (apex 1.35) clears it by 0.25,
+ * which is a 0.238 s window, against the roll's 0.30 (docs/action-layer.md 2.3). A slam is not low: it lands on a player in the air.
+ */
+export const SWEEP_CLEAR = 1.1;
+/** Above SWEEP_CLEAR, measured from the floor the player is over (the ground, or the top of a prop they stand above), not from 0. The net asks it; so will the sweep. */
+const clearsGround = (p: { x: number; z: number; airborne: boolean; y: number }) => p.airborne && p.y - (perchAt(p.x, p.z, p.y)?.top ?? 0) >= SWEEP_CLEAR;
 /** The standable prop the player is standing on, or null. Enemies cannot follow onto it, so it is where they reach to instead (see updateEnemies). */
 const perchOf = (p: { x: number; z: number; y: number; airborne: boolean }) => p.airborne || p.y <= 0 ? null : perchAt(p.x, p.z, p.y);
 /** How far to one side of the player a blocked shooter aims while it works round the cover between them (see updateRanged). */
@@ -587,17 +590,17 @@ function updateCast(s: GameState, e: Enemy, dt: number) {
     const h = def.hazard!;
     e.hazardCd = h.every;
     s.events.push({ t: 'slam', id: e.id, x: c.x!, z: c.z!, radius: h.radius });
-    if (!p.dead && !clearsGround(p) && dist({ x: c.x!, z: c.z! }, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage, true), h.name, true);
+    if (!p.dead && dist({ x: c.x!, z: c.z! }, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage, true), h.name, true);
   } else if (c.kind === 'heavy') {
     const h = def.heavy!;
     e.heavyCd = h.every;
     s.events.push({ t: 'slam', id: e.id, x: e.x, z: e.z, radius: h.radius });
-    if (!p.dead && !clearsGround(p) && dist(e, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage, true), h.name, true);
+    if (!p.dead && dist(e, p) <= h.radius) hurtPlayer(s, e, takeDamage(p, h.damage, true), h.name, true);
   } else if (c.kind === 'net') {
     const n = def.net!;
     e.netCd = n.every;
     // the same two outs as a bolt: walk out of its reach, or put rock between you and it
-    if (p.dead || isFlying(p) || rolling(p) || dist(e, p) > n.range + 2) return;
+    if (p.dead || isFlying(p) || rolling(p) || clearsGround(p) || dist(e, p) > n.range + 2) return; // a net is thrown low: a hop over it is a dodge
     if (!clearLine(e, p)) return void s.events.push({ t: 'blocked', id: e.id, x: e.x, z: e.z });
     // light on your feet: Agility is how much of the hold you shrug off, and the shooter only backs away for as long as it has you
     const held = netHold(p, n.duration);

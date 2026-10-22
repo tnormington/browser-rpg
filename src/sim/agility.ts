@@ -8,7 +8,7 @@
 import type { GameState, Player } from '../sim';
 import { grantXp } from './skills';
 import { MAX_LEVEL } from './xp';
-import { JUMP_VELOCITY } from './data';
+import { GRAVITY, JUMP_VELOCITY } from './data';
 
 export const SPRINT_SPEED = 9;        // u/s with shift held, against foot speed's 6 and the first mount's 10: a horse is still the faster way to travel
 export const STAMINA_BASE = 100;      // the meter at Agility 1
@@ -80,14 +80,19 @@ export const JUMP_LIFT = 0.25;
 export const jumpVelocity = (p: Player) => JUMP_VELOCITY * (1 + JUMP_LIFT * ladder(p));
 
 /**
- * The double jump (HOM-151): one more takeoff in the air per hop, behind an Agility level. These three are placeholders until
- * the bible's action layer (HOM-150) rules on them -- the capability is what is built, and each number is one line here.
- * The second push replaces the vertical speed rather than adding to it, at this share of a full takeoff.
+ * The double jump (HOM-151, ruled on in docs/action-layer.md 4): one more takeoff in the air per hop, behind an Agility level.
+ * The second push replaces the vertical speed rather than adding to it, and is aimed at a fixed height above the floor under
+ * the player, not at a share of a takeoff: a hoard's rooftop is 2.6 or 2.8 up, so the apex has to be the same at every
+ * Agility level and every press time, or the roof is a different height for different players.
  */
-export const DOUBLE_JUMP_LEVEL = 10;
-export const DOUBLE_JUMP_SHARE = 0.85;
-export const DOUBLE_JUMP_COST = 0; // stamina; free until the bible says otherwise
-export const canDoubleJump = (p: Player) => p.skills.agility.level >= DOUBLE_JUMP_LEVEL && p.stamina >= DOUBLE_JUMP_COST;
+export const DOUBLE_JUMP_LEVEL = 25;
+export const DOUBLE_JUMP_APEX = 3.2;    // u above the floor the second push peaks at
+export const DOUBLE_JUMP_CEILING = 2.9; // a press higher than this does nothing (it would overshoot the apex's meaning) and is not spent
+export const DOUBLE_JUMP_COST = 40;     // stamina, against a roll's 45 and a meter of 220 at the level it unlocks
+export const canDoubleJump = (p: Player, rise: number) =>
+  p.skills.agility.level >= DOUBLE_JUMP_LEVEL && p.stamina >= DOUBLE_JUMP_COST && rise <= DOUBLE_JUMP_CEILING;
+/** The vertical speed that peaks at DOUBLE_JUMP_APEX from `rise` units above the floor (rising is at GRAVITY, so the apex is v^2 / 2g). */
+export const doubleJumpVelocity = (rise: number) => Math.sqrt(2 * GRAVITY * (DOUBLE_JUMP_APEX - rise));
 
 /**
  * The dodge-roll: a burst along the ground that nothing can touch you during, paid for out of the sprint meter.
