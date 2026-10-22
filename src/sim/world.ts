@@ -624,6 +624,8 @@ const spireLandmarks = {
   spireKeeper: { ...at(SPIRE, -10, 22), r: 0.7 },
   /** The provisioner: buys the bag, mends the gear. */
   spireVendor: { ...at(SPIRE, 14, 26), r: 0.7 },
+  /** The trainer, on a dais of his own between the forge and the Keeper: the Spire's half of the road's abilities (HOM-200; the vendor itself is HOM-201's). */
+  spireTrainer: { ...at(SPIRE, -14, 36), r: 0.7 },
   /** The forge: the top of the metal ladder is smelted here, a few paces from the road in (the second forge in the world). */
   forgeSpire: at(SPIRE, -26, 38),
   /** The rune circle: the enchanter's station (HOM-112), across the square from the forge. */
@@ -978,7 +980,7 @@ export const REGIONS: Region[] = [
       ...SPIRE_GATES.map(g => ({ x0: g.span[0], x1: g.span[1], z0: g.at - 8, z1: SPIRE.z - 66 })),
     ],
     obstacles: [
-      ...SPIRE_HOUSES, SPIRE_FORGE, SPIRE_CIRCLE, SPIRE_TOWER,...SPIRE_RUINS, ...SPIRE_HEADSTONES, { ...spireLandmarks.flightSpire, kind: 'person' }, { ...spireLandmarks.boardSpire, kind: 'board' }, { ...spireLandmarks.spireKeeper, kind: 'person' }, { ...spireLandmarks.spireVendor, kind: 'person' },
+      ...SPIRE_HOUSES, SPIRE_FORGE, SPIRE_CIRCLE, SPIRE_TOWER,...SPIRE_RUINS, ...SPIRE_HEADSTONES, { ...spireLandmarks.flightSpire, kind: 'person' }, { ...spireLandmarks.boardSpire, kind: 'board' }, { ...spireLandmarks.spireKeeper, kind: 'person' }, { ...spireLandmarks.spireVendor, kind: 'person' }, { ...spireLandmarks.spireTrainer, kind: 'person' },
       ...SPIRE_GATES.map(g => ({ ...g.post, r: 0.55, kind: 'person' as const })),
     ],
     tall: [...SPIRE_HOUSES, SPIRE_FORGE, SPIRE_TOWER,...SPIRE_RUINS.filter(o => o.r >= 1.5)],

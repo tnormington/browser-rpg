@@ -638,12 +638,27 @@ export class WorldView {
     const toward = (at: { x: number; z: number }) => Math.atan2(sq.x - at.x, sq.z - at.z + 0.01) + Math.PI;
     this.person(add, LANDMARKS.spireKeeper, 0x4a3a62, 'cap', toward(LANDMARKS.spireKeeper), t.picks.npc, 'spire', 0x2a2040);
     this.person(add, LANDMARKS.spireVendor, 0x5a5a38, 'brim', toward(LANDMARKS.spireVendor), t.picks.vendor, 'spire');
-    for (const l of [LANDMARKS.spireKeeper, LANDMARKS.spireVendor]) lampPost(bag, l.x + 1.4, l.z - 1.1, 0, 6);
+    this.person(add, LANDMARKS.spireTrainer, 0x34384e, 'cap', toward(LANDMARKS.spireTrainer), t.picks.trainer, 'spire_trainer', 0x1c2236);
+    this.spireTrainerStation(bag, LANDMARKS.spireTrainer);
+    for (const l of [LANDMARKS.spireKeeper, LANDMARKS.spireVendor, LANDMARKS.spireTrainer]) lampPost(bag, l.x + 1.4, l.z - 1.1, 0, 6);
     lampPost(bag, LANDMARKS.forgeSpire.x - 2.4, LANDMARKS.forgeSpire.z + 3.2, 0, 5); // the smith works late
     this.spireTower(bag, sq);
     this.runeCircle(bag, LANDMARKS.circle);
     for (let n = 0, z = SPIRE.z + 66; z > sq.z + 6; n++, z -= 13) lampPost(bag, SPIRE.x + (n % 2 ? 4.4 : -4.4), z, 0, 5.5);
     this.emit(bag, add, SPIRE_PAL);
+  }
+
+  /**
+   * The Spire's trainer's station: a low two-tier dais of the Spire's pale stone under his feet, a sparring pillar beside it (a snapped column cut with old blade-scars and one cold rune slit),
+   * and a rack of three leaning stone blanks behind. The only thing in the square that tells a passer-by what he is for.
+   */
+  private spireTrainerStation(bag: Bag, at: { x: number; z: number }) {
+    bag.marble.push(place(new THREE.CylinderGeometry(2.1, 2.3, 0.22, 8), at.x, 0.11, at.z), place(new THREE.CylinderGeometry(1.5, 1.7, 0.22, 8), at.x, 0.33, at.z));
+    const px = at.x - 2.6, pz = at.z + 0.4;
+    bag.marble.push(place(new THREE.CylinderGeometry(0.5, 0.62, 2.1, 7), px, 1.05, pz), place(new THREE.BoxGeometry(0.9, 0.35, 0.7), px, 2.2, pz, 0.5, 1, 1, 1)); // the pillar and its torn cap
+    for (let n = 0; n < 3; n++) bag.dark.push(place(new THREE.BoxGeometry(0.7, 0.05, 0.05), px + 0.1, 0.8 + n * 0.4, pz + 0.55, 0.5 + n * 0.5)); // blade-scars
+    bag.rune.push(place(new THREE.BoxGeometry(0.07, 0.8, 0.05), px - 0.2, 1.3, pz + 0.55, 0));
+    for (let n = 0; n < 3; n++) bag.marble.push(place(new THREE.BoxGeometry(0.22, 2.1 - n * 0.2, 0.1).rotateZ(0.25 + n * 0.05), at.x + 2.4 + n * 0.38, 1, at.z - 0.9, 0.2)); // the rack of blanks
   }
 
   /**
