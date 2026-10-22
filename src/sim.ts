@@ -352,7 +352,8 @@ function movePlayer(s: GameState, input: Input, dt: number) {
   const px = p.x, pz = p.z;
   p.x += dx * speed * dt;
   p.z += dz * speed * dt;
-  resolveCollisions(p, PLAYER_RADIUS);
+  if (p.mounted) { const at = { x: p.x, z: p.z, y: 0 }; resolveCollisions(at, PLAYER_RADIUS); p.x = at.x; p.z = at.z; } // a horse does not climb: every top is a wall (action-layer 6 rule 5)
+  else resolveCollisions(p, PLAYER_RADIUS);
   holdAtGates(s, px, pz);
   holdDoor(s, { x: px, z: pz });
 
@@ -385,14 +386,14 @@ function stepVertical(s: GameState, wantsJump: boolean, dt: number) {
   const p = s.player;
   const press = wantsJump && !p.jumpHeld; // the edge of the key: a held key hops on landing, but only a press spends the double jump
   p.jumpHeld = wantsJump;
-  const floor = perchAt(p.x, p.z, p.y)?.top ?? 0;
+  const floor = p.mounted ? 0 : perchAt(p.x, p.z, p.y)?.top ?? 0;
   const grounded = p.vy === 0 && p.y <= floor;
   if (grounded) { p.y = floor; p.airJumped = false; }
   if (wantsJump && grounded) {
     p.vy = jumpVelocity(p); // Agility pushes off harder, and height goes as the square of it
     p.action = null; // like moving, hopping breaks the concentration of a gather or craft
     s.events.push({ t: 'jump', airtime: jumpAirtime(p.vy) });
-  } else if (press && !grounded && !p.airJumped && canDoubleJump(p, p.y - floor)) {
+  } else if (press && !grounded && !p.airJumped && !p.mounted && canDoubleJump(p, p.y - floor)) {
     p.airJumped = true;
     p.stamina -= DOUBLE_JUMP_COST;
     p.vy = doubleJumpVelocity(p.y - floor); // a fixed apex above the floor, whatever the Agility or the press time
@@ -405,7 +406,7 @@ function stepVertical(s: GameState, wantsJump: boolean, dt: number) {
   p.y += p.vy * dt - 0.5 * g * dt * dt;
   p.vy -= g * dt;
   // a descent lands on the highest top at or below where it started this tick, so a fast fall cannot tunnel through one
-  const land = p.vy <= 0 ? perchAt(p.x, p.z, was)?.top ?? 0 : -Infinity;
+  const land = p.vy <= 0 ? (p.mounted ? 0 : perchAt(p.x, p.z, was)?.top ?? 0) : -Infinity;
   if (p.y <= land) {
     p.y = land; p.vy = 0; p.airborne = false; p.airJumped = false;
     s.events.push({ t: 'land', x: p.x, z: p.z });
