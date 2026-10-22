@@ -20,6 +20,7 @@ import { BOULDERS_PER_FACTOR, ringPoints } from './sim/stress';
 import { Animator, LEAD, TELLS } from './anim';
 import { SILHOUETTES, Silhouette, mergeParts } from './creatures';
 import { PROPS, PropId } from './props';
+import { ECHO_BODY, ECHO_GLOW, ECHO_MIX, ECHO_RIM, ECHO_SHIMMER, EchoBand, echoBand, echoLevelOf } from './echo-look';
 import { PlayerGear } from './gear';
 import { MountRig, MOUNT_LOOKS, mountLookId } from './mount';
 import { FOOT_SPEED, bestMount, moveSpeed } from './sim/mounts';
@@ -1154,6 +1155,7 @@ export class Renderer {
     a.anim = new Animator(inst.root, inst.clips, SLOTS[slotOf(a.type) as 'boar'].anim);
     const kit = SILHOUETTES[a.type];
     if (kit) this.dressKit(a, inst.root, kit());
+    if (a.echo) this.setEcho(a, a.echo); // the model's materials are new: the dye goes on them too
   }
 
   /** What makes a re-skinned rig a different creature (creatures.ts): squash and lean the rig, add its layers, hang a light from its hand. */
@@ -1458,7 +1460,47 @@ export class Renderer {
     this.scene.add(group);
     let tele: Actor['tele'];
     if (def.heavy) tele = this.makeTele(def.heavy.radius); // the ground circle a slam lands in: an outline that stays, and a fill that grows to meet it
-    this.actors.set(e.id, { group, body, nose, ring, tele, mats: [mat], type: e.type, scale: lookScale(e.type), glow, px: e.x, pz: e.z, cx: e.x, cz: e.z, swing: 0, flash: 0, dead: false, t: e.id });
+    this.actors.set(e.id, { group, body, nose, ring, tele, mats: [mat], type: e.type, scale: lookScale(e.type), glow, px: e.x, pz: e.z, cx: e.x, cz: e.z, swing: 0, flash: 0, dead: false, t: e.id, echo: null });
+  }
+
+  /**
+   * Dress an enemy as the band's Echo, or take it off (null): the body's own colour pulled toward the band hue, a cold rim light on every facet's edge (emissive, so it
+   * holds in the dark and under rain), and a ring of dashes in the band colour on the ground inside the red one. Idempotent; the colours are remembered per material so
+   * an Echo that respawns as the authored thing gets its own back. The Echo's glow replaces the hostile red-brown a rested enemy carries.
+   */
+  private setEcho(a: Actor, band: EchoBand | null) {
+    a.echo = band;
+    a.glow = band ? new THREE.Color(band.color).multiplyScalar(ECHO_GLOW).getHex() : emissiveOf(a.type);
+    for (const m of a.mats) {
+      m.userData.echoBase ??= m.color.clone();
+      m.color.copy(m.userData.echoBase);
+      if (band) m.color.lerp(new THREE.Color(band.color).multiplyScalar(ECHO_BODY), ECHO_MIX);
+      if (!m.userData.echoRim) {
+        const rim = m.userData.echoRim = { value: new THREE.Color(0) };
+        m.onBeforeCompile = sh => {
+          sh.uniforms.echoRim = rim;
+          sh.fragmentShader = sh.fragmentShader
+            .replace('uniform vec3 emissive;', 'uniform vec3 emissive;\nuniform vec3 echoRim;')
+            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += echoRim * pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 2.2);');
+        };
+        m.customProgramCacheKey = () => 'echo-rim';
+        m.needsUpdate = true;
+      }
+      m.userData.echoRim.value.setHex(band ? band.color : 0).multiplyScalar(band ? ECHO_RIM : 0);
+    }
+    if (band) {
+      if (!a.echoRing) {
+        const r = ENEMY_TYPES[a.type].radius, arcs: THREE.BufferGeometry[] = [];
+        for (let i = 0; i < 10; i++) arcs.push(new THREE.RingGeometry(r * 0.78, r * 0.98, 4, 1, (i / 10) * Math.PI * 2, Math.PI * 2 / 10 * 0.55).rotateX(-Math.PI / 2));
+        a.echoRing = new THREE.Mesh(mergeGeometries(arcs)!, new THREE.MeshBasicMaterial({ color: band.color, transparent: true, opacity: 0.85, fog: false, depthWrite: false, side: THREE.DoubleSide }));
+        a.echoRing.position.y = 0.075;
+        a.echoRing.renderOrder = 1;
+        a.echoRing.raycast = () => {};
+        a.group.add(a.echoRing);
+      }
+      (a.echoRing.material as THREE.MeshBasicMaterial).color.setHex(band.color);
+    }
+    if (a.echoRing) a.echoRing.visible = !!band;
   }
 
   /** A danger circle on the ground: an outline that pulses and a fill that grows to meet it. The radius is fixed per type. */
@@ -2125,6 +2167,8 @@ export class Renderer {
     const a = this.actors.get(e.id);
     if (!a) return; // not built yet: it is further than ACTOR_RANGE from the player
     const g = a.group, an = a.anim, dead = e.state === 'dead';
+    const band = echoBand(echoLevelOf(e) ?? 0);
+    if (band !== a.echo) this.setEcho(a, band); // the sim re-rolls a spawn as an Echo (or back) on the same enemy
     g.visible = !dead || e.deadFor < 2;
     g.position.set(a.px + (a.cx - a.px) * alpha, 0, a.pz + (a.cz - a.pz) * alpha);
     // past the fog a model is invisible but still costs a skinned draw and a mixer update: skip both
@@ -2184,10 +2228,15 @@ export class Renderer {
         (a.ground.outline.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * pulse;
       }
     }
-    if (dead) for (const m of a.mats) m.emissive.setHex(0x000000); // a corpse takes no hostile tint and no hit flash (hitFlash stops ticking on death)
+    if (dead) for (const m of a.mats) { m.emissive.setHex(0x000000); (m.userData.echoRim?.value as THREE.Color | undefined)?.setHex(0); } // a corpse takes no hostile tint, no hit flash (hitFlash stops ticking on death) and no rim
     else if (e.hitFlash > 0) for (const m of a.mats) m.emissive.setHex(P.bloodLight).multiplyScalar(0.7 * Math.min(1, e.hitFlash / 0.12)); // a flash that fades, never so hot the model loses its facets
     else if (wind > 0) for (const m of a.mats) m.emissive.setRGB(0.12 + 0.38 * wind * (0.6 + 0.4 * pulse), 0.06, 0.03);
+    else if (a.echo) { // an Echo breathes, each out of step with the next
+      const s = 1 - ECHO_SHIMMER.depth * (0.5 + 0.5 * Math.sin(performance.now() / 1000 * Math.PI * 2 / ECHO_SHIMMER.period + a.t * 1.7));
+      for (const m of a.mats) { m.emissive.setHex(a.glow).multiplyScalar(s); (m.userData.echoRim?.value as THREE.Color | undefined)?.setHex(a.echo.color).multiplyScalar(ECHO_RIM * s); }
+    }
     else for (const m of a.mats) m.emissive.setHex(a.glow);
+    if (a.echoRing) { a.echoRing.rotation.y += dt * 0.35; a.echoRing.visible = !dead && !!a.echo; }
     if (e.stagger > 0 && !dead) for (const m of a.mats) m.emissive.setRGB(0.5, 0.45, 0.1); // stunned: a dull gold flash
     a.ring.scale.setScalar(wind > 0 ? 1 + 0.25 * pulse : 1);
     a.ring.visible = !dead && Math.hypot(g.position.x - this.camera.position.x, g.position.z - this.camera.position.z) < FOG.far;
@@ -2199,6 +2248,8 @@ interface Actor {
   body: THREE.Mesh;
   nose: THREE.Mesh;
   ring: THREE.Mesh;
+  /** The Echo band this actor is dressed as, or null for the authored enemy (echo-look.ts), and the band-coloured dashes on the ground it brings. */
+  echo: EchoBand | null; echoRing?: THREE.Mesh;
   tele?: { root: THREE.Group; fill: THREE.Mesh; outline: THREE.Mesh };
   /** The mark a 'ground' cast lays under the player: made on first use, at the spot the sim fixed. */
   ground?: { root: THREE.Group; fill: THREE.Mesh; outline: THREE.Mesh; rock?: THREE.Mesh };
