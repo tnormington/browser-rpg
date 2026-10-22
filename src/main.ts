@@ -5,6 +5,7 @@ import type { InvAction } from './sim/inventory';
 import type { ShopAction } from './sim/shop';
 import type { EnchantAction } from './sim/enchanting';
 import type { AdminAction } from './sim/admin';
+import type { EchoSetting } from './sim/echo';
 import type { BountyAction } from './sim/bounties';
 import type { Interact } from './sim';
 import type { WeatherKind } from './weather';
@@ -45,6 +46,7 @@ let pendingCraft: { recipe: string; count: number } | null = null;
 let pendingAdvance: boolean | 'road' = false;
 let pendingTalent: string | null = null, pendingTalentReset = false;
 let pendingFlight: string | null = null;
+let pendingEcho: EchoSetting | undefined;
 
 // --- save / load ---
 const AUTOSAVE_EVERY = 20; // seconds
@@ -70,6 +72,7 @@ const hud = new Hud((x, y, z) => view.showingMap ? null : view.project(x, y, z),
     return view.quality;
   },
   // the QA panel, and with it the admin actions, exists only in a debug build: a player's game has no way to raise one
+  echo: to => { pendingEcho = to; saveDirty = true; },
   admin: debug ? (a: AdminAction) => { pendingAdmin.push(a); saveDirty = true; } : undefined,
   save: () => hud.note(save() ? 'Game saved.' : 'Could not save (browser storage unavailable).', 'log-info'),
   newGame: () => {
@@ -256,8 +259,9 @@ function readInput(): Input {
     talent: pendingTalent,
     talentReset: pendingTalentReset,
     flight: pendingFlight,
+    echo: pendingEcho,
   };
-  pendingFlight = null;
+  pendingFlight = null; pendingEcho = undefined;
   pendingInteract = null; pendingCraft = null; pendingAdvance = false; pendingTalent = null; pendingTalentReset = false;
   pendingEnemy = null; pendingTab = false; pendingAttack = false; pendingMount = false; pendingJump = false; pendingRoll = false; pendingClear = false;
   return input;

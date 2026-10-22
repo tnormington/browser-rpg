@@ -60,6 +60,7 @@ export interface HudActions {
   save: () => void;
   newGame: () => void;
   quality: (toggle: boolean) => import('./post').Quality;
+  echo: (to: import('./sim/echo').EchoSetting) => void;
   /** Dev tooling: present only when main.ts has the debug flag on, and the only thing that builds the QA panel. */
   admin?: (a: AdminAction) => void;
 }
@@ -182,7 +183,7 @@ export class Hud {
   private msg: HTMLElement;
   private banner: HTMLElement;
   private deathOverlay: HTMLElement;
-  private plates = new Map<number, { root: HTMLElement; fill: HTMLElement; cast: HTMLElement; castFill: HTMLElement }>();
+  private plates = new Map<number, { root: HTMLElement; name: HTMLElement; fill: HTMLElement; cast: HTMLElement; castFill: HTMLElement }>();
   private floaters: Floater[] = [];
   private msgAge = 99;
   private msgHold = MSG_HOLD;
@@ -838,12 +839,13 @@ export class Hud {
       let plate = this.plates.get(e.id);
       if (!plate) {
         const root = el(this.root, 'plate');
-        const def = defOf(e);
-        el(root, 'pname', `${def.name} ${def.level}`);
+        const name = el(root, 'pname');
         const cast = el(root, 'bar thin pcast');
-        plate = { root, fill: el(el(root, 'bar thin pbar'), 'fill'), cast, castFill: el(cast, 'fill') };
+        plate = { root, name, fill: el(el(root, 'bar thin pbar'), 'fill'), cast, castFill: el(cast, 'fill') };
         this.plates.set(e.id, plate);
       }
+      const def = defOf(e), title = `${def.name} ${def.level}`; // read every frame: the plate outlives the enemy's row, and an Echo respawns at a new level
+      if (plate.name.textContent !== title) plate.name.textContent = title;
       plate.root.style.display = 'block';
       plate.root.style.transform = `translate(${scr.x}px, ${y}px) translate(-50%, -100%)`;
       plate.fill.style.width = `${(e.hp / e.maxHp) * 100}%`;
@@ -882,6 +884,7 @@ export class Hud {
     this.dock.settle(this.dockWindows);
     this.mapUi.update(s);
     this.adminUi?.update(s);
+    this.menuUi.update(s);
     this.updateCastBar(s);
     this.updateNodePlates(s, blockers);
 

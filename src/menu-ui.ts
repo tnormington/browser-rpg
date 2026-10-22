@@ -2,6 +2,16 @@
 import { el } from './dom';
 import type { Quality } from './post';
 import { helpSeen, markHelpSeen } from './storage';
+import { ECHO_STEPS, echoUnlocked, type EchoSetting } from './sim/echo';
+import type { GameState } from './sim';
+
+/** What each setting is worth (docs/combat-99.md 3.4): the XP against Standard, and the health an Echo's fight costs against it. */
+const ECHO_ROWS: { to: EchoSetting; label: string; tip: string }[] = [
+  { to: null, label: 'Off', tip: 'The world as it was authored.' },
+  { to: -3, label: 'Easy 0.66x', tip: 'Echoes stand 3 levels under you: 0.66x the XP of Standard, for 9 to 13 % less health cost.' },
+  { to: 0, label: 'Standard 1x', tip: 'Echoes stand at your level: the XP the fight is balanced around.' },
+  { to: 3, label: 'Hard 1.49x', tip: 'Echoes stand 3 levels over you: 1.49x the XP of Standard, for 10 to 17 % more health cost.' },
+];
 
 const CONTROLS: [string, string][] = [
   ['W A S D', 'Move (relative to the camera). The keys are the only thing that moves you: clicking the ground never does'],
@@ -40,8 +50,10 @@ const CONTROLS: [string, string][] = [
 
 export class MenuUi {
   private overlay: HTMLElement;
+  private echoRow: HTMLElement;
+  private echoBtns = new Map<EchoSetting, HTMLElement>();
 
-  constructor(root: HTMLElement, actions: { save: () => void; newGame: () => void; quality: (toggle: boolean) => Quality }) {
+  constructor(root: HTMLElement, actions: { save: () => void; newGame: () => void; quality: (toggle: boolean) => Quality; echo: (to: EchoSetting) => void }) {
     this.overlay = el(root, 'panel helpoverlay');
     el(this.overlay, 'helptitle', 'Welcome to the Clearing');
     el(this.overlay, 'helpgoal', 'Talk to Warden Hale, hunt, mine, forge a blade, and slay the Cave Brute. Your quest tracker (top left) always shows the next step and an arrow to follow.');
@@ -55,6 +67,16 @@ export class MenuUi {
     const bar = el(root, 'menubar');
     for (const [label, fn] of [['? Help (H)', () => this.toggle()], ['Save', actions.save], ['New Game', actions.newGame]] as const) {
       el(bar, 'btn mbtn', label).addEventListener('click', fn);
+    }
+    this.echoRow = el(bar, 'echorow');
+    this.echoRow.style.display = 'none'; // until the Seal is broken (quest.eighth done)
+    const label = el(this.echoRow, 'echolabel', 'Echoes:');
+    label.title = 'Enemies that respawn as copies of themselves at your level, from their next respawn on.';
+    for (const { to, label: text, tip } of ECHO_ROWS) {
+      const b = el(this.echoRow, 'btn mbtn echoopt', text);
+      b.title = tip;
+      b.addEventListener('click', () => actions.echo(to));
+      this.echoBtns.set(to, b);
     }
     const quality = el(bar, 'btn mbtn', '');
     quality.title = 'Graphics quality: High has bloom, ambient occlusion and a colour grade; Low renders straight to the screen';
@@ -73,4 +95,12 @@ export class MenuUi {
   }
 
   toggle() { this.setOpen(!this.isOpen); }
+
+  /** The Echo row shows once the Seal is broken and marks the setting the sim holds. It only reads: a click sends the sim an input. */
+  update(s: GameState) {
+    const on = echoUnlocked(s);
+    this.echoRow.style.display = on ? 'flex' : 'none';
+    if (!on) return;
+    for (const to of ECHO_STEPS) this.echoBtns.get(to)!.classList.toggle('sel', to === s.player.echo);
+  }
 }
