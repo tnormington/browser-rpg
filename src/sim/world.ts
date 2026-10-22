@@ -14,7 +14,7 @@ import { PERCHES } from './perches';
 export const PLAYER_RADIUS = 0.5;
 
 /** What an obstacle is, for whatever draws it: the sim only ever reads the circle. Absent means a rock (or, in the clearing, whatever it always was). */
-export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'rack' | 'barrow' | 'forge' | 'ruin' | 'circle' | 'signpost' | 'shrine' | 'wayfire' | 'tower';
+export type PropKind = 'rock' | 'tree' | 'hut' | 'cart' | 'house' | 'inn' | 'hull' | 'crate' | 'person' | 'grave' | 'thornoak' | 'alembic' | 'rack' | 'barrow' | 'forge' | 'ruin' | 'circle' | 'signpost' | 'shrine' | 'wayfire' | 'tower' | 'board';
 export interface Obstacle {
   x: number; z: number; r: number; kind?: PropKind;
   /**
@@ -115,6 +115,8 @@ const clearingLandmarks = {
   vendor: { x: -5, z: 3, r: 0.7 },
   /** The flight master, just inside the east gate (design 5.1): the first thing the road's far end shows you too. */
   flightHale: { x: 26, z: 1, r: 0.7 },
+  /** The notice board (sim/bounties.ts): north of where a new game starts, clear of every line the clearing's tests walk. */
+  boardHale: { x: 3.5, z: -5, r: 0.9 },
 };
 const ridgeLandmarks = { caveMouth: { x: -18, z: -24 } };
 
@@ -272,6 +274,8 @@ const saltLandmarks = {
   range: at(SALTMARROW, -10, -9),
   /** The flight master, just inside the gate from the road. */
   flightSalt: { ...at(SALTMARROW, -54, -5), r: 0.7 },
+  /** The notice board, on the square's west side. */
+  boardSalt: { ...at(SALTMARROW, -34, -2), r: 0.9 },
   /** The quay's root and its end. */
   quayRoot: at(SALTMARROW, 16, 0),
   quayEnd: at(SALTMARROW, 62, 0),
@@ -408,6 +412,8 @@ const thornLandmarks = {
   thornStable: { ...at(THORNWICK, -22, -34), r: 0.7 },
   /** The flight master, just inside the town from the north road. */
   flightThorn: { ...at(THORNWICK, 10, -52), r: 0.7 },
+  /** The notice board, on the square's east side. */
+  boardThorn: { ...at(THORNWICK, 8, -18), r: 0.9 },
   /** The alchemist's bench: a station, for the card that teaches alchemy. */
   alembic: at(THORNWICK, 14, -8),
 };
@@ -516,6 +522,8 @@ const highLandmarks = {
   highSquare: at(HIGHMOOR, -24, 0),
   /** The flight master, just inside the town from the road in from the west. */
   flightHigh: { ...at(HIGHMOOR, -56, 5), r: 0.7 },
+  /** The notice board, on the square's east side. */
+  boardHigh: { ...at(HIGHMOOR, -18, 2), r: 0.9 },
   /** The trainer, a little way off the square: Colossus Blow and Last Stand are bought here. */
   highTrainer: { ...at(HIGHMOOR, -28, -8), r: 0.7 },
   /** The stablemaster, at the west edge of the town: the second mount is bought here. */
@@ -610,6 +618,8 @@ const spireLandmarks = {
   spireSquare: at(SPIRE, 0, 28),
   /** The flight master, just inside the town from the road in from the south. */
   flightSpire: { ...at(SPIRE, 8, 56), r: 0.7 },
+  /** The notice board, on the square's north side. */
+  boardSpire: { ...at(SPIRE, 0, 20), r: 0.9 },
   /** The Keeper of the Spire's ledger: the town's one quest giver (the bible's Q7). */
   spireKeeper: { ...at(SPIRE, -10, 22), r: 0.7 },
   /** The provisioner: buys the bag, mends the gear. */
@@ -679,7 +689,7 @@ export const REGIONS: Region[] = [
     // The outdoor square. Its half-side is live (setWorldHalf), so this rect is mutated in place.
     id: 'clearing', name: 'The Clearing', cave: false, zone: 'hale', cell: 0.25,
     footprint: [{ x0: -30, x1: 30, z0: -30, z1: 30 }],
-    obstacles: [FORGE_BUILDING, { x: 5, z: 2, r: 0.7 }, { x: -5, z: 3, r: 0.7 }, clearingLandmarks.flightHale, ...HALE_HEADSTONES], // forge building, quest giver, the merchant, the flight master, the graveyard's stones
+    obstacles: [FORGE_BUILDING, { x: 5, z: 2, r: 0.7 }, { x: -5, z: 3, r: 0.7 }, clearingLandmarks.flightHale, { ...clearingLandmarks.boardHale, kind: 'board' }, ...HALE_HEADSTONES], // forge building, quest giver, the merchant, the flight master, the graveyard's stones
     tall: [FORGE_BUILDING], // the one outdoor thing big enough to hide behind
     trees: [
       { x: -12, z: 10, r: 1 }, { x: -20, z: 4, r: 1 }, { x: -8, z: 20, r: 1 },
@@ -753,7 +763,7 @@ export const REGIONS: Region[] = [
       { x0: SALTMARROW.x - 70, x1: SALTMARROW.x + 30, z0: SALTMARROW.z - 70, z1: SALTMARROW.z + 70 },
       { x0: SALTMARROW.x + 16, x1: SALTMARROW.x + 62, z0: SALTMARROW.z - 3, z1: SALTMARROW.z + 3 },
     ],
-    obstacles: [SALT_INN, ...SALT_HOUSES, ...SALT_PROPS, { ...saltLandmarks.harbourmaster, kind: 'person' }, { ...saltLandmarks.harbourVendor, kind: 'person' }, { ...saltLandmarks.flightSalt, kind: 'person' }, { ...saltLandmarks.trainer, kind: 'person' }, ...SALT_HEADSTONES],
+    obstacles: [SALT_INN, ...SALT_HOUSES, ...SALT_PROPS, { ...saltLandmarks.harbourmaster, kind: 'person' }, { ...saltLandmarks.harbourVendor, kind: 'person' }, { ...saltLandmarks.flightSalt, kind: 'person' }, { ...saltLandmarks.boardSalt, kind: 'board' }, { ...saltLandmarks.trainer, kind: 'person' }, ...SALT_HEADSTONES],
     tall: [SALT_INN, ...SALT_HOUSES, SALT_PROPS[4]], trees: [],
     rocks: [-14, -8, -2, 4, 10].map((lx, i) => ({ type: 'adamant' as const, ...at(SALTMARROW, lx, i % 2 ? -66 : -64), r: 1.2 })),
     spots: SALT_SPOTS,
@@ -813,7 +823,7 @@ export const REGIONS: Region[] = [
     footprint: [{ x0: THORNWICK.x - 70, x1: THORNWICK.x + 70, z0: THORNWICK.z - 70, z1: THORNWICK.z + 70 }],
     obstacles: [
       ...THORN_HOUSES, THORN_ALEMBIC, ...THORNWOODS, ...THORN_HEADSTONES, { ...THORN_GATE.post, r: 0.55, kind: 'person' },
-      { ...thornLandmarks.thornReeve, kind: 'person' }, { ...thornLandmarks.thornVendor, kind: 'person' }, { ...thornLandmarks.flightThorn, kind: 'person' }, { ...thornLandmarks.thornTrainer, kind: 'person' }, { ...thornLandmarks.thornStable, kind: 'person' },
+      { ...thornLandmarks.thornReeve, kind: 'person' }, { ...thornLandmarks.thornVendor, kind: 'person' }, { ...thornLandmarks.flightThorn, kind: 'person' }, { ...thornLandmarks.boardThorn, kind: 'board' }, { ...thornLandmarks.thornTrainer, kind: 'person' }, { ...thornLandmarks.thornStable, kind: 'person' },
     ],
     tall: [...THORN_HOUSES, ...THORNWOODS],
     trees: [], rocks: [],
@@ -892,7 +902,7 @@ export const REGIONS: Region[] = [
       ...HIGH_GATES.map(g => ({ x0: g.span[0], x1: g.span[1], z0: g.at - 8, z1: HIGHMOOR.z - 66 })),
     ],
     obstacles: [
-      ...HIGH_HOUSES, HIGH_RACK, ...MOOR_ROCKS, ...HIGH_HEADSTONES, { ...highLandmarks.flightHigh, kind: 'person' }, { ...highLandmarks.highTrainer, kind: 'person' }, { ...highLandmarks.highStable, kind: 'person' },
+      ...HIGH_HOUSES, HIGH_RACK, ...MOOR_ROCKS, ...HIGH_HEADSTONES, { ...highLandmarks.flightHigh, kind: 'person' }, { ...highLandmarks.boardHigh, kind: 'board' }, { ...highLandmarks.highTrainer, kind: 'person' }, { ...highLandmarks.highStable, kind: 'person' },
       { ...highLandmarks.highSteward, kind: 'person' }, { ...highLandmarks.highVendor, kind: 'person' },
       ...HIGH_GATES.map(g => ({ ...g.post, r: 0.55, kind: 'person' as const })),
     ],
@@ -968,7 +978,7 @@ export const REGIONS: Region[] = [
       ...SPIRE_GATES.map(g => ({ x0: g.span[0], x1: g.span[1], z0: g.at - 8, z1: SPIRE.z - 66 })),
     ],
     obstacles: [
-      ...SPIRE_HOUSES, SPIRE_FORGE, SPIRE_CIRCLE, SPIRE_TOWER,...SPIRE_RUINS, ...SPIRE_HEADSTONES, { ...spireLandmarks.flightSpire, kind: 'person' }, { ...spireLandmarks.spireKeeper, kind: 'person' }, { ...spireLandmarks.spireVendor, kind: 'person' },
+      ...SPIRE_HOUSES, SPIRE_FORGE, SPIRE_CIRCLE, SPIRE_TOWER,...SPIRE_RUINS, ...SPIRE_HEADSTONES, { ...spireLandmarks.flightSpire, kind: 'person' }, { ...spireLandmarks.boardSpire, kind: 'board' }, { ...spireLandmarks.spireKeeper, kind: 'person' }, { ...spireLandmarks.spireVendor, kind: 'person' },
       ...SPIRE_GATES.map(g => ({ ...g.post, r: 0.55, kind: 'person' as const })),
     ],
     tall: [...SPIRE_HOUSES, SPIRE_FORGE, SPIRE_TOWER,...SPIRE_RUINS.filter(o => o.r >= 1.5)],

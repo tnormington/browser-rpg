@@ -293,9 +293,27 @@ function ledge(): Prop {
   ] };
 }
 
+/**
+ * A notice board (HOM-163): two posts, a weathered backboard under a little roof, and a few pale sheets pinned across it. Front faces +z, feet at y 0, about
+ * 2 wide and 2.3 tall. Plain on purpose: the surface is the UI Designer's to dress, this is only something to walk up to and read.
+ */
+function board(): Prop {
+  const frame = [
+    ...[-0.95, 0.95].map(x => put(new THREE.BoxGeometry(0.14, 2.1, 0.14), x, 1.05, 0)),
+    put(new THREE.BoxGeometry(1.9, 1.15, 0.08), 0, 1.35, 0.02), // the backboard
+    put(new THREE.BoxGeometry(2.2, 0.1, 0.5), 0, 2.2, 0.08, 0.18, 0, 0), // the roof, tipped back
+  ];
+  const sheets = [[-0.6, 1.55, 0.04], [0.05, 1.4, -0.03], [0.62, 1.58, 0.05], [-0.35, 1.12, 0.02], [0.4, 1.1, -0.02]]
+    .map(([x, y, a]) => put(new THREE.BoxGeometry(0.42, 0.52, 0.02), x, y, 0.08, 0, 0, a));
+  return { layers: [
+    { name: 'wood', color: CHEST_WOOD, cls: 'wood', parts: frame },
+    { name: 'notices', color: 0xcfc3a3, cls: 'hide', parts: sheets },
+  ] };
+}
+
 /** Prop id -> its build. A prop is built per use (cheap: a handful of merged layers) and the renderer shares nothing between uses. */
 export const PROPS = {
-  chest: () => chest('closed'), chestOpen: () => chest('open'), chestSpent: () => chest('spent'), ledge,
+  chest: () => chest('closed'), chestOpen: () => chest('open'), chestSpent: () => chest('spent'), ledge, board,
   alembic, herbPatchFen: () => herbPatch('fen'), herbPatchThorn: () => herbPatch('thorn'), thornoak, tanningRack,
   bush: () => bush('green'), bushDry: () => bush('dry'), torch, signpost, wayshrine, wayfire,
 } satisfies Record<string, () => Prop>;

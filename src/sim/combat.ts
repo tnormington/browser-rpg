@@ -11,6 +11,7 @@ import { wearWornGear } from './durability';
 import { refreshGearStats } from './inventory';
 import { rollDrops } from './loot';
 import { questOnKill, questReached } from './quest';
+import { bountyOnKill } from './bounties';
 import { nextRandom } from './rng';
 import { PLAYER_RADIUS, clampToWorld, inSafeZone, nearestTown, perchAt, resolveCollisions, sameSideOfDoor } from './world';
 import { clearLine } from './sight';
@@ -262,6 +263,7 @@ function killEnemy(s: GameState, e: Enemy) {
   s.events.push({ t: 'kill', id: e.id, x: e.x, z: e.z, species: e.type });
   rollDrops(s, e.type, e.x, e.z);
   questOnKill(s, e.type);
+  bountyOnKill(s, e.type, e.region);
   const xp = Math.max(1, Math.round(def.xp * xpParity(def.level, s.player.combat.level))); // the rate at the level the player is when it dies
   if (grantXp(s, 'combat', xp, e.x, e.z) > 0) refreshPlayerStats(s, true); // levelling restores health: a punchy reward
 }

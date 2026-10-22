@@ -1,4 +1,4 @@
-﻿// Authoritative simulation. No Three.js / DOM imports: this module must be able to run server-side.
+// Authoritative simulation. No Three.js / DOM imports: this module must be able to run server-side.
 // Rules live in src/sim/*; this file owns state shape and the fixed-step driver.
 
 import { XpTrack } from './sim/xp';
@@ -15,6 +15,7 @@ import { Buff, updateConsumables } from './sim/consumables';
 import type { Proc } from './sim/procs';
 import type { ChestTier } from './sim/chests';
 import { ShopAction, applyShopAction } from './sim/shop';
+import { BountyAction, BountyState, applyBountyAction, newBounties } from './sim/bounties';
 import { AdminAction, applyAdminAction } from './sim/admin';
 import { Action, Interact, requestInteract, updateAction, updateInteract } from './sim/actions';
 import { QuestState, advanceQuest, newQuest, updateQuest } from './sim/quest';
@@ -188,6 +189,8 @@ export type GameEvent =
   | { t: 'death'; killer: string; wear: { item: string; was: number; now: number }[]; grave: string; run: number; recap: { src: string; what: string; amount: number; heavy: boolean; ago: number }[] } // killer: "Cave Brute: Crushing Slam"; wear: every worn piece and its durability before and after; grave: the graveyard you wake at (its town's name); run: the straight-line walk from there back to where you fell; recap: last hits, oldest first, `ago` seconds before death
   | { t: 'respawn'; town: string }                      // woke at this town's graveyard
   | { t: 'repair'; gold: number; pieces: number }       // a vendor mended this many pieces of gear for this much gold
+  | { t: 'board'; town: string }                        // player reached a notice board (a town id): open its bounties
+  | { t: 'bounty'; what: 'accept' | 'progress' | 'ready' | 'turnin' | 'abandon'; id: string; name: string; kills: number; goal: number; gold: number; xp: number } // a bounty moved (sim/bounties.ts): gold and xp are what it pays on turn-in
   | { t: 'flightmaster'; town: string }                 // player reached a flight master (a town id): open the destinations
   | { t: 'discover'; town: string }                     // a flight master was found for the first time (a town name)
   | { t: 'flight'; phase: 'start' | 'land'; from: string; to: string; price: number }; // a ride began (price paid) or ended; town ids
@@ -204,6 +207,8 @@ export interface GameState {
   nextDropId: number;
   nodes: ResourceNode[];
   quest: QuestState;
+  /** The repeatable objectives (sim/bounties.ts): the ones carried, and how many times each has been handed in. */
+  bounties: BountyState;
   /** Town ids whose flight master has been found: the only places a flight can go (and, later, where a death wakes you). Hale is home. */
   found: string[];
   interact: Interact | null; // the node/forge being used this tick
@@ -225,6 +230,7 @@ export interface Input {
   sprint?: boolean;                             // shift held this tick: run flat out while there is stamina for it (sim/agility.ts)
   roll?: boolean;                               // the roll key pressed this tick: a dodge-roll out of the same meter (sim/agility.ts)
   inv: InvAction[];                             // inventory/equipment actions this tick
+  bounty?: BountyAction[];                      // accept / hand in / drop requests this tick, at the board the player stands at
   shop?: ShopAction[];                          // sell/buy requests this tick (optional like the others added after the first callers)
   enchant?: EnchantAction[];                    // disenchant / enchant requests this tick, at the rune circle
   interact: Interact | null;                    // node or forge clicked this tick: use it, if it is within reach
@@ -270,6 +276,7 @@ export function createState(seed = 1): GameState {
     nextDropId: 1,
     nodes: createNodes(),
     quest: newQuest(),
+    bounties: newBounties(),
     found: [START_TOWN],
     interact: null,
     events: [],
@@ -305,6 +312,7 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     for (const a of input.inv) applyInvAction(s, a);
     for (const a of input.shop ?? []) applyShopAction(s, a);
     for (const a of input.enchant ?? []) applyEnchantAction(s, a);
+    for (const a of input.bounty ?? []) applyBountyAction(s, a);
     if (input.interact) requestInteract(s, input.interact);
     if (input.questAdvance) advanceQuest(s, input.questAdvance);
     if (input.craft) beginCraft(s, input.craft.recipe, input.craft.count);

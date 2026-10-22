@@ -366,7 +366,7 @@ export class WorldView {
       if (top !== undefined && (o.kind === 'rock' || o.kind === undefined)) { standableRock(bag, o, top, ry, i); return; }
       if (top !== undefined && o.kind === 'crate') placeProp(bag, 'ledge', o.x, o.z, ry, 0.6, 1.17); // a crate's top is fixed: its cap sits on the slats
       switch (o.kind) {
-        case 'person': return;
+        case 'person': case 'board': return; // a board is a collider only: render.ts stands the prop (HOM-163)
         case 'signpost': case 'shrine': case 'wayfire': return; // a fork's own: forkDressing places each turned the way its track goes
         case 'thornoak': placeProp(bag, 'thornoak', o.x, o.z, ry, 0.9 + hash(i + 11) * 0.3); return;
         case 'alembic': placeProp(bag, 'alembic', o.x, o.z, Math.atan2(LANDMARKS.thornSquare.x - o.x, LANDMARKS.thornSquare.z - o.z) - Math.PI / 2); return; // the bench's front (+z in its own frame) faces the square

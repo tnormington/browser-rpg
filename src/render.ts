@@ -1,7 +1,7 @@
 // Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, WORLD_HALF } from './sim';
+import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, TOWNS, WORLD_HALF } from './sim';
 import { floorLift, roomIndices } from './floor-stack';
 import { CAVE_MOUTH, CAVE_ROCKS, COLLIDERS, CAVE_PILLARS, CAVE_ROOMS, REGIONS, WITHERING, caveDepth, caveWallPoints, clampToWorld, dungeonAt, inCave, perchAt, regionAt } from './sim/world';
 import { ABILITIES, ENEMY_TYPES, AUTO_RANGE, SPAWNS, GRAVITY, FALL_GRAVITY } from './sim/data';
@@ -11,6 +11,7 @@ import { HARBOURMASTER, HIGH_STEWARD, NPC, SPIRE_KEEPER, THORN_REEVE, harbourMar
 import { nearestSite, stationSites } from './sim/crafting';
 import { VENDOR } from './sim/shop';
 import { CHESTS, isOpened } from './sim/chests';
+import { BOARDS } from './sim/bounties';
 import { Motes, Particles, Rings, Slashes } from './fx';
 import { PostStack, Quality } from './post';
 import { Weather } from './weather';
@@ -303,6 +304,8 @@ export class Renderer {
   private npcParts: THREE.Object3D[] = [];
   private vendorParts: THREE.Object3D[] = [];
   private flightParts: THREE.Mesh[] = [];
+  /** The notice boards (sim/bounties.ts BOARDS), in that order: one standing prop per town. */
+  private boards: THREE.Group[] = [];
   /** The world map: built the first time the map screen or a ride wants it, then kept (one mesh, two uses: see world-map.ts). */
   private mapScene: WorldMap | null = null;
   private mapScreen = false;
@@ -395,6 +398,7 @@ export class Renderer {
     this.world = new WorldView(this.scene, this.kit);
     this.scene.add(flightMasterFigure(this.kit, LANDMARKS.flightHale, { x: 0, z: 6 }, this.flightParts)); // faces the spawn, like the other two
     standableRocks(this.kit, REGIONS.filter(r => r.zone === 'hale' || r.cave).flatMap(r => r.obstacles), o => this.scene.add(o)); // the steps and rooftops of Hale and the caves: render.ts draws those regions itself (HOM-161)
+    this.buildBoards();
     this.scene.add(headstones(this.kit, REGIONS.find(r => r.id === 'clearing')!.obstacles.filter(o => o.kind === 'grave'))); // Hale's graveyard
     this.rings = new Rings(this.scene);
     this.slashes = new Slashes(this.scene);
@@ -1386,6 +1390,17 @@ export class Renderer {
     }
   }
 
+  /** A notice board in every town, turned to face the town's own wake point (where you arrive), and clickable from anywhere you can see it. */
+  private buildBoards() {
+    for (const b of BOARDS) {
+      const town = TOWNS.find(t => t.id === b.id)!, g = this.buildProp('board');
+      g.position.set(b.x, 0, b.z);
+      g.rotation.y = Math.atan2(town.wake.x - b.x, town.wake.z - b.z);
+      this.scene.add(g);
+      this.boards.push(g);
+    }
+  }
+
   /** A chest within sight shows its state: closed (the lock's glint), open for a few seconds after you open it, then spent. Far ones are not drawn at all. */
   private drawChests(s: GameState, nowMs: number) {
     const p = s.player;
@@ -1784,6 +1799,16 @@ export class Renderer {
     return idx === null ? null : CHESTS[idx].id;
   }
 
+  /** The id (a town id) of the notice board under a screen position, or null: the exact ray, then the forgiving volume. */
+  pickBoard(clientX: number, clientY: number, tolerance = 0): string | null {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1), this.camera);
+    const hit = this.raycaster.intersectObjects(this.boards, true)[0];
+    if (hit) return BOARDS[this.boards.findIndex(g => hit.object.parent === g)]?.id ?? null;
+    const idx = tolerance > 0 ? this.pickVolumes(clientX, clientY, tolerance, this.boards.map((g, i) => ({ id: i, x: g.position.x, z: g.position.z, height: 2.3, radius: 1.1 }))) : null;
+    return idx === null ? null : BOARDS[idx].id;
+  }
+
   /** The index into `stationSites('forge')` of the forge building under the click, or null when it lands on none. */
   pickForge(clientX: number, clientY: number): number | null {
     this.raycaster.setFromCamera(
@@ -1840,6 +1865,8 @@ export class Renderer {
     if (node !== null) return { k: 'node', id: node };
     const chest = this.pickChest(clientX, clientY);
     if (chest !== null) return { k: 'chest', id: chest };
+    const board = this.pickBoard(clientX, clientY);
+    if (board !== null) return { k: 'board', id: board };
     if (vendor !== null) return { k: 'vendor', id: vendor };
     if (forge !== null) return { k: 'forge', site: forge };
     if (this.pickRange(clientX, clientY)) return { k: 'range' };
@@ -1853,6 +1880,8 @@ export class Renderer {
       if (nearNode !== null) return { k: 'node', id: nearNode };
       const nearChest = this.pickChest(clientX, clientY, tolerance);
       if (nearChest !== null) return { k: 'chest', id: nearChest };
+      const nearBoard = this.pickBoard(clientX, clientY, tolerance);
+      if (nearBoard !== null) return { k: 'board', id: nearBoard };
     }
     return null;
   }

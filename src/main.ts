@@ -5,6 +5,7 @@ import type { InvAction } from './sim/inventory';
 import type { ShopAction } from './sim/shop';
 import type { EnchantAction } from './sim/enchanting';
 import type { AdminAction } from './sim/admin';
+import type { BountyAction } from './sim/bounties';
 import type { Interact } from './sim';
 import type { WeatherKind } from './weather';
 import { loadGame, loadQuality, saveGame, saveQuality, wipeSave } from './storage';
@@ -39,6 +40,7 @@ const pendingInv: InvAction[] = [];
 const pendingShop: ShopAction[] = [];
 const pendingEnchant: EnchantAction[] = [];
 const pendingAdmin: AdminAction[] = [];
+const pendingBounty: BountyAction[] = [];
 let pendingCraft: { recipe: string; count: number } | null = null;
 let pendingAdvance: boolean | 'road' = false;
 let pendingTalent: string | null = null, pendingTalentReset = false;
@@ -50,6 +52,7 @@ let wiped = stress > 1, saveDirty = false, sinceSave = 0;
 function save(): boolean { return !wiped && saveGame(state); }
 const hud = new Hud((x, y, z) => view.showingMap ? null : view.project(x, y, z), () => view.yaw, {
   fly: to => { pendingFlight = to; saveDirty = true; },
+  bounty: a => { pendingBounty.push(a); saveDirty = true; },
   map: { setScreen: on => view.setMapScreen(on), project: town => view.mapProject(town), projectYou: () => view.mapProjectYou() },
   inv: a => { pendingInv.push(a); saveDirty = true; },
   talent: id => { pendingTalent = id; saveDirty = true; },
@@ -246,6 +249,7 @@ function readInput(): Input {
     shop: pendingShop.splice(0),
     enchant: pendingEnchant.splice(0),
     admin: pendingAdmin.splice(0),
+    bounty: pendingBounty.splice(0),
     interact: pendingInteract,
     craft: pendingCraft,
     questAdvance: pendingAdvance,
@@ -276,7 +280,7 @@ function frame(now: number) {
     const region = regionAt(state.player.x, state.player.z)?.id ?? null;
     if (region !== lastRegion) setAmbience(lastRegion = region);
     trace?.tick(state.events);
-    if (state.events.some(ev => ev.t === 'levelup' || ev.t === 'quest' || ev.t === 'crafted' || ev.t === 'kill' || ev.t === 'talent' || ev.t === 'talentreset' || ev.t === 'flight' || ev.t === 'discover' || ev.t === 'stable' || ev.t === 'mount')) saveDirty = true;
+    if (state.events.some(ev => ev.t === 'levelup' || ev.t === 'quest' || ev.t === 'bounty' || ev.t === 'crafted' || ev.t === 'kill' || ev.t === 'talent' || ev.t === 'talentreset' || ev.t === 'flight' || ev.t === 'discover' || ev.t === 'stable' || ev.t === 'mount')) saveDirty = true;
     acc -= TICK_DT;
   }
   // autosave: soon after anything meaningful, otherwise on a timer

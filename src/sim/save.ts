@@ -17,6 +17,7 @@ import { MAX_GOLD } from './shop';
 import { landingSpot, masterById } from './flight';
 import { mountById } from './mounts';
 import { chestById } from './chests';
+import { ActiveBounty, MAX_ACTIVE, MAX_GOAL, bountyById, targetSig } from './bounties';
 import { maxStamina } from './agility';
 import { mountsAllowed } from './world';
 
@@ -58,6 +59,7 @@ interface SaveFile {
     buffs?: { id: string; left: number }[]; // absent in saves from before cooking: nobody was Well Fed
     chests?: string[];                // chests opened, by id (sim/chests.ts); absent in saves from before them: none were
   };
+  bounties?: { active: { id: string; sig: string; kills: number; goal: number; gold: number; xp: number }[]; done: Record<string, number> }; // the boards' objectives (sim/bounties.ts); absent in saves from before them: none carried, none handed in
   found?: string[]; // flight masters found, by town id: absent in saves from before flights (only home is found)
   quest: { stage: QuestStage; kills: Record<string, number>; second?: Quest2Stage; third?: Quest3Stage; fourth?: Quest4Stage; fifth?: Quest5Stage; sixth?: Quest6Stage; seventh?: Quest7Stage; eighth?: Quest8Stage }; // `second` is absent in saves from before the cave, `third` in saves from before the road
   enemies: { id: number; type: string; deadIn: number }[]; // deadIn > 0: still respawning
@@ -91,6 +93,7 @@ export function serialize(s: GameState): string {
       mounted: p.mounted,
       chests: [...p.chests],
     },
+    bounties: { active: s.bounties.active.map(a => ({ ...a })), done: { ...s.bounties.done } },
     found: [...s.found],
     quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second, third: s.quest.third, fourth: s.quest.fourth, fifth: s.quest.fifth, sixth: s.quest.sixth, seventh: s.quest.seventh, eighth: s.quest.eighth },
     enemies: s.enemies.map(e => ({ id: e.id, type: e.type, deadIn: e.state === 'dead' ? Math.max(0, e.respawnIn) : 0 })),
@@ -209,6 +212,21 @@ export function deserialize(raw: string): GameState | null {
     p.energy = Math.min(p.maxEnergy, num(fp.energy, 0, 1e6, 'energy'));
     // the ceiling follows the Agility level loaded above, so a save made at a lower level cannot carry a longer meter in
     p.stamina = fp.stamina === undefined ? maxStamina(p) : Math.min(maxStamina(p), num(fp.stamina, 0, 1e6, 'stamina'));
+
+    // bounties: matched by id and by the signature of what counts as a kill, so a bounty the table dropped or re-aimed is ignored rather than mis-applied to a live character
+    if (f.bounties !== undefined) {
+      const fb = f.bounties;
+      if (!isObj(fb) || !Array.isArray(fb.active) || !isObj(fb.done)) return null;
+      for (const fa of fb.active) {
+        if (!isObj(fa) || typeof fa.id !== 'string') throw new Error('bad bounty');
+        const d = bountyById(fa.id);
+        if (!d || fa.sig !== targetSig(d) || s.bounties.active.length >= MAX_ACTIVE || s.bounties.active.some(a => a.id === d.id)) continue;
+        const goal = num(fa.goal, 1, MAX_GOAL, 'bounty goal');
+        const a: ActiveBounty = { id: d.id, sig: targetSig(d), goal, kills: Math.min(goal, num(fa.kills, 0, MAX_GOAL, 'bounty kills')), gold: num(fa.gold, 0, MAX_GOLD, 'bounty gold'), xp: num(fa.xp, 0, 1e7, 'bounty xp') };
+        s.bounties.active.push(a);
+      }
+      for (const [id, n] of Object.entries(fb.done)) if (bountyById(id)) s.bounties.done[id] = num(n, 0, 1e9, 'bounty count');
+    }
 
     if (f.found !== undefined) {
       if (!Array.isArray(f.found)) return null;

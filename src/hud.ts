@@ -27,6 +27,7 @@ import { enchantById } from './sim/enchants';
 import type { EnchantAction } from './sim/enchanting';
 import { ShopUi } from './shop-ui';
 import { FlightUi, MapUi, MapView } from './flight-ui';
+import { BoardUi } from './board-ui';
 import { QuestUi } from './quest-ui';
 import { MenuUi } from './menu-ui';
 import { AdminUi } from './admin-ui';
@@ -50,6 +51,7 @@ export interface HudActions {
   sell: (slot: number, qty: number) => void;
   buy: (item: string, qty: number) => void;
   fly: (to: string) => void;
+  bounty: (a: import('./sim/bounties').BountyAction) => void;
   map: MapView;
   learn: (slot: number) => void;
   repair: () => void;
@@ -202,6 +204,7 @@ export class Hud {
   private enchantUi: EnchantUi;
   private shopUi: ShopUi;
   private flightUi: FlightUi;
+  private boardUi: BoardUi;
   private mapUi: MapUi;
   private bookUi: SpellbookUi;
   /** The QA panel, or null in a build without the debug flag. */
@@ -286,6 +289,7 @@ export class Hud {
     this.talentsUi = new TalentsUi(dock, { learn: actions.talent, reset: actions.talentReset });
     this.shopUi = new ShopUi(dock, actions.buy, actions.learn, actions.repair, actions.buyMount);
     this.flightUi = new FlightUi(dock, actions.fly);
+    this.boardUi = new BoardUi(dock, actions.bounty);
     this.mapUi = new MapUi(this.root, actions.map);
     const craft = (r: string, n: number) => { this.acting = true; actions.craft(r, n); };
     this.forgeUi = new ForgeUi(dock, 'forge', 'Forge', craft);
@@ -298,11 +302,11 @@ export class Hud {
     this.bookUi = new SpellbookUi(dock, () => this.bar, a => this.keyForAbility(a), a => this.assign(this.slotOfAbility(a), null));
     if (actions.admin) this.adminUi = new AdminUi(this.root, dock, actions.admin);
     this.menuUi = new MenuUi(this.root, actions);
-    this.windows = [this.mapUi, this.menuUi, this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi, this.enchantUi,
+    this.windows = [this.mapUi, this.menuUi, this.questUi, this.shopUi, this.flightUi, this.boardUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi, this.enchantUi,
       this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char,
       ...(this.adminUi ? [this.adminUi] : [])];
     // every window the dock lays out: all of them but the map (a screen of its own) and the help (a veil over everything)
-    this.dockWindows = [this.questUi, this.shopUi, this.flightUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi, this.enchantUi,
+    this.dockWindows = [this.questUi, this.shopUi, this.flightUi, this.boardUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi, this.enchantUi,
       this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char,
       ...(this.adminUi ? [this.adminUi] : [])];
     this.renderBar();
@@ -472,6 +476,16 @@ export class Hud {
     return line;
   }
 
+  /** The log's line for a bounty moving: taken, a kill counted, finished, handed in or dropped (sim/bounties.ts). */
+  private noteBounty(ev: Extract<GameEvent, { t: 'bounty' }>) {
+    const left = `${ev.kills}/${ev.goal}`;
+    if (ev.what === 'accept') this.note(`Bounty taken: ${ev.name} (0/${ev.goal}).`, 'log-quest');
+    else if (ev.what === 'progress') this.note(`${ev.name}: ${left}`, 'log-quest');
+    else if (ev.what === 'ready') { this.say(`${ev.name}: done`); this.note(`${ev.name}: ${left}. Hand it in at the board.`, 'log-quest'); }
+    else if (ev.what === 'turnin') this.note(`Bounty done: ${ev.name}. ${ev.gold} gold and ${ev.xp} XP.`, 'log-loot');
+    else this.note(`Bounty dropped: ${ev.name}.`, 'log-info');
+  }
+
   /** The centre-screen message: a refusal or a cue, gone in a second. `speech` is a person talking (a keeper): it is set as speech, not as an error, and held long enough to read. */
   say(text: string, speech = false) {
     this.msg.textContent = text;
@@ -526,6 +540,10 @@ export class Hud {
         if (VENDORS.find(v => v.id === ev.vendor)!.stock.length > 0) this.invUi.show('inv'); // selling is done from the bag
       } else if (ev.t === 'flightmaster') {
         this.flightUi.setOpen(true, ev.town);
+      } else if (ev.t === 'board') {
+        this.boardUi.setOpen(true, ev.town);
+      } else if (ev.t === 'bounty') {
+        this.noteBounty(ev);
       } else if (ev.t === 'discover') {
         this.popBanner(this.unlockBanner, `FLIGHT PATH:  ${ev.town}`);
         this.unlockBanner.dataset.sub = 'You can now fly here from any flight master';
@@ -854,6 +872,7 @@ export class Hud {
     this.enchantUi.update(s);
     this.shopUi.update(s);
     this.flightUi.update(s);
+    this.boardUi.update(s);
     this.dock.settle(this.dockWindows);
     this.mapUi.update(s);
     this.adminUi?.update(s);
