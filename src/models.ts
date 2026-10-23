@@ -87,6 +87,9 @@ const UE_RIG: RigMap = {
   UpperLegR: 'thigh_r', LowerLegR: 'calf_r', LowerLegR_end: 'foot_r', FootR: 'foot_r', FootR_end: 'ball_r',
 };
 
+/** A hand-held blade slot: its file's colours are replaced per item by gear.ts, so the look here is only a placeholder. */
+const blade = (file: string): SlotDef => ({ file, height: 1.15, look: { sat: 1, light: 1, named: {} }, surface: { '*': 'metal', Brown: 'hide' } });
+
 export const SLOTS = {
   // Built by scripts/build-player.py out of the three packs: the Peasant set is the figure (the parts ARE the body --
   // what "wearing nothing" renders as), the base character gives the head, and the animation library the clips.
@@ -152,9 +155,33 @@ export const SLOTS = {
   // both read by how wide they are over the skull and the shoulders they clear.
   helmet: { file: 'helmet', footprint: 0.29, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794, DarkGrey: 0x4a525c } }, surface: 'plate' },
   pauldrons: { file: 'pauldrons', footprint: 0.5, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794 } }, surface: 'plate' },
-  sword: { file: 'sword', height: 1.15, look: { sat: 1, light: 1, named: {} }, surface: { '*': 'metal', Brown: 'hide' } },
+  sword: blade('sword'),
+  // One model per weapon (HOM-203), keyed `weapon_<item id>`; `sword` stays the fallback for any weapon without one. All 20 are authored the way sword.glb is:
+  // blade along +Y, broad face across X, butt at the origin, fitted to 1.15 tall, materials Metal / Gold / Red / Brown.
+  weapon_copper_sword: blade('weapon_copper_sword'),
+  weapon_bronze_sword: blade('weapon_bronze_sword'),
+  weapon_rusty_blade: blade('weapon_rusty_blade'),
+  weapon_iron_sword: blade('weapon_iron_sword'),
+  weapon_steel_sword: blade('weapon_steel_sword'),
+  weapon_forged_blade: blade('weapon_forged_blade'),
+  weapon_warden_edge: blade('weapon_warden_edge'),
+  weapon_adamant_blade: blade('weapon_adamant_blade'),
+  weapon_marrows_edge: blade('weapon_marrows_edge'),
+  weapon_stormiron_blade: blade('weapon_stormiron_blade'),
+  weapon_rotroot_edge: blade('weapon_rotroot_edge'),
+  weapon_starmetal_blade: blade('weapon_starmetal_blade'),
+  weapon_crownbreaker: blade('weapon_crownbreaker'),
+  weapon_echo_blade_1: blade('weapon_echo_blade_1'),
+  weapon_echo_blade_2: blade('weapon_echo_blade_2'),
+  weapon_echo_blade_3: blade('weapon_echo_blade_3'),
+  weapon_echo_blade_4: blade('weapon_echo_blade_4'),
+  weapon_echo_blade_5: blade('weapon_echo_blade_5'),
+  weapon_echo_blade_6: blade('weapon_echo_blade_6'),
+  weapon_echo_blade_7: blade('weapon_echo_blade_7'),
 } satisfies Record<string, SlotDef>;
 export type SlotId = keyof typeof SLOTS;
+/** The slot holding the model made for weapon `id`, or null when it has none and the generic sword stands in. */
+export const weaponSlot = (id: string): SlotId | null => `weapon_${id}` in SLOTS ? `weapon_${id}` as SlotId : null;
 
 /**
  * Faces meeting at a shallower angle than this shade as one continuous surface; anything sharper keeps a hard edge.
@@ -166,7 +193,7 @@ const CREASE = Math.cos(45 * Math.PI / 180);
 /**
  * Rewrite a geometry's normals so it shades smoothly: each corner takes the average of the faces meeting at its
  * position that lie within CREASE of its own face. Only the normal attribute is replaced, so the index, the material
- * groups and the skinning attributes all survive — three's `toCreasedNormals` re-indexes and throws those away. The
+ * groups and the skinning attributes all survive â€” three's `toCreasedNormals` re-indexes and throws those away. The
  * pack ships everything flat-shaded (one vertex per face, no sharing), so every corner already has its own normal
  * slot to write into and hard edges stay hard.
  */

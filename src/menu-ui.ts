@@ -5,6 +5,7 @@ import { helpSeen, markHelpSeen } from './storage';
 import { DOUBLE_JUMP_COST, DOUBLE_JUMP_LEVEL } from './sim/agility';
 import { CHEST_TOTAL } from './sim/chests';
 import { ECHO_STEPS, echoUnlocked, type EchoSetting } from './sim/echo';
+import { spentTotal, talentPoints } from './sim/talents';
 import type { GameState } from './sim';
 
 /** What each setting is worth (docs/combat-99.md 3.4): the XP against Standard, and the health an Echo's fight costs against it. */
@@ -14,6 +15,12 @@ const ECHO_ROWS: { to: EchoSetting; label: string; mult?: string; tip: string }[
   { to: 0, label: 'Standard', mult: '1x', tip: 'Echoes stand at your level: the XP the fight is balanced around.' },
   { to: 3, label: 'Hard', mult: '1.49x', tip: 'Echoes stand 3 levels over you: 1.49x the XP of Standard, for 10 to 17 % more health cost.' },
 ];
+
+const ECHO_TIP = 'Enemies that respawn as copies of themselves at your level, from their next respawn on.';
+
+/** What is true about Echoes and unspent talent points (docs/combat-99.md 10.5): the count, where they are spent, and what an Echo is priced against. A fact, not a forecast. */
+const unspentLine = (n: number) =>
+  `You have ${n} unspent talent point${n > 1 ? 's' : ''}: press N to spend ${n > 1 ? 'them' : 'it'}. An Echo is priced for a character who has spent theirs.`;
 
 const CONTROLS: [string, string][] = [
   ['W A S D', 'Move (relative to the camera). The keys are the only thing that moves you: clicking the ground never does'],
@@ -57,8 +64,13 @@ export class MenuUi {
   private overlay: HTMLElement;
   private echoRow: HTMLElement;
   private echoBtns = new Map<EchoSetting, HTMLElement>();
+  private echoLabel: HTMLElement;
+  private echoPts: HTMLElement;
+  private echo: EchoSetting = null; // what the sim held at the last update: a click that turns Echoes on from Off is the one that is told
+  private unspent = 0;
 
-  constructor(root: HTMLElement, actions: { save: () => void; newGame: () => void; quality: (toggle: boolean) => Quality; echo: (to: EchoSetting) => void }) {
+  constructor(root: HTMLElement, actions: { save: () => void; newGame: () => void; quality: (toggle: boolean) => Quality; echo: (to: EchoSetting) => void },
+    note: (text: string, cls: string) => void) {
     this.overlay = el(root, 'panel helpoverlay');
     el(this.overlay, 'helptitle', 'Welcome to the Clearing');
     el(this.overlay, 'helpgoal', 'Talk to Warden Hale, hunt, mine, forge a blade, and slay the Cave Brute. Your quest tracker (top left) always shows the next step and an arrow to follow.');
@@ -75,14 +87,20 @@ export class MenuUi {
     }
     this.echoRow = el(bar, 'echorow');
     this.echoRow.style.display = 'none'; // until the Seal is broken (quest.eighth done)
-    const label = el(this.echoRow, 'echolabel', 'Echoes:');
-    label.title = 'Enemies that respawn as copies of themselves at your level, from their next respawn on.';
+    this.echoLabel = el(this.echoRow, 'echolabel', 'Echoes:');
+    this.echoLabel.title = ECHO_TIP;
+    // HOM-198: the count of talent points left unspent, in the label cell. The row has no width to spare (800px leaves the XP bar 158), so the sentence that goes with it is the
+    // label's tooltip and, once, a line in the log when the player turns Echoes on; the count is what is always there to be asked about. Empty (so gone) when none are left.
+    this.echoPts = el(this.echoLabel, 'echopts');
     for (const { to, label: text, mult, tip } of ECHO_ROWS) {
       const b = el(this.echoRow, 'btn mbtn echoopt');
       el(b, 'echoname', text);
       if (mult) el(b, 'echomult', mult);
       b.title = tip;
-      b.addEventListener('click', () => actions.echo(to));
+      b.addEventListener('click', () => {
+        if (to !== null && this.echo === null && this.unspent > 0) note(unspentLine(this.unspent), 'log-lvl');
+        actions.echo(to);
+      });
       this.echoBtns.set(to, b);
     }
     // the XP bar ends where the menu bar begins, whatever the bar holds (the Echo row makes it twice as long)
@@ -110,6 +128,10 @@ export class MenuUi {
     const on = echoUnlocked(s);
     this.echoRow.style.display = on ? 'flex' : 'none';
     if (!on) return;
+    this.echo = s.player.echo;
+    this.unspent = Math.max(0, talentPoints(s.player.combat.level) - spentTotal(s.player.talents));
+    this.echoPts.textContent = this.unspent > 0 ? String(this.unspent) : ''; // a player who has spent their points never sees it
+    this.echoLabel.title = this.unspent > 0 ? `${ECHO_TIP}\n\n${unspentLine(this.unspent)}` : ECHO_TIP;
     for (const to of ECHO_STEPS) {
       const b = this.echoBtns.get(to)!, sel = to === s.player.echo;
       b.classList.toggle('sel', sel);

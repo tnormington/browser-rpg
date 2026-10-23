@@ -1,4 +1,4 @@
-﻿// Rendering only: reads GameState, never mutates it.
+// Rendering only: reads GameState, never mutates it.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameState, GameEvent, Enemy, LANDMARKS, ResourceNode, TOWNS, WORLD_HALF } from './sim';
@@ -27,7 +27,7 @@ import { FOOT_SPEED, bestMount, moveSpeed } from './sim/mounts';
 import { ROLL_SPEED, ROLL_TIME, SPRINT_SPEED, canDoubleJump } from './sim/agility';
 import { BEACON_INTENSITY, cappedIntensity } from './glow';
 import { HaloSpot, haloMesh, tickHalos } from './halo';
-import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze } from './models';
+import { SLOTS, SlotId, Prepared, loadSlot, spawn, freeze, weaponSlot } from './models';
 import { EdgeView } from './edges-view';
 import { WorldView, flightMasterFigure, hasTop, headstones, standableRocks, Kit } from './world-view';
 import { WorldMap, mapPosition } from './world-map';
@@ -1086,12 +1086,15 @@ export class Renderer {
 
   /** The knight plus the pieces bound to its bones. Everything is attached at the bind pose, before the first animation frame. */
   private async dressPlayer(p: Prepared) {
-    const [helmet, pauldrons, sword] = await Promise.all(
-      (['helmet', 'pauldrons', 'sword'] as const).map(id => loadSlot(id).catch(err => { console.warn(`model slot "${id}" skipped:`, err); return null; })));
+    const skipped = (id: SlotId) => loadSlot(id).catch(err => { console.warn(`model slot "${id}" skipped:`, err); return null; });
+    const bladeIds = Object.keys(ITEMS).filter(id => ITEMS[id].slot === 'weapon' && weaponSlot(id));
+    const [helmet, pauldrons, sword, ...blades] = await Promise.all([skipped('helmet'), skipped('pauldrons'), skipped('sword'), ...bladeIds.map(id => skipped(weaponSlot(id)!))]);
+    const weapons = new Map<string, Prepared>();
+    bladeIds.forEach((id, i) => { if (blades[i]) weapons.set(id, blades[i]!); });
     const inst = spawn(p);
     inst.root.updateMatrixWorld(true);
     // gear is mounted from the sim's equipment record every frame (see gear.ts); nothing is attached unconditionally
-    this.gear = new PlayerGear(inst, { helmet, pauldrons, sword });
+    this.gear = new PlayerGear(inst, { helmet, pauldrons, sword, weapons });
     this.hide(this.weapon);
     this.hide(this.player);
     this.player.add(inst.root);

@@ -494,4 +494,32 @@ withoutProcs(() => {
   assert(witch.loss < 3 && witch.died === 0, `...and a Bog Witch at 60 costs a player who presses it at every wind-up ${witch.loss.toFixed(1)} % of health`);
 });
 
+// ---------------------------------------------------------------------------
+section('HOM-194: the first 41 levels are priced for the bare line; what that means for the character a level has (docs/combat-99.md 11)');
+withoutProcs(() => {
+  // The rows were never re-priced for the talents and this card did not touch them: the ruling (leave them) rests on these figures, pinned so a talent retune or a row change is a decision.
+  const BARE = { talents: false, gear: false }, BULWARK_FIRST = { talents: true, gear: false, build: [...ECHO_TALENTS.build] }, FURY_FIRST = { talents: true, gear: false, build: ['fury', 'bulwark', 'hunt'] as const };
+  const at = (type: string, L: number, kit: { talents: boolean; gear: boolean; build?: readonly ('fury' | 'bulwark' | 'hunt')[] }, policy: Policy, n = 6, seeds = 2) => {
+    const runs = [...Array(seeds).keys()].map(i => pulls(type, L, { kit: { ...kit, build: kit.build && [...kit.build] }, policy }, i + 1, n, { base: { weapon: weaponLine(L), armour: armourLine(L) } }));
+    const r = runs.flatMap(x => x.slice(1));
+    return { ttk: mean(r.map(x => x.ttk)), loss: mean(r.map(x => x.loss)), net: mean(r.map(x => x.net)), died: runs.filter(x => x.some(y => y.died)).length };
+  };
+  const trash: Policy = { pummel: true, dodge: 'all' }, elite: Policy = { pummel: true, dodge: 'none', heal: true, saveHeal: true };
+  // 1. speed: the Echo's reference build (Bulwark first) kills a row as the line does until its Fury points arrive at 39; a Fury-first character is 1.5 to 1.9x quicker from the low 20s
+  for (const [type, L, fast] of [['thornback', 21, 1.4], ['rune_golem', 38, 1.5]] as const) {
+    const a = at(type, L, BARE, trash), b = at(type, L, BULWARK_FIRST, trash), f = at(type, L, FURY_FIRST, trash);
+    assert(Math.abs(a.ttk / b.ttk - 1) <= 0.06 && a.ttk / f.ttk >= fast && a.ttk / f.ttk <= 1.95 && a.died + b.died + f.died === 0,
+      `a ${T[type].name} at ${L}: ${a.ttk.toFixed(1)} s with no talent, ${b.ttk.toFixed(1)} with Bulwark first (x${(a.ttk / b.ttk).toFixed(2)}), ${f.ttk.toFixed(1)} with Fury first (x${(a.ttk / f.ttk).toFixed(2)})`);
+    assert(b.loss <= 0.75 * a.loss, `...and the Bulwark-first character loses ${b.loss.toFixed(0)} % of health to it against ${a.loss.toFixed(0)} %`);
+  }
+  // 2. the elite tier is priced in dodges (docs/world-design.md 3.4a) and a character with Counterstrike and Stalwart is not asked for one: a Bogfather at 21 with nothing answered but Pummel and Second Wind
+  const bare = at('bogfather', 21, BARE, elite), b = at('bogfather', 21, BULWARK_FIRST, elite), f = at('bogfather', 21, FURY_FIRST, elite);
+  assert(bare.net >= 35 && b.net <= 20 && f.net > b.net && f.net < bare.net && bare.died + b.died + f.died === 0,
+    `a Bogfather with no dodge: ${bare.net.toFixed(0)} % net to a character with no talent, ${b.net.toFixed(0)} % with Bulwark first, ${f.net.toFixed(0)} % with Fury first (3.4a's 25 to 80 % spread is the first column)`);
+  // 3. the Greywater Wolf camp, as shipped (470 HP, hit 33, no pack discount: 3.4 flagged it and no card took it): it kills a character with no talent and a Fury-first one at its own level in the steel set.
+  const camp = (kit: Parameters<typeof at>[2]) => pulls('road_wolf', 11, { kit: { ...kit, build: kit.build && [...kit.build] }, policy: { pummel: true, dodge: 'all', cleave: true } }, 1, 3, { base: { weapon: 28, armour: 50 } });
+  assert(camp(BARE).some(x => x.died) && camp(FURY_FIRST).some(x => x.died) && T.road_wolf.hp === 470 && T.road_wolf.damage === 33,
+    'the Greywater Wolf camp at 11 in the steel set kills a character with no talent and a Fury-first one (a known defect, docs/combat-99.md 11: fixing the row is what flips this check)');
+});
+
 console.log(`\n${checks} checks passed`);

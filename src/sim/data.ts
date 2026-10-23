@@ -132,20 +132,20 @@ export const ABILITIES: AbilityDef[] = [
   { name: 'Charge', desc: 'Cover the ground to a distant target in one bound and open with a hit. The way back in after a Sidestep. Learned from the Saltmarrow trainer.',
     kind: 'dash', unlockLevel: 14, damage: 12, weaponMult: 0.8, cost: 15, cooldown: 15, range: 25, minRange: 8,
     dash: { away: false, gap: 2 }, trainer: { vendor: 'trainer', price: 200 } },
-  // The six past level 48 (docs/combat-99.md 6.2, HOM-176): one every ten levels from 50, each bought from Highmoor's trainer (the last one there is) at an hour of that band's gold income
+  // The six past level 48 (docs/combat-99.md 6.2, HOM-176): one every ten levels from 50, each bought from the Sundered Spire trainer (HOM-201; Highmoor's Ravn sold them until then) at an hour of that band's gold income
   // (`(0.6 L + 3) x 1.4 x 90`: 4,158 / 4,914 / 5,670 / 6,426 / 7,182 / 7,862, 36,212 in all). They are the book's 17th to 22nd entries, in the order they open, so no slot a save already holds moves.
-  { name: 'Rampart', desc: 'Off the global cooldown. Three quarters off everything that hits you for 2.5 seconds: the slam you cannot step out of. Learned from the Highmoor trainer.',
-    kind: 'guard', unlockLevel: 50, damage: 0, cost: 20, cooldown: 45, range: 0, offGcd: true, buff: 'rampart', trainer: { vendor: 'high_trainer', price: 4158 } },
-  { name: 'Reaping Blow', desc: 'The big hit, bigger: three and a fifth times your weapon behind it. Learned from the Highmoor trainer.',
-    kind: 'strike', unlockLevel: 60, damage: 90, weaponMult: 3.2, cost: 60, cooldown: 20, range: 3, trainer: { vendor: 'high_trainer', price: 4914 } },
-  { name: 'Shockwave', desc: 'Strike everything around you and stagger all of it, wind-up or no wind-up: a slam answered, and a pair held. Learned from the Highmoor trainer.',
-    kind: 'cleave', unlockLevel: 70, damage: 20, weaponMult: 1, cost: 45, cooldown: 25, range: 4.5, arc: 360, stagger: true, trainer: { vendor: 'high_trainer', price: 5670 } },
-  { name: 'Echo Surge', desc: 'Off the global cooldown. Everything you deal hits 50% harder for 15 seconds, on top of Battle Fury. Learned from the Highmoor trainer.',
-    kind: 'guard', unlockLevel: 80, damage: 0, cost: 40, cooldown: 90, range: 0, offGcd: true, buff: 'echo_surge', trainer: { vendor: 'high_trainer', price: 6426 } },
-  { name: 'Bloodbath', desc: 'Spin and hit everything around you; a third of all that it deals comes back as health, so a pair is a feast. Learned from the Highmoor trainer.',
-    kind: 'cleave', unlockLevel: 90, damage: 12, weaponMult: 1, leech: 0.3, cost: 50, cooldown: 15, range: 4, arc: 360, trainer: { vendor: 'high_trainer', price: 7182 } },
-  { name: 'Final Reckoning', desc: 'Six times your weapon in one blow, and nearly all your energy to throw it. The last button there is. Learned from the Highmoor trainer.',
-    kind: 'strike', unlockLevel: 99, damage: 200, weaponMult: 6, cost: 90, cooldown: 60, range: 3.5, trainer: { vendor: 'high_trainer', price: 7862 } },
+  { name: 'Rampart', desc: 'Off the global cooldown. Three quarters off everything that hits you for 2.5 seconds: the slam you cannot step out of. Learned from the Sundered Spire trainer.',
+    kind: 'guard', unlockLevel: 50, damage: 0, cost: 20, cooldown: 45, range: 0, offGcd: true, buff: 'rampart', trainer: { vendor: 'spire_trainer', price: 4158 } },
+  { name: 'Reaping Blow', desc: 'The big hit, bigger: three and a fifth times your weapon behind it. Learned from the Sundered Spire trainer.',
+    kind: 'strike', unlockLevel: 60, damage: 90, weaponMult: 3.2, cost: 60, cooldown: 20, range: 3, trainer: { vendor: 'spire_trainer', price: 4914 } },
+  { name: 'Shockwave', desc: 'Strike everything around you and stagger all of it, wind-up or no wind-up: a slam answered, and a pair held. Learned from the Sundered Spire trainer.',
+    kind: 'cleave', unlockLevel: 70, damage: 20, weaponMult: 1, cost: 45, cooldown: 25, range: 4.5, arc: 360, stagger: true, trainer: { vendor: 'spire_trainer', price: 5670 } },
+  { name: 'Echo Surge', desc: 'Off the global cooldown. Everything you deal hits 50% harder for 15 seconds, on top of Battle Fury. Learned from the Sundered Spire trainer.',
+    kind: 'guard', unlockLevel: 80, damage: 0, cost: 40, cooldown: 90, range: 0, offGcd: true, buff: 'echo_surge', trainer: { vendor: 'spire_trainer', price: 6426 } },
+  { name: 'Bloodbath', desc: 'Spin and hit everything around you; a third of all that it deals comes back as health, so a pair is a feast. Learned from the Sundered Spire trainer.',
+    kind: 'cleave', unlockLevel: 90, damage: 12, weaponMult: 1, leech: 0.3, cost: 50, cooldown: 15, range: 4, arc: 360, trainer: { vendor: 'spire_trainer', price: 7182 } },
+  { name: 'Final Reckoning', desc: 'Six times your weapon in one blow, and nearly all your energy to throw it. The last button there is. Learned from the Sundered Spire trainer.',
+    kind: 'strike', unlockLevel: 99, damage: 200, weaponMult: 6, cost: 90, cooldown: 60, range: 3.5, trainer: { vendor: 'spire_trainer', price: 7862 } },
 ];
 
 /**

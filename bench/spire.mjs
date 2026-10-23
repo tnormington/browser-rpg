@@ -53,6 +53,7 @@ const views = [
   ['spire-sq-circle', rc.x - 8, rc.z + 7, facing(rc.x - 8, rc.z + 7, rc.x, rc.z)],
   ['spire-sq-forge', fm.x + 8, fm.z + 7, facing(fm.x + 8, fm.z + 7, fm.x, fm.z)],
   ['spire-sq-across', fm.x + 4, fm.z + 4, facing(fm.x + 4, fm.z + 4, rc.x, rc.z)],
+  ['spire-trainer', W.L.spireTrainer.x + 7, W.L.spireTrainer.z + 9, facing(W.L.spireTrainer.x + 7, W.L.spireTrainer.z + 9, W.L.spireTrainer.x, W.L.spireTrainer.z)],
   ['spire-ruins', sq.x, sq.z - 36, NORTH],
 ];
 for (const [name, x, z, yaw] of views) { await stand(x, z, yaw, 900); await page.screenshot({ path: join(shots, name + '.png') }); }

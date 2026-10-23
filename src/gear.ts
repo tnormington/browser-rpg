@@ -2,7 +2,7 @@
 //
 // One PlayerGear owns the figure's bone-mounted pieces. sync() diffs the sim's equipment record against what is mounted and
 // rebuilds only the slot that changed, so swapping gear mid-session (even mid-swing) needs no event from the sim.
-//   weapon -> sword.glb in the right hand, restyled and rescaled per item
+//   weapon -> the item's own blade model (weapon_<id>.glb, else sword.glb) in the right hand, restyled and rescaled per item
 //   head   -> a generated leather cap (rung 1) or helmet.glb (rung 2+), crest and horns added by rung
 //   chest  -> the figure's own body mesh recoloured, plus pauldrons.glb (rung 2+), spiked at rung 3+
 //   legs   -> the leg mesh recoloured, plus generated greaves (rung 2+) and knee cops (rung 3+)
@@ -113,7 +113,8 @@ const empty = (): Mounted => ({ id: null, group: null, materials: [] });
 /** The finishes one piece is built from, made on demand. `list` is what `unmount` frees, so a build never leaks a material it did not use. */
 interface Palette { get(f: Finish): THREE.MeshStandardMaterial; list: THREE.Material[] }
 
-export interface GearPieces { helmet: Prepared | null; pauldrons: Prepared | null; sword: Prepared | null }
+/** `sword` is the generic blade; `weapons` holds the model made for a weapon id, where one exists and loaded (HOM-203). */
+export interface GearPieces { helmet: Prepared | null; pauldrons: Prepared | null; sword: Prepared | null; weapons?: Map<string, Prepared> }
 
 export class PlayerGear {
   private model: THREE.Object3D;
@@ -390,7 +391,7 @@ export class PlayerGear {
   }
 
   private buildWeapon(id: string) {
-    const sword = this.pieces.sword, hand = this.bones.get('MiddleHandR');
+    const sword = this.pieces.weapons?.get(id) ?? this.pieces.sword, hand = this.bones.get('MiddleHandR');
     if (!sword || !hand) return null;
     const ap = appearanceOf(id);
     const blade = spawn(sword, true);
