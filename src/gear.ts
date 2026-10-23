@@ -531,6 +531,7 @@ export class PlayerGear {
     const ap = appearanceOf(id), g = new THREE.Group(), w = this.world(), p = this.palette(ap);
     w.scale.multiplyScalar(HEAD_FIT);   // every radius below is authored over the knight's skull; HEAD_FIT is this figure's
     const main = p.get('plate'), trim = p.get('trim');
+    const hood = ap.rung <= 1 && ap.metal <= 0.1 && !ap.form ? this.wear('gear_head_hood', ap, 'hide', []) : null;
     if (ap.form === 'gutterhook') {
       // a salvaged cap with a gutting hook lashed over the brow: the hook is the silhouette, a single cold glint at its tip
       const vein = p.get('inlay');
@@ -551,9 +552,16 @@ export class PlayerGear {
         this.spikeOut(trim, w, [Math.sin(t) * 0.3, -0.06, Math.cos(t) * 0.3], [Math.sin(t) * lean, 1, Math.cos(t) * lean], 0.05, i === 0 ? 0.3 : 0.2);
       }
       this.jewel(0.06, p, w, [0, -0.05, 0.3], [Math.PI / 2, 0, 0]);
+    } else if (ap.rung <= 1 && ap.metal <= 0.1 && hood) {
+      // The one head piece on the ladder that is cloth rather than metal (`leather_cap`): a modelled hood, skinned to
+      // the figure so it turns with the neck rather than riding the Head bone. It leaves the face, so nothing of the
+      // head is hidden under it, and nothing is drawn over it -- a hood has no rung's work to carry.
+      (g.userData.pieces ??= [] as THREE.Object3D[]).push(hood.mesh);
+      p.list.push(...hood.materials);
     } else if (ap.rung <= 1 || !this.pieces.helmet) {
-      // leather cap: a low dome and a rolled brim, close to the skull. Rolled from enough segments to shade as worked
-      // leather rather than as a faceted ball, with the brim the one hard line on it.
+      // The smithed rung-1 caps, which are metal and so get no hood: a low dome and a rolled brim, close to the skull.
+      // Rolled from enough segments to shade as worked leather rather than as a faceted ball, with the brim the one
+      // hard line on it.
       this.part(new THREE.SphereGeometry(0.3, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.88, 1.05), main, w, [0, -0.02, 0]);
       this.band(0.31, 0.325, 0.065, 'trim', p, w, [0, -0.04, 0]);
       this.part(new THREE.BoxGeometry(0.055, 0.1, 0.09), p.get('strap'), w, [0, -0.02, 0.3]); // the brow strap, riveted at the front
@@ -724,12 +732,8 @@ export class PlayerGear {
     // knight's theme from bronze up, leather from the ranger's below it -- which is also what gives rung 1 a legs
     // piece at all, where before `hide_leggings` and the copper greaves showed nothing but a recoloured body.
     const worn = this.wear(ap.rung >= 2 ? 'gear_legs_plate' : 'gear_legs_hide', ap, ap.metal > 0.3 ? 'plate' : 'hide', ['Male_Peasant_Legs']);
-    if (worn) {
-      (root.userData.pieces ??= [] as THREE.Object3D[]).push(worn.mesh);
-      p.list.push(...worn.materials);
-    }
-    if (ap.rung <= 1) return { group: worn ? root : null, materials: p.list, covered: worn?.covered };
-    for (const side of ['L', 'R']) {
+    if (worn) p.list.push(...worn.materials);
+    if (ap.rung >= 2) for (const side of ['L', 'R']) {
       const shin = `LowerLeg${side}`, end = `LowerLeg${side}_end`;
       if (!this.bind.has(shin) || !this.bind.has(end)) continue;
       const a = this.at(shin), b = this.at(end), len = a.distanceTo(b) / this.k / LIMB_FIT;
@@ -752,6 +756,9 @@ export class PlayerGear {
       g.add(w);
       this.mountPiece(root, shin, g, a.clone().lerp(b, 0.5));
     }
+    // last, not first: `sync` emits a piece's motes off `pieces[0]`, and a shell sits at the figure's own origin
+    // where a knee cop sits at the knee.
+    if (worn) (root.userData.pieces ??= [] as THREE.Object3D[]).push(worn.mesh);
     return { group: root.userData.pieces ? root : null, materials: p.list, covered: worn?.covered };
   }
 
@@ -812,10 +819,7 @@ export class PlayerGear {
     const vein = ap.glow && ap.rung >= 3 ? p.get('inlay') : null;
     const root = new THREE.Group();
     const worn = this.wear(ap.rung >= 4 ? 'gear_feet_fine' : 'gear_feet_hide', ap, 'hide', ['Male_Peasant_Feet']);
-    if (worn) {
-      (root.userData.pieces ??= [] as THREE.Object3D[]).push(worn.mesh);
-      p.list.push(...worn.materials);
-    }
+    if (worn) p.list.push(...worn.materials);
     for (const side of ['L', 'R']) {
       const foot = `Foot${side}`, toe = `Foot${side}_end`;
       if (!this.bind.has(foot) || !this.bind.has(toe)) continue;
@@ -845,6 +849,7 @@ export class PlayerGear {
       shaft.add(s);
       this.mountPiece(root, foot, shaft, a);
     }
+    if (worn) (root.userData.pieces ??= [] as THREE.Object3D[]).push(worn.mesh);   // last: see buildLegs
     return { group: root.userData.pieces ? root : null, materials: p.list, covered: worn?.covered };
   }
 

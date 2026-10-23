@@ -193,6 +193,7 @@ export const SLOTS = {
   //
   // Two a slot rather than the pack's five, because that is what the ladder asks for: every boot in the game is
   // leather, so the sabatons have no item to be, and no legs item below bronze is plate.
+  gear_head_hood: garment('gear_head_hood', 'hide'),
   gear_legs_hide: garment('gear_legs_hide', 'hide'),
   gear_legs_plate: garment('gear_legs_plate', 'plate'),
   gear_feet_hide: garment('gear_feet_hide', 'hide'),

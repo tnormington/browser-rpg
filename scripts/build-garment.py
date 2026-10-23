@@ -28,6 +28,7 @@ import os
 # wizard's robe and the peasant's own legs and feet are out for a different reason -- the figure already wears those
 # two, since the pack's parts ARE its body.
 GARMENTS = {
+    'gear_head_hood':  ('Male_Ranger_Head_Hood', 0.6),
     'gear_legs_hide':  ('Male_Ranger_Legs', 1.0),
     'gear_legs_plate': ('Male_Knight_Legs_Armor', 0.45),
     'gear_feet_hide':  ('Male_Ranger_Feet_Boots', 0.15),
