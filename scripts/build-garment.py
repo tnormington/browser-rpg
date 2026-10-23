@@ -17,8 +17,14 @@
 # The material is renamed `Shell` whatever the pack called it (MI_Knight, MI_Ranger...), because gear.ts recolours a
 # worn piece by material name and the tier ladder is that retint: one name means one call site for every garment.
 import bpy
+import bmesh
 import sys
 import os
+
+# An arms part is a sleeve to the shoulder; a glove is its forearm, hand and fingers. A part is cut by dropping the
+# vertices whose heaviest bone is one of these, which removes faces and moves nothing that is left. The sleeve above
+# the elbow is the chest's to wear (the figure's own sleeves stay under whatever chest is on).
+HANDS_ONLY = ('clavicle', 'upperarm', 'spine')
 
 # What each shipped file is cut from, and the decimation that takes it to roughly 1,300 triangles. The pack is authored
 # for a hero shot and these are worn over a 7,838-triangle figure; the ranger's boots alone are 9,172.
@@ -33,6 +39,10 @@ GARMENTS = {
     'gear_legs_plate': ('Male_Knight_Legs_Armor', 0.45),
     'gear_feet_hide':  ('Male_Ranger_Feet_Boots', 0.15),
     'gear_feet_fine':  ('Male_Noble_Feet', 0.35),
+    'gear_chest_hide':  ('Male_Ranger_Body', 0.45),
+    'gear_chest_plate': ('Male_Knight_Body_Armor', 0.2),
+    'gear_hands_hide':  ('Male_Ranger_Arms', 0.3, HANDS_ONLY),
+    'gear_hands_fine':  ('Male_Noble_Arms', 0.28, HANDS_ONLY),
 }
 
 # A helm is the one worn piece in this pack that is NOT a garment, and so is the one that leaves here rigid. A skull
@@ -61,7 +71,7 @@ def log(*a):
     print('[build-garment]', *a)
 
 
-def build(name, part, ratio, material='Shell', rigid=False):
+def build(name, part, ratio, material='Shell', rigid=False, drop=()):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=os.path.join(PARTS_DIR, part + '.gltf'))
     objs = list(bpy.data.objects)
@@ -74,6 +84,16 @@ def build(name, part, ratio, material='Shell', rigid=False):
     for slot in mesh.material_slots:
         slot.material = slot.material.copy()
         slot.material.name = material
+
+    if drop:
+        names = {g.index: g.name for g in mesh.vertex_groups}
+        bm = bmesh.new()
+        bm.from_mesh(mesh.data)
+        layer = bm.verts.layers.deform.verify()
+        gone = [v for v in bm.verts if v[layer] and names[max(v[layer].items(), key=lambda kv: kv[1])[0]].startswith(drop)]
+        bmesh.ops.delete(bm, geom=gone, context='VERTS')
+        bm.to_mesh(mesh.data)
+        bm.free()
 
     if ratio < 1.0:
         m = mesh.modifiers.new('decimate', 'DECIMATE')
@@ -129,5 +149,5 @@ for name in WANTED:
         part, ratio, material = HELMS[name]
         build(name, part, ratio, material, rigid=True)
     else:
-        part, ratio = GARMENTS[name]
-        build(name, part, ratio)
+        part, ratio, *drop = GARMENTS[name]
+        build(name, part, ratio, drop=drop[0] if drop else ())

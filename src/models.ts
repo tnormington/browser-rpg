@@ -202,6 +202,10 @@ export const SLOTS = {
   gear_legs_plate: garment('gear_legs_plate', 'plate'),
   gear_feet_hide: garment('gear_feet_hide', 'hide'),
   gear_feet_fine: garment('gear_feet_fine', 'hide'),
+  gear_chest_hide: garment('gear_chest_hide', 'hide'),
+  gear_chest_plate: garment('gear_chest_plate', 'plate'),
+  gear_hands_hide: garment('gear_hands_hide', 'hide'),
+  gear_hands_fine: garment('gear_hands_fine', 'hide'),
 } satisfies Record<string, SlotDef>;
 export type SlotId = keyof typeof SLOTS;
 /** The slot holding the model made for weapon `id`, or null when it has none and the generic sword stands in. */

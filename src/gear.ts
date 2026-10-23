@@ -332,7 +332,12 @@ export class PlayerGear {
     mesh.bind(new THREE.Skeleton(bones, inverses), this.body.bindMatrix);
     this.restyle(p.def, inst.materials, ap, ['Shell'], [], cls);
     this.body.parent!.add(mesh);
-    const covered = covers.map(n => this.parts.get(n)).filter((m): m is THREE.SkinnedMesh => !!m);
+    // by mesh name or material name: the hands are cut out of the arms into a mesh that keeps the arms' name and takes the material 'Hands'
+    const covered: THREE.SkinnedMesh[] = [];
+    this.model.traverse(o => {
+      const m = o as THREE.SkinnedMesh;
+      if (m.isSkinnedMesh && (covers.includes(m.name) || covers.includes((m.material as THREE.Material).name))) covered.push(m);
+    });
     for (const m of covered) m.visible = false;
     return { mesh, materials: inst.materials, covered };
   }
@@ -654,8 +659,18 @@ export class PlayerGear {
 
   private buildChest(id: string) {
     const ap = appearanceOf(id);
-    if (ap.form === 'greywolf') return this.buildHauberk(ap);
-    if (ap.rung <= 1 || !this.pieces.pauldrons) return { group: null, materials: [] };
+    // The shell: the ranger's jerkin through the first rung (which is also what gives copper and bronze a chest at all,
+    // where before they were a recoloured body), the knight's breastplate from iron up. The rung's own work goes over it.
+    const worn = this.wear(ap.rung >= 2 ? 'gear_chest_plate' : 'gear_chest_hide', ap, ap.metal > 0.3 ? 'plate' : 'hide', ['Male_Peasant_Body']);
+    const done = (g: THREE.Group | null, materials: THREE.Material[]) => {
+      if (!worn) return { group: g, materials };
+      // last, not first: `sync` emits a piece's motes off `pieces[0]`, and a shell sits at the figure's own origin
+      const root = g ?? new THREE.Group();
+      root.userData.pieces = [...(g ? [g] : []), worn.mesh];
+      return { group: root, materials: [...materials, ...worn.materials], covered: worn.covered };
+    };
+    if (ap.form === 'greywolf') { const h = this.buildHauberk(ap); return done(h.group, h.materials); }
+    if (ap.rung <= 1 || !this.pieces.pauldrons) return done(null, []);
     const g = new THREE.Group(), w = this.world(), p = this.palette(ap);
     w.scale.multiplyScalar(CHEST_FIT);
     const pads = spawn(this.pieces.pauldrons, true);
@@ -710,7 +725,7 @@ export class PlayerGear {
     }
     g.add(w);
     this.mount('Torso', g, this.at('Torso').add(new THREE.Vector3(0, SHOULDER_LIFT * this.k, 0)));
-    return { group: g, materials: p.list };
+    return done(g, p.list);
   }
 
   /** The Greywolf Hauberk: a wolfskin mantle in two flared tiers and a wolf's head on the left shoulder with a cold glint for each eye. */
@@ -782,6 +797,10 @@ export class PlayerGear {
     const ruff = fur ? p.get('fur') : null;
     const vein = ap.glow && ap.rung >= 3 ? p.get('inlay') : null;
     const root = new THREE.Group();
+    // Every glove in the game is leather, so the shells are the ranger's fingerless gloves for the first three rungs and the
+    // noble's sleeved pair from Thornhide up -- the boots' split. The figure's own hands are hidden under it.
+    const worn = this.wear(ap.rung >= 4 ? 'gear_hands_fine' : 'gear_hands_hide', ap, 'hide', ['Hands']);
+    if (worn) p.list.push(...worn.materials);
     for (const side of ['L', 'R']) {
       const palm = `Palm${side}`, tip = `Fingers${side}_end`;
       if (!this.bind.has(palm) || !this.bind.has(tip)) continue;
@@ -817,7 +836,8 @@ export class PlayerGear {
       g.add(w);
       this.mountPiece(root, palm, g, a, dir);
     }
-    return { group: root.userData.pieces ? root : null, materials: p.list };
+    if (worn) (root.userData.pieces ??= [] as THREE.Object3D[]).push(worn.mesh);   // last: see buildLegs
+    return { group: root.userData.pieces ? root : null, materials: p.list, covered: worn?.covered };
   }
 
   /**
