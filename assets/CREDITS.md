@@ -1,13 +1,15 @@
 # Asset credits
 
 Every model in `assets/models/` is by **Quaternius** and released under **CC0 1.0 Universal** (public domain dedication,
-https://creativecommons.org/publicdomain/zero/1.0/). Credit is not required; it is given here anyway. Each pack was
-downloaded from its OpenGameArt page, where the licence is listed as CC0, and the pack's own `License.txt` repeats it.
-Only the files actually used are committed; the full downloads are not in the repo.
+https://creativecommons.org/publicdomain/zero/1.0/). Credit is not required; it is given here anyway. Each free pack was
+downloaded from its OpenGameArt page, where the licence is listed as CC0; the three paid tiers behind `player.glb` came
+from itch.io. In every case the pack's own `License.txt` repeats the CC0 grant, which is what makes committing a file
+built from them to a public repository fine. Only the files actually used are committed; the full downloads are not in
+the repo.
 
 | File(s) in `assets/models/` | Slot | Source file in the pack | Pack | Source URL | Licence |
 |---|---|---|---|---|---|
-| `knight.glb` | Player | `KnightCharacter.fbx` | Knight Character | https://opengameart.org/content/lowpoly-animated-knight | CC0 |
+| `player.glb` | Player | three packs, assembled (see below) | Universal Base Characters, Modular Character Outfits – Fantasy, Universal Animation Library | https://quaternius.itch.io/universal-base-characters · https://quaternius.itch.io/modular-character-outfits-fantasy · https://quaternius.itch.io/universal-animation-library | CC0 |
 | `helmet.glb`, `pauldrons.glb`, `sword.glb` | Player armour + weapon | `Helmet1.fbx`, `ShoulderPads.fbx`, `Sword.fbx` | Knight Character | https://opengameart.org/content/lowpoly-animated-knight | CC0 |
 | `wizard.glb` | Warden Hale | `Wizard.fbx` | Ultimate Animated Character Pack | https://opengameart.org/content/animated-characters-pack | CC0 |
 | `viking.glb` | Cave Brute | `Viking_Male.fbx` | Ultimate Animated Character Pack | https://opengameart.org/content/animated-characters-pack | CC0 |
@@ -29,7 +31,22 @@ built from **game-icons.net** icons under **CC BY 3.0**, which unlike everything
 
 ## Processing
 
-The packs ship FBX; each used file was converted once to binary glTF with FBX2glTF (`npm i fbx2gltf`,
+Most packs ship FBX; each used file was converted once to binary glTF with FBX2glTF (`npm i fbx2gltf`,
 `FBX2glTF --binary --input X.fbx --output X`), unmodified otherwise. The game restyles materials at load time
 (`src/models.ts`): colours are pulled into the scene palette, shading is forced flat, and static props are baked into
-a single shared geometry. No geometry was edited.
+a single shared geometry. No geometry in those files was edited.
+
+`player.glb` is the exception: it is **built**, by `scripts/build-player.py` in Blender, out of three purchased CC0
+packs whose `License.txt` each states CC0 1.0. The three share one 65-joint skeleton, name for name, but not one rest
+pose, so the clips are retargeted through Blender's rest-relative pose space rather than copied. What the script does:
+
+- the figure is the **Peasant** set from Modular Character Outfits – Fantasy (body, arms, legs, feet). The pack's
+  readme is explicit that the garments *are* the body, so this is what "wearing nothing" renders as;
+- the head is cut off the male **Universal Base Character** by vertex weight (the readme: *"only the head of the model
+  is required. Using the full body will result in clipping"*), and rides the outfit's armature;
+- six clips come from the **Universal Animation Library**, under its own names, of which `Jump` is `Jump_Start` and
+  `Jump_Land` laid end to end and baked flat;
+- each part is given the material name the game dresses it by, the whole is decimated from 16,730 triangles to 7,838,
+  and the 4K maps are scaled to 1024 and written as WebP.
+
+Only the one exported file is committed. The three downloads (~1.2 GB unpacked) stay outside the repo.

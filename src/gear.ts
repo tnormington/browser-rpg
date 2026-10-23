@@ -1,21 +1,22 @@
 ﻿// The player's worn gear, drawn: every equipped item is visible and nothing else is. Rendering only.
 //
-// One PlayerGear owns the knight's bone-mounted pieces. sync() diffs the sim's equipment record against what is mounted and
+// One PlayerGear owns the figure's bone-mounted pieces. sync() diffs the sim's equipment record against what is mounted and
 // rebuilds only the slot that changed, so swapping gear mid-session (even mid-swing) needs no event from the sim.
 //   weapon -> sword.glb in the right hand, restyled and rescaled per item
 //   head   -> a generated leather cap (rung 1) or helmet.glb (rung 2+), crest and horns added by rung
-//   chest  -> the knight's own armour mesh recoloured, plus pauldrons.glb (rung 2+), spiked at rung 3+
-//   legs   -> the split-off leg mesh recoloured, plus generated greaves (rung 2+) and knee cops (rung 3+)
+//   chest  -> the figure's own body mesh recoloured, plus pauldrons.glb (rung 2+), spiked at rung 3+
+//   legs   -> the leg mesh recoloured, plus generated greaves (rung 2+) and knee cops (rung 3+)
 //   hands  -> generated gloves: a cuff at the wrist and a mitt over the palm (hide, or wolf pelt with a fur ruff)
 //   feet   -> generated boots: a shaft over the ankle and a foot with a sole, a fur-topped shaft for wolfskin
 //   offhand-> a generated torch burning in the left fist, with the halo of lit air round its flame
-// Bare slots show skin. Looks come from gear-look.ts, keyed by item id with a tier fallback.
+// Bare slots show the figure's own cloth (BARE). Looks come from gear-look.ts, keyed by item id with a tier fallback.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Equipment } from './sim/items';
 
 /** The slots that have a worn look: every equipment slot. */
 type WornSlot = 'weapon' | 'head' | 'chest' | 'legs' | 'hands' | 'feet' | 'offhand';
+import { RIG_BONES } from './anim';
 import { Appearance, appearanceOf } from './gear-look';
 import { cappedIntensity } from './glow';
 import { haloMesh } from './halo';
@@ -24,6 +25,12 @@ import { bakeUV, dress } from './surface';
 import type { Motes } from './fx';
 
 const SKIN = 0xb89a7e;
+/**
+ * What each body material is when its slot is empty. The knight showed skin in all four, because the mesh under the
+ * armour was its own body. The figure that replaced it is the pack's Peasant set and those parts ARE the body, so
+ * "wearing nothing" is a man in linen and leather rather than a nude: only the hands are actually bare.
+ */
+const BARE: Record<string, number> = { Armor: 0x9a8a6c, ArmorLegs: 0x4a4038, Boots: 0x5a4632, Hands: SKIN };
 /** A gathering tool is nobody's gear: it has no item, no tier and no appearance, so its two finishes are fixed here. */
 const HAFT = 0x6a5235, TOOL_IRON = 0x8e949c;
 /** The torch's flame, the same ember the standing torches burn (props.ts). `EMITTER_DIFFUSE` is render.ts's rule: an emitter shows its own light, not the room's. */
@@ -31,13 +38,24 @@ const FLAME = 0xff8a30, EMITTER_DIFFUSE = 0.15;
 const UP = new THREE.Vector3(0, 1, 0);
 const WHITE = new THREE.Color(0xffffff);
 /**
- * Helmet and pauldron pieces are authored in rig units; these are the offsets from their bone (rig units) that seat them.
- * HELM_LIFT and HELM_FIT are measured rather than tuned by eye: the knight's skull stands 0.528 world units tall from
- * y 1.468, and the stock helm at its old lift and scale covered only to 1.965, so the crown came through the top of the
- * bowl (HOM-137). Together these clear the skull by about 40mm on every axis, and because the helm hangs off the same
- * Head bone the clearance holds through every pose rather than only at the bind.
+ * Where the head and chest pieces sit on their bone, in WORLD units (`this.k` takes them into the rig's own). Measured
+ * off the figure rather than tuned by eye: the Head bone stands at y 1.727 with the skull from 1.696 to 2.000, and the
+ * chest bone at 1.405 with the shoulders at about 1.55. Because each piece hangs off the bone it was measured against,
+ * the clearance holds through every pose rather than only at the bind.
  */
-const HELM_LIFT = 0.62, SHOULDER_LIFT = 0.3, HELM_FIT = 1.18;
+const HELM_LIFT = 0.13, SHOULDER_LIFT = 0.15;
+/**
+ * Every generated piece is drawn at the sizes the knight's proportions wanted: a helm bowl 0.69 world units across, a
+ * greave 0.30 across, a boot 0.30 long. That was right over a cartoon figure whose skull alone stood 0.53 tall. The
+ * figure that replaced it is the same 2.0 units but built to human proportions -- a skull 0.30 tall and 0.20 wide,
+ * a shin 0.10 across, a foot 0.18 long -- so every one of those numbers is roughly twice what it should be.
+ *
+ * Rather than re-author a hundred radii, each slot's group is drawn at the old numbers and scaled by what was
+ * measured off the new figure, which is also what keeps a set reading as one set. Three values and not one, because
+ * the knight's head was the most exaggerated part of it and its chest the least. A piece whose length comes from the
+ * rig (greaves span the shin, gloves the hand) divides that length back out, so only the cross-section is scaled.
+ */
+const HEAD_FIT = 0.44, CHEST_FIT = 0.62, LIMB_FIT = 0.5;
 
 /**
  * glb gear is authored in the rig's units, not the world's, so models.ts baked its UVs at the wrong texel size: one world
@@ -117,12 +135,19 @@ export class PlayerGear {
     this.model = inst.root.children[0];
     inst.root.updateMatrixWorld(true);
     const modelInv = new THREE.Matrix4().copy(this.model.matrixWorld).invert();
+    const nodes = new Map<string, THREE.Object3D>();
     this.model.traverse(o => {
-      const bone = (o as THREE.Bone).isBone;
-      if (!bone && !o.name.endsWith('_end')) return; // the rig's `*_end` tips are plain nodes, not joints, but gear is sized from them
-      if (bone) this.bones.set(o.name, o);
-      this.bind.set(o.name, new THREE.Matrix4().multiplyMatrices(modelInv, o.matrixWorld));
+      // the human rig's `*_end` tips are plain nodes rather than joints, and gear is sized along them
+      if (((o as THREE.Bone).isBone || o.name.endsWith('_end')) && !nodes.has(o.name)) nodes.set(o.name, o);
     });
+    // Keyed by the logical name throughout (RIG_BONES), so a rig that spells its bones differently is one table in
+    // models.ts and nothing here. Two logical names may land on one joint: on this rig the shin's end IS the foot.
+    for (const logical of RIG_BONES) {
+      const o = nodes.get(inst.rig[logical] ?? logical);
+      if (!o) continue;
+      if ((o as THREE.Bone).isBone) this.bones.set(logical, o);
+      this.bind.set(logical, new THREE.Matrix4().multiplyMatrices(modelInv, o.matrixWorld));
+    }
     this.k = 1 / this.model.scale.x;
     for (const m of inst.materials) if (m.name === 'Armor' || m.name === 'ArmorLegs' || m.name === 'Boots' || m.name === 'Hands') this.bodyMats.set(m.name, m as THREE.MeshStandardMaterial);
     this.dressBody('Armor', null);
@@ -235,22 +260,17 @@ export class PlayerGear {
   }
 
   /**
-   * A glb gear piece, made ready to wear: creased like generated gear (so the bowl of a helm rolls and its folds stay
-   * hard) and re-projected in world units, because models.ts baked these in the rig's and put nearly two tiles of plate
-   * grain in every world unit -- which is what the speckle on the old helm was. Cached per source geometry: every
-   * instance is the player's and is drawn at the same rig scale.
+   * A glb gear piece, made ready to wear: creased like generated gear, so the bowl of a helm rolls and its folds stay
+   * hard. Its UVs are models.ts's, which are already in world units now that these slots are fitted rather than raw.
+   * Cached per source geometry: every instance is the player's and is drawn at the same scale.
    */
   private fitPiece(def: SlotDef, o: THREE.Object3D) {
+    if (def.keepNormals) return;
     o.traverse(c => {
       const mesh = c as THREE.Mesh;
       if (!mesh.isMesh) return;
       let g = FITTED.get(mesh.geometry);
-      if (!g) {
-        let fit = mesh.geometry.clone();
-        if (!def.keepMaps) fit = bakeUV(fit, 1 / this.k);   // UVs before the split, as in `forge`
-        if (!def.keepNormals) fit = smoothed(fit.index ? fit.toNonIndexed() : fit);
-        FITTED.set(mesh.geometry, g = fit);
-      }
+      if (!g) FITTED.set(mesh.geometry, g = smoothed(mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone()));
       mesh.geometry = g;
     });
   }
@@ -290,12 +310,12 @@ export class PlayerGear {
     this.slots[slot] = empty();
   }
 
-  /** Dress the body materials for a slot: skin when bare, the item's tint when worn. */
+  /** Dress the body materials for a slot: the figure's own cloth when bare, the item's tint when worn. */
   private dressBody(name: 'Armor' | 'ArmorLegs' | 'Boots' | 'Hands', id: string | null) {
     const m = this.bodyMats.get(name);
     if (!m) return;
     const ap = id ? appearanceOf(id) : null;
-    m.color.setHex(ap ? ap.tint : SKIN);
+    m.color.setHex(ap ? ap.tint : BARE[name]);
     m.metalness = ap ? ap.metal : 0.02;
     m.roughness = ap ? ap.rough : 0.9;
     m.emissive.setHex(0);
@@ -455,6 +475,7 @@ export class PlayerGear {
 
   private buildHead(id: string) {
     const ap = appearanceOf(id), g = new THREE.Group(), w = this.world(), p = this.palette(ap);
+    w.scale.multiplyScalar(HEAD_FIT);   // every radius below is authored over the knight's skull; HEAD_FIT is this figure's
     const main = p.get('plate'), trim = p.get('trim');
     if (ap.form === 'gutterhook') {
       // a salvaged cap with a gutting hook lashed over the brow: the hook is the silhouette, a single cold glint at its tip
@@ -486,14 +507,14 @@ export class PlayerGear {
       const helm = spawn(this.pieces.helmet, true);
       this.fitPiece(this.pieces.helmet.def, helm.root);
       helm.root.matrixAutoUpdate = true;
-      helm.root.scale.setScalar(HELM_FIT * (ap.rung >= 3 ? 1.04 : 1));
+      helm.root.scale.setScalar(this.k * (ap.rung >= 3 ? 1.04 : 1));   // the slot is fitted in world units; `k` is model space
       this.restyle(this.pieces.helmet.def, helm.materials, ap, ['Grey'], ['DarkGrey']);
       p.list.push(...helm.materials);
       g.add(helm.root);
       if (ap.form === 'adamant') {
         // a heavy squared helm: brow slab, flat ridge, cheek slabs and a T of jade light. No horns, no crest: the mass is the read.
         const vein = p.get('inlay');
-        helm.root.scale.setScalar(HELM_FIT * 1.06);
+        helm.root.scale.setScalar(this.k * 1.06);
         this.part(new THREE.BoxGeometry(0.66, 0.1, 0.52), trim, w, [0, 0.14, 0.06]);
         this.part(new THREE.BoxGeometry(0.2, 0.14, 0.74), main, w, [0, 0.32, -0.02]);
         this.part(new THREE.BoxGeometry(0.21, 0.035, 0.75), p.get('edge'), w, [0, 0.4, -0.02]); // the ridge's polished crown
@@ -504,7 +525,7 @@ export class PlayerGear {
       } else if (ap.form === 'storm') {
         // a lean helm under a fan of backswept spikes and two long cheek barbs: a jagged crown that reads from every side
         const vein = p.get('inlay');
-        helm.root.scale.setScalar(HELM_FIT);
+        helm.root.scale.setScalar(this.k);
         for (const [x, len, lift] of [[0, 0.8, 0.28], [-0.14, 0.62, 0.24], [0.14, 0.62, 0.24]] as const)
           this.part(curvedSpike(0.06, len, 0.9, 0.4), trim, w, [x, lift, 0.1], [0, Math.PI / 2, 0]);
         for (const s of [-1, 1]) this.part(curvedSpike(0.05, 0.4, 1.2, -0.5), trim, w, [s * 0.3, 0.02, 0.1]).scale.x = s;
@@ -514,7 +535,7 @@ export class PlayerGear {
       } else if (ap.form === 'star') {
         // a clean black helm and one thing over it: a four-point star hung on a stem above the brow, two crossed diamonds around a bright core. Two long blades sweep back off the cheeks.
         const vein = p.get('inlay');
-        helm.root.scale.setScalar(HELM_FIT * 1.02);
+        helm.root.scale.setScalar(this.k * 1.02);
         this.part(new THREE.CylinderGeometry(0.02, 0.05, 0.3, 4), trim, w, [0, 0.44, 0]);
         this.part(new THREE.OctahedronGeometry(0.1).scale(0.5, 2.8, 0.5), vein, w, [0, 0.72, 0]);
         this.part(new THREE.OctahedronGeometry(0.1).scale(2.4, 0.5, 0.5), vein, w, [0, 0.72, 0]);
@@ -547,9 +568,12 @@ export class PlayerGear {
           }
         }
       }
+      // a fitted slot stands on its own origin (models.ts puts the model's foot at it), and this group's origin is the
+      // middle of the bowl every generated helm is drawn round, so the stock helm drops by half its height to share it
+      helm.root.position.y = -new THREE.Box3().setFromObject(helm.root).getSize(this.tmp).y / 2;
     }
     g.add(w);
-    this.mount('Head', g, this.at('Head').add(new THREE.Vector3(0, HELM_LIFT, 0)));
+    this.mount('Head', g, this.at('Head').add(new THREE.Vector3(0, HELM_LIFT * this.k, 0)));
     return { group: g, materials: p.list };
   }
 
@@ -558,10 +582,11 @@ export class PlayerGear {
     if (ap.form === 'greywolf') return this.buildHauberk(ap);
     if (ap.rung <= 1 || !this.pieces.pauldrons) return { group: null, materials: [] };
     const g = new THREE.Group(), w = this.world(), p = this.palette(ap);
+    w.scale.multiplyScalar(CHEST_FIT);
     const pads = spawn(this.pieces.pauldrons, true);
     this.fitPiece(this.pieces.pauldrons.def, pads.root);
     pads.root.matrixAutoUpdate = true;
-    pads.root.scale.setScalar(1 + 0.18 * (ap.rung - 2));
+    pads.root.scale.setScalar(this.k * (1 + 0.18 * (ap.rung - 2)));
     // The shoulders are the one part of a worn set that is always turned up at the sky, so they are left half as rough as
     // the breast under them: the key light picks them out and the torso stays matte. Plate that is one roughness all over
     // has no shape in a frame lit by a single moon.
@@ -577,7 +602,7 @@ export class PlayerGear {
     if (ap.rung >= 3) this.jewel(0.055, p, w, [0, 0.15, 0.23], [Math.PI / 2, 0, 0]); // the gorget's stone, under the chin
     if (ap.form === 'adamant' || ap.form === 'storm') {
       const trim = p.get('trim'), main = p.get('plate'), vein = p.get('inlay');
-      pads.root.scale.setScalar(ap.form === 'adamant' ? 1.5 : 1.1);
+      pads.root.scale.setScalar(this.k * (ap.form === 'adamant' ? 1.5 : 1.1));
       for (const s of [-1, 1]) {
         if (ap.form === 'adamant') { // square slab over each shoulder, a lit stud in it, and a gorget collar
           this.part(new THREE.BoxGeometry(0.5, 0.1, 0.44), trim, w, [s * 0.38, 0.2, 0]);
@@ -593,7 +618,7 @@ export class PlayerGear {
     } else if (ap.form === 'star') {
       // each shoulder a fan of three swept pinions with a lit root, and a four-point star set on the back between them (the camera sits behind the player)
       const trim = p.get('trim'), main = p.get('plate'), vein = p.get('inlay');
-      pads.root.scale.setScalar(1.35);
+      pads.root.scale.setScalar(this.k * 1.35);
       for (const s of [-1, 1]) {
         for (let i = 0; i < 3; i++) this.part(curvedSpike(0.065 - i * 0.012, 0.78 - i * 0.16, 0.45 + i * 0.4, 0.35, 3), trim, w, [s * 0.34, 0.1 - i * 0.03, -0.02 * i]).scale.x = s;
         this.part(new THREE.OctahedronGeometry(0.08), vein, w, [s * 0.34, 0.1, 0]);
@@ -609,13 +634,14 @@ export class PlayerGear {
       }
     }
     g.add(w);
-    this.mount('Torso', g, this.at('Torso').add(new THREE.Vector3(0, SHOULDER_LIFT, 0)));
+    this.mount('Torso', g, this.at('Torso').add(new THREE.Vector3(0, SHOULDER_LIFT * this.k, 0)));
     return { group: g, materials: p.list };
   }
 
   /** The Greywolf Hauberk: a wolfskin mantle in two flared tiers and a wolf's head on the left shoulder with a cold glint for each eye. */
   private buildHauberk(ap: Appearance) {
     const g = new THREE.Group(), w = this.world(), p = this.palette(ap);
+    w.scale.multiplyScalar(CHEST_FIT);
     const fur = this.double(p.get('plate')), dark = p.get('trim'), eye = p.get('inlay');
     p.list.push(fur);
     // seven sides, not the eighteen a rolled cuff takes: a pelt hangs in folds, and a mantle shaded smooth reads as a cone of stone
@@ -632,7 +658,7 @@ export class PlayerGear {
     // a spiked fur ridge on the right so the mantle is not symmetrical from behind
     this.part(curvedSpike(0.06, 0.34, 0.4, 0.6), dark, w, [0.4, 0.14, 0]);
     g.add(w);
-    this.mount('Torso', g, this.at('Torso').add(new THREE.Vector3(0, SHOULDER_LIFT, 0)));
+    this.mount('Torso', g, this.at('Torso').add(new THREE.Vector3(0, SHOULDER_LIFT * this.k, 0)));
     return { group: g, materials: p.list };
   }
 
@@ -644,8 +670,9 @@ export class PlayerGear {
     for (const side of ['L', 'R']) {
       const shin = `LowerLeg${side}`, end = `LowerLeg${side}_end`;
       if (!this.bind.has(shin) || !this.bind.has(end)) continue;
-      const a = this.at(shin), b = this.at(end), len = a.distanceTo(b) / this.k;
+      const a = this.at(shin), b = this.at(end), len = a.distanceTo(b) / this.k / LIMB_FIT;
       const g = new THREE.Group(), w = this.world();
+      w.scale.multiplyScalar(LIMB_FIT);
       // Shin plate: a tapered six-sided shell from knee to ankle, left faceted on purpose (six sides meet at sixty
       // degrees, past the crease, so the plate keeps its folds where the helm's bowl rolls). Down the front of it runs a
       // polished ridge and round it two leather bands: the hard lit line and the soft dark one, on every rung. Both are
@@ -683,8 +710,9 @@ export class PlayerGear {
     for (const side of ['L', 'R']) {
       const palm = `Palm${side}`, tip = `Fingers${side}_end`;
       if (!this.bind.has(palm) || !this.bind.has(tip)) continue;
-      const a = this.at(palm), dir = this.at(tip).sub(a), len = dir.length() / this.k; // +Y runs from the wrist to the fingertips
+      const a = this.at(palm), dir = this.at(tip).sub(a), len = dir.length() / this.k / LIMB_FIT; // +Y runs from the wrist to the fingertips
       const g = new THREE.Group(), w = this.world();
+      w.scale.multiplyScalar(LIMB_FIT);
       if (moor) {
         // a deep fleece cuff, taller and wider than wolfskin's, and a horn toggle curling off the back of the hand
         this.part(new THREE.CylinderGeometry(0.11, 0.2, 0.17, 7, 1, true), ruff!, w, [0, -0.08, 0]);
@@ -731,6 +759,7 @@ export class PlayerGear {
       // the foot's local Z ends up pointing up or down depending on the rig's handedness; "up" is whichever side it faces
       const zUp = new THREE.Vector3(0, 0, 1).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, dir.clone().normalize())).y > 0 ? 1 : -1;
       const g = new THREE.Group(), w = this.world();
+      w.scale.multiplyScalar(LIMB_FIT);
       this.part(new THREE.BoxGeometry(0.17, 0.3, 0.09), main, w, [0, 0.07, zUp * 0.055]);
       this.part(new THREE.BoxGeometry(0.165, 0.32, 0.025), p.get('strap'), w, [0, 0.07, zUp * 0.0125]); // sole
       if (ap.rung >= 2) { // toe cap, with its top edge rubbed bright: the tier fallback
@@ -742,6 +771,7 @@ export class PlayerGear {
       g.add(w);
       this.mountPiece(root, foot, g, a, dir);
       const shaft = new THREE.Group(), s = this.world();
+      s.scale.multiplyScalar(LIMB_FIT);
       this.part(new THREE.CylinderGeometry(0.105, 0.12, 0.24, 14), main, s, [0, 0.13, -0.03]);
       this.band(0.113, 0.113, 0.04, 'strap', p, s, [0, 0.16, -0.03]); // the buckle strap round the shaft
       if (moor) this.part(new THREE.CylinderGeometry(0.2, 0.12, 0.15, 7, 1, true), ruff!, s, [0, 0.28, -0.03]); // a deep fleece top, wider than wolfskin's

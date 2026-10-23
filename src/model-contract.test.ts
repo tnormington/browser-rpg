@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import * as THREE from 'three';
+import { RIG_BONES } from './anim';
 import { SLOTS, SlotDef, SlotId } from './models';
 
 const assert = (ok: boolean, msg: string) => { if (!ok) { console.error('FAIL', msg); process.exit(1); } };
@@ -47,11 +48,10 @@ const nodesOf = (g: Gltf) => new Set((g.nodes ?? []).map(n => sanitize(n.name ??
 const clipsOf = (g: Gltf) => new Set((g.animations ?? []).map(a => (a.name ?? '').split('|').pop()!));
 
 /**
- * The two materials models.ts manufactures at load rather than reading: `splitBones` peels the leg triangles off `Armor`
- * and the hands off `Skin` into meshes of their own, so a `splitLegs` slot names four materials but ships two. What the
- * file must carry is the parent each is cut from.
+ * The one material models.ts manufactures at load rather than reading: `splitBones` peels the hands off `Skin` into a
+ * mesh of their own, so a `splitHands` slot names it but no file carries it. What the file must carry is `Skin`.
  */
-const SPLIT_FROM: Record<string, string> = { ArmorLegs: 'Armor', Hands: 'Skin' };
+const SPLIT_FROM: Record<string, string> = { Hands: 'Skin' };
 
 // ---- every slot: the materials and clips its SLOTS entry names ---------------------------------------------------
 
@@ -60,7 +60,7 @@ for (const id of Object.keys(SLOTS) as SlotId[]) {
   const wanted = new Set<string>(Object.keys(def.look.named ?? {}));
   if (def.surface && typeof def.surface === 'object') for (const name of Object.keys(def.surface)) if (name !== '*') wanted.add(name);
   for (const name of wanted) {
-    const want = def.splitLegs ? SPLIT_FROM[name] ?? name : name;
+    const want = def.splitHands ? SPLIT_FROM[name] ?? name : name;
     assert(mats.has(want), `${id}: ${def.file}.glb carries the material '${want}' that SLOTS.${id} dresses`);
   }
   const a = def.anim;
@@ -71,25 +71,24 @@ for (const id of Object.keys(SLOTS) as SlotId[]) {
 // ---- the player's rig: the bones gear.ts and anim.ts reach for by name --------------------------------------------
 
 /**
- * Joints, as `gear.ts` (`Head`, `Torso`, the hands the weapon and torch hang in, the shins and palms the greaves and
- * gloves are sized along), `anim.ts` (the spine, the limbs it aims, the legs it seats) and `models.ts` (`LEG_BONE` and
- * `HAND_BONE`, which both match members of this list) read them.
+ * Every joint the code reaches for -- `gear.ts` (the head and chest pieces hang there, the hands hold the weapon and
+ * the torch, the shins, palms and feet are the spans greaves, gloves and boots are sized along), `anim.ts` (the spine,
+ * the limbs it aims, the legs it seats) and `models.ts` (the wrists the hands are split at) -- resolved through the
+ * slot's own rig map. The names in `RIG_BONES` are the logical ones; a pack that spells them differently carries a
+ * `RigMap` in SLOTS, and this is where that table is checked against the file rather than against a reading of it.
+ *
+ * Six of them are tips rather than joints on the human rig (`*_end`), written only when the exporter's *Add Leaf
+ * Bones* option is on. A rig exported without them collapses greaves, boot shafts and glove fingertips to zero length
+ * and says nothing about it, which is the whole reason this file exists.
  */
-const PLAYER_BONES = ['Abdomen', 'Torso', 'Head',
-  'UpperArmL', 'UpperArmR', 'LowerArmL', 'LowerArmR', 'PalmL', 'PalmR', 'MiddleHandL', 'MiddleHandR',
-  'UpperLegL', 'UpperLegR', 'LowerLegL', 'LowerLegR', 'FootL', 'FootR'];
-
-/**
- * The tips: Blender leaf bones, written only when the exporter's *Add Leaf Bones* option is on, and plain nodes rather
- * than joints -- which is why `PlayerGear` keeps the `*_end` names as well as the skeleton's. Greaves (gear.ts), boot
- * shafts and glove fingertips are each sized from the span between a bone and its tip, and `anim.ts` carries the foot
- * to the shin's end from them. A rig exported without them collapses all three pieces to zero length and says nothing.
- */
-const PLAYER_TIPS = ['LowerLegL_end', 'LowerLegR_end', 'FootL_end', 'FootR_end', 'FingersL_end', 'FingersR_end'];
-
 const player = gltfOf(SLOTS.player.file), playerNodes = nodesOf(player);
-for (const bone of PLAYER_BONES) assert(playerNodes.has(bone), `the player rig has the joint '${bone}'`);
-for (const tip of PLAYER_TIPS) assert(playerNodes.has(tip), `the player rig kept the leaf bone '${tip}' (exported with Add Leaf Bones)`);
+const playerRig: Record<string, string> = SLOTS.player.rig ?? {};
+for (const logical of RIG_BONES) {
+  const bone = playerRig[logical] ?? logical;
+  assert(playerNodes.has(bone), `the player rig has '${bone}', which the code reaches for as '${logical}'`);
+}
+for (const logical of Object.keys(playerRig))
+  assert((RIG_BONES as readonly string[]).includes(logical), `SLOTS.player.rig maps '${logical}', which is not a name the code uses`);
 
 // ---- the mounts: mount.ts hangs every piece of tack off 'Torso' and the chanfron off 'Head', and asserts both -------
 
@@ -101,21 +100,22 @@ for (const id of ['horse', 'destrier'] as const) {
 // ---- which of the player's clips write the spine ------------------------------------------------------------------
 
 /**
- * `anim.ts` touches `Abdomen` two ways, and they want opposite things of the clips. `bend()` (the mounted lean, the
- * gather's stoop) sets it absolutely from the bind rotation, so it overrides whatever the clip wrote; `turn('Abdomen')`
- * (the swing's hip twist) multiplies onto it, so it is a clip's own track that stops it winding up over the frames of
- * a swing. Neither is a name, so nothing above would catch a change here -- but a replacement rig's clip set is exactly
- * what changes it. This is the shipped answer, measured off the file: a rig swap that moves a line here is not
- * necessarily wrong, it just has to be looked at against anim.ts's two uses rather than discovered in the game.
+ * `anim.ts` touches the spine two ways and they want different things of the clips. `bend()` (the mounted lean, the
+ * gather's stoop) sets it absolutely from the bind rotation, so it holds whatever the clip wrote and is safe either
+ * way. `turn('Abdomen')` (the swing's hip twist) MULTIPLIES onto whatever is there this frame, so it is the clip's own
+ * spine track that writes the wind-up away each frame; under a clip that leaves the spine alone it would accumulate
+ * over the frames of a swing and the hips would keep turning. Nothing above would catch that -- it is not a name --
+ * and a replacement clip set is exactly what changes it, so every clip the player can be playing while a swing runs
+ * has to carry a spine track.
  */
-const SPINE_TRACKS: Record<string, boolean> = { Idle: false, Run: true, Jump: true, swordAttackJump: true, Death: true, Run_swordAttack: true };
-
 const nodeNames = (player.nodes ?? []).map(n => sanitize(n.name ?? ''));
-for (const [clip, writes] of Object.entries(SPINE_TRACKS)) {
-  const def = (player.animations ?? []).find(a => (a.name ?? '').split('|').pop() === clip)!;
+const spineBone = playerRig.Abdomen ?? 'Abdomen';
+const anim = SLOTS.player.anim;
+for (const clip of [anim.idle, anim.move, anim.death, anim.jump, ...anim.attack, ...anim.upper]) {
+  const def = (player.animations ?? []).find(a => (a.name ?? '').split('|').pop() === clip);
   assert(!!def, `the player rig has the clip '${clip}'`);
-  const spine = def.channels.some(c => c.target.node !== undefined && nodeNames[c.target.node] === 'Abdomen');
-  assert(spine === writes, `the player's '${clip}' ${writes ? 'animates' : 'leaves'} the Abdomen (anim.ts bend/turn)`);
+  const spine = def!.channels.some(c => c.target.node !== undefined && nodeNames[c.target.node] === spineBone);
+  assert(spine, `the player's '${clip}' animates '${spineBone}', so the swing's hip twist has something under it (anim.ts turn)`);
 }
 
 console.log('model contract ok');

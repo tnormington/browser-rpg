@@ -1095,7 +1095,7 @@ export class Renderer {
     this.hide(this.weapon);
     this.hide(this.player);
     this.player.add(inst.root);
-    this.playerAnim = new Animator(inst.root, inst.clips, SLOTS.player.anim);
+    this.playerAnim = new Animator(inst.root, inst.clips, SLOTS.player.anim, inst.rig);
   }
 
   /**
@@ -1142,7 +1142,7 @@ export class Renderer {
       this.staffLight.position.copy(gem.position);
       hand.add(gem, this.staffLight);
     }
-    this.npcAnim = new Animator(inst.root, inst.clips, SLOTS.warden.anim);
+    this.npcAnim = new Animator(inst.root, inst.clips, SLOTS.warden.anim, inst.rig);
   }
 
   private dressActor(a: Actor, p: Prepared) {
@@ -1154,7 +1154,7 @@ export class Renderer {
     a.mats = inst.materials;
     const tint = defOf(a).look?.tint;
     for (const m of a.mats) { if (tint !== undefined) m.color.lerp(new THREE.Color(tint), TINT_MIX); m.emissive.setHex(a.glow); }
-    a.anim = new Animator(inst.root, inst.clips, SLOTS[slotOf(a.type) as 'boar'].anim);
+    a.anim = new Animator(inst.root, inst.clips, SLOTS[slotOf(a.type) as 'boar'].anim, inst.rig);
     const kit = SILHOUETTES[a.type];
     if (kit) this.dressKit(a, inst.root, kit());
     if (a.echo) this.setEcho(a, a.echo); // the model's materials are new: the dye goes on them too

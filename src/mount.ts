@@ -108,7 +108,7 @@ export class MountRig {
     this.torso = this.root.getObjectByName('Torso')!;
     this.rest = this.backY();
     this.seat = { y: look.saddle.y + 0.05, z: look.saddle.z };
-    this.anim = new Animator(this.root, inst.clips, p.def.anim!);
+    this.anim = new Animator(this.root, inst.clips, p.def.anim!, inst.rig);
     look.dress((bone, mesh, pos, rot) => this.hang(bone, mesh, pos, rot), look.saddle);
   }
 

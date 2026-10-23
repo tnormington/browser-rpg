@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { AnimDef } from './anim';
+import type { AnimDef, RigMap } from './anim';
 import { SurfaceId, bakeUV, dress } from './surface';
 
 // The glob is read inside `urlOf` rather than at module scope so this module imports under plain node, where
@@ -30,8 +30,10 @@ export interface SlotDef {
   look: Look;
   metal?: number; roughness?: number;
   anim?: AnimDef;
-  /** Cut the 'Armor' mesh in two by bone weight: the leg triangles become their own mesh and material ('ArmorLegs'), so legs and chest can be dressed apart. */
-  splitLegs?: boolean;
+  /** What this file calls the bones `gear.ts` and `anim.ts` reach for, where it does not call them what the human rig does. */
+  rig?: RigMap;
+  /** Cut the hands out of the 'Skin' mesh by bone weight, into a mesh and material ('Hands') of their own: a glove then recolours them without touching the face and the arms. */
+  splitHands?: boolean;
   /** Ignore the file's vertex colours: a pack that bakes its colours dark would otherwise tint every named colour black. */
   plain?: boolean;
   /**
@@ -57,13 +59,41 @@ const surfaceOf = (def: SlotDef, name: string): SurfaceId | undefined =>
   typeof def.surface === 'string' ? def.surface : def.surface?.[name] ?? def.surface?.['*'];
 
 const SKIN = 0xb89a7e;
+
+/**
+ * The player's rig (Quaternius Universal Base Characters / Modular Character Outfits / Universal Animation Library,
+ * all CC0) uses the Unreal mannequin's bone names, and exactly one of them -- `Head` -- is spelled the way the human
+ * rig the rest of the cast is built on spells it. Everything else is this table; the code goes on saying `FootL`.
+ *
+ * Two of these are not renames but the rig's own shape. The shin's end IS the foot, because this rig parents the foot
+ * to the shin where the human rig hangs it off the hips; and the toe is `ball_l`, a real joint, where the human rig
+ * has a bare `*_end` tip. Both are read as spans (gear.ts sizes greaves, boots and glove fingertips along them), so
+ * what matters is that the two names resolve to the two ends of the right segment.
+ */
+const UE_RIG: RigMap = {
+  Abdomen: 'spine_01', Torso: 'spine_03',
+  UpperArmL: 'upperarm_l', LowerArmL: 'lowerarm_l', PalmL: 'hand_l', MiddleHandL: 'middle_01_l', FingersL_end: 'middle_04_leaf_l',
+  UpperArmR: 'upperarm_r', LowerArmR: 'lowerarm_r', PalmR: 'hand_r', MiddleHandR: 'middle_01_r', FingersR_end: 'middle_04_leaf_r',
+  UpperLegL: 'thigh_l', LowerLegL: 'calf_l', LowerLegL_end: 'foot_l', FootL: 'foot_l', FootL_end: 'ball_l',
+  UpperLegR: 'thigh_r', LowerLegR: 'calf_r', LowerLegR_end: 'foot_r', FootR: 'foot_r', FootR_end: 'ball_r',
+};
+
 export const SLOTS = {
-  player: { file: 'knight', height: 2.0, look: { sat: 0.55, light: 1.9, named: { Skin: SKIN, Armor: 0x6a7684, ArmorLegs: 0x6a7684, Boots: 0x2a2622, Hands: SKIN } }, splitLegs: true,
-    surface: { '*': 'plate', Skin: 'skin', Hands: 'skin', Boots: 'hide' },   // the knight's own armour is worn plate, not world iron
-    // jumpSpan: the Jump clip is 1.21 s, of which 0 - 0.50 is a crouch and 0.88 - 1.21 the landing absorb. The hop is half a
-    // second, so the whole clip squeezed into it ran the crouch while the knight was already in the air: only 0.50 (the legs
-    // at full extension, feet leaving) to 0.88 (straight again, reaching for the ground) is the part that is actually airborne.
-    anim: { idle: 'Idle', move: 'Run', moveSpeed: 6, attack: ['Run_swordAttack', 'swordAttackJump'], upper: ['Run_swordAttack'], death: 'Death', jump: 'Jump', jumpSpan: [0.5, 0.88], impact: { Run_swordAttack: 0.4, swordAttackJump: 0.62 } } },
+  // Built by scripts/build-player.py out of the three packs: the Peasant set is the figure (the parts ARE the body --
+  // what "wearing nothing" renders as), the base character gives the head, and the animation library the clips.
+  player: { file: 'player', height: 2.0, rig: UE_RIG, splitHands: true,
+    look: { sat: 0.55, light: 1.9, named: { Skin: SKIN, Armor: 0x6a7684, ArmorLegs: 0x6a7684, Boots: 0x2a2622, Hands: SKIN, Hair: 0x30261e, Eyes: 0x241c16 } },
+    surface: { '*': 'plate', Skin: 'skin', Hands: 'skin', Boots: 'hide', Hair: 'fur', Eyes: 'gem' },   // the worn pieces are plate, not world iron
+    // Measured off the built file, not guessed (the numbers the knight's entry carried were its own clips'):
+    //   moveSpeed  the planted foot sweeps back at 6.5 u/s through Jog_Fwd_Loop at rate 1
+    //   jumpSpan   the jump is Jump_Start and Jump_Land laid end to end, 2.58 s: the toe leaves the ground at 0.21
+    //              and the two clips meet at 1.33, which is the frame the body starts reaching for it again. The
+    //              crouch before 0.21 and the absorb after 1.33 sit outside the span, which is what jumpSpan is for.
+    //   impact     the sword hand is fastest through its arc at 0.42 s in both attacks
+    // Sword_Attack steps into the blow (the shin travels 0.27 u through it) and Sword_Attack_Standing does not, so
+    // the standing one is the swing layered over a run and the stepping one is the heavy.
+    anim: { idle: 'Idle_Loop', move: 'Jog_Fwd_Loop', moveSpeed: 6.5, attack: ['Sword_Attack_Standing', 'Sword_Attack'], upper: ['Sword_Attack_Standing'],
+      death: 'Death01', jump: 'Jump', jumpSpan: [0.21, 1.33], impact: { Sword_Attack_Standing: 0.42, Sword_Attack: 0.42 } } },
   warden: { file: 'wizard', height: 2.1, look: { sat: 0.6, light: 1.6, named: { Skin: SKIN, Clothes: 0x4c3b66, Hat: 0x33283f, Belt: 0x3a2d22, Gold: 0xb8893a } },
     surface: { '*': 'cloth', Skin: 'skin', Face: 'skin', Belt: 'hide', Gold: 'metal' }, anim: { idle: 'Idle', move: 'Walk' } },
   boar: { file: 'pig', height: 1.0, look: { sat: 0.5, light: 0.95, named: { 'Material.003': 0x93705a, Material: 0x3a281c } }, surface: 'hide',
@@ -103,10 +133,12 @@ export const SLOTS = {
   forge: { file: 'blacksmith', footprint: 5.2, look: { sat: 0.45, light: 1.0 },
     surface: { Plaster: 'plaster', Wood: 'wood', Wood_Light: 'wood', Wood_Side: 'wood', Stone_Light: 'stone', Stone_Dark: 'stone', RoofTiles_Red: 'roof' } },
   anvil: { file: 'anvil', height: 0.9, look: { sat: 0.3, light: 0.5, named: { MI_Trim_Metal: 0x2a2c33 } }, metal: 0.6, roughness: 0.5, surface: 'metal' },
-  // The two worn glb pieces. `raw` keeps the file's own coordinates so they sit on the knight, which also means their UVs
-  // are baked in rig units rather than world ones; gear.ts re-projects them when it mounts them (`fitPiece`).
-  helmet: { file: 'helmet', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794, DarkGrey: 0x4a525c } }, surface: 'plate' },
-  pauldrons: { file: 'pauldrons', raw: true, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794 } }, surface: 'plate' },
+  // The two worn glb pieces, fitted in world units like everything else and mounted in world units by gear.ts. They
+  // were `raw` while the figure they sat on was the pack that authored them: their file coordinates put the helm on
+  // the knight's head and nowhere else. `footprint` is the width across, because a helm and a pair of pauldrons are
+  // both read by how wide they are over the skull and the shoulders they clear.
+  helmet: { file: 'helmet', footprint: 0.29, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794, DarkGrey: 0x4a525c } }, surface: 'plate' },
+  pauldrons: { file: 'pauldrons', footprint: 0.5, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794 } }, surface: 'plate' },
   sword: { file: 'sword', height: 1.15, look: { sat: 1, light: 1, named: {} }, surface: { '*': 'metal', Brown: 'hide' } },
 } satisfies Record<string, SlotDef>;
 export type SlotId = keyof typeof SLOTS;
@@ -191,9 +223,6 @@ export interface Prepared {
   fit: { scale: number; offset: THREE.Vector3 };
 }
 
-const LEG_BONE = /^(UpperLeg|LowerLeg|Foot)/;
-const HAND_BONE = /^(Palm|MiddleHand|Fingers|Thumb)/;
-
 /**
  * How many units of the file's own space one unit of a mesh's geometry becomes, measured off the bind pose: the size of
  * the mesh as the loader lays it out, over the size of the numbers in its position buffer. Packs carry this factor in
@@ -209,14 +238,16 @@ function bindScale(m: THREE.Mesh): number {
 }
 
 /**
- * Peel the leg triangles off a skinned mesh into a second mesh that shares its vertex data (a triangle is a leg when the
- * mean of its corners' leg-bone weight is over half). The pack ships the whole outfit as one material, so this is the only
- * way to dress chest and legs separately. Returns null when one side is empty.
+ * Peel the triangles that hang off one part of the skeleton into a second mesh sharing the first's vertex data (a
+ * triangle belongs to the part when the mean of its corners' weight to it is over half). The hands come out of the
+ * skin this way: the pack carries face, arms and hands as one material, and a glove has to recolour the hands alone.
+ * Returns null when one side is empty.
  */
-function splitBones(m: THREE.SkinnedMesh, bones: RegExp, materialName: string, suffix: string): THREE.SkinnedMesh | null {
+function splitBones(m: THREE.SkinnedMesh, under: THREE.Object3D[], materialName: string, suffix: string): THREE.SkinnedMesh | null {
   const g = m.geometry, index = g.index, joints = g.getAttribute('skinIndex'), weights = g.getAttribute('skinWeight');
   if (!index || !joints || !weights) return null;
-  const leg = m.skeleton.bones.map(b => bones.test(b.name));
+  const below = (b: THREE.Object3D | null): boolean => !!b && (under.includes(b) || below(b.parent));
+  const leg = m.skeleton.bones.map(below);
   const legWeight = (v: number) => {
     let w = 0;
     for (let k = 0; k < 4; k++) if (leg[joints.getComponent(v, k)]) w += weights.getComponent(v, k);
@@ -278,14 +309,16 @@ async function load(id: SlotId): Promise<Prepared> {
   // before anything splits or merges: the legs share the body's attributes, so the seam only shades smoothly if both
   // sides were normalled while they were still one surface
   if (skinned && !def.keepNormals) for (const m of meshes) smoothNormals(m.geometry);
-  if (def.splitLegs) for (const m of [...meshes]) {
-    if ((m as THREE.SkinnedMesh).isSkinnedMesh && (m.material as THREE.Material).name === 'Armor') {
-      const legs = splitBones(m as THREE.SkinnedMesh, LEG_BONE, 'ArmorLegs', 'Legs');
-      if (legs) meshes.push(legs);
+  if (def.splitHands) {
+    const wrists: THREE.Object3D[] = [];
+    for (const side of ['L', 'R']) {
+      const name = def.rig?.[`Palm${side}`] ?? `Palm${side}`;
+      const b = root.getObjectByName(name);
+      if (b) wrists.push(b);
     }
-    // the bare hands, peeled off the skin so a glove can recolour them without touching the face and arms
-    if ((m as THREE.SkinnedMesh).isSkinnedMesh && (m.material as THREE.Material).name === 'Skin') {
-      const hands = splitBones(m as THREE.SkinnedMesh, HAND_BONE, 'Hands', 'Hands');
+    for (const m of [...meshes]) {
+      if (!(m as THREE.SkinnedMesh).isSkinnedMesh || (m.material as THREE.Material).name !== 'Skin') continue;
+      const hands = splitBones(m as THREE.SkinnedMesh, wrists, 'Hands', 'Hands');
       if (hands) meshes.push(hands);
     }
   }
@@ -340,7 +373,7 @@ async function load(id: SlotId): Promise<Prepared> {
   return { def, geometry, materials, scene: skinned ? root : undefined, clips, fit: { scale, offset } };
 }
 
-export interface Instance { root: THREE.Object3D; materials: THREE.MeshStandardMaterial[]; clips: Map<string, THREE.AnimationClip> }
+export interface Instance { root: THREE.Object3D; materials: THREE.MeshStandardMaterial[]; clips: Map<string, THREE.AnimationClip>; rig: RigMap }
 
 /**
  * A fresh renderable instance. Static slots share geometry and (unless `ownMaterials`) materials and are frozen:
@@ -354,7 +387,7 @@ export function spawn(p: Prepared, ownMaterials = false): Instance {
     const mesh = new THREE.Mesh(p.geometry, materials.length === 1 ? materials[0] : materials);
     shadow(mesh);
     mesh.matrixAutoUpdate = false;
-    return { root: mesh, materials, clips: p.clips };
+    return { root: mesh, materials, clips: p.clips, rig: p.def.rig ?? {} };
   }
   const model = cloneSkinned(p.scene);
   const own = new Map<THREE.Material, THREE.MeshStandardMaterial>();
@@ -371,7 +404,7 @@ export function spawn(p: Prepared, ownMaterials = false): Instance {
   model.position.copy(p.fit.offset);
   model.rotation.y = p.def.yaw ?? 0;
   fit.add(model);
-  return { root: fit, materials: [...own.values()], clips: p.clips };
+  return { root: fit, materials: [...own.values()], clips: p.clips, rig: p.def.rig ?? {} };
 }
 
 /** Freeze a static subtree: compute its world matrices once, then never again. */

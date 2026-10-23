@@ -3,6 +3,25 @@
 // Where a rig ships no clip for a job (hit, death, a lunge, a wind-up tell) a procedural pose layer stands in: see applyPose.
 import * as THREE from 'three';
 
+/**
+ * Every bone this file and `gear.ts` reach for by name, written as the Quaternius human rig (the knight, the wizard,
+ * the viking) ships them. A pack that calls them something else carries a `RigMap` saying so, and the names below stay
+ * the ones the code is written in: they are the logical joints, not any one file's spelling of them.
+ */
+export const RIG_BONES = ['Abdomen', 'Torso', 'Head',
+  'UpperArmL', 'UpperArmR', 'LowerArmL', 'LowerArmR', 'PalmL', 'PalmR', 'MiddleHandL', 'MiddleHandR',
+  'FingersL_end', 'FingersR_end',
+  'UpperLegL', 'UpperLegR', 'LowerLegL', 'LowerLegR', 'LowerLegL_end', 'LowerLegR_end',
+  'FootL', 'FootR', 'FootL_end', 'FootR_end'] as const;
+
+/**
+ * What one rig calls those joints: a logical name from `RIG_BONES` to the node name in its file (as three sanitises
+ * it, so the knight's `Foot.L` is `FootL`). Anything left out is spelled the same in both, so the human rig needs no
+ * map at all. Two logical names may share one file name -- on a rig where the foot hangs off the shin, the shin's end
+ * and the foot are the same joint.
+ */
+export type RigMap = Readonly<Record<string, string>>;
+
 /** Which clip plays for which state. Clip names are the glTF names with the armature prefix stripped. */
 export interface AnimDef {
   idle: string;
@@ -115,7 +134,6 @@ const SEATED: Record<string, [number, number, number]> = {
 };
 const SEAT_LEAN = 0.09; // radians the spine tips forward over the pommel
 
-const UPPER_BODY = /Abdomen|Torso|Neck|Head|Shoulder|Arm|Palm|Hand|Finger|Thumb/;
 const FADE = 0.18;
 const TWIST_END = 0.85; // clip time at which the swing's hip turn has unwound
 export const LEAD = 0.06;
@@ -148,7 +166,10 @@ export class Animator {
   private moving = false;
   private layer: THREE.AnimationAction | null = null;
   // procedural layer
+  /** Keyed by the logical name (RIG_BONES), whatever the file calls them. */
   private bones = new Map<string, THREE.Object3D>();
+  /** The node names below the spine: which of a clip's tracks the attack overlay plays over locomotion. */
+  private upper = new Set<string>();
   private hit = idle(0.32, 0.22);
   private lunge = idle(0.34, 0.2);
   private land = idle(0.3, 0.25);
@@ -181,13 +202,20 @@ export class Animator {
   private hipY = 0; // standing hip height above the feet, taken at the bind pose
   private spine?: THREE.Quaternion; // the Abdomen's bind rotation: the seated lean is set from it, never stacked on the last frame's
 
-  constructor(private root: THREE.Object3D, clips: Map<string, THREE.AnimationClip>, private def: AnimDef) {
+  constructor(private root: THREE.Object3D, clips: Map<string, THREE.AnimationClip>, private def: AnimDef, rig: RigMap = {}) {
     this.clips = clips;
     this.mixer = new THREE.AnimationMixer(root);
-    const wanted = new Set(['Abdomen', 'Torso', 'UpperArmL', 'LowerArmL', 'UpperArmR', 'LowerArmR', 'PalmL', 'PalmR',
-      'UpperLegL', 'LowerLegL', 'LowerLegL_end', 'FootL', 'FootL_end', 'UpperLegR', 'LowerLegR', 'LowerLegR_end', 'FootR', 'FootR_end']);
-    root.traverse(o => { if (wanted.has(o.name) && !this.bones.has(o.name)) this.bones.set(o.name, o); });
-    const names = [def.idle, def.move, ...(def.attack ?? []).filter(n => !def.upper?.includes(n)), def.hit, def.death, def.jump].filter((n): n is string => !!n);
+    const nodes = new Map<string, THREE.Object3D>();
+    root.traverse(o => { if (!nodes.has(o.name)) nodes.set(o.name, o); });
+    for (const logical of RIG_BONES) {
+      const o = nodes.get(rig[logical] ?? logical);
+      if (o) this.bones.set(logical, o);
+    }
+    // The upper body is the spine and everything hanging off it -- the arms and the head, never the legs, which are
+    // the pelvis's children. Read off the skeleton rather than matched by name, so a rig that spells its bones
+    // differently needs nothing said about it here.
+    this.bones.get('Abdomen')?.traverse(o => this.upper.add(o.name));
+    const names =[def.idle, def.move, ...(def.attack ?? []).filter(n => !def.upper?.includes(n)), def.hit, def.death, def.jump].filter((n): n is string => !!n);
     for (const n of names) {
       const c = clips.get(n);
       if (c) this.actions.set(n, this.mixer.clipAction(c));
@@ -489,9 +517,11 @@ export class Animator {
       const mx = side === 'L' ? 1 : -1, mirror = ([x, y, z]: [number, number, number]): [number, number, number] => [x * mx, y, z];
       this.aim(`UpperLeg${side}`, `LowerLeg${side}`, mirror(pose.UpperLeg), weight);
       this.aim(`LowerLeg${side}`, `LowerLeg${side}_end`, mirror(pose.LowerLeg), weight);
-      // the foot is its own bone, not a child of the shin: carry it to the shin's end, then point the toes
+      // On the human rig the foot is its own bone, not a child of the shin, so swinging the shin leaves it behind:
+      // carry it to the shin's end, then point the toes. A rig where the ankle IS the foot (the two logical names
+      // resolve to one joint) has already carried it, and the copy would be its own position.
       const foot = this.bones.get(`Foot${side}`), end = this.bones.get(`LowerLeg${side}_end`);
-      if (foot?.parent && end) {
+      if (foot?.parent && end && foot !== end) {
         end.updateWorldMatrix(true, false);
         foot.parent.updateWorldMatrix(true, false);
         foot.position.copy(foot.parent.worldToLocal(end.getWorldPosition(_a)));
@@ -501,8 +531,9 @@ export class Animator {
   }
 
   /**
-   * Tip the spine forward by `lean` radians. Set from the Abdomen's bind rotation, never stacked on the last frame's: no
-   * locomotion clip on this rig has an Abdomen track, so a multiply there is never written over and would wind up forever.
+   * Tip the spine forward by `lean` radians. Set from the Abdomen's bind rotation rather than stacked on the last
+   * frame's, so it holds whatever the clip is doing to the spine instead of winding up over it: that is what makes the
+   * seated lean and the gather's stoop independent of which clips a pack ships with spine tracks in them.
    */
   private bend(lean: number) {
     const b = this.bones.get('Abdomen');
@@ -534,7 +565,7 @@ export class Animator {
     let act = this.actions.get(key);
     if (!act) {
       const full = this.clips.get(name)!;
-      act = this.mixer.clipAction(new THREE.AnimationClip(key, full.duration, full.tracks.filter(t => UPPER_BODY.test(t.name))));
+      act = this.mixer.clipAction(new THREE.AnimationClip(key, full.duration, full.tracks.filter(t => this.upper.has(t.name.split('.')[0]))));
       this.actions.set(key, act);
     }
     this.layer?.fadeOut(0.05);
