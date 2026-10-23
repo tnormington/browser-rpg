@@ -1,7 +1,7 @@
 // Shop panel (DOM): the merchant's stock with prices. Selling happens from the bag's right-click menu (inventory-ui.ts).
 // Reads GameState; trades go out as sim shop requests only. Opens when the merchant is clicked, closes when you walk off.
 import type { GameState } from './sim';
-import { SHOP_REACH, Vendor, buyPrice, taughtBy, vendorById, VENDORS } from './sim/shop';
+import { SHOP_REACH, Vendor, SENDS_ON, buyPrice, taughtBy, vendorById, VENDORS } from './sim/shop';
 import { ABILITIES } from './sim/data';
 import { FOOT_SPEED, mountsSoldBy } from './sim/mounts';
 import { ITEMS, TIER_COLORS, describeStats } from './sim/items';
@@ -43,7 +43,7 @@ export class ShopUi {
     if (on && vendor) this.vendor = vendorById(vendor) ?? this.vendor;
     this.titleEl.firstChild?.nodeType === Node.TEXT_NODE ? (this.titleEl.firstChild.textContent = this.vendor.name) : this.titleEl.prepend(this.vendor.name);
     setFace(this.face, `vendor_${this.vendor.id}`);
-    this.hint.textContent = mountsSoldBy(this.vendor.id).length ? 'Mounts are bought here with gold, once you meet what each one asks. Press Z to ride.' : taughtBy(this.vendor.id).length ? 'Abilities are bought here with gold, once you have the level.' : 'Right-click an item in your bag to sell it.';
+    this.hint.textContent = mountsSoldBy(this.vendor.id).length ? 'Mounts are bought here with gold, once you meet what each one asks. Press Z to ride.' : taughtBy(this.vendor.id).length ? ['Abilities are bought here with gold, once you have the level.', SENDS_ON[this.vendor.id]].filter(Boolean).join(' ') : 'Right-click an item in your bag to sell it.';
     this.panel.style.display = on ? 'block' : 'none';
     this.sig = '';
   }

@@ -20,6 +20,7 @@ export const THORN_STABLE = { name: 'Garth Hollin, Stablemaster', x: LANDMARKS.t
 export const HIGH_VENDOR = { name: 'Kell Ashdown, Provisioner', x: LANDMARKS.highVendor.x, z: LANDMARKS.highVendor.z, r: LANDMARKS.highVendor.r };
 export const HIGH_TRAINER = { name: 'Ravn Highcastle, Trainer', x: LANDMARKS.highTrainer.x, z: LANDMARKS.highTrainer.z, r: LANDMARKS.highTrainer.r };
 export const HIGH_STABLE = { name: 'Isolde Marr, Stablemaster', x: LANDMARKS.highStable.x, z: LANDMARKS.highStable.z, r: LANDMARKS.highStable.r };
+export const SPIRE_TRAINER = { name: 'Maren Duskhollow, Trainer', x: LANDMARKS.spireTrainer.x, z: LANDMARKS.spireTrainer.z, r: LANDMARKS.spireTrainer.r };
 export const SPIRE_VENDOR = { name: 'Corwen Ashmere, Provisioner', x: LANDMARKS.spireVendor.x, z: LANDMARKS.spireVendor.z, r: LANDMARKS.spireVendor.r };
 export const SHOP_REACH = 6; // centre to centre, like the forge
 export const BUY_MARKUP = 4; // the shop charges this many times an item's value: far above what it pays, so a round trip always loses gold
@@ -50,7 +51,9 @@ export interface Vendor { id: string; name: string; x: number; z: number; r: num
 /** Merchants buy and sell; the trainer has no stock and teaches whatever ABILITIES names her in `trainer.vendor`, and the stablemaster sells whatever MOUNTS names him in `vendor`. */
 export const VENDORS: Vendor[] = [{ id: 'hale', ...VENDOR, stock: SHOP_STOCK }, { id: 'harbour', ...HARBOUR_VENDOR, stock: HARBOUR_STOCK }, { id: 'trainer', ...TRAINER, stock: [] }, { id: 'thorn', ...THORN_VENDOR, stock: THORN_STOCK }, { id: 'thorn_trainer', ...THORN_TRAINER, stock: [] }, { id: 'thorn_stable', ...THORN_STABLE, stock: [] },
   { id: 'high', ...HIGH_VENDOR, stock: HIGH_STOCK }, { id: 'high_trainer', ...HIGH_TRAINER, stock: [] }, { id: 'high_stable', ...HIGH_STABLE, stock: [] },
-  { id: 'spire', ...SPIRE_VENDOR, stock: SPIRE_STOCK }];
+  { id: 'spire', ...SPIRE_VENDOR, stock: SPIRE_STOCK }, { id: 'spire_trainer', ...SPIRE_TRAINER, stock: [] }];
+/** A trainer who points the player on: the abilities past level 50 are taught in the Spire only, and the town that used to sell them says where they went (HOM-201). */
+export const SENDS_ON: Record<string, string> = { high_trainer: 'Nothing past combat level 50 is taught here: Maren Duskhollow, in the Sundered Spire, sells the six abilities that open at 50 to 99.' };
 /** The slots a trainer teaches. */
 export const taughtBy = (vendor: string) => ABILITIES.flatMap((a, slot) => a.trainer?.vendor === vendor ? [slot] : []);
 export const vendorById = (id: string) => VENDORS.find(v => v.id === id);
