@@ -33,7 +33,11 @@
 // HOM-183: --rotation old|new|both, --echo 3|0|-3, --build fury,bulwark,hunt, --spacing S (ttk). --gear line past level 48 is the Echo blades and Echohide. The press counts are the `presses` column; NEVER PRESSED lines say what did not fire.
 //   node bench/combat.mjs --mode ttk --types rune_golem --level 50 --gear line --echo 3 --rotation both --n 10 --fast 1 --skip-build
 //   The new rotation's rules for the two off-GCD buttons (Rampart, Echo Surge) and for Final Reckoning are written out in fightStep.
-// Not modelled: food, potions; talents only under --rotation new.
+// HOM-197: --rotation talents is the character the Echo is priced against (ECHO_TALENTS.build, the six purchased abilities off the bar); old is the NO-TALENT arm and says so in every header. The steady-state loop is --spacing 25; --spacing 0 is a FIRST PULL.
+//   node bench/combat.mjs --mode ttk --types rune_golem --level 60 --gear line --rotation talents --spacing 25 --n 10 --skip-build
+//   Acceptance (golem, --echo 0 --gear line --spacing 25 --fast 1 --n 16, mean ttk): with --no-heal 42 13.9, 60 14.9, 80 13.5, 99 a pair 25.4 (2 x 0.85 x 14.2 = 24.1); without it 60 reads 16.4,
+//   because the bot spends a GCD on Second Wind: price Echo health with --no-heal, read survivability with the heals.
+// Not modelled: food, potions; talents only under --rotation new|talents.
 // ttk: isolated 1v1 (everything else in the world pinned dead), player placed 7 units off; per fight: first swing -> kill, damage taken, % of max HP.
 // loop: the type's camps in their natural layout (other types pinned dead), kill -> loot (real clicks) -> walk (real clicks) -> wait for --health of max HP
 //   -> next fight; swing-to-swing time split into fight / loot / walk / regen-wait / engage. Writes bench/shots/bot-<mode>-<tag>.json.
@@ -47,6 +51,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const opt = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i < 0 ? d : process.argv[i + 1]; };
 const tag = opt('tag', 'run'), secs = Number(opt('secs', 25)), quality = opt('quality', 'high');
 const mode = opt('mode', ''), speed = Number(opt('speed', 1)), port = Number(opt('port', 4175));
+// HOM-197: what each rotation IS, printed in every result's header.
+const ROT_NOTE = { old: 'the NO-TALENT arm: no talent, no purchased ability; not a player past level 2, never quote it as one', new: 'every talent point spent and the six purchased abilities on the bar', talents: 'the Echo reference character: ECHO_TALENTS.build spent, the six purchased abilities off the bar' };
 const shots = join(root, 'bench', 'shots'); mkdirSync(shots, { recursive: true });
 // ---------- HOM-53 balance bot ----------
 /** Runs in the page. Plays through KeyboardEvents / MouseEvents the game's own listeners read; the sim ticks at its fixed 30 Hz, so every time below is in ticks. */
@@ -104,7 +110,8 @@ async function botInPage(cfg) {
     if (rot === 'new') { // HOM-183: the whole kit a player of this level has: the trainer's abilities, a spent talent tree and the six on the bar
       for (const ab of d.bench.abilities) if (ab.trainer && !p.learned.includes(ab.name)) p.learned.push(ab.name);
       spendTalents(); setBar(NEW_SLOTS);
-    } else { d.bench.resetTalents(); setBar({}); }
+    } else if (rot === 'talents') { spendTalents(); setBar({}); // HOM-197: the character the Echo is priced against: the reference build spent, the six purchased abilities off the bar
+    } else { d.bench.resetTalents(); setBar({}); } // 'old': NO talents at all, which no player past level 2 is
     p.hp = p.maxHp = Math.round((100 + 15 * (level - 1)) * p.talentFx.maxHp); p.energy = p.maxEnergy;
     // --spacing S: cooldowns carry from the last fight less S seconds, as they do in a 40 s loop; without it every fight starts with everything ready (this bench's old assumption)
     if (cfg.spacing > 0 && lastRot === rot) { for (let i = 0; i < p.cd.length; i++) p.cd[i] = Math.max(0, p.cd[i] - cfg.spacing); } else p.cd.fill(0);
@@ -435,11 +442,13 @@ async function runBot(page) {
   // HOM-183: --rotation old|new|both (default old: every number this bench ever printed is still what it prints). `new` is the kit a player has at the level: the trainer's six abilities, a spent talent tree
   // (--build fury,bulwark,hunt: the order the trees are filled in), the six on the bar. `both` runs each row twice, old then new, so the difference is in one table. --echo 3|0|-3 puts the Echo switch on
   // (Hard, Standard, Easy); --spacing S carries cooldowns from fight to fight less S seconds (40 is the bible's loop) where the default starts every fight with everything ready.
-  const rotation = opt('rotation', 'old'); if (!['old', 'new', 'both'].includes(rotation)) throw new Error(`--rotation old|new|both, not ${rotation}`);
+  const rotation = opt('rotation', 'old'); if (!['old', 'new', 'talents', 'both'].includes(rotation)) throw new Error(`--rotation old|new|talents|both, not ${rotation}`);
   const rotations = rotation === 'both' ? ['old', 'new'] : [rotation], echo = opt('echo', '') === '' ? null : Number(opt('echo', ''));
   if (echo !== null && ![-3, 0, 3].includes(echo)) throw new Error(`--echo 3|0|-3, not ${opt('echo', '')}`);
   if (mode !== 'ttk' && (rotation !== 'old' || echo !== null)) throw new Error('--rotation and --echo are ttk modes');
-  const build = opt('build', 'fury,bulwark,hunt').split(','); if (build.some(t => !['fury', 'bulwark', 'hunt'].includes(t))) throw new Error(`--build is fury, bulwark and hunt in an order, not ${opt('build', '')}`);
+  // HOM-197: --rotation talents is the Echo's reference character, so its default build is ECHO_TALENTS.build (read from src/sim/echo.ts, not copied); the other rotations keep fury,bulwark,hunt.
+  const echoBuild = readFileSync(join(root, 'src/sim/echo.ts'), 'utf8').match(/build: \[([^\]]*)\]/)[1].replace(/['\s]/g, '');
+  const build = opt('build', rotation === 'talents' ? echoBuild : 'fury,bulwark,hunt').split(','); if (build.some(t => !['fury', 'bulwark', 'hunt'].includes(t))) throw new Error(`--build is fury, bulwark and hunt in an order, not ${opt('build', '')}`);
   const runs = types.flatMap(type => rotations.map(rot => ({ type, rot, n, gear, level: opt('level', '') ? Number(opt('level', '')) : levels[type] })));
   page.on('console', m => { if (m.type() === 'error') console.error('page:', m.text()); });
   const t0 = Date.now();
@@ -452,13 +461,16 @@ async function runBot(page) {
     console.log(`wall ${wall}s at speed ${speed}`);
     return;
   }
-  writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify({ mode, gear, rotation, echo, build, spacing: Number(opt('spacing', 0)), thr, speed, n, dodge, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), runs, res }, null, 1));
+  // HOM-197: every result says which character, which loop and which gear it measured: a right number read as the wrong thing is how this bench has misled before.
+  const spacingN = Number(opt('spacing', 0)), header = `rotation ${rotation} (${rotations.map(r => `'${r}' = ${ROT_NOTE[r]}`).join('; ')}); spacing ${spacingN} (${spacingN > 0 ? 'steady state: cooldowns carry from the last fight' : 'FIRST PULL: every fight starts with everything ready'}); gear arm ${gear}; build ${build.join(',')}`;
+  writeFileSync(join(shots, `bot-${mode}-${tag}.json`), JSON.stringify({ header, mode, gear, rotation, echo, build, spacing: Number(opt('spacing', 0)), thr, speed, n, dodge, tactics: process.argv.includes('--tactics'), heal: mode === 'ttk' ? !process.argv.includes('--no-heal') : process.argv.includes('--heal'), runs, res }, null, 1));
   const stat = a => { a = a.filter(x => x != null); if (!a.length) return { n: 0 }; const m = a.reduce((x, y) => x + y, 0) / a.length, sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, a.length - 1)); const sorted = [...a].sort((x, y) => x - y), h = sorted.length >> 1, med = sorted.length % 2 ? sorted[h] : (sorted[h - 1] + sorted[h]) / 2;
     return { n: a.length, mean: +m.toFixed(2), median: +med.toFixed(2), sd: +sd.toFixed(2), min: +Math.min(...a).toFixed(1), max: +Math.max(...a).toFixed(1) }; };
   if (mode === 'ttk') {
     // HOM-106: gross is damage taken, net is gross less health healed, both as % of max health; hpPct was gross and a heal never lowered it. Medians and means together.
     const mm = a => { const s = stat(a); return s.n ? `${s.median} / ${s.mean}` : '-'; };
     const sumTele = (t, kind) => t.reduce((a, x) => { const k = x.tele[kind]; if (k) for (const f in k) a[f] = (a[f] ?? 0) + k[f]; return a; }, {});
+    console.log(header);
     console.log(`--dodge ${dodge}; ttk, gross, net: median / mean`);
     // HOM-183: the press count is a permanent column, as the swing count was (HOM-98). `presses` is the mean number of casts a fight, every ability that fired plus every one of the six past level 48 the player's level
     // has open (a 0 there is printed as a 0); `presses0` is the abilities of the run that never fired in any fight, and is warned about below the table.
