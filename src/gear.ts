@@ -45,6 +45,13 @@ const WHITE = new THREE.Color(0xffffff);
  */
 const HELM_LIFT = 0.13, SHOULDER_LIFT = 0.15;
 /**
+ * Where the helm model's own box sits in the helm group's units, measured off the skull it covers with
+ * bench/helmprobe.mjs. models.ts centres a `footprint` slot on its own box, which throws away the one thing the
+ * pack did say about the armet: it hung 0.085 forward of the skull's centre and 0.049 above it, because a visor has a
+ * beak and the box grows round it. Centred instead, the shell sits back far enough for the face to come through it.
+ */
+const HELM_SEAT = new THREE.Vector3(0, -0.064, 0.121);
+/**
  * Every generated piece is drawn at the sizes the knight's proportions wanted: a helm bowl 0.69 world units across, a
  * greave 0.30 across, a boot 0.30 long. That was right over a cartoon figure whose skull alone stood 0.53 tall. The
  * figure that replaced it is the same 2.0 units but built to human proportions -- a skull 0.30 tall and 0.20 wide,
@@ -570,30 +577,35 @@ export class PlayerGear {
       this.fitPiece(this.pieces.helmet.def, helm.root);
       helm.root.matrixAutoUpdate = true;
       helm.root.scale.setScalar(this.k * (ap.rung >= 3 ? 1.04 : 1));   // the slot is fitted in world units; `k` is model space
-      this.restyle(this.pieces.helmet.def, helm.materials, ap, ['Grey'], ['DarkGrey']);
+      this.restyle(this.pieces.helmet.def, helm.materials, ap, ['Grey'], []);   // one material on the armet, so the trim is what the rung builds onto it
       p.list.push(...helm.materials);
       g.add(helm.root);
       if (ap.form === 'adamant') {
         // a heavy squared helm: brow slab, flat ridge, cheek slabs and a T of jade light. No horns, no crest: the mass is the read.
         const vein = p.get('inlay');
         helm.root.scale.setScalar(this.k * 1.06);
-        this.part(new THREE.BoxGeometry(0.66, 0.1, 0.52), trim, w, [0, 0.14, 0.06]);
-        this.part(new THREE.BoxGeometry(0.2, 0.14, 0.74), main, w, [0, 0.32, -0.02]);
-        this.part(new THREE.BoxGeometry(0.21, 0.035, 0.75), p.get('edge'), w, [0, 0.4, -0.02]); // the ridge's polished crown
-        for (const s of [-1, 1]) this.part(new THREE.BoxGeometry(0.09, 0.34, 0.34), trim, w, [s * 0.31, -0.06, 0.04]);
-        this.part(new THREE.BoxGeometry(0.34, 0.04, 0.04), vein, w, [0, 0.04, 0.3]);
-        this.part(new THREE.BoxGeometry(0.04, 0.22, 0.04), vein, w, [0, -0.07, 0.3]);
-        this.jewel(0.06, p, w, [0, 0.2, 0.26], [Math.PI / 2.4, 0, 0]);
+        // Less added mass than the knight's bowl wanted, because the armet brings its own: a slab wide enough to
+        // overhang a 0.66 dome is a hat brim over a 0.54 one. Each of these is sized to stand just proud of the
+        // shell's own line at the band of y it sits in.
+        this.part(new THREE.BoxGeometry(0.46, 0.09, 0.26), trim, w, [0, 0.08, 0.24]);
+        this.part(new THREE.BoxGeometry(0.2, 0.14, 0.42), main, w, [0, 0.3, 0.07]);
+        this.part(new THREE.BoxGeometry(0.21, 0.035, 0.43), p.get('edge'), w, [0, 0.385, 0.07]); // the ridge's polished crown
+        for (const s of [-1, 1]) this.part(new THREE.BoxGeometry(0.07, 0.3, 0.3), trim, w, [s * 0.25, -0.14, 0.1]);
+        this.part(new THREE.BoxGeometry(0.3, 0.04, 0.04), vein, w, [0, 0, 0.4]);
+        // the stem of the T lies along the beak, which juts to z 0.55 as it drops to y -0.15: a bar straight down the
+        // front of a visor that shape is half inside it, so this one leans with the slope
+        this.part(new THREE.BoxGeometry(0.04, 0.26, 0.04), vein, w, [0, -0.11, 0.47], [-0.65, 0, 0]);
+        this.jewel(0.06, p, w, [0, 0.08, 0.42], [Math.PI / 2.4, 0, 0]);
       } else if (ap.form === 'storm') {
         // a lean helm under a fan of backswept spikes and two long cheek barbs: a jagged crown that reads from every side
         const vein = p.get('inlay');
         helm.root.scale.setScalar(this.k);
-        for (const [x, len, lift] of [[0, 0.8, 0.28], [-0.14, 0.62, 0.24], [0.14, 0.62, 0.24]] as const)
+        for (const [x, len, lift] of [[0, 0.8, 0.25], [-0.11, 0.62, 0.21], [0.11, 0.62, 0.21]] as const)
           this.part(curvedSpike(0.06, len, 0.9, 0.4), trim, w, [x, lift, 0.1], [0, Math.PI / 2, 0]);
-        for (const s of [-1, 1]) this.part(curvedSpike(0.05, 0.4, 1.2, -0.5), trim, w, [s * 0.3, 0.02, 0.1]).scale.x = s;
-        this.part(new THREE.BoxGeometry(0.03, 0.4, 0.04), vein, w, [0, 0.4, 0.2], [0.9, 0, 0]);
-        this.part(new THREE.BoxGeometry(0.34, 0.03, 0.04), vein, w, [0, 0.04, 0.3]);
-        this.jewel(0.055, p, w, [0, 0.21, 0.24], [Math.PI / 2.6, 0, 0]);
+        for (const s of [-1, 1]) this.part(curvedSpike(0.05, 0.4, 1.2, -0.5), trim, w, [s * 0.21, 0.02, 0.1]).scale.x = s;
+        this.part(new THREE.BoxGeometry(0.03, 0.4, 0.04), vein, w, [0, 0.37, 0.17], [0.9, 0, 0]);
+        this.part(new THREE.BoxGeometry(0.26, 0.03, 0.04), vein, w, [0, 0.04, 0.37]);
+        this.jewel(0.055, p, w, [0, 0.2, 0.32], [Math.PI / 2.6, 0, 0]);
       } else if (ap.form === 'star') {
         // a clean black helm and one thing over it: a four-point star hung on a stem above the brow, two crossed diamonds around a bright core. Two long blades sweep back off the cheeks.
         const vein = p.get('inlay');
@@ -602,37 +614,38 @@ export class PlayerGear {
         this.part(new THREE.OctahedronGeometry(0.1).scale(0.5, 2.8, 0.5), vein, w, [0, 0.72, 0]);
         this.part(new THREE.OctahedronGeometry(0.1).scale(2.4, 0.5, 0.5), vein, w, [0, 0.72, 0]);
         this.part(new THREE.OctahedronGeometry(0.06), vein, w, [0, 0.72, 0], [0.6, 0.6, 0]);
-        for (const s of [-1, 1]) this.part(curvedSpike(0.05, 0.62, 1.5, -0.35), trim, w, [s * 0.3, 0.02, -0.02]).scale.x = s;
-        this.part(new THREE.BoxGeometry(0.3, 0.035, 0.04), vein, w, [0, 0.04, 0.3]); // the visor slit
+        for (const s of [-1, 1]) this.part(curvedSpike(0.05, 0.62, 1.5, -0.35), trim, w, [s * 0.215, 0.02, -0.02]).scale.x = s;
+        this.part(new THREE.BoxGeometry(0.26, 0.035, 0.04), vein, w, [0, 0.04, 0.38]); // the visor slit
       } else {
-        // The ladder's own plate helms. Every rung gets the brow it is read by: a band rolled round the widest line of
-        // the bowl, and a nasal hanging off it down the middle of the face, both polished. The bowl stays smooth, so
-        // these two are the only hard lit lines on the helm and the eye slit sits in their shadow.
-        this.band(0.344, 0.348, 0.055, 'edge', p, w, [0, 0.01, 0]);
-        this.part(new THREE.CylinderGeometry(0.055, 0.02, 0.23, 4).rotateY(Math.PI / 4), p.get('edge'), w, [0, -0.1, 0.315]);
-        this.part(crestFin(0.1, 0.56, 0.05), p.get('edge'), w, [0, 0.19, -0.02]);   // a low comb over the crown, so the bowl is not a bare dome
-        if (ap.rung >= 3) { // a swept crest along the skull: the silhouette cue from behind
+        // The ladder's own plate helms. The brow band, the nasal and the low comb the knight's bowl was read by are
+        // gone with it: the armet has a visor, a brow and a comb of its own, and a hoop rolled round a shell that is
+        // 0.51 across and 0.81 deep would cut into it at the sides and float at the beak. Rung 2 is the bare armet --
+        // "plated", which is what that rung means -- and every rung above adds only what the shell does not have.
+        if (ap.rung >= 3) { // a swept crest over the armet's own comb: the silhouette cue from behind
           const h = ap.rung >= 4 ? 0.5 : 0.28;
-          this.part(crestFin(h, 0.62, ap.rung >= 4 ? 0.07 : 0.05), trim, w, [0, 0.24, -0.02]);
+          this.part(crestFin(h, 0.55, ap.rung >= 4 ? 0.07 : 0.05), trim, w, [0, 0.22, 0]);   // base 0.08 under the crown, so it grows out of the comb rather than sitting on it
           const vein = p.get('inlay');
-          this.part(new THREE.BoxGeometry(ap.rung >= 4 ? 0.1 : 0.08, h * 0.7, 0.04), vein, w, [0, 0.24 + h * 0.55, -0.2 * h / 0.5], [0.55, 0, 0]); // vein up the crest's back edge, standing proud of the fin
-          this.jewel(0.055, p, w, [0, 0.19, 0.2], [Math.PI / 2.6, 0, 0]); // the crest's stone, set at its root over the brow
+          this.part(new THREE.BoxGeometry(ap.rung >= 4 ? 0.1 : 0.08, h * 0.7, 0.04), vein, w, [0, 0.22 + h * 0.55, -0.2 * h / 0.5], [0.55, 0, 0]); // vein up the crest's back edge, standing proud of the fin
+          this.jewel(0.055, p, w, [0, 0.22, 0.26], [Math.PI / 2.6, 0, 0]); // the crest's stone, set at its root where the comb meets the brow
           if (ap.rung >= 4) {
-            // aventail: a flared plate over the nape, with a glowing seam down it: the read from behind at play distance
-            const back = new THREE.CylinderGeometry(0.34, 0.46, 0.3, 6, 1, true, Math.PI / 2, Math.PI);
+            // aventail: a flared plate under the bevor, with a glowing seam down it: the read from behind at play
+            // distance. The armet's own neck stops at -0.43, so this hangs from just inside it onto the shoulders.
+            const back = new THREE.CylinderGeometry(0.3, 0.4, 0.28, 6, 1, true, Math.PI / 2, Math.PI);
             const plate = this.double(trim);
             p.list.push(plate);
-            this.part(back, plate, w, [0, -0.24, 0]);
-            this.part(new THREE.BoxGeometry(0.06, 0.28, 0.04), vein, w, [0, -0.24, -0.45]);
-            this.part(new THREE.CylinderGeometry(0.455, 0.465, 0.03, 6, 1, true, Math.PI / 2, Math.PI), vein, w, [0, -0.38, 0]); // hem line
-            // horns: three-piece curved spikes that sweep out and back up
-            for (const s of [-1, 1]) this.part(curvedSpike(0.075, 0.55, 1.1, -0.9), trim, w, [s * 0.26, 0.14, 0], [0, 0, 0]).scale.x = s;
+            this.part(back, plate, w, [0, -0.37, 0]);
+            this.part(new THREE.BoxGeometry(0.06, 0.26, 0.04), vein, w, [0, -0.37, -0.36]);
+            this.part(new THREE.CylinderGeometry(0.395, 0.405, 0.03, 6, 1, true, Math.PI / 2, Math.PI), vein, w, [0, -0.5, 0]); // hem line
+            // horns: three-piece curved spikes that sweep out and back up, rooted inside the shell's 0.253 half-width
+            for (const s of [-1, 1]) this.part(curvedSpike(0.07, 0.5, 1.1, -0.9), trim, w, [s * 0.2, 0.1, 0], [0, 0, 0]).scale.x = s;
           }
         }
       }
-      // a fitted slot stands on its own origin (models.ts puts the model's foot at it), and this group's origin is the
-      // middle of the bowl every generated helm is drawn round, so the stock helm drops by half its height to share it
-      helm.root.position.y = -new THREE.Box3().setFromObject(helm.root).getSize(this.tmp).y / 2;
+      // A fitted slot is centred on its own box (models.ts), and that is not where the pack hung the armet: the beak
+      // puts its box behind the skull's centre and below it, so left alone the face reads through the visor. Seating
+      // it is one move -- put the box centre at HELM_SEAT, measured off the skull in these units -- and it holds for
+      // every rung, including the three above that scale the shell.
+      helm.root.position.sub(new THREE.Box3().setFromObject(helm.root).getCenter(this.tmp)).addScaledVector(HELM_SEAT, this.k * HEAD_FIT);
     }
     g.add(w);
     this.mount('Head', g, this.at('Head').add(new THREE.Vector3(0, HELM_LIFT * this.k, 0)));

@@ -161,7 +161,11 @@ export const SLOTS = {
   // were `raw` while the figure they sat on was the pack that authored them: their file coordinates put the helm on
   // the knight's head and nowhere else. `footprint` is the width across, because a helm and a pair of pauldrons are
   // both read by how wide they are over the skull and the shoulders they clear.
-  helmet: { file: 'helmet', footprint: 0.29, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794, DarkGrey: 0x4a525c } }, surface: 'plate' },
+  // The helm is the Knight Armet out of the figure's own pack (scripts/build-garment.py), so the one piece of plate
+  // the player wears on the model is the art the model is. `footprint` is the depth, because that is what the visor
+  // makes widest, and 0.357 is the size the pack authored it at: the part spans 0.324 over a figure the game scales
+  // by 2.0/1.814, so this number is measured rather than dialled -- it puts the armet on the skull it was cut for.
+  helmet: { file: 'helmet', footprint: 0.357, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794 } }, surface: 'plate' },
   pauldrons: { file: 'pauldrons', footprint: 0.5, look: { sat: 0.5, light: 1.6, named: { Grey: 0x7c8794 } }, surface: 'plate' },
   sword: blade('sword'),
   // One model per weapon (HOM-203), keyed `weapon_<item id>`; `sword` stays the fallback for any weapon without one. All 20 are authored the way sword.glb is:
