@@ -32,6 +32,12 @@ export interface SlotDef {
   anim?: AnimDef;
   /** What this file calls the bones `gear.ts` and `anim.ts` reach for, where it does not call them what the human rig does. */
   rig?: RigMap;
+  /**
+   * A worn garment: a skinned mesh over the figure in `wornOn`'s own rig, not a prop on a bone. It is never fitted --
+   * it left Blender in that figure's space and has to stay there (scripts/build-garment.py) -- and it takes that
+   * slot's scale so its surface grain comes out the same size as the skin beside it. `gear.ts` `wear()` mounts one.
+   */
+  wornOn?: SlotId;
   /** Cut the hands out of the 'Skin' mesh by bone weight, into a mesh and material ('Hands') of their own: a glove then recolours them without touching the face and the arms. */
   splitHands?: boolean;
   /** Ignore the file's vertex colours: a pack that bakes its colours dark would otherwise tint every named colour black. */
@@ -89,6 +95,8 @@ const UE_RIG: RigMap = {
 
 /** A hand-held blade slot: its file's colours are replaced per item by gear.ts, so the look here is only a placeholder. */
 const blade = (file: string): SlotDef => ({ file, height: 1.15, look: { sat: 1, light: 1, named: {} }, surface: { '*': 'metal', Brown: 'hide' } });
+/** A worn garment over the player: one mesh, one material (`Shell`), recoloured per item by gear.ts like a blade. */
+const garment = (file: string, surface: SurfaceId): SlotDef => ({ file, wornOn: 'player', look: { sat: 1, light: 1, named: {} }, surface: { Shell: surface } });
 
 export const SLOTS = {
   // Built by scripts/build-player.py out of the three packs: the Peasant set is the figure (the parts ARE the body --
@@ -178,6 +186,17 @@ export const SLOTS = {
   weapon_echo_blade_5: blade('weapon_echo_blade_5'),
   weapon_echo_blade_6: blade('weapon_echo_blade_6'),
   weapon_echo_blade_7: blade('weapon_echo_blade_7'),
+  // The worn shells (HOM-202 phase 6), cut from the Ranger and Knight themes of the same pack the figure itself is:
+  // the shape of a legs or feet piece, where before it was a six-sided cone and a pair of boxes. A shell is only the
+  // shape -- gear.ts tints it per item and keeps the rung's own work (knee cops, veins, fur, thorns, shards) layered
+  // over it, the way the Echo blades sit over a blade model, so the tier ladder still reads off one shared mesh.
+  //
+  // Two a slot rather than the pack's five, because that is what the ladder asks for: every boot in the game is
+  // leather, so the sabatons have no item to be, and no legs item below bronze is plate.
+  gear_legs_hide: garment('gear_legs_hide', 'hide'),
+  gear_legs_plate: garment('gear_legs_plate', 'plate'),
+  gear_feet_hide: garment('gear_feet_hide', 'hide'),
+  gear_feet_fine: garment('gear_feet_fine', 'hide'),
 } satisfies Record<string, SlotDef>;
 export type SlotId = keyof typeof SLOTS;
 /** The slot holding the model made for weapon `id`, or null when it has none and the generic sword stands in. */
@@ -393,8 +412,11 @@ async function load(id: SlotId): Promise<Prepared> {
   }
   const size = box.getSize(new THREE.Vector3());
   const dim = def.footprint ? Math.max(size.x, size.z) : size.y;
-  const scale = def.raw ? 1 : (def.footprint ?? def.height!) / dim;
-  const offset = def.raw ? new THREE.Vector3() : new THREE.Vector3(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2).multiplyScalar(scale);
+  // A garment is not fitted to anything of its own: it is already in the figure's space, and it borrows the figure's
+  // scale so `bakeUV` below gives a boot the same texel size as the shin beside it.
+  const worn = def.wornOn ? await loadSlot(def.wornOn) : null;
+  const scale = worn ? worn.fit.scale : def.raw ? 1 : (def.footprint ?? def.height!) / dim;
+  const offset = worn || def.raw ? new THREE.Vector3() : new THREE.Vector3(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2).multiplyScalar(scale);
   if (skinned) offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), def.yaw ?? 0); // the model turns about its own origin, so the centring offset must turn with it
   if (geometry) { // bake the fit as well: instances then need no transform of their own
     geometry.scale(scale, scale, scale).translate(offset.x, offset.y, offset.z);

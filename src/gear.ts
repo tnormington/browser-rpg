@@ -20,7 +20,7 @@ import { RIG_BONES } from './anim';
 import { Appearance, appearanceOf } from './gear-look';
 import { cappedIntensity } from './glow';
 import { haloMesh } from './halo';
-import { Instance, keepsMaps, Prepared, SlotDef, smoothNormals, spawn } from './models';
+import { Instance, keepsMaps, Prepared, SlotDef, SlotId, smoothNormals, spawn } from './models';
 import { bakeUV, dress } from './surface';
 import type { Motes } from './fx';
 
@@ -107,14 +107,14 @@ function crestFin(h: number, len: number, thick: number) {
   return g.rotateY(-Math.PI / 2).translate(thick / 2, 0, 0);
 }
 
-interface Mounted { id: string | null; group: THREE.Object3D | null; materials: THREE.Material[] }
+interface Mounted { id: string | null; group: THREE.Object3D | null; materials: THREE.Material[]; covered?: THREE.Object3D[] }
 const empty = (): Mounted => ({ id: null, group: null, materials: [] });
 
 /** The finishes one piece is built from, made on demand. `list` is what `unmount` frees, so a build never leaks a material it did not use. */
 interface Palette { get(f: Finish): THREE.MeshStandardMaterial; list: THREE.Material[] }
 
-/** `sword` is the generic blade; `weapons` holds the model made for a weapon id, where one exists and loaded (HOM-203). */
-export interface GearPieces { helmet: Prepared | null; pauldrons: Prepared | null; sword: Prepared | null; weapons?: Map<string, Prepared> }
+/** `sword` is the generic blade; `weapons` holds the model made for a weapon id, where one exists and loaded (HOM-203); `garments` the worn shells, by slot id. */
+export interface GearPieces { helmet: Prepared | null; pauldrons: Prepared | null; sword: Prepared | null; weapons?: Map<string, Prepared>; garments?: Map<SlotId, Prepared> }
 
 export class PlayerGear {
   private model: THREE.Object3D;
@@ -130,6 +130,10 @@ export class PlayerGear {
   private tools = new Map<string, THREE.Object3D>();
   private held: string | null = null;
   private tmp = new THREE.Vector3();
+  /** The figure's own skinned meshes, by node name: what a garment is bound alongside, and what it hides when it covers one. */
+  private parts = new Map<string, THREE.SkinnedMesh>();
+  /** The figure's first skinned mesh: every garment borrows its bind and its place in the tree (see `wear`). */
+  private body: THREE.SkinnedMesh | null = null;
 
   /** Call at the bind pose, before the Animator exists. */
   constructor(private inst: Instance, private pieces: GearPieces) {
@@ -150,6 +154,12 @@ export class PlayerGear {
       this.bind.set(logical, new THREE.Matrix4().multiplyMatrices(modelInv, o.matrixWorld));
     }
     this.k = 1 / this.model.scale.x;
+    this.model.traverse(o => {
+      const m = o as THREE.SkinnedMesh;
+      if (!m.isSkinnedMesh) return;
+      this.parts.set(m.name, m);
+      this.body ??= m;
+    });
     for (const m of inst.materials) if (m.name === 'Armor' || m.name === 'ArmorLegs' || m.name === 'Boots' || m.name === 'Hands') this.bodyMats.set(m.name, m as THREE.MeshStandardMaterial);
     this.dressBody('Armor', null);
     this.dressBody('ArmorLegs', null);
@@ -279,11 +289,53 @@ export class PlayerGear {
   private double(m: THREE.MeshStandardMaterial) { const d = m.clone(); d.side = THREE.DoubleSide; return d; }
 
   /**
+   * Put a worn garment (models.ts `wornOn`) on the figure: a skinned shell that moves because the skeleton moves it,
+   * not a prop on a bone. A boot runs ankle to toe and a legs piece hip to ankle, so neither has one bone it could
+   * hang from and still follow the leg.
+   *
+   * Mounting one is a rebind, not a parenting. The shell arrives with a copy of the rig it was authored over
+   * (scripts/build-garment.py exports the armature alongside the mesh, because the exporter writes no skin data
+   * without one), and that copy is thrown away: a Skeleton is built from the FIGURE's bones, ordered as the shell's
+   * joints name them, and given the figure's own inverse binds. So the shell is posed by exactly the matrices the
+   * skin beside it is posed by, and nothing depends on the two files agreeing numerically on a rest pose -- only on
+   * agreeing on the 65 names, which is the one thing every pack in this set does agree on.
+   *
+   * `covers` names the figure's own meshes the shell stands in for; they are hidden while it is worn, because the
+   * pack's parts ARE the body and a leg garment over the peasant's legs is two legs in one pair of trousers.
+   */
+  private wear(slot: SlotId, ap: Appearance, cls: 'plate' | 'hide' | 'metal', covers: string[]) {
+    const p = this.pieces.garments?.get(slot);
+    if (!p || !this.body) return null;
+    const inst = spawn(p, true);
+    let mesh: THREE.SkinnedMesh | undefined;
+    inst.root.traverse(o => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) mesh ??= o as THREE.SkinnedMesh; });
+    if (!mesh) return null;
+    const bones: THREE.Bone[] = [], inverses: THREE.Matrix4[] = [];
+    for (const b of mesh.skeleton.bones) {
+      const i = this.body.skeleton.bones.findIndex(o => o.name === b.name);
+      if (i < 0) return null;
+      bones.push(this.body.skeleton.bones[i] as THREE.Bone);
+      inverses.push(this.body.skeleton.boneInverses[i]);
+    }
+    mesh.removeFromParent();
+    // the shell's vertices are in the figure's own space, so it takes the figure's place in the tree and its bind
+    mesh.position.copy(this.body.position);
+    mesh.quaternion.copy(this.body.quaternion);
+    mesh.scale.copy(this.body.scale);
+    mesh.bind(new THREE.Skeleton(bones, inverses), this.body.bindMatrix);
+    this.restyle(p.def, inst.materials, ap, ['Shell'], [], cls);
+    this.body.parent!.add(mesh);
+    const covered = covers.map(n => this.parts.get(n)).filter((m): m is THREE.SkinnedMesh => !!m);
+    for (const m of covered) m.visible = false;
+    return { mesh, materials: inst.materials, covered };
+  }
+
+  /**
    * Recolour a glb piece's materials by name: `main` names take the tint, `trim` names the trim (and the glow). The pack
    * ships these flat-shaded; worn plate is left smooth so the shell reads as a beaten bowl and the hard edges come from
    * the rims and ridges built onto it, which is the same rule `forge()` applies to generated gear.
    */
-  private restyle(def: SlotDef, mats: THREE.Material[], ap: Appearance, main: string[], trim: string[], cls: 'plate' | 'metal' = 'plate', polish = 1) {
+  private restyle(def: SlotDef, mats: THREE.Material[], ap: Appearance, main: string[], trim: string[], cls: 'plate' | 'metal' | 'hide' = 'plate', polish = 1) {
     const blade = cls === 'metal';
     for (const mat of mats as THREE.MeshStandardMaterial[]) {
       const isMain = main.includes(mat.name), isTrim = trim.includes(mat.name);
@@ -308,6 +360,7 @@ export class PlayerGear {
     for (const o of (s.group?.userData.pieces ?? []) as THREE.Object3D[]) o.removeFromParent();
     s.group?.traverse(o => { if (o.userData.own) (o as THREE.Mesh).geometry.dispose(); });
     for (const m of s.materials) m.dispose();
+    for (const m of s.covered ?? []) m.visible = true;   // the figure's own leg, foot or head comes back when its shell goes
     this.slots[slot] = empty();
   }
 
@@ -665,24 +718,25 @@ export class PlayerGear {
 
   private buildLegs(id: string) {
     const ap = appearanceOf(id);
-    if (ap.rung <= 1) return { group: null, materials: [] };
-    const p = this.palette(ap), main = p.get('plate'), trim = p.get('trim');
+    const p = this.palette(ap), trim = p.get('trim');
     const root = new THREE.Group();
+    // The shell: a modelled leg piece over the whole leg, hip to ankle, in place of the figure's own. Plate from the
+    // knight's theme from bronze up, leather from the ranger's below it -- which is also what gives rung 1 a legs
+    // piece at all, where before `hide_leggings` and the copper greaves showed nothing but a recoloured body.
+    const worn = this.wear(ap.rung >= 2 ? 'gear_legs_plate' : 'gear_legs_hide', ap, ap.metal > 0.3 ? 'plate' : 'hide', ['Male_Peasant_Legs']);
+    if (worn) {
+      (root.userData.pieces ??= [] as THREE.Object3D[]).push(worn.mesh);
+      p.list.push(...worn.materials);
+    }
+    if (ap.rung <= 1) return { group: worn ? root : null, materials: p.list, covered: worn?.covered };
     for (const side of ['L', 'R']) {
       const shin = `LowerLeg${side}`, end = `LowerLeg${side}_end`;
       if (!this.bind.has(shin) || !this.bind.has(end)) continue;
       const a = this.at(shin), b = this.at(end), len = a.distanceTo(b) / this.k / LIMB_FIT;
       const g = new THREE.Group(), w = this.world();
       w.scale.multiplyScalar(LIMB_FIT);
-      // Shin plate: a tapered six-sided shell from knee to ankle, left faceted on purpose (six sides meet at sixty
-      // degrees, past the crease, so the plate keeps its folds where the helm's bowl rolls). Down the front of it runs a
-      // polished ridge and round it two leather bands: the hard lit line and the soft dark one, on every rung. Both are
-      // cut from the same cone as the shell, so they hug it over its whole taper instead of floating off the ankle.
-      const shell = len * 0.8, rAt = (f: number) => 0.13 + (f / shell) * 0.04;   // the shell's radius at a height f off its middle
-      this.part(new THREE.CylinderGeometry(0.15, 0.11, shell, 6), main, w, [0, 0, 0]);
-      this.part(new THREE.CylinderGeometry(0.157, 0.117, shell * 0.98, 3, 1, false, -0.24, 0.48), p.get('edge'), w, [0, 0, 0]);
-      this.band(0.118, 0.126, 0.05, 'edge', p, w, [0, -shell / 2, 0]);   // the rolled rim at the ankle, cut to the shell's own radius there
-      for (const f of [-shell * 0.3, shell * 0.26]) this.band(rAt(f + 0.02) + 0.008, rAt(f - 0.02) + 0.008, 0.042, 'strap', p, w, [0, f, 0]);
+      // Knee cops, barbs and seams, over the shell: the rung's own work, which is all that is left here now that the
+      // shell carries the shape. A piece that is nothing but these is a piece whose tier can be read at a glance.
       if (ap.rung >= 3) {
         this.part(new THREE.OctahedronGeometry(ap.rung >= 4 ? 0.17 : 0.13), trim, w, [0, len * 0.4 + 0.05, 0.05]);
         this.jewel(0.045, p, w, [0, len * 0.4 + 0.05, 0.05 + (ap.rung >= 4 ? 0.14 : 0.11)], [Math.PI / 2, 0, 0]); // a stone in each knee cop
@@ -698,7 +752,7 @@ export class PlayerGear {
       g.add(w);
       this.mountPiece(root, shin, g, a.clone().lerp(b, 0.5));
     }
-    return { group: root.userData.pieces ? root : null, materials: p.list };
+    return { group: root.userData.pieces ? root : null, materials: p.list, covered: worn?.covered };
   }
 
   /** Gloves: the knight's own hands recoloured (they are a mesh of their own, see models.ts), plus a cuff at the wrist, on the Palm bone. Wolfskin swaps the cuff for a flared fur ruff and fringes the fingertips. Sizes are world units: the knight's hand is ~0.2 long. */
@@ -746,13 +800,22 @@ export class PlayerGear {
     return { group: root.userData.pieces ? root : null, materials: p.list };
   }
 
-  /** Boots: a shaft over the ankle and a foot with a sole, both on the Foot bone (which sits at ground level, heel). Wolfskin tops the shaft with a flared fur cuff. */
+  /**
+   * Boots: a modelled shell over both feet, and the set's own work over its rim on the Foot bone (which sits at ground
+   * level, heel). Every boot on the ladder is leather, so the shells are the ranger's for the first three rungs and
+   * the finer noble pair from Thornhide up; the plate sabatons in the same pack have no item to be.
+   */
   private buildFeet(id: string) {
     const ap = appearanceOf(id), moor = ap.form === 'moor', fur = ap.form === 'wolfskin' || moor;
     const p = this.palette(ap), main = p.get('plate'), trim = p.get('trim');
     const ruff = fur ? p.get('fur') : null;
     const vein = ap.glow && ap.rung >= 3 ? p.get('inlay') : null;
     const root = new THREE.Group();
+    const worn = this.wear(ap.rung >= 4 ? 'gear_feet_fine' : 'gear_feet_hide', ap, 'hide', ['Male_Peasant_Feet']);
+    if (worn) {
+      (root.userData.pieces ??= [] as THREE.Object3D[]).push(worn.mesh);
+      p.list.push(...worn.materials);
+    }
     for (const side of ['L', 'R']) {
       const foot = `Foot${side}`, toe = `Foot${side}_end`;
       if (!this.bind.has(foot) || !this.bind.has(toe)) continue;
@@ -761,23 +824,14 @@ export class PlayerGear {
       const zUp = new THREE.Vector3(0, 0, 1).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, dir.clone().normalize())).y > 0 ? 1 : -1;
       const g = new THREE.Group(), w = this.world();
       w.scale.multiplyScalar(LIMB_FIT);
-      this.part(new THREE.BoxGeometry(0.17, 0.3, 0.09), main, w, [0, 0.07, zUp * 0.055]);
-      this.part(new THREE.BoxGeometry(0.165, 0.32, 0.025), p.get('strap'), w, [0, 0.07, zUp * 0.0125]); // sole
-      if (ap.rung >= 2) { // toe cap, with its top edge rubbed bright: the tier fallback
-        this.part(new THREE.BoxGeometry(0.16, 0.08, 0.09), trim, w, [0, 0.19, zUp * 0.055]);
-        this.part(new THREE.BoxGeometry(0.168, 0.022, 0.096), p.get('edge'), w, [0, 0.225, zUp * 0.055]);
-      }
       if (vein) this.part(new THREE.BoxGeometry(0.02, 0.2, 0.02), vein, w, [0, 0.1, zUp * 0.1]);
       if (moor) this.part(curvedSpike(0.035, 0.26, 0.1, 0.9, 3), trim, w, [0, 0.2, zUp * 0.09], [0, zUp > 0 ? Math.PI / 2 : -Math.PI / 2, 0]); // a horn toe-cap, curling up off the toe
       g.add(w);
       this.mountPiece(root, foot, g, a, dir);
       const shaft = new THREE.Group(), s = this.world();
       s.scale.multiplyScalar(LIMB_FIT);
-      this.part(new THREE.CylinderGeometry(0.105, 0.12, 0.24, 14), main, s, [0, 0.13, -0.03]);
-      this.band(0.113, 0.113, 0.04, 'strap', p, s, [0, 0.16, -0.03]); // the buckle strap round the shaft
       if (moor) this.part(new THREE.CylinderGeometry(0.2, 0.12, 0.15, 7, 1, true), ruff!, s, [0, 0.28, -0.03]); // a deep fleece top, wider than wolfskin's
       else if (fur) this.part(new THREE.CylinderGeometry(0.17, 0.11, 0.1, 7, 1, true), ruff!, s, [0, 0.27, -0.03]);
-      else this.band(0.12, 0.12, 0.035, 'edge', p, s, [0, 0.25, -0.03]); // rolled top
       if (ap.form === 'marsh') {
         this.band(0.122, 0.128, 0.06, 'trim', p, s, [0, 0.04, -0.03]); // the mud line round the ankle
         for (let i = 0; i < 8; i++) { const t = (i / 8) * Math.PI * 2; this.part(new THREE.ConeGeometry(0.02, 0.17 + 0.04 * (i % 3), 3), main, s, [Math.sin(t) * 0.12, 0.2, -0.03 + Math.cos(t) * 0.12], [Math.PI + Math.cos(t) * 0.3, 0, -Math.sin(t) * 0.3]); } // reeds hung over the top
@@ -791,7 +845,7 @@ export class PlayerGear {
       shaft.add(s);
       this.mountPiece(root, foot, shaft, a);
     }
-    return { group: root.userData.pieces ? root : null, materials: p.list };
+    return { group: root.userData.pieces ? root : null, materials: p.list, covered: worn?.covered };
   }
 
   /**
@@ -825,7 +879,8 @@ export class PlayerGear {
     return { group: g, materials: p.list };
   }
 
-  private build(slot: WornSlot, id: string) {
+  /** What a slot's builder hands back: what to mount, what to free with it, and the figure's own meshes a shell stands in for. */
+  private build(slot: WornSlot, id: string): { group: THREE.Object3D | null; materials: THREE.Material[]; covered?: THREE.SkinnedMesh[] } | null {
     switch (slot) {
       case 'weapon': return this.buildWeapon(id);
       case 'head': return this.buildHead(id);
@@ -847,7 +902,7 @@ export class PlayerGear {
       if (id !== this.slots[slot].id) {
         this.unmount(slot);
         const built = id ? this.build(slot, id) : null;
-        this.slots[slot] = { id, group: built?.group ?? null, materials: built?.materials ?? [] };
+        this.slots[slot] = { id, group: built?.group ?? null, materials: built?.materials ?? [], covered: built?.covered };
         if (slot === 'chest') this.dressBody('Armor', id);
         if (slot === 'legs') this.dressBody('ArmorLegs', id);
         if (slot === 'hands') this.dressBody('Hands', id);

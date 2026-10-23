@@ -1088,13 +1088,17 @@ export class Renderer {
   private async dressPlayer(p: Prepared) {
     const skipped = (id: SlotId) => loadSlot(id).catch(err => { console.warn(`model slot "${id}" skipped:`, err); return null; });
     const bladeIds = Object.keys(ITEMS).filter(id => ITEMS[id].slot === 'weapon' && weaponSlot(id));
-    const [helmet, pauldrons, sword, ...blades] = await Promise.all([skipped('helmet'), skipped('pauldrons'), skipped('sword'), ...bladeIds.map(id => skipped(weaponSlot(id)!))]);
+    const shellIds = (Object.keys(SLOTS) as SlotId[]).filter(id => id.startsWith('gear_'));
+    const [helmet, pauldrons, sword, ...rest] = await Promise.all([skipped('helmet'), skipped('pauldrons'), skipped('sword'),
+      ...bladeIds.map(id => skipped(weaponSlot(id)!)), ...shellIds.map(skipped)]);
     const weapons = new Map<string, Prepared>();
-    bladeIds.forEach((id, i) => { if (blades[i]) weapons.set(id, blades[i]!); });
+    bladeIds.forEach((id, i) => { if (rest[i]) weapons.set(id, rest[i]!); });
+    const garments = new Map<SlotId, Prepared>();
+    shellIds.forEach((id, i) => { const g = rest[bladeIds.length + i]; if (g) garments.set(id, g); });
     const inst = spawn(p);
     inst.root.updateMatrixWorld(true);
     // gear is mounted from the sim's equipment record every frame (see gear.ts); nothing is attached unconditionally
-    this.gear = new PlayerGear(inst, { helmet, pauldrons, sword, weapons });
+    this.gear = new PlayerGear(inst, { helmet, pauldrons, sword, weapons, garments });
     this.hide(this.weapon);
     this.hide(this.player);
     this.player.add(inst.root);

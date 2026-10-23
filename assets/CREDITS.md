@@ -12,6 +12,7 @@ the repo.
 |---|---|---|---|---|---|
 | `player.glb` | Player | three packs, assembled (see below) | Universal Base Characters, Modular Character Outfits – Fantasy, Universal Animation Library | https://quaternius.itch.io/universal-base-characters · https://quaternius.itch.io/modular-character-outfits-fantasy · https://quaternius.itch.io/universal-animation-library | CC0 |
 | `helmet.glb`, `pauldrons.glb`, `sword.glb` | Player armour + weapon | `Helmet1.fbx`, `ShoulderPads.fbx`, `Sword.fbx` | Knight Character | https://opengameart.org/content/lowpoly-animated-knight | CC0 |
+| `gear_legs_hide.glb`, `gear_legs_plate.glb`, `gear_feet_hide.glb`, `gear_feet_fine.glb` | Worn legs and feet | `Male_Ranger_Legs`, `Male_Knight_Legs_Armor`, `Male_Ranger_Feet_Boots`, `Male_Noble_Feet` (decimated, one material, `scripts/build-garment.py`) | Modular Character Outfits – Fantasy [Source] | https://quaternius.itch.io/modular-character-outfits-fantasy | CC0 |
 | `wizard.glb` | Warden Hale | `Wizard.fbx` | Ultimate Animated Character Pack | https://opengameart.org/content/animated-characters-pack | CC0 |
 | `viking.glb` | Cave Brute | `Viking_Male.fbx` | Ultimate Animated Character Pack | https://opengameart.org/content/animated-characters-pack | CC0 |
 | `wolf.glb` | Dire Wolf | `Wolf.fbx` | Animal Pack Vol.2 | https://opengameart.org/content/animated-animales-low-poly | CC0 |
