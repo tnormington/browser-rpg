@@ -262,6 +262,7 @@ function readInput(): Input {
     enchant: pendingEnchant.splice(0),
     admin: pendingAdmin.splice(0),
     bounty: pendingBounty.splice(0),
+    now: Date.now(),
     interact: pendingInteract,
     craft: pendingCraft,
     questAdvance: pendingAdvance,

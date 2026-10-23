@@ -11,6 +11,8 @@ const WHY: Partial<Record<BountyFail, string>> = {
   slots: 'Your hands are full: hand one in or drop one first.',
   level: 'Nothing left in the world is a match for you.',
 };
+/** The line for a bounty a hand-in has put back on the board: when it is posted again. */
+const readyIn = (ms: number) => { const m = Math.ceil(ms / 60000); return `Posted again in ${m >= 60 ? `${Math.floor(m / 60)} h ` : ''}${m % 60} min.`; };
 
 /** The board's panel. Opens when the board is clicked, closes when you walk off. */
 export class BoardUi {
@@ -45,7 +47,7 @@ export class BoardUi {
     if (this.open && (s.player.dead || boardNear(s)?.id !== this.town)) this.setOpen(false);
     if (!this.open) return;
     const rows = offers(s, this.town);
-    const sig = JSON.stringify([rows.map(r => [r.active?.kills, r.goal, r.gold, r.xp, r.done, r.why]), s.player.dead]);
+    const sig = JSON.stringify([rows.map(r => [r.active?.kills, r.goal, r.gold, r.xp, r.done, r.why, Math.ceil(r.wait / 60000)]), s.player.dead]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.list.textContent = '';
@@ -57,7 +59,8 @@ export class BoardUi {
       el(row, 'rstat', r.def.text);
       const reward = [`${r.gold} gold`, `${r.xp} XP`, ...(r.def.reward.items ?? []).map(i => `${i.qty > 1 ? i.qty + 'x ' : ''}${ITEMS[i.id].name}`)].join(', ');
       el(row, 'rstat', `${r.active ? `${cap(r.def.target.label)}: ${Math.min(r.goal, r.active.kills)} / ${r.goal}` : `Slay ${r.goal} ${r.def.target.label}`}. Pays ${reward}.`);
-      if (r.why && r.why !== 'active' && WHY[r.why]) el(row, 'rstat', WHY[r.why]!);
+      if (r.why === 'wait') el(row, 'rstat', readyIn(r.wait));
+      else if (r.why && r.why !== 'active' && WHY[r.why]) el(row, 'rstat', WHY[r.why]!);
       const btns = el(row, 'rbtns');
       if (r.active) {
         if (r.active.kills >= r.active.goal) actionButton(btns, 'Hand in').addEventListener('click', () => this.send({ k: 'turnin', id: r.def.id }));

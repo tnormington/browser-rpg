@@ -245,6 +245,7 @@ export interface Input {
   roll?: boolean;                               // the roll key pressed this tick: a dodge-roll out of the same meter (sim/agility.ts)
   inv: InvAction[];                             // inventory/equipment actions this tick
   bounty?: BountyAction[];                      // accept / hand in / drop requests this tick, at the board the player stands at
+  now?: number;                                 // the wall clock in ms (Date.now), from the shell: the only time the sim knows, for what refills by the hour (sim/bounties.ts)
   echo?: EchoSetting;                           // the Echo switch, set to this (null is off); absent leaves it alone. Refused until the Seal is broken
   shop?: ShopAction[];                          // sell/buy requests this tick (optional like the others added after the first callers)
   enchant?: EnchantAction[];                    // disenchant / enchant requests this tick, at the rune circle
@@ -331,6 +332,7 @@ export function step(s: GameState, input: Input, dt: number = TICK_DT): void {
     for (const a of input.inv) applyInvAction(s, a);
     for (const a of input.shop ?? []) applyShopAction(s, a);
     for (const a of input.enchant ?? []) applyEnchantAction(s, a);
+    if (input.now !== undefined) s.bounties.now = input.now;
     for (const a of input.bounty ?? []) applyBountyAction(s, a);
     if (input.echo !== undefined) setEcho(s, input.echo);
     if (input.interact) requestInteract(s, input.interact);

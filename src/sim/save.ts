@@ -61,7 +61,7 @@ interface SaveFile {
     chests?: string[];                // chests opened, by id (sim/chests.ts); absent in saves from before them: none were
     echo?: number | null;             // the Echo switch (sim/echo.ts); absent in saves from before it: off
   };
-  bounties?: { active: { id: string; sig: string; kills: number; goal: number; gold: number; xp: number }[]; done: Record<string, number> }; // the boards' objectives (sim/bounties.ts); absent in saves from before them: none carried, none handed in
+  bounties?: { active: { id: string; sig: string; kills: number; goal: number; gold: number; xp: number; perKill?: number }[]; done: Record<string, number>; readyAt?: Record<string, number> }; // the boards' objectives (sim/bounties.ts); absent in saves from before them: none carried, none handed in
   found?: string[]; // flight masters found, by town id: absent in saves from before flights (only home is found)
   quest: { stage: QuestStage; kills: Record<string, number>; second?: Quest2Stage; third?: Quest3Stage; fourth?: Quest4Stage; fifth?: Quest5Stage; sixth?: Quest6Stage; seventh?: Quest7Stage; eighth?: Quest8Stage }; // `second` is absent in saves from before the cave, `third` in saves from before the road
   enemies: { id: number; type: string; deadIn: number }[]; // deadIn > 0: still respawning
@@ -96,7 +96,7 @@ export function serialize(s: GameState): string {
       chests: [...p.chests],
       echo: p.echo,
     },
-    bounties: { active: s.bounties.active.map(a => ({ ...a })), done: { ...s.bounties.done } },
+    bounties: { active: s.bounties.active.map(a => ({ ...a })), done: { ...s.bounties.done }, readyAt: { ...s.bounties.readyAt } },
     found: [...s.found],
     quest: { stage: s.quest.stage, kills: { ...s.quest.kills }, second: s.quest.second, third: s.quest.third, fourth: s.quest.fourth, fifth: s.quest.fifth, sixth: s.quest.sixth, seventh: s.quest.seventh, eighth: s.quest.eighth },
     enemies: s.enemies.filter(e => e.mateOf === null).map(e => ({ id: e.id, type: e.type, deadIn: e.state === 'dead' ? Math.max(0, e.respawnIn) : 0 })),
@@ -225,8 +225,12 @@ export function deserialize(raw: string): GameState | null {
         const d = bountyById(fa.id);
         if (!d || fa.sig !== targetSig(d) || s.bounties.active.length >= MAX_ACTIVE || s.bounties.active.some(a => a.id === d.id)) continue;
         const goal = num(fa.goal, 1, MAX_GOAL, 'bounty goal');
-        const a: ActiveBounty = { id: d.id, sig: targetSig(d), goal, kills: Math.min(goal, num(fa.kills, 0, MAX_GOAL, 'bounty kills')), gold: num(fa.gold, 0, MAX_GOLD, 'bounty gold'), xp: num(fa.xp, 0, 1e7, 'bounty xp') };
+        const a: ActiveBounty = { id: d.id, sig: targetSig(d), goal, kills: Math.min(goal, num(fa.kills, 0, MAX_GOAL, 'bounty kills')), gold: num(fa.gold, 0, MAX_GOLD, 'bounty gold'), xp: num(fa.xp, 0, 1e7, 'bounty xp'), perKill: fa.perKill === undefined ? 0 : num(fa.perKill, 0, 100, 'bounty perKill') };
         s.bounties.active.push(a);
+      }
+      if (fb.readyAt !== undefined) {
+        if (!isObj(fb.readyAt)) return null;
+        for (const [id, t] of Object.entries(fb.readyAt)) if (bountyById(id)) s.bounties.readyAt[id] = num(t, 0, 1e15, 'bounty readyAt');
       }
       for (const [id, n] of Object.entries(fb.done)) if (bountyById(id)) s.bounties.done[id] = num(n, 0, 1e9, 'bounty count');
     }

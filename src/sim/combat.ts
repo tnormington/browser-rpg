@@ -282,7 +282,7 @@ function killEnemy(s: GameState, e: Enemy) {
   rollDrops(s, e.type, e.x, e.z);
   if (e.echo !== null) kill.gold = echoLoot(s, e); // the original's table, and what its level adds to it
   questOnKill(s, e.type);
-  bountyOnKill(s, e.type, e.region);
+  bountyOnKill(s, e);
   const xp = Math.max(1, Math.round(def.xp * xpParity(def.level, s.player.combat.level))); // the rate at the level the player is when it dies
   if (grantXp(s, 'combat', xp, e.x, e.z) > 0) refreshPlayerStats(s, true); // levelling restores health: a punchy reward
   const fx = s.player.talentFx;
