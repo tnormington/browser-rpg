@@ -16,7 +16,8 @@ import * as THREE from 'three';
 import { SLOTS, SlotDef, SlotId } from './models';
 
 const assert = (ok: boolean, msg: string) => { if (!ok) { console.error('FAIL', msg); process.exit(1); } };
-const MODELS = join(dirname(fileURLToPath(import.meta.url)), '../assets/models');
+/** The shipped models, or a directory of candidates: `MODEL_DIR=... tsx src/model-contract.test.ts` checks an export before it lands. */
+const MODELS = process.env.MODEL_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '../assets/models');
 
 /** A glTF node's name as three sees it: the loader sanitises `[ ] . : /` away, so the file's `Foot.L` is the code's `FootL`. */
 const sanitize = (name: string) => THREE.PropertyBinding.sanitizeNodeName(name);
