@@ -16,7 +16,7 @@ What the jump answers, what Agility unlocks, and what is in the chests (HOM-150)
 | 2. Is the net jumpable? | **Yes.** Same clearance as the sweep (1.1 u above the floor). | It already telegraphs, it is already a ground-level thing, and it is the cheapest reason to jump in the game. 3. |
 | 3. The double jump | **Agility 25, 40 breath, a fixed apex of 3.2 u above the floor you took off from** (not Agility-scaled, not a share of the first jump). | 25 was 12 minutes of unbroken sprinting and is now **3 (HOM-189, 10)**: the level stayed and the training rate came up to it. A fixed apex is what makes the reach rule hold. 4. |
 | 4. The reach rule | **Reach is gated on three discrete capabilities and nothing else.** Standable tops are 0.4 to 1.0 u (a hop) or 2.5 to 2.8 u (a double jump) above the floor beside them; **nothing is standable between 1.0 and 2.5 or above 2.8**; gaps are 2.5 u or less. **`JUMP_LIFT` stays**, but it may only ever scale *time in the air*, never *reach*. **The roll is not a reach capability: it covers 4.8 u and a sprinting hop at Agility 1 covers 4.98.** | 5. |
-| 5. The chests | **50, never respawning: 18 stashes (need nothing), 17 caches (need a hop), 15 hoards (need the double jump), in 9 open places and 5 dungeons.** They pay coin, Agility XP and four lanterns, and **no combat XP, no gear and no item the ladder produces.** Payouts are indexed on *the player's* level at the moment of opening, so parity cannot decay them. A counter ("Greywater 2 / 4") and a final lantern say when it is done. | 7. |
+| 5. The chests | **50, never respawning: 18 stashes (need nothing), 17 caches (need a hop), 15 hoards (need the double jump), in 9 open places and 5 dungeons.** They pay coin, Agility XP and four lanterns, and **no combat XP, no gear and no item the ladder produces.** Payouts are indexed on *the player's* level at the moment of opening, so parity cannot decay them. A counter ("Greywater 2 / 4") and a final lantern say when it is done. **Superseded in part by 11 (HOM-210): 24 of the 50 are concealed, the pay is rewritten and the items are bound.** | 7, 11. |
 | 6. The anti-kite rule | **Reach is measured rim-to-rim for both sides; a player on a rooftop (top 2.0 or more) is out of the fight and every enemy resets; a mounted player cannot perch.** | 6. |
 
 ---
@@ -325,6 +325,8 @@ The card says 32 regions; `REGIONS` has **30** at `630adbf`: sixteen are cave ro
 
 ### 7.3 What is in them
 
+**Superseded by 11.7 (HOM-210).** The ruling below that a chest holds "coin, Agility XP and one of four lanterns, and nothing else" overruled the board's answer of 2026-10-22 (named pieces, different and not better) on one argument, that every item sells at full `value`; 11.7 lifts that at its source with a `bound` item, restores the board's answer, and rewrites the payouts. The table and the multipliers here are history.
+
 The two facts the card names decide this, and so does a third it did not: **every item in the game is worth its `value` in gold at any vendor** (`shop.ts` sells at full `value`), so any item a chest holds competes with the gold, the crafting and the drop tables at once, whatever it is. A chest therefore holds **coin, Agility XP and one of four lanterns, and nothing else.**
 
 | | Stash | Cache | Hoard |
@@ -485,6 +487,201 @@ Three moments, in the order a player meets them. The surface is the UI Designer'
 
 ### 10.4 What this moves, and what I could not verify
 
-- **Chest lamps are a smaller share of a run**: a hoard at Agility 25 pays 898 XP, 12 seconds of sprinting where it was 50. A lamp is still a level, and 4.1's "the one thing a chest gives that sprinting does not give faster" is no longer true; the multipliers (0.5 and 1) are the lever if the board wants chests to matter to Agility again. `LAMP_CAP` and the 23.5 levels over all fifty are unchanged.
+- **Chest lamps are a smaller share of a run**: a hoard at Agility 25 pays 898 XP, 12 seconds of sprinting where it was 50. A lamp is still a level, and 4.1's "the one thing a chest gives that sprinting does not give faster" is no longer true; the multipliers (0.5 and 1) are the lever if the board wants chests to matter to Agility again. *(Pulled in 11.7: a cache is 3 levels or 1.5 minutes of sprint, a hoard 5 levels or 3 minutes, whichever is less.)* `LAMP_CAP` and the 23.5 levels over all fifty are unchanged.
 - **Floaters get bigger**: a stretch pays 240 XP at Agility 1 (it was 60). Game Engineer's floater and the bar's fill see only larger numbers; nothing in the sim reads them.
 - **Not verified, in order of consequence:** (1) how much of their time players actually sprint: 983 u is 3.1 minutes at the floor and I guess half an hour to an hour of play, but I have no count; `player.sprinted` resets every stretch, so a lifetime ground counter is the telemetry that would settle it. (2) Whether 3 minutes of floor reads as earned: the reward is a mechanic the board has to go and find, and I cannot tell from a test whether it lands as a discovery or as a chore. (3) Whether a 33-minute Agility 50 cheapens the skill.
+
+---
+
+## 11. Hiding the chests, and paying them (HOM-210)
+
+The board played the fifty and said two things: *they were all easily found and not very rewarding.* Both are true, and I checked the build rather than the report. This section rules both. **No code ships with it** and no chest moves: it is the spec the build cards work from, with the checker that proves each rule written as a sentence in 11.9. Everything measured below was computed against the sim with a throwaway script (the terrain is HOM-208's `groundY` at `c20abd0`, which was on the main checkout and not yet on `origin/master` when I measured; the one number it moves is flagged).
+
+| Question on the card | Call | Why, in one line |
+| --- | --- | --- |
+| Is there a concealment mechanic? | **No, and the measurement is worse than "none": nothing hides a chest, and a chest 33 u off the road is in view from about half of the road.** | 11.1. |
+| What conceals | **Three finds, a new axis beside the tier: `open` (26), `veiled` (19) and `sealed` (5).** Concealed is **24 of 50**, and **no hoard is concealed.** | 11.2. A hoard is a promise (7.4): its lock is a capability, and a player is meant to see it and want it. A stash's lock was "nothing: behind something", and nothing was ever behind anything. |
+| A place, or a trick | **Both, in a ratio of four to one.** *Veiled* is a place: a chest out of every road's sight, which a checker proves. *Sealed* is a trick, and exactly one: **a ring of three or four marked props lit in order**, in three skins. | 11.3, 11.4. A lever has no wrong answer, a dig is a hunt, and a free dig is a held E key (11.6). |
+| Is the rumour enough on its own? | **It is the half that makes the rest fair, and it does not exist.** Â§6.1 and Â§7.2 promise a keeper's line and a pin on the map; `src/` has neither (`rumour` is not a word in it). **Build it, as a circle and not a marker**, from the six waystation keepers and the five town merchants. | 11.5. Without it a veiled chest is a wiki lookup; with it, a looking player has a bounded search and a passing one has none. |
+| How many | **24 of 50 (48 %), of which 5 are puzzles (10 %).** | "Some", not "all": a chest that is never hidden is the on-ramp that teaches what a chest is. |
+| What a chest pays | **A chest is worth more than the two minutes it costs, in the currency the ground cannot pay.** Combat XP **6 / 4 / 8 mean kills** (stash / cache / hoard), Agility **a cache 3 levels or 1.5 minutes of sprint, a hoard 5 levels or 3 minutes**, whichever is less, and coin up 1.5 to 2.3 times. Gold is not the lever, and 11.7 says why. | 11.7: a cache paid 5 seconds of sprinting and a stash paid fourteen seconds of a kill's coin and no XP. |
+| The board's answer (2026-10-22): named pieces, different and not better | **It stands.** I cannot beat it on this card: my argument against was that every item sells at full `value`, and that is a rule of `shop.ts`, not of the game. **Items become `bound`**, and **the five chests that are solved pay a named, bound, set piece that trades 15 % of its band's armour for a bigger breath.** The three lanterns stand, bound. **Nine items, two art deliverables.** | 11.7. |
+
+### 11.1 What is true of discovery today
+
+- **Nothing hides a chest.** `ChestDef` is `id, place, tier, x, z, floor`; `ChestFail` has five refusals and none is a discovery check; `drawChests` draws every unopened chest inside `CHEST_RANGE` (93 u, which is past the fog's 85) from the first frame. The header's "a chest is found once, which is the whole point of hiding it" is a sentence the code does not implement.
+- **The tiers gate reach and never discovery**, which is the card's point. Â§7.2's "15 to 60 u off the road line" makes a chest *far*, not *hidden*: the 18 stashes are a median **33 u** from a road, the 17 caches 34 u and the 15 hoards 30 u (a dungeon's rooms counted by the nearest road), and the road is where the player already is.
+- **Measured against HOM-208's relief.** For each of the 31 open-country chests that has a road within 60 u, I walked the road every 3 u, put an eye on it, and marched a line to the chest's top over `groundY`. At the default camera (distance 10, pitch 0.5: an eye 6.3 u over the ground) a stash is in view from **45 %** of those road samples, a cache from **52 %** and a hoard from **63 %**; at ground level (eye 1.8) **19 %, 39 %, 44 %**. **8 of the 31 are never in view from the road at the default camera**: greywater-stash-1, dunmere-stash-1, dunmere-stash-2, barrowdowns-stash-2, thornwick-cache-2, barrowdowns-cache-1, highmoor-cache-1, and *greywater-hoard-1*. Props and tree cover are not in that number, so it is a ceiling for how visible they are.
+- **Finding: HOM-208's relief has begun concealing chests and has picked the wrong ones.** A level spot the size of a chest with a 0.7 cone round it is a bowl, and hills rise out of the bowl, so the world now hides some chests by accident. Three of the 15 **hoards**, which Â§7.4 says must be read from the road on purpose, are in view from under a tenth of their road samples (greywater-hoard-1 0 %, cairnwaste-hoard-1 6 %, barrowdowns-hoard-1 9 %). That is a defect in the placement, found by the same checker the veiled chests need (11.9, check 3), and it is the first thing the placement card moves.
+- **What already helps a looking player, and stays.** The J screen's per-place count ("Greywater 0 / 4", told before anything is found, 7.5) is the one free rumour in the game: it says *something is here*. It is not hidden by this section; it is what turns a walk into a hunt.
+
+### 11.2 The new axis: a chest's *find*
+
+`ChestDef` gains `find: 'open' | 'veiled' | 'sealed'`, beside `tier`. **Tier says what it takes to reach; find says what it takes to know it is there.** The two are independent and the reach checker (5.5) is untouched.
+
+| | Open | Veiled | Sealed | |
+| --- | --- | --- | --- | --- |
+| **Stash** (18) | 0 | 13 | 5 | a stash needs nothing, so concealment is where its lock goes |
+| **Cache** (17) | 11 | 6 | 0 | a hop is a lock already; the on-ramp for each place is a cache you can see |
+| **Hoard** (15) | 15 | 0 | 0 | a promise: seen from the road, wanted, reached later |
+| | **26** | **19** | **5** | **50** |
+
+By id (the placement card moves what does not yet satisfy 11.3; **I place nothing here**):
+
+- **Sealed (5):** hale-stash-1, greywater-stash-2, barrowdowns-stash-1, highmoor-stash-1, spire-stash-1. One a band, so the first is in the first minute and the last in the last town, and **Hale's is the lesson**: it has no torch to find (11.4).
+- **Veiled stashes (13):** hollow-1, greywater-1, saltmarrow-1, grotto-1, dunmere-1, dunmere-2, thornwick-1, rotroot-1, barrowdowns-2, cairnhold-1, cairnwaste-1, cairnwaste-2, vault-1. (saltmarrow-stash-1 is 2 u from the road today and highmoor's 1 u; the first moves, the second is sealed.)
+- **Veiled caches (6):** greywater-1, dunmere-1, thornwick-2, barrowdowns-1, highmoor-1, cairnwaste-1. (Seven of the 19 veiled chests already pass 11.3's first rule where they stand: greywater-stash-1, dunmere-stash-1 and -2, barrowdowns-stash-2, thornwick-cache-2, barrowdowns-cache-1, highmoor-cache-1. Rules 2 and 3 and the five dungeons are unmeasured.)
+- **Open:** all fifteen hoards and eleven caches (hale-1, hollow-1, saltmarrow-1 and -2, grotto-1, thornwick-1, rotroot-1, highmoor-2, cairnhold-1, spire-1, vault-1).
+
+A dungeon's stash is veiled and its cache stays open (the boss is the guard, and a ring in a fight is a way to die).
+
+### 11.3 Veiled: a place you only reach by deciding to explore
+
+The rule is a number a checker can hold, because "hard to see" argued in words is how the current build got here.
+
+1. **Out of the road's sight.** From every sample of every road, fork track and square within 60 u of it, **no clear line at ground level (eye 1.8), and a clear line from at most 10 % of the samples at the default camera (eye 6.3).** A zoomed-out player may glimpse it; one walking the road with a normal camera may not. The line runs over `groundY` and over `sim/sight.ts`'s `clearLine` (cover and cave walls). **A dungeon's** is `clearLine` false from the room's door and from the boss's spawn.
+2. **In sight from the open side.** There is a bearing from which the chest is in clear view from 20 u or more, so it is *found by coming over the rise*, not by tripping its 4 u chime. A hunt that ends on a chime is a hunt that ends by luck.
+3. **A walk, not a maze.** The walkable route from the nearest road point is at most **1.5 times** the straight line (HOM-208's flood already proves it is walkable; this proves it is not a detour of ten minutes).
+4. The existing rules stand: 15 to 60 u off the road, 16 u from a spawn, 100 u from the next of its place, 2 to 4 u from something solid.
+
+### 11.4 Sealed: the one small puzzle
+
+**A ring of 3 or 4 marker props round a cairn, each carved with 1 to 4 notches. Use them in order of notches; a wrong one puts them all out, with no penalty; the last one lights the ring and the chest rises out of the cairn.** That is the whole of it, and it is a puzzle by the card's own measure: a person who is not looking sees a ring of stones; a person who is looking sees notches and counts.
+
+- **The rule, in the sim.** A new `Interact` kind `'marker'`. `ringUse(s, chestId, rank)`: if `rank` is the next, the ring advances; if not, it resets; at the last, `player.revealed` gains the chest's id. Progress is run state (it takes ten seconds and is not worth saving); **`revealed: string[]` is saved**, beside `chests`. Events `ring` `{ id, rank, ok }` and `reveal` `{ id }`.
+- **A sealed chest before it is revealed does not exist for the player**: not drawn, not clickable, no chime, and `openChest` refuses with a new **`ChestFail 'hidden'`**. The ledger still counts it in the total.
+- **Three skins of one machine**, so the build is one rule and one prop family. **Stones** (hale, barrowdowns): nothing needed. **Braziers** (greywater, highmoor): the player needs a **lit torch in the off hand**; without one the marker says so (`'dark'`: *you have nothing to light it with; every merchant sells torches*), which is the first reason outside a cave to own the item HOM-148 made. **Bells** (spire): nothing needed.
+- **Three markers at the first two rings, four at the last three** (3! = 6 orders at Hale, 4! = 24 at the Spire: a reader finishes in ten seconds and a masher in a minute, which is the size of "small").
+- **The ring is its own clue, and the rumour is optional for it.** It is placed inside the veiled rule's out-of-sight bowl (11.3, 1) for the same reason: the ring should be a thing a player *comes upon*.
+
+### 11.5 The rumour: the half that makes it fair
+
+A hunt without a direction is a wiki. **The rumour is a circle on the J map, not a marker (6.1), and a line from a person (7.2).** It does not exist in code today; building it is part of this card.
+
+- **Who says it.** The six waystation keepers (`villagers.ts`: Osmund, Hesk, Alsa, Tobbe, Veth, Corrin) and the five town merchants. A keeper is "not a quest giver: they give nothing but words" (their file's header), and a rumour is exactly that. A chest's speaker is the nearest of the eleven to it.
+- **What the player does.** One new thing to ask: *Have you heard of anything left lying about?* Each ask returns the next concealed chest of the speaker's patch the player has not heard of, **nearest first**, and when there are none it says so. `player.rumours: string[]` is saved.
+- **What it gives.** A line (a template, from the bearing and distance to the speaker's own waystone or fire: *"Something was left south of the Drowned Stones, past where the slabs end"*) and a **circle on the J map: radius 70 u for a veiled chest, 45 u for a sealed one** (its ring is visible at 25 u). **The chest is never at the centre**: the centre is offset 0.3 to 0.6 of the radius, in a direction hashed from the chest's id, because a circle with a chest in the middle is a marker with a thin disguise. The circle goes when the chest is opened.
+- **What a search costs.** A 70 u circle is 15,400 u^2; at a walking pace of 6 u/s and a 30 u wide sweep it is about 85 seconds to cover, which is the two minutes the card talks about, **and a person who did not read it spends none**.
+- **The templates are mine; the writing is not.** 24 lines is a morning of writing and a template is a stand-in that reads flat. If the board wants them better, that is a writer's card and the circle does not change.
+
+**Who finds what.** A player who runs the road and never opens J or speaks to a keeper meets **0 of the 24** concealed chests in view and **26** open ones (11.1: the open ones are as findable as they were). A player who opens J sees a count that is short, and a player who asks gets a circle: bounded, fair, and without a wiki.
+
+### 11.6 What I rejected, and why
+
+| Shape | Call | Reason |
+| --- | --- | --- |
+| **A lever or a pulled stone** | Rejected. | One answer and no wrong one is not a puzzle: it is a verb that costs a second. |
+| **Dig the marked ground** | Rejected. | A mound visible from the road is a chest visible from the road. The thing a mound would hide is already what *veiled* does. |
+| **Dig anywhere, by a clue in paces** | Rejected. | A third-person camera cannot count paces, and "dig anywhere" is a held E key sweeping a field: a hunt by spam. |
+| **A timed hoop run** (sprint through N rings in 20 s) | **Rejected for now, and it is the best idea I did not take.** | It is the only puzzle that is *about* Agility, and it would train it. It needs a timer, a failure state and N props per course, and it must not pay Agility XP (10.1 rejected XP for a mechanic). The lever if the board wants one: it replaces a ring's markers, and nothing else changes. |
+| **A combat guard** (kill the hermit; the chest appears) | Rejected. | It is a rare spawn (6.1) with a different reward. |
+| **A chest behind a cliff** | Rejected. | `terrain.ts` holds every cliff 26 u from anything authored, a chest included, so a chest *on* a ledge would need an exception in the terrain's own rule. A hill, which the same file allows, hides it just as well. |
+| **A fog-of-discovery** (a chest not drawn until you have visited its place) | Rejected. | It hides what the fog and the relief already hide, and it punishes a player who flies in. |
+
+### 11.7 The reward
+
+**What a chest is worth, measured against what its two minutes would have earned.** A mean kill is 40 s and pays `1.51 x (0.6 L + 3)` coin and `1.4345 x trashXp(L)` combat XP (3.7; the writ table's 28 s a trash kill is the faster pace, and at it two minutes is 4.3 kills and every ratio below falls by 30 %). Two minutes of the band it sits in is **three of them**:
+
+| Player level | Two minutes of killing: coin, XP (share of the level) | A stash today | A cache today | A hoard today |
+| --- | --- | --- | --- | --- |
+| 10 | 41, 129 (63 %) | **5 coin** | 5 coin, 93 Agility XP | 9 coin, 185 Agility XP |
+| 20 | 68, 172 (31 %) | **8 coin** | 8 coin, 225 Agility XP | 15 coin, 450 Agility XP |
+| 30 | 95, 215 (15 %) | **11 coin** | 11 coin, 547 Agility XP | 21 coin, 1,094 Agility XP |
+| 40 | 122, 258 (7 %) | **14 coin** | 14 coin, 1,329 Agility XP | 27 coin, 2,658 Agility XP |
+
+**A stash today is worth fourteen seconds of the coin two minutes of kills pay (and none of their XP), and a hoard 22 % of it.** The lamp is the rest of it, and it has the two faults the card names: since HOM-189 a cache at Agility 18 is **5 seconds of sprinting** (a hoard 10), and `LAMP_CAP = 10,000` makes a cache and a hoard the same at Agility 60. **The ground pays nothing in Agility, and a chest asked for the one thing the ground does not pay, then did not pay it.**
+
+**What I changed, in the order of what the ground cannot pay.**
+
+| | Stash | Cache | Hoard | Was |
+| --- | --- | --- | --- | --- |
+| **Agility XP** | none | **`min(3 levels' span, 1.5 min of sprint)`** | **`min(5 levels' span, 3 min of sprint)`** | half a level and a level, capped at 10,000 |
+| **Combat XP** (new) | **6 mean kills** | **4** | **8** | none |
+| **Coin** (a mean kill's) | **0.5** | **0.75** | **1.5** | 0.33, 0.33, 0.66 |
+| **A find** | a set piece, at 5 sealed | | a lantern, at 3 | 3 lanterns, at 3 hoards |
+
+- **The lamp is a number of minutes of sprint once the levels are many**, and a number of levels while they are few. A "minute" is the floor of 10.1: `72 x max / (max + 120)` XP a second, 33 at Agility 1, 47 at 25, 60 at 99. So **a cache at Agility 25 is 2,694 XP (a minute of running, and three levels) where it was 449; a hoard is 4,490 (1.6 minutes, five levels) where it was 898**, and **from Agility 30 a cache is always 1.5 minutes and from 40 a hoard always 3: the two tiers no longer collapse (a cache 4,606 and a hoard 9,213 at 40, where both were 10,000 at 60), and `LAMP_CAP` goes.** (At 99 there is no level to take a span of; the rule's second arm, the minutes, pays.)
+- **Combat XP is paid in mean kills, indexed on the player at the moment of opening**, so a chest is worth the same minutes at 20 and at 60 and none decays by parity (7.4 stands). It goes through `grantXp(s, 'combat', ...)` and `refreshPlayerStats`, as a writ does (`bounties.ts:220`). **I ruled combat XP out of chests in 7.3 on the ground that a lamp of it is a shortcut round 3.2's 152 kills. I withdraw it:** the arithmetic is that all fifty pay **296 mean kills of XP, 3.3 hours of the 44-hour road, 7.5 %**, where the writ board takes a fifth, and a chest at the player's level is paid exactly in the time it cost.
+- **Coin is the one number I did not push.** Through combat 31 the new coin is **775 gold, 17 % of the 4,650 the climb pays, up from 376 (8 %).** That leaves a gap of about 350 to the sinks (5,400), where the economy was built for 500 to 1,000: **it is the budget, and a full rule of 1 / 1.5 / 3 mean kills of coin, which is what a chest "should" pay by the minutes, would be 1,550, 33 % of the climb, and would close the gap the whole economy is built on.** A chest cannot win on gold against a kill and must not try; **it pays in what the ground does not.** The levers are the three coin multipliers; every 0.1 mean kill on every chest is about 80 gold through combat 31.
+
+**What it is worth against the two minutes, in the time of the thing it pays.** Costs are guesses of mine (11.10): a veiled stash 3 minutes with a rumour, a sealed one 4, a cache you can see 1.5, a hoard 2.5 once the player can climb it.
+
+| At level 20 | Cost | Combat XP, in minutes of kills | Coin, in minutes of kills | Agility | Object |
+| --- | --- | --- | --- | --- | --- |
+| Veiled stash | 3 min | 6 kills = **4.0 min** (344 XP) | 0.3 min (11 g) | none | |
+| Sealed stash | 4 min | 4.0 min (344 XP) | 0.3 min | none | **a set piece** |
+| Cache | 1.5 min | 4 kills = **2.7 min** (230 XP) | 0.5 min (17 g) | 1,350 XP (0.5 min of sprint) | |
+| Hoard | 2.5 min | 8 kills = **5.3 min** (459 XP) | 1.0 min (34 g) | 2,250 XP (0.9 min of sprint) | a lantern, at 3 |
+| *Today: stash / cache / hoard* | *3 / 1.5 / 2.5 min* | *none* | *0.1 / 0.1 / 0.2 min* | *none / 225 / 450 XP (5 s / 10 s)* | |
+
+**In combat XP alone a concealed stash pays 1.3 times the time it costs (before the piece), a cache 1.8 times and a hoard 2.1 times (before its Agility); the board drove past fifty chests that paid 0.04 of it.** Whether 1.3 is enough for the unlucky searcher is the thing I most cannot check (11.10).
+
+**The board's decision, and why it stands.** The board answered *named pieces, different and not better*. Â§7.3 overruled it on one argument, that every item sells at full `value`, so a chest's item competes with the gold, the crafting and the drops at once. **That is true of `shop.ts` and it is not a law of the game**, and the card is right that it can be taught. I cannot beat the board's answer on this card, so it stands, with the constraint lifted at its source:
+
+- **`ItemDef.bound?: true`.** A bound item cannot be sold (`shop.ts:86` refuses; `inventory-ui.ts` hides the sell rows and says *bound*) and cannot be ground at the rune circle (`enchanting.ts` `dustFor`, `disenchantXp`: the same `value` would turn a bound 150-gold piece into 1,200 Enchanting XP). `value` stays, because the repair bill is a share of it (`durability.ts:28`). **That is the whole of the change that makes an item in a chest cost the economy nothing it was not already owed.**
+- **A chest that pays an item needs room for it**: a new **`ChestFail 'full'`**, checked before anything is paid and before the id is written, exactly as `turnInBounty` does (`bounties.ts:212`). A full bag does not lose a piece.
+- **Different and not better, as a rule a test can hold:** a piece is **0.85 of the armour of the best piece its slot can have in the band it is found in**, plus a **stamina** stat (a new `ItemStats.stamina`, added to `maxStamina` and to nothing else). Stamina is 5 a level of Agility, so **10 is two levels of breath and the full set +80 is sixteen**, and it moves no reach (5.4: jump height is untouched) and no gate (the gates read the true level).
+
+**The set: five pieces, five puzzles.** One a band, the piece the ring pays, bound, `tier 5` (the rarest thing in its band, so by the standing rule the best looking), on one shared bespoke `form`.
+
+| Chest | Ring | Piece | Slot | Sidesteps | Armour | Stamina | Needs |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| hale-stash-1 | 3 stones | **Wayfarer's Boots** | feet | wolfskin boots 7 | **6** | +10 | |
+| greywater-stash-2 | 3 braziers | **Wayfarer's Gloves** | hands | wolfskin gloves 5 | **4** | +10 | |
+| barrowdowns-stash-1 | 4 stones | **Wayfarer's Leggings** | legs | stormiron greaves 28 | **24** | +20 | combat 23 |
+| highmoor-stash-1 | 4 braziers | **Wayfarer's Cuirass** | chest | stormiron chestplate 38 | **32** | +20 | combat 23 |
+| spire-stash-1 | 4 bells | **Wayfarer's Helm** | head | starmetal helm 24 | **20** | +20 | combat 32 |
+
+**Plainly: this is mostly a look.** A breath of +10 is a small trade for 15 % of a small armour; the reward is that a player who solved a ring at Hale walks round in a piece that looks like level 30. The journal shows the five slots as a set with the found ones filled, which is the chase and costs the sim nothing (it reads `player.chests`). **Not weapons, and not a faster blade for a lower number**: damage and speed are the one trade I cannot make neutral by arithmetic, because a blade's `damage` is flat and the level's power is not (3.4), and the sidegrade is not allowed to be a secret upgrade.
+
+**The lanterns stand as 7.3 ruled them** (the Tinker's, Hedge-Warden's and Cairn Lantern on the Hale, first Thornwick and first Highmoor hoards; the Surveyor's on the 50th chest), now **bound** instead of a `value` of 10. No lantern item exists in `items.ts` and none is built; they are the offhand pieces of a hoard's find, `light` 30 / 34 / 38 / 44, `tier` 2 / 3 / 4 / 6.
+
+**The standing rule, honoured.** **Nine equippables ship, and none ships without an appearance:** five set pieces and four lanterns. **The 3D Artist is asked for two things, not nine:** (1) **one `wayfarer` form across the five slots** (head, chest, legs, hands, feet; `gear-look.ts` already carries a `form` per named set, e.g. `greywolf`, `gutterhook`, `crown`, and a leather pair is two slots, adamant is four); (2) **one lantern, in four tints** (`buildOffhand` hangs a torch for any offhand, so with no lantern model the tier fallback would show a *torch* with a lantern's name, which is unworthy of the grind and I will not ship it). **Prop work, outside the standing rule:** the three ring skins (marker, with *unlit* and *lit* and the notches readable at 3 u), and the cairn that opens. The bench proof for the standing rule is a screenshot of the character in each piece and in each lantern before they land.
+
+### 11.8 What gets built, and who builds it
+
+| Part | Owner | What |
+| --- | --- | --- |
+| **The rule** | me, `src/sim/` | `ChestDef.find`; the 50 assignments (11.2); `ChestFail 'hidden' \| 'full'`; `player.revealed`, `player.rumours`; `ringUse`; `askRumour`; the new `chestReward` (combat XP, the minutes-capped lamp, the new coin); the five set pieces, `ItemDef.bound`, `ItemStats.stamina`; the headless checks (11.9). |
+| **The placement** | me, after the checker exists (a card of its own, as HOM-160 and 161 were) | Move every veiled chest that fails 11.3 and place the five rings; move the three hoards HOM-208 hid (11.1). I do not place chests on this card. |
+| **Game Engineer** (blocked on this) | | The `'marker'` interaction and the ring props' states; `'hidden'` chests not drawn, clicked or chimed; the keeper's second question and the J map's circles; `bound` in the inventory's menu and tooltip, and the enchant UI's refusal; the HUD line for combat XP and the item; admin panel: *reveal every sealed chest* and *solve a ring* (QA reaches a puzzle the way it reaches a level). |
+| **3D Artist** | | 11.7: the `wayfarer` form (5 slots), the lantern (1 model, 4 tints), the ring skins (3), the cairn. |
+| **Sound** | | A faint hum from a ring within 12 u (the puzzle's tell); the ring's lit and put-out notes (a clear note rising by rank, and a flat one for the wrong). |
+| **UI Designer** | | The set's five slots in the journal; the rumour line in the keeper's dialogue. |
+
+### 11.9 The headless checks that make this executable
+
+Assertions in `src/golden-path.test.ts` or a sibling that joins `npm run verify`; each is a sentence above.
+
+1. **The assignments**: all 50 have a `find`; 26 open (11 caches, 15 hoards), 19 veiled (13 stashes, 6 caches), 5 sealed (stashes); **no hoard is concealed.**
+2. **The veiled rule** (11.3, rules 1 to 3): for every veiled chest, no road or square sample within 60 u sees it at eye 1.8, at most 10 % at eye 6.3, a bearing exists from which it is seen at 20 u, and the walk is 1.5 times the straight line or less. **Dungeons**: `clearLine` is false from the door and the boss.
+3. **The hoards are seen** (7.4, which no test holds): every hoard has a road or square sample within 45 u with a clear line at eye 6.3. **It fails today on three** (greywater-hoard-1, barrowdowns-hoard-1, cairnwaste-hoard-1), so it lands with the placement card and not before.
+4. **A sealed chest**: before its ring is solved it is not in the drawn list, not pickable, raises no `chestnear`, and `openChest` returns `{ why: 'hidden' }`; the right order of markers reveals it, a wrong one resets the ring, and a third marker out of order does not reveal it; `player.revealed` round-trips the save; a braziers ring refuses a player with no lit torch (`'dark'`).
+5. **The rumour**: every concealed chest has a speaker, a line and a circle that **contains it, with the chest at least 0.3 of the radius from the centre**; radius 70 (veiled) and 45 (sealed); asking returns the nearest unheard chest first and says so when there are none; `player.rumours` round-trips the save.
+6. **The pay**: coin is `0.5 / 0.75 / 1.5` of a mean kill's coin at the player's level, combat XP is `6 / 4 / 8` mean kills, and the lamp is `min(3 or 5 levels' span, 1.5 or 3 minutes at the floor rate)` at Agility 1, 25, 40, 60 and 99; **a cache and a hoard differ at every one of them** (the cap that collapsed them is gone); opening twice pays once.
+7. **Bound**: a bound item cannot be sold and cannot be ground; `value` still prices its repair; **the only items a chest ever grants are the five pieces and four lanterns**; a chest that pays an item with a full bag refuses with `'full'` and writes nothing; the 50th chest opens the Surveyor's Lantern.
+8. **A piece is a sidegrade**: each piece's armour is 0.85 (rounded) of the best armour its slot can have in its chest's band, its stamina is the table's, and `maxStamina` rises by exactly the worn stamina; **`reach.test.ts` is unchanged and green** (no stat moves a jump).
+9. **The standing rule**: every one of the nine has an `ITEM_LOOKS` entry of its own (`form` for the five, a lantern's for the four), and the bench shows the character in each.
+10. **Existing checks stay green**, with `chestReward`'s old assertions (7.3) rewritten to the new table.
+
+### 11.10 What I tuned, what I compared it to, and what I could not verify
+
+**Tuned**, and to what:
+
+- **24 of 50 concealed, 5 of them puzzles**, against the card's "some" and 7.1's 18 / 17 / 15: the stash is where concealment goes because its lock was "nothing", the hoard is never hidden because 7.4 wants it seen, and **5** because one a band is the smallest number that is a feature of every town and not of one.
+- **Combat XP 6 / 4 / 8 mean kills**, against the cost of finding it (my guesses: 3, 1.5, 2.5 minutes): 1.3 to 2.1 times, over the 7.5 % of the road all fifty come to, against the writ board's fifth.
+- **The lamp, 3 or 5 levels, 1.5 or 3 minutes**, against HOM-189's floor of 33 to 60 XP a second: **5 levels at Agility 25 is 1.6 minutes of running**, and it is the number I would turn first.
+- **Coin 0.5 / 0.75 / 1.5 mean kills**, against a gap of 500 to 1,000 between income and sinks, so it takes 400 of it.
+- **The set's 0.85 of armour and 10 / 20 breath**, against 5 a level and the roll's 45.
+
+**Compared against:** the writ table (7.5), the lamp's own history (7.3, 10.4), `bounties.ts`'s payment path, and the measured visibility of 11.1.
+
+**Could not verify by play, in order of how much it could change:**
+
+1. **Whether 19 veiled chests with a 70 u circle read as exploring or as a chore.** The search is 85 seconds by arithmetic. I cannot tell whether a person finds a chest at the third minute or the fifteenth, which is the number the 1.3 in 11.7 rests on. Levers: the circle radius, the XP multiplier of the stash (6), and the count of veiled chests.
+2. **Whether a ring of notches is a puzzle or a verb.** It has a wrong answer and a fix, but a masher gets four stones in a minute. If the board finds it too light, the lever is not to add rings but to **stop printing the ranks** and put the order in the rumour (a rhyme), which turns the keeper's line into the solution.
+3. **Combat XP in a chest.** I withdrew my own ruling on arithmetic; I have not seen what a level-1 player does with 179 XP at Hale (a level and a half, at 124 a level). The bench's first chest should be opened at level 1.
+4. **Whether `stamina` is wanted**: breath binds the roll only below Agility 17 (1.1), so above it the piece is a look. That is what "different, not better" means, but a board that wanted a *choice* wants a stat that binds, and the only one that does is a blade's speed, which I refused above.
+5. **Whether the 0.85 trades are felt.** 15 % of a 7-armour boot is one armour.
+6. **The HOM-208 sight numbers.** They come from a terrain that was on the main checkout and not on `origin/master`; they ignore trees and props; and a person's camera is wherever they put it. The rule and the checker stand; the measured counts will move.
+7. **The cost of finding, 3 / 1.5 / 2.5 minutes**: the board said two, I assumed three for a veiled stash with a rumour, and no one has timed it.
