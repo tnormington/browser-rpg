@@ -306,6 +306,9 @@ body.swinging,body.swinging *{cursor:none!important} /* a camera drag takes the 
 .echorow .echoopt.sel:hover{background:var(--gold-wash-hi)}
 .echoname,.echomult{display:inline}.echomult{margin-left:var(--sp-2);font-size:var(--fs-sm)}.echoopt.sel .echomult{color:var(--gold-hi)}
 @media (max-width:1100px){.echoname:has(+ .echomult){display:none}.echomult{margin-left:0}} /* the strip is full: the multiplier is what is chosen between, so it stays and the name (still in the tooltip) goes */
+/* talent points left unspent (HOM-198): a count in the Echo label, ringed in gold and not filled, so it cannot be mistaken for the picked segment (the one gold-washed block). Its sentence is the
+   label's tooltip; empty, it is not there, which is what a player who has spent their points sees. */
+.echopts{margin-left:var(--sp-2);padding:0 var(--sp-2);font-size:var(--fs-sm);font-weight:bold;color:var(--gold-hi);border:1px solid var(--gold-dim);border-radius:var(--r)}.echopts:empty{display:none}
 .hurt{position:absolute;inset:0;opacity:0;box-shadow:inset 0 0 120px 30px rgba(170,15,15,.7)}
 .hurt.show{animation:hurt .45s ease-out}.hurt.heavy.show{animation:hurt 1.2s ease-out}
 @keyframes hurt{0%{opacity:1}100%{opacity:0}}

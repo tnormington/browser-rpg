@@ -307,7 +307,7 @@ export class Hud {
     this.questUi = new QuestUi(rail, dock, actions.questAdvance);
     this.bookUi = new SpellbookUi(dock, () => this.bar, a => this.keyForAbility(a), a => this.assign(this.slotOfAbility(a), null));
     if (actions.admin) this.adminUi = new AdminUi(this.root, dock, actions.admin);
-    this.menuUi = new MenuUi(this.root, actions);
+    this.menuUi = new MenuUi(this.root, actions, (text, cls) => this.note(text, cls));
     this.windows = [this.mapUi, this.menuUi, this.questUi, this.shopUi, this.flightUi, this.boardUi, this.forgeUi, this.rangeUi, this.alembicUi, this.rackUi, this.enchantUi,
       this.skillsUi, this.talentsUi, this.bookUi, this.invUi.panels.inv, this.invUi.panels.char,
       ...(this.adminUi ? [this.adminUi] : [])];

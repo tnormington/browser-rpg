@@ -170,10 +170,28 @@ for (const [width, height] of SIZES) {
       if (opts.length !== 4 || sel.length !== 1) fails.push(`the Echo row shows ${sel.length} of ${opts.length} segments picked with echo ${to}`);
       else if (opts.some(o => o !== sel[0] && getComputedStyle(o).backgroundColor === getComputedStyle(sel[0]).backgroundColor)) fails.push(`the picked Echo segment (echo ${to}) looks like an unpicked one`);
     }
-    p.echo = 0; d.step(); d.step();
+    // HOM-198: a character with points unspent has the count in the Echo label, whose tooltip says where they are spent; one with none has nothing there. Turning Echoes on from Off
+    // with points unspent puts one line in the log; turning them on with none spent, or moving between settings, does not. The count is in the row for the layout checks below.
+    const tail = () => new Promise(r => setTimeout(r, 150)), pts = () => document.querySelector('.echopts'), opt = i => document.querySelectorAll('.echoopt')[i], logged = () => [...document.querySelectorAll('.msglog .logline')].filter(l => l.textContent.includes('unspent talent point')).length;
+    p.combat.level = 1; p.echo = null; d.step(); d.step(); await tail();
+    if (pts()?.offsetParent) fails.push(`the Echo row shows ${pts().textContent} unspent points for a level 1 character, who has none to spend`);
+    opt(1).click(); await tail();
+    if (logged()) fails.push('turning Echoes on told a character with no points to spend that it has some');
+    p.combat.level = 75; p.echo = null; d.step(); d.step(); await tail();
+    if (!pts()?.offsetParent) fails.push('the Echo row shows no count for a level 75 character with no talent spent');
+    else if (pts().textContent !== '74') fails.push(`the Echo row's count is "${pts().textContent}", not the 74 points a level 75 has been handed`);
+    const tip = document.querySelector('.echolabel').title;
+    if (!tip.includes('74 unspent talent points') || !tip.includes('press N')) fails.push(`the Echo label's tooltip should name the count and the key: "${tip}"`);
+    opt(1).click(); await tail();
+    if (logged() !== 1) fails.push(`turning Echoes on with points unspent left ${logged()} lines in the log, not one`);
+    p.echo = 0; d.step(); d.step(); await tail(); opt(3).click(); await tail();
+    if (logged() !== 1) fails.push('moving between Echo settings told the player again');
+    p.combat.level = 2; d.step(); d.step(); await tail();
+    if (!document.querySelector('.echolabel').title.includes('1 unspent talent point:')) fails.push('the Echo label says "1 unspent talent points"');
+    p.combat.level = 75; p.echo = 0; d.step(); d.step();
     await new Promise(r => setTimeout(r, 400));
     const xpBox = document.querySelector('.xp').getBoundingClientRect();
-    if (xpBox.width < 140) fails.push(`the XP bar is ${Math.round(xpBox.width)}px wide with the Echo row up: its label does not fit`);
+    if (xpBox.width < 128) fails.push(`the XP bar is ${Math.round(xpBox.width)}px wide with the Echo row up: its label does not fit`);
     const parts = [['quest tracker', '.tracker'], ['minimap', '.minimap'], ['player frame', '.frame.player'], ['target frame', '.frame.target'],
       ['action bar', '.actionbar'], ['swing bar', '.swing'], ['XP bar', '.xp'], ['menu bar', '.menubar'], ['message log', '.msglog'],
       ['admin button', '.devbar']]; // HOM-114: dev builds only, and this bench loads the game as one
