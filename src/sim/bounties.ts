@@ -1,6 +1,6 @@
 // The boards (HOM-163): a repeatable objective, the reason to go back. A board stands in every town and offers that town's bounties; a bounty is
 // accepted, counted as its kills land, turned in at the board that gave it, and then offered again. Nothing here is a number the designer owns: what a
-// bounty asks, how it scales with the player and what it pays are all rows in BOUNTIES (HOM-162 fills the reward table; the values there are PLACEHOLDERS).
+// bounty asks, how it scales with the player and what it pays are all rows in BOUNTIES (priced in docs/combat-99.md 7.5, HOM-188).
 // Pure sim, like every other action: the renderer draws what BOARDS says and the E key or a click calls the board's panel, which sends BountyActions.
 //
 // Scaling is data, not code: a `Scale` is a flat number or `base + perLevel * combat level`, read when the bounty is accepted and then written into the
@@ -67,30 +67,39 @@ export const WRIT_MARKS = 1;
 export const MAX_GOAL = 999;
 const GOLD_CAP = MAX_GOLD, XP_CAP = 1e7;
 
-// PLACEHOLDER: every reward figure below (and the counts) is a stand-in until HOM-162 rules the table. They are chosen only to be plausible, not balanced.
-const PLACEHOLDER_REWARD = { gold: { base: 3, perLevel: 1 }, xp: { base: 20, perLevel: 4 } } as const;
+// The table (docs/combat-99.md 7.5). Every writ is the same job at the same price, so the rows differ in where they send you and not in what they are worth:
+// 12 kills (a kill is the same ~28 s of work at every level, because the Echo is sized to a fixed time to kill, so the count does not grow with the player),
+// paid `WRIT_PER_KILL` of those kills again as XP and a tip of `3 + level` gold. The kills are the town's own trash and nothing else, so one kill is one
+// trash-kill equivalent and the count is the work. A thin species still supplies it: the two ridge ogre spawns refill 12 kills in about 240 s of the 336 s it takes to fight them.
+/** What a writ pays above its kills, as a share of them: a tour (ten writs) is then about 1.5x the rate of fighting the same ground (7.2, 7.5). The one number to turn. */
+export const WRIT_PER_KILL = 0.75;
+/** Kills a writ asks. */
+export const WRIT_KILLS = 12;
+/** How far from the player's level a foe may be and still count: a foe 5 under pays three quarters of its XP (xpParity), so a level-45 board cannot be farmed off level-3 boars for a bonus indexed on level 45. */
+export const WRIT_BAND = 5;
+const WRIT = { count: WRIT_KILLS, reward: { gold: { base: 3, perLevel: 1 }, xp: { perKill: WRIT_PER_KILL } } } as const;
 export const BOUNTIES: BountyDef[] = [
   { id: 'hale-boars', board: 'hale', name: 'Thin the Boars', text: 'The boars are rooting up the clearing again.',
-    target: { types: ['boar'], regions: ['clearing'], label: 'boars' }, count: 8, reward: PLACEHOLDER_REWARD },
+    target: { types: ['boar'], regions: ['clearing'], levelBand: WRIT_BAND, label: 'boars' }, ...WRIT },
   { id: 'hale-pack', board: 'hale', name: 'Cull the Pack', text: 'Wolves and their pups, where the children play.',
-    target: { types: ['wolf', 'pup'], regions: ['clearing'], label: 'wolves and pups' }, count: 10, reward: PLACEHOLDER_REWARD },
+    target: { types: ['wolf', 'pup'], regions: ['clearing'], levelBand: WRIT_BAND, label: 'wolves and pups' }, ...WRIT },
   { id: 'salt-crabs', board: 'saltmarrow', name: 'Clear the Strand', text: 'Shore crabs have the nets and the quay.',
-    target: { types: ['shore_crab'], regions: ['saltmarrow'], label: 'shore crabs' }, count: 12, reward: PLACEHOLDER_REWARD },
+    target: { types: ['shore_crab'], regions: ['saltmarrow'], levelBand: WRIT_BAND, label: 'shore crabs' }, ...WRIT },
   { id: 'salt-drowned', board: 'saltmarrow', name: 'Quiet the Drowned', text: 'The drowned come ashore at night.',
-    target: { types: ['drowned_sailor', 'tide_hag'], regions: ['saltmarrow'], label: 'drowned' }, count: 8, reward: PLACEHOLDER_REWARD },
+    target: { types: ['drowned_sailor', 'tide_hag'], regions: ['saltmarrow'], levelBand: WRIT_BAND, label: 'drowned' }, ...WRIT },
   { id: 'thorn-thornbacks', board: 'thornwick', name: 'Bark and Bristle', text: 'Thornbacks and blight stags are hemming the town in.',
-    target: { types: ['thornback', 'blight_stag'], regions: ['thornwick'], label: 'thornbacks and stags' }, count: 10, reward: PLACEHOLDER_REWARD },
+    target: { types: ['thornback', 'blight_stag'], regions: ['thornwick'], levelBand: WRIT_BAND, label: 'thornbacks and stags' }, ...WRIT },
   { id: 'thorn-cultists', board: 'thornwick', name: 'Root and Branch', text: 'The cultists have cut the wood a new road.',
-    target: { types: ['rotwood_cultist'], regions: ['thornwick'], label: 'cultists' }, count: 6, reward: PLACEHOLDER_REWARD },
+    target: { types: ['rotwood_cultist'], regions: ['thornwick'], levelBand: WRIT_BAND, label: 'cultists' }, ...WRIT },
   { id: 'high-rams', board: 'highmoor', name: 'The Moor Provides', text: 'The rams and raiders have not been thinned in a season.',
-    target: { types: ['moor_ram', 'moor_raider'], regions: ['highmoor'], label: 'rams and raiders' }, count: 10, reward: PLACEHOLDER_REWARD },
+    target: { types: ['moor_ram', 'moor_raider'], regions: ['highmoor'], levelBand: WRIT_BAND, label: 'rams and raiders' }, ...WRIT },
   { id: 'high-ogres', board: 'highmoor', name: 'Stone and Sinew', text: 'The ridge ogres come down at the first snow.',
-    target: { types: ['ridge_ogre'], regions: ['highmoor'], label: 'ridge ogres' }, count: 3, reward: PLACEHOLDER_REWARD },
+    target: { types: ['ridge_ogre'], regions: ['highmoor'], levelBand: WRIT_BAND, label: 'ridge ogres' }, ...WRIT },
   { id: 'spire-adepts', board: 'spire', name: 'Quiet the Ruins', text: 'Adepts still keep their vigil in the ruins.',
-    target: { types: ['spire_adept'], regions: ['spire'], label: 'adepts' }, count: 6, reward: PLACEHOLDER_REWARD },
-  // the level-following shape: any enemy near your own level, anywhere, and more of them the further you have come
+    target: { types: ['spire_adept'], regions: ['spire'], levelBand: WRIT_BAND, label: 'adepts' }, ...WRIT },
+  // the level-following shape: any enemy near your own level, anywhere, so a tighter band than the species rows
   { id: 'spire-peace', board: 'spire', name: 'Keep the Peace', text: 'Anything that is your match, wherever it is found.',
-    target: { levelBand: 3, label: 'foes of your own mettle' }, count: { base: 8, perLevel: 0.25 }, reward: PLACEHOLDER_REWARD },
+    target: { levelBand: 3, label: 'foes of your own mettle' }, ...WRIT },
 ];
 export const bountyById = (id: string) => BOUNTIES.find(b => b.id === id);
 export const bountiesOf = (board: string) => BOUNTIES.filter(b => b.board === board);

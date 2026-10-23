@@ -24,7 +24,7 @@ What it costs to put combat levels 42 to 99 in this game, where the enemies for 
 | What fills 58 empty levels | **A blade every 8 levels from 48 (seven), one last armour step at 48, a talent row that takes the 44 points that have nowhere to go, and a new ability every 10 levels from 50 (six).** Armour has 13 % left in it, so the ladder past 48 is weapons, talents and abilities. | 6 |
 | **HOM-181**: the ladder is a dividend; Hard at 90 is nearly free; the pair is a speed-up; shooters get nothing | **An ignored tell hits for its stake (mark 1.6, slam 2.2) on Standard and Hard, and Easy keeps the dividend; Hard stays +3 and costs the read, 1.3 to 1.4x XP an hour; a pair body pays 0.88; the net at 92 is out.** | 3.10 |
 | **HOM-192**: the full kit kills an Echo in 6 s | **The Echo is priced against the character (the talents a level has), not the line; K98 stays 90.** Shipped, the game was 27 to 30 hours (the board's 30); re-priced it is 46 with talents alone and 42 with the six abilities (44). The six-second floor was a first pull. The ladder survives; the stakes go 1.6 -> 3 and 2.2 -> 4; a Pummel on 1 s is a separate card. | 10 |
-| The repeatable objective | **Writs: 2 a board, in each of the five towns, refilling 20 hours after you hand one in.** Ask 12 trash-kills' worth; **pay the same again** as a bonus, indexed on your level at hand-in, plus an Echo mark. **A supplement**: a full daily tour takes about 25 % off the road, and nothing caps the kills. | 7 |
+| The repeatable objective | **Writs: 2 a board, in each of the five towns, refilling 20 hours after you hand one in.** Ask 12 trash-kills' worth; **pay three quarters of it again** as a bonus (`perKill` 0.75, ruled in 7.5), indexed on your level at hand-in, plus an Echo mark. **A supplement**: a full daily tour is about 1.5x the rate of fighting and takes about a third off the road, and nothing caps the kills. | 7 |
 | HOM-163's shape (landed at `96d05d5`) | **The loop is right and the table stays a table. Four changes:** a reward that resolves against `trashXp(level)` instead of a linear `Scale`, a 20-hour refill per bounty (today it is on offer again at once), the enemy's level on the kill, `finishable` that knows about Echoes. | 7.4 |
 
 ---
@@ -343,7 +343,7 @@ The armour row is the finding: **the ladder past level 48 cannot be armour.** HO
 
 | Question | Call |
 | --- | --- |
-| **What it pays** | A **bonus equal to the work: `perKill x count x trashXp(L)` XP** (`perKill` is 1.0), where `trashXp(L)` is `20 + L` to level 40 and section 2's above it, **paid on the player's level at hand-in**, on top of what the kills themselves paid. **Gold: the placeholder's `3 + L` stands** (a tip: 23 at level 20, against 15 a kill; the bible's economy, 7, is built to run short and doubling it would break that). From the Seal, **1 Echo mark**. |
+| **What it pays** | A **bonus on the work: `perKill x count x trashXp(L)` XP** (`perKill` was 1.0 here and is **0.75**, 7.5), where `trashXp(L)` is `20 + L` to level 40 and section 2's above it, **paid on the player's level at hand-in**, on top of what the kills themselves paid. **Gold: the placeholder's `3 + L` stands** (a tip: 23 at level 20, against 15 a kill; the bible's economy, 7, is built to run short and doubling it would break that). From the Seal, **1 Echo mark**. |
 | **What it asks** | **8 to 12 kills as HOM-163's table has them** (3 for the Ridge Ogres, 6 for a caster), counted in trash-kill equivalents once the Seal is broken: **12 trash, or 4 elites, or 1 boss and 2 trash** (the role multipliers are time-fair, section 2). After the Seal each board also offers **one Echo writ**, `levelBand: 3` (HOM-163's `spire-peace`, "foes of your own mettle", already has the shape), counting Echoes within 3 levels of the player. |
 | **How often** | **Two bounties on each board, each its own slot; a slot refills 20 hours after it is handed in.** Nothing banks: a slot unclaimed for a week offers one writ. A writ in progress survives a save and a level-up. |
 | **Obey parity?** | **The bonus does not; the kills do.** The same reason as the chests (7.4 of `action-layer.md`): a bonus on the player's level at hand-in never decays and never inflates. A writ pays the same share of the road at 45 as at 95. |
@@ -361,7 +361,7 @@ A kill-equivalent is a trash kill at parity. 12 of them is **17.9 % of a level a
 | **Rate** | 1.0x | **2.0x while fighting, 1.3x over the tour** |
 | 41 to 99 (5,689 trash-equivalents) | 44.1 hours | **23.7 days of the tour, about 33 hours** |
 
-**A full daily tour takes about a quarter off the road** and puts about half of that day's XP in the bonus. A player who tours once a week gets about a seventh of it. That is a modest size on purpose: enough that a player who has been away has a reason to go round the towns, small enough that nobody who plays four hours on a Saturday is behind someone who plays 85 minutes a day. **The bonus is `perKill` times the count (nominally 12), and `perKill` is the one number to turn.** With the 29 minutes of travel, the tour breaks even with simply fighting at a `perKill` of **0.53**: at 0.5 it is 0.98x (nobody tours), at 1.0 it is 1.31x and 99 is 33.6 hours, at 2.0 it is 1.97x and 99 is 22.4. So 1.0 is not generous, it is the smallest round number that pays for the walk; a board that wants the tour to be the way to play wants 1.5 to 2.
+**A full daily tour takes about a quarter off the road** and puts about half of that day's XP in the bonus. A player who tours once a week gets about a seventh of it. That is a modest size on purpose: enough that a player who has been away has a reason to go round the towns, small enough that nobody who plays four hours on a Saturday is behind someone who plays 85 minutes a day. **The bonus is `perKill` times the count (nominally 12), and `perKill` is the one number to turn.** With the 29 minutes of travel, the tour breaks even with simply fighting at a `perKill` of **0.53**: at 0.5 it is 0.98x (nobody tours), at 1.0 it is 1.31x and 99 is 33.6 hours, at 2.0 it is 1.97x and 99 is 22.4. So 1.0 is not generous, it is the smallest round number that pays for the walk; a board that wants the tour to be the way to play wants 1.5 to 2. *(Re-priced in 7.5: the walk was measured at 2.4 minutes, not 29, and the number is 0.75.)*
 
 **Echo marks** are the currency of section 6: **a blade step costs 20 marks**, about an hour of kills (a mean pull's elite and boss share is about 19 marks an hour at 1 an elite and 3 a boss) or two days of tours at one a writ. A player who never opens a board is never behind the curve, which is 6.1's rule for capstones: reliable, not gated on a daily.
 
@@ -380,6 +380,55 @@ HOM-163 landed (`96d05d5`) while this was being written, and I read `sim/bountie
 2. **A handed-in bounty is on offer again at once** (`done` is a counter, nothing waits). With a bonus equal to the work that is a 2x faucet with no pull and no rhythm. Add `readyAt` per bounty id to the save and a `now` the shell passes in; a bounty is takeable when `now >= readyAt`, and handing one in sets it 20 hours on. The sim never calls `Date`, and a test passes its own `now`.
 3. **A kill must carry the instance's level.** `bountyOnKill(s, type, region)` and `counts()` read `ENEMY_TYPES[type].level`, which is the authored row's. An Echo of a level-38 golem at 70 is a level-70 kill. Pass `defOf(e).level` (section 3.7) and `counts` compares that.
 4. **`finishable()` is computed once from the authored spawns.** After the Seal a `levelBand` row is finishable whenever Echoes are on, and not otherwise, so the board does not offer an Echo writ to a player who has switched them off.
+
+### 7.5 The table, ruled (HOM-188)
+
+**What was asked.** Fill `BOUNTIES` with real values, after the board kept the road at 44 hours (`K98` 90) and with HOM-173's machinery on `master`. The question the card sets is whether a writ beats going and killing the same things without one: if it pays less per minute than the ground it sends you to, nobody opens a board twice; if it pays much more, it is the only way anyone levels.
+
+**The rule.** *Every writ is the same job at the same price, so a row differs in where it sends you and not in what it is worth.* Equal pay for equal work holds because the work is equal: an Echo is sized to a fixed time to kill (14.2 s), so a kill is the same ~28 s of work at 41 and at 98, and a writ's count does not grow with the player.
+
+| | Before (the placeholder) | **Ruled** |
+| --- | --- | --- |
+| Kills a writ asks | 3 to 12, and the Peace row 8 + 0.25 x level (23 at 60, 33 at 99) | **12, every row, at every level.** Supply is never the limit: the thinnest species, the two ridge ogre spawns, refill 12 kills in 240 s against the 335 s it takes to fight them |
+| XP | `20 + 4 x level` flat | **`perKill` 0.75: nine trash kills at the level handed in at** (13.4 % of a level at 41, 7.0 % at 98) |
+| Gold | `3 + level` | **`3 + level` stands** |
+| Echo mark | one a hand-in | **one a hand-in stands; no shard** |
+| Band | none on the species rows, 3 on Peace | **5 on every species row, 3 on Peace** |
+
+**`perKill` is 0.75, and this is what I am optimising for: a tour at about half again the rate of fighting.** The tour is 120 kills (ten writs) of 56 minutes of fighting at 28 s a trash-equivalent, plus flights, walking and menus. HOM-183 measured the lap at **2.4 minutes, not the 29 7.2 assumed**; I use **8 minutes** of overhead in all (the lap, five boards of accepting and handing in, and a margin), which is a guess and is the one thing in this section nobody has timed. Rate against fighting the same ground is `(1 + perKill) x 56 / (56 + overhead)`:
+
+| `perKill` | 0.5 | **0.75** | 1.0 | 2.0 |
+| --- | --- | --- | --- | --- |
+| Tour against fighting, 8 minutes' overhead | 1.31x | **1.53x** | 1.75x | 2.6x |
+| At 16 minutes' overhead (twice my guess) | 1.17x | **1.36x** | 1.55x | 2.33x |
+| 99 by tours alone, a bound (hours of the 44) | 34 | **29** | 25 | 17 |
+| **99 by the best route that still earns its shards** (hours of the 44; below) | 38 | **35** | 33 | 29 |
+| A day of two hours with a tour in it, against two hours fighting | 1.17x | **1.28x** | 1.40x | 1.86x |
+| Bonus of one hand-in at 41 | 9 % of a level | **13 %** | 18 % | 36 % |
+
+- **Break-even is 0.14, not 0.53.** The writ's kills are kills the player would have made anyway and the bonus is on top, so the only cost of a tour is the 8 minutes; it pays for them at a `perKill` of 8 / 56. At 0.75 the overhead would have to be 42 minutes, seventeen times the measured lap, before a tour paid less per minute than the ground. The 0.53 was the 29 minutes talking.
+- **Why not 0.5.** It is the 1.3x 7.2 designed for, and at twice my overhead guess it is 1.17x: a bonus a player has to do arithmetic to see. A hand-in worth a ninth of a level at 41 and a twentieth at 98 is the number most likely to be read as flavour, which is the failure the card names.
+- **Why not 1.0 or 2.0.** At 2.0 a tour is 2.3 to 2.6x the ground and the best route is 29 hours of the 44 (a third off, and a two-hour day with a tour in it is 1.86x one without): the boards become the hour everyone plays and the rest of the road is the worse hour. 1.0 is 33 hours, a quarter off, and is where I would go first if a playtest says 0.75 is not enough. **0.75 is 35 hours on the best route, a fifth off, and a two-hour day with a tour in it is 1.28x** (a four-hour day, 1.14x): a reason to go round the towns that nobody who plays four hours on a Saturday is behind for.
+- **It is also the middle of 10.3's line**, which asked 1.3x of a board that answered 30 hours and 1.8x of one that answered 64: the board answered 44, and 1.5x is where a straight line between them lands.
+- **The lever stays `WRIT_PER_KILL`**, one constant. If a playtest says the boards are visited once and dropped, it goes up toward 1.0 (the cost: tour-only 99 at 25 hours); if players say they feel obliged, down toward 0.5.
+
+**The band, and the hole it closes.** The placeholder rows were fixed targets, finishable at any level. A bonus indexed on the player's level for kills that are not is a farm: at level 60 with Echoes off, 12 level-3 boars die in a few seconds each and pay nine trash kills at 60, about **twelve times the rate of fighting**, daily, for as long as the player cares to turn the Echoes off. **Every row now has a `levelBand`**: 5 on the species rows (a foe 5 under pays three quarters of its XP by `xpParity`, so the kills still pay), 3 on Peace. A row is **offered while the player is inside it and declined (`level`) once they are not**, so the table reads as a ladder up the towns:
+
+| Board | Species | Offered at (Echoes off) |
+| --- | --- | --- |
+| Hale's Rest | boars; wolves and pups | 1 to 6; 1 to 8 |
+| Saltmarrow | shore crabs; drowned and hags | 9 to 19; 10 to 21 |
+| Thornwick | thornbacks and stags; cultists | 16 to 27; 18 to 28 |
+| Highmoor | rams and raiders; ridge ogres | 23 to 34; 25 to 35 |
+| Sundered Spire | adepts; **Peace** (anything within 3, anywhere) | 31 to 41; any level with a foe within 3 of it, to 44 |
+
+Every level from 1 to 41 has at least two writs open (checked), and **after the Seal with Echoes on all ten are open at every level from 42 to 99** (checked at the three settings), because every enemy of the region comes back at the player's level and counts at the level it died at (HOM-173). **With Echoes off past 44 there is nothing on any board**: there is nothing to match, so no bonus for it; it is the same line 10.3 draws about the road. A writ already carried when this landed is dropped, because the target changed (`targetSig`, which holds the band): at worst a player loses progress on one.
+
+**Marks and shards: one mark, no shard.** Marks are 840 earned over the road against 140 spent: nobody is short, and a mark a writ is a token, not a pull. Shards are the scarcer, and not by much: the road needs about **250** and they drop only from elites, rares and bosses, 13 an hour at the doc's mix, so a fighter has them in **19 hours of the 44** and 572 by the end. **A writ's kills are trash on purpose, so they drop no shard**, which makes the question a real one: a shard on the hand-in would be the only shard a tourist ever saw. It is the reason not to. Ten a day pays the whole 250 in 25 days, a player could reach the forge's last blade without meeting an elite, a rare or a boss, and the tell ladder lives in them (3.6). As it stands **the boards cannot take more than about a fifth off the road for anyone who wants the blades**: 19 hours of elite-mix fighting is 43 % of the road's XP, tours can supply the other 57 % in 15 days of 64 minutes, and that is 35 hours of the 44. A writ is paid in time, as XP, and not in a bar or a shard, because a player who never opens a board is never behind the curve (6.1's rule for capstones). The one thing on the road that is scarce in its own right is the 220 starmetal bars, the Smithing line's long pole; I have not touched it. If the board wants a board to pay in kind, `reward.items` takes any item, and the bar is the candidate, one a hand-in on one row.
+
+**Gold: this makes it worse, by 11,000 to 20,000 of 250,000.** A hand-in is `3 + level`: 63 at 60, 102 at 99, and a tour is ten of them, 630 to 1,020 a day against about 8,000 for the day's fighting. Over the 15 days of the best route (27 for a tour-only 99) that is roughly 11,000 to 20,000, **4 to 8 % on a faucet that already outruns every sink** (the six abilities are 36,212 of about 250,000). It is small enough that I have not priced a sink for it, as 6.2 said; **it is not nothing**, and a gold sink is still a separate card for the board.
+
+**What I tuned, what I compared it to, what I could not verify.** Tuned `perKill` to **0.75**, against 0.5 (1.31x, the 7.2 design), 1.0 and 2.0 above and 7.2's own break-even of 0.53, which is now 0.14. Compared against the measured lap (HOM-183), the road's 28 s a trash-equivalent (5,689 in 44.1 hours), the spawn tables' respawn times and `xpParity`. **I could not verify: the 8 minutes** (the lap is measured, the menus and the flights are not: the tour's 1.53x is 1.34x if it is 16), **that a person does 120 kills in 56 minutes in towns' own species** (the same 28 s as the rest of the road, which is 3.7's 40 s a mean kill and has not been timed), **and the one the card is about, whether anyone opens a board twice**: that is a playtest, and the lever is above. Checks: `src/bounties.test.ts`, "HOM-188 the writ table" (the price, the band on every row, supply, coverage at every level, the tour's rate at 8 and 16 minutes and under 2x, and tour-only 99 between 26 and 32 hours and the best route between 33 and 38).
 
 ---
 
@@ -424,7 +473,7 @@ Assertions in `src/golden-path.test.ts` or a sibling that joins `npm run verify`
 - **`K98 = 90`**, against the flat curve (`46`, 29.6 hours) and 3.6's (`150`, 63.7). It is the middle of the table and the choice that makes the top feel longer without a wall.
 - **TTK frozen at 14.2 s**, against the bible's drift, because the pace is kills and a second on a kill is an hour on the road.
 - **Hard at +3**, against +5: +3 is 1.49x XP for 10 to 17 % more cost, +5 is 1.93x for 24 % (at level 60).
-- **The writ at 12 and 12**, against a 24-kill bonus (1.97x, 22 hours) and a 6-kill one (0.98x, no pull): a tour is 1.31x over its length, with 29 minutes of travel that is my assumption.
+- **The writ at 12 and 12**, against a 24-kill bonus (1.97x, 22 hours) and a 6-kill one (0.98x, no pull): a tour is 1.31x over its length, with 29 minutes of travel that is my assumption. *(7.5: ruled at 12 and 9, `perKill` 0.75, after the lap was measured at 2.4 minutes.)*
 - **The cadence**: 8 levels a blade, the step sizes (+19 to +9 %) matching 3.3's 10 to 20 %.
 
 **Compared against**: the bible's own 3.4 model, which reproduces the Rune Golem to the digit and a headless bot within ±2 % for levels 10 to 32; 3.6's 45 to 150 kills a level; 3.7's 33.6 s mean kill and the person's 40 s; 3.3's weapon and armour lines; the gathering skills' `0.12 x cost` rule; and `action-layer.md` 7.4's parity rule for chests.

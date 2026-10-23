@@ -6,7 +6,7 @@ import { ENEMY_TYPES, SPAWNS, aggroRadius } from './sim/data';
 import { ITEMS } from './sim/items';
 import {
   BOARDS, BOUNTIES, BountyDef, MAX_ACTIVE, MAX_GOAL, acceptBounty, abandonBounty, boardById, boardNear, bountyById, bountyOnKill, counts, finishable,
-  REFILL_MS, WRIT_MARKS, offers, payXp, resolveBounty, scaled, targetSig, turnInBounty,
+  REFILL_MS, WRIT_BAND, WRIT_KILLS, WRIT_MARKS, WRIT_PER_KILL, offers, payXp, resolveBounty, scaled, targetSig, turnInBounty,
 } from './sim/bounties';
 import { trashXp } from './sim/enemy-xp';
 import { ECHO_MARK_ITEM } from './sim/echo';
@@ -50,14 +50,57 @@ section('HOM-163 the table: every row is real and can be finished');
     assert((b.target.types ?? []).every(t => ENEMY_TYPES[t]), `${b.id}: every enemy it names exists`);
     assert((b.target.regions ?? []).every(r => REGIONS.some(x => x.id === r)), `${b.id}: every region it names exists`);
     assert(SPAWNS.some(sp => counts(b, sp.type, regionAt(sp.x, sp.z)?.id ?? '', b.target.levelBand === undefined ? 1 : ENEMY_TYPES[sp.type].level)), `${b.id}: something in the world counts for it`);
-    // a fixed target is as easy to finish at 99 as at 1: only a level-following one may run out of enemies (the board then declines to offer it)
-    if (b.target.levelBand === undefined) assert(finishable(b, 1) && finishable(b, 99), `${b.id}: finishable at any level`);
+    // every row follows the player (HOM-188): it runs out of enemies in its band at some level, and the board then declines to offer it
+    assert(b.target.levelBand !== undefined, `${b.id}: it has a band, so a bonus indexed on the player's level cannot be farmed off enemies far below it`);
     for (const level of [1, 10, 25, 42, 60, 99]) {
       const r = resolveBounty(b, level);
       assert(Number.isInteger(r.goal) && r.goal >= 1 && r.goal <= MAX_GOAL && r.gold >= 0 && r.xp >= 0, `${b.id}: a sane goal and reward at level ${level}`);
     }
     assert((b.reward.items ?? []).every(i => ITEMS[i.id] && i.qty >= 1), `${b.id}: its item rewards exist`);
   }
+}
+
+// ---------------------------------------------------------------------------
+section('HOM-188 the writ table: one price, a band on every row, a tour that beats the ground without becoming the road');
+{
+  const SECONDS_PER_KILL = 3600 / 129; // the road's own pace: 5,689 trash-kill equivalents in 44.1 hours (docs/combat-99.md 7.2)
+  const ROAD = 5689, TOUR_KILLS = BOUNTIES.length * WRIT_KILLS;
+  const tourRate = (overheadS: number) => (1 + WRIT_PER_KILL) * TOUR_KILLS * SECONDS_PER_KILL / (TOUR_KILLS * SECONDS_PER_KILL + overheadS);
+  for (const b of BOUNTIES) {
+    const xp = b.reward.xp as { perKill?: number };
+    assert(b.count === WRIT_KILLS && xp.perKill === WRIT_PER_KILL && b.target.levelBand !== undefined && b.target.levelBand <= WRIT_BAND, `${b.id}: ${WRIT_KILLS} kills, ${WRIT_PER_KILL} of them again, inside a band of ${WRIT_BAND}`);
+    assert([10, 40, 60, 99].every(l => resolveBounty(b, l).gold === 3 + l && resolveBounty(b, l).goal === WRIT_KILLS), `${b.id}: a tip of 3 + level gold for the twelve, at every level`);
+    if (b.target.types) { // the species' own spawns can supply the count in less than the time it takes to fight it, so a writ is never slower than the ground
+      const mine = SPAWNS.filter(sp => b.target.types!.includes(sp.type) && b.target.regions!.includes(regionAt(sp.x, sp.z)?.id ?? ''));
+      const supplyS = b.count / mine.reduce((a, sp) => a + 1 / ENEMY_TYPES[sp.type].respawn, 0);
+      assert(mine.length > 0 && supplyS < b.count * SECONDS_PER_KILL, `${b.id}: ${mine.length} spawns refill ${b.count} kills in ${supplyS.toFixed(0)} s, under the ${(b.count * SECONDS_PER_KILL).toFixed(0)} s it takes to fight them`);
+    }
+  }
+  assert(payXp({ xp: 0, perKill: WRIT_PER_KILL, goal: WRIT_KILLS }, 60) === Math.round(9 * trashXp(60)), 'the bonus is nine trash kills at the level handed in at');
+  assert([41, 98].every(l => { const share = payXp({ xp: 0, perKill: WRIT_PER_KILL, goal: WRIT_KILLS }, l) / (xpForLevel(l + 1) - xpForLevel(l)); return share > 0.06 && share < 0.14; }), 'a hand-in is a seventh to a fifteenth of a level at 41 and at 98');
+
+  // the band: a level-45 board is not a farm of level-3 boars paid on level 45, and every level has work
+  const boars = def('hale-boars');
+  assert(!counts(boars, 'boar', 'clearing', 45) && !finishable(boars, 45) && finishable(boars, 6) && !finishable(boars, 7), 'boars count for a player up to 6 and no further');
+  const open = (level: number, echo: number | null = null) => BOUNTIES.filter(b => finishable(b, level, echo)).length;
+  for (let l = 1; l <= 41; l++) assert(open(l) >= 2, `level ${l}: at least two writs on the boards, before the Seal`);
+  for (const l of [45, 60, 99]) assert(open(l) === 0, `level ${l}: with Echoes off there is nothing in the world to match, so no writ`);
+  for (let l = 42; l <= 99; l += 1) for (const d of [-3, 0, 3]) {
+    if (open(l, Math.max(42, Math.min(99, l + d))) !== BOUNTIES.length) assert(false, `level ${l}, Echoes at ${d}: every writ is on offer`);
+  }
+  assert(true, 'with Echoes on every writ is on offer at every level from 42, at -3, 0 and +3');
+
+  // the one number: a tour beats the ground at any plausible overhead, and is not the way to play
+  assert(TOUR_KILLS === 120, 'ten writs of twelve is a tour of 120 kills');
+  assert(tourRate(8 * 60) > 1.4 && tourRate(8 * 60) < 1.7, `a tour with 8 minutes of flying, walking and menus is ${tourRate(8 * 60).toFixed(2)}x the rate of fighting`);
+  assert(tourRate(16 * 60) > 1.3, `and at double that overhead still ${tourRate(16 * 60).toFixed(2)}x: nobody who measured the walk (2.4 minutes) is worse off for going`);
+  assert(tourRate(0) < 2, 'and it never doubles the rate: the tour is not the only way to level');
+  const tourOnlyHours = ROAD / (TOUR_KILLS * (1 + WRIT_PER_KILL)) * (TOUR_KILLS * SECONDS_PER_KILL + 8 * 60) / 3600;
+  assert(tourOnlyHours > 26 && tourOnlyHours < 32, `a player who only tours reaches 99 in ${tourOnlyHours.toFixed(0)} hours of the 44, over ${(ROAD / (TOUR_KILLS * (1 + WRIT_PER_KILL))).toFixed(0)} days: a bound, not a route`);
+  // the blades need ~250 shards, which only elites, rares and bosses drop (13 an hour) and a writ's trash kills never do: 19 hours of fighting, and tours may supply the rest of the road
+  const fightHours = 250 / 13, tourDays = (ROAD - fightHours * 129) / (TOUR_KILLS * (1 + WRIT_PER_KILL));
+  const bestHours = fightHours + tourDays * (TOUR_KILLS * SECONDS_PER_KILL + 8 * 60) / 3600;
+  assert(bestHours > 33 && bestHours < 38, `the best route that still earns its shards is ${bestHours.toFixed(0)} hours of the 44: the boards take about a fifth off the road and no more`);
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +208,8 @@ section('HOM-163 scaling is data');
 {
   assert(scaled(8, 50) === 8 && scaled({ base: 8, perLevel: 0.25 }, 1) === 8 && scaled({ base: 8, perLevel: 0.25 }, 41) === 18, 'a Scale is a number, or base plus per-level, rounded');
   const peace = def('spire-peace');
-  assert(resolveBounty(peace, 1).goal < resolveBounty(peace, 40).goal, 'a scaled count asks for more of a stronger player');
+  const growing = { ...peace, count: { base: 8, perLevel: 0.25 } }; // the table's rows are flat (7.5); the mechanism is still data
+  assert(resolveBounty(growing, 1).goal < resolveBounty(growing, 40).goal, 'a scaled count asks for more of a stronger player');
   const s = atBoard('spire', 30);
   assert(acceptBounty(s, 'spire-peace').ok, 'a level-following bounty is offered while enemies are in the band');
   const a = s.bounties.active[0], goalThen = a.goal;
@@ -319,7 +363,7 @@ section('HOM-173 writs: a share of the road, a slot that refills, the foe\'s own
   s.player.echo = null;
   s.bounties.active.length = 0;
   assert(!acceptBounty(s, 'spire-peace').ok && offers(s, 'spire').find(o => o.def.id === 'spire-peace')!.why === 'level', 'switched off, the board does not offer an Echo writ');
-  assert(finishable(def('hale-boars'), 99) && !finishable(peace, 99) && finishable(peace, 99, 99), 'finishable: unchanged while the switch is absent, and open to the Echo level when it is on');
+  assert(!finishable(def('hale-boars'), 99) && !finishable(peace, 99) && finishable(peace, 99, 99) && finishable(def('hale-boars'), 99, 99), 'finishable: shut at 99 while the switch is absent, and open to the Echo level when it is on, for every row');
 }
 
 console.log(`\n${checks} checks passed`);
