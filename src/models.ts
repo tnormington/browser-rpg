@@ -7,8 +7,11 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { AnimDef } from './anim';
 import { SurfaceId, bakeUV, dress } from './surface';
 
-const FILES = import.meta.glob('../assets/models/*.glb', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
-const urlOf = (file: string) => FILES[`../assets/models/${file}.glb`];
+// The glob is read inside `urlOf` rather than at module scope so this module imports under plain node, where
+// `import.meta.glob` does not exist: the name-contract check (model-contract.test.ts) reads SLOTS and loads no file.
+// vite rewrites the call where it stands, so the bundle is unchanged.
+const urlOf = (file: string) =>
+  (import.meta.glob('../assets/models/*.glb', { query: '?url', import: 'default', eager: true }) as Record<string, string>)[`../assets/models/${file}.glb`];
 
 /** How a pack's stock colours are pulled into the scene palette: HSL saturation/lightness multipliers, or a hard colour per material name. */
 interface Look { sat: number; light: number; named?: Record<string, number> }
