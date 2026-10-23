@@ -1,11 +1,11 @@
-// A player policy that fights one enemy (and the mate that came with it) to the death on the real sim and reports what it cost (HOM-174). It is the bench's balance bot
+﻿// A player policy that fights one enemy (and the mate that came with it) to the death on the real sim and reports what it cost (HOM-174). It is the bench's balance bot
 // (bench/combat.mjs --mode ttk, HOM-53) without the browser: the same rotation (auto-attack, Pummel on a wind-up, Crushing Blow > Serrated Throw > Strike, queued inside the
 // GCD window), the same stand-off 7 units off, the same line gear (docs/world-design.md 3.4), the same reading of a slam (Pummel it, else step out) - driven through `step()`
 // at one decision a tick, which is the bench's `--fast 1`. Nothing here is in the game; it is what src/echo.test.ts measures a row with.
 import { Enemy, GameState, Input, NO_INPUT, TICK_DT, createState, step } from './sim';
-import { ABILITIES, defOf, powerForLevel } from './sim/data';
+import { ABILITIES, ENEMY_TYPES, defOf, powerForLevel } from './sim/data';
 import { abilityOpen, refreshPlayerStats } from './sim/combat';
-import { TALENTS, TreeId, learnTalent, resetTalents } from './sim/talents';
+import { CAPSTONE_TIER, TALENTS, TreeId, learnTalent, resetTalents } from './sim/talents';
 import { ECHO_ROLE_TALENTS, ECHO_TALENTS, dress, echoArmour, weaponLine } from './sim/echo';
 import { regear } from './sim/inventory';
 import { ECHOHIDE_SET, ECHO_BLADE_COUNT, echoBladeId, echoBladeLevel } from './sim/items';
@@ -15,16 +15,16 @@ import { inSafeZone, regionAt } from './sim/world';
 import { PROCS } from './sim/procs';
 
 /** What the player answers. A bot that answers nothing pays what the pace model says (3.6); the reference player of 3.4a Pummels a wind-up and steps out of slams and off marked ground. */
-export interface Policy { pummel: boolean; dodge: 'none' | 'all'; kit?: boolean; heal?: boolean }
+export interface Policy { pummel: boolean; dodge: 'none' | 'all'; kit?: boolean; heal?: boolean; cleave?: boolean; saveHeal?: boolean }
 export const ANSWERS_NOTHING: Policy = { pummel: false, dodge: 'none' };
 export const REFERENCE: Policy = { pummel: true, dodge: 'all' };
 /** HOM-192: the reference player with the whole kit a player of the level has (`dressKit`): the six abilities past 48 on the bench's rules, and Second Wind when none of it would be wasted. */
 export const WITH_KIT: Policy = { ...REFERENCE, kit: true, heal: true };
 
-/** `ttk` is first swing to last kill in seconds; `lossPct` is gross damage taken as a share of max health (no heals: the bot has none). */
-export interface Fight { ttk: number | null; lossPct: number; died: boolean; kills: number }
+/** `ttk` is first swing to last kill in seconds; `lossPct` is gross damage taken as a share of max health, `netPct` that less what was healed (the bot heals only when `Policy.heal` is on). */
+export interface Fight { ttk: number | null; lossPct: number; netPct: number; died: boolean; kills: number }
 
-const SLOT = { strike: 0, crushing: 1, throw: 2, wind: 3, pummel: 5 };
+const SLOT = { strike: 0, crushing: 1, throw: 2, wind: 3, cleave: 4, pummel: 5 };
 /** The six past level 48 by their place in the book (data.ts), which is the slot the sim takes. */
 const KIT = { rampart: 16, reaping: 17, shockwave: 18, surge: 19, bloodbath: 20, final: 21 };
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -69,7 +69,7 @@ export function arena(seed: number, type: string, level: number, weapon: number,
  * (the bench's own rule: bench/combat.mjs spendTalents); `gear` swaps the line weapon and armour of `arena` for the real Echo blades and Echohide above 48 (below it the line stands). The abilities need
  * nothing: `arena` has bought the whole book, and `abilityOpen` gates each by its level. Call it on an arena before the fight.
  */
-export interface Kit { talents: boolean; gear: boolean; build?: TreeId[] }
+export interface Kit { talents: boolean; gear: boolean; build?: TreeId[]; maxTier?: number }
 export const BARE: Kit = { talents: false, gear: false };
 export const FULL_KIT: Kit = { talents: true, gear: true };
 export function dressKit(s: GameState, kit: Kit) {
@@ -82,7 +82,7 @@ export function dressKit(s: GameState, kit: Kit) {
   if (kit.talents) {
     resetTalents(s);
     for (const tree of kit.build ?? ECHO_TALENTS.build) {
-      for (const t of TALENTS.filter(x => x.tree === tree).sort((a, b) => a.tier - b.tier)) {
+      for (const t of TALENTS.filter(x => x.tree === tree && x.tier <= (kit.maxTier ?? CAPSTONE_TIER + 1)).sort((a, b) => a.tier - b.tier)) {
         for (let r = p.talents[t.id] ?? 0; r < t.ranks; r++) { learnTalent(s, t.id); if ((p.talents[t.id] ?? 0) <= r) break; }
       }
     }
@@ -95,7 +95,7 @@ export function dressKit(s: GameState, kit: Kit) {
 export function fight({ s, enemy }: ReturnType<typeof arena>, policy: Policy, cap = 300): Fight {
   const p = s.player;
   const group = s.enemies.filter(e => e === enemy || (e.mateOf === enemy.id && e.state !== 'dead'));
-  let firstSwing: number | null = null, lastKill: number | null = null, kills = 0, taken = 0, lastSelect = -99, lastAttack = -99;
+  let firstSwing: number | null = null, lastKill: number | null = null, kills = 0, taken = 0, healed = 0, lastSelect = -99, lastAttack = -99;
   const start = s.tick, plans = new Map<number, { x: number; z: number } | null>(), pummelled = new Set<number>(); // the answer to each wind-up in progress, by enemy id; and the ones Pummel took
   const ready = (slot: number, dd: number, range: number, t: Enemy) => {
     const w = p.gcd, en = Math.min(p.maxEnergy, p.energy + 8 * w);
@@ -144,7 +144,10 @@ export function fight({ s, enemy }: ReturnType<typeof arena>, policy: Policy, ca
         // Final Reckoning is held for a Surge: while one is up or coming nothing else spends the energy below 90 (heals excepted), so it lands inside the window; with none up it goes as soon as the energy is there. Never on a target under 40 %.
         const final = !!policy.kit && hpFrac >= 0.4 && abilityOpen(p, KIT.final) && p.cd[KIT.final] <= w + 0.02, reserve = final && en < 90 && !!surge && surge.left >= 4;
         const windHeal = 45 * powerForLevel(p.combat.level);
-        if (policy.heal && p.maxHp - p.hp >= windHeal && ok(SLOT.wind, 99)) input.ability = SLOT.wind;
+        const windOwed = !!policy.heal && p.maxHp - p.hp >= windHeal && abilityOpen(p, SLOT.wind) && p.cd[SLOT.wind] <= w + 0.02;
+        if (windOwed && ok(SLOT.wind, 99)) input.ability = SLOT.wind;
+        else if (windOwed && policy.saveHeal) { /* the energy is Second Wind's: a Strike a global cooldown never lets 25 build up */ }
+        else if (policy.cleave && around >= 2 && ok(SLOT.cleave, 3.5)) input.ability = SLOT.cleave;
         else if (final && ok(KIT.final, 3.5)) input.ability = KIT.final;
         else if (reserve) { /* the energy is Final Reckoning's */ }
         else if (policy.kit && hpFrac >= 0.2 && ok(KIT.reaping, 3)) input.ability = KIT.reaping;
@@ -159,10 +162,11 @@ export function fight({ s, enemy }: ReturnType<typeof arena>, policy: Policy, ca
     for (const ev of s.events) {
       if (ev.t === 'swing' || (ev.t === 'cast' && ['strike', 'dot', 'cleave'].includes(ABILITIES[ev.slot].kind))) firstSwing ??= s.tick;
       else if (ev.t === 'hit' && ev.target === 'player') taken += ev.amount;
+      else if (ev.t === 'heal') healed += ev.amount;
       else if (ev.t === 'kill' && group.some(e => e.id === ev.id)) { kills++; lastKill = s.tick; }
     }
   }
-  return { ttk: lastKill !== null && firstSwing !== null ? (lastKill - firstSwing) * TICK_DT : null, lossPct: 100 * taken / p.maxHp, died: p.dead, kills };
+  return { ttk: lastKill !== null && firstSwing !== null ? (lastKill - firstSwing) * TICK_DT : null, lossPct: 100 * taken / p.maxHp, netPct: 100 * (taken - healed) / p.maxHp, died: p.dead, kills };
 }
 
 /**
@@ -197,20 +201,35 @@ function rest(s: GameState, e: Enemy, spot: { x: number; z: number; facing: numb
   s.targetId = null; p.autoAttack = false;
 }
 
+/** HOM-194: a row as authored rather than an Echo of it, fought in this weapon and armour (the gear the row was priced against, docs/world-design.md 3.3). */
+export interface Base { weapon: number; armour: number }
+
+/** HOM-194: a pack row is a camp, so the spawns of its type within its `pack` radius of the first stand up beside it as its mates (the fight counts them in: `mateOf`), as many as the camp has (three, or the Fens' two). */
+function camp(s: GameState, leader: Enemy) {
+  const def = ENEMY_TYPES[leader.type];
+  if (!def.pack) return;
+  for (const m of s.enemies) {
+    if (m === leader || m.type !== leader.type || Math.hypot(m.spawnX - leader.spawnX, m.spawnZ - leader.spawnZ) > def.pack) continue;
+    Object.assign(m, { state: 'idle', respawnIn: 0, deadFor: 0, x: m.spawnX, z: m.spawnZ, attackCd: 0, cast: null, bleed: null, netCd: 0, mateOf: leader.id });
+    m.hp = m.maxHp;
+  }
+}
+
 /**
  * HOM-192: `n` pulls of the same Echo in a row, the loop a player is in and not one fight from a cold start: cooldowns, energy and buffs run on through the rest between pulls (the 5 s delay,
  * then 3 % of health a second to full, which is how docs/combat-99.md 3.10 counts a kill's loop, plus `walk` seconds to the next one). The first pull has every cooldown ready; the rest are the steady state.
  */
-export function pulls(type: string, E: number, who: { kit: Kit; policy: Policy }, seed: number, n: number, { setting = 0, walk = 0 }: { setting?: -3 | 0 | 3; walk?: number } = {}) {
-  const a = arena(seed, type, E, weaponLine(E), echoArmour(E), (s, e) => { s.quest.eighth = 'done'; s.player.echo = setting; dress(s, e); });
+export function pulls(type: string, E: number, who: { kit: Kit; policy: Policy }, seed: number, n: number, { setting = 0, walk = 0, base }: { setting?: -3 | 0 | 3; walk?: number; base?: Base } = {}) {
+  const a = base ? arena(seed, type, E, base.weapon, base.armour, (s, e) => camp(s, e))
+    : arena(seed, type, E, weaponLine(E), echoArmour(E), (s, e) => { s.quest.eighth = 'done'; s.player.echo = setting; dress(s, e); });
   dressKit(a.s, who.kit);
   const p = a.s.player, spot = { x: p.x, z: p.z, facing: p.facing };
-  const out: { ttk: number; loss: number; gap: number; died: boolean }[] = [];
+  const out: { ttk: number; loss: number; net: number; gap: number; died: boolean }[] = [];
   for (let i = 0; i < n; i++) {
     if (i) rest(a.s, a.enemy, spot);
     const f = fight(a, who.policy);
     const gap = 5 + f.lossPct / 3 + walk;
-    out.push({ ttk: f.ttk ?? NaN, loss: f.lossPct, gap, died: f.died });
+    out.push({ ttk: f.ttk ?? NaN, loss: f.lossPct, net: f.netPct, gap, died: f.died });
     if (f.died) break;
     for (let t = 0; t < gap / TICK_DT; t++) step(a.s, NO_INPUT);
   }
