@@ -43,11 +43,16 @@ export interface SlotDef {
   surface?: SurfaceId | Partial<Record<string, SurfaceId>>;
   /**
    * Keep the file's own textures and UVs: no `map: null` on a named material, no surface class hung over it, and no
-   * world-planar re-projection. The default is to throw all three away, which is right for the packs shipped so far --
-   * between them they carry two 1x1 placeholder pixels, so there has never been anything to keep -- and wrong the
-   * moment an authored asset arrives with maps worth looking at. `gear.ts` honours it on the worn glb pieces too.
+   * world-planar re-projection. The default is to throw all three away, which was right for every pack shipped before
+   * the player's -- between them they carried two 1x1 placeholder pixels, so there was nothing to keep -- and wrong
+   * the moment an authored asset arrives with maps worth looking at. `gear.ts` honours it on the worn glb pieces too.
+   *
+   * `true` for the whole slot, or the material names that keep theirs, because on the player the two answers are both
+   * right in different places: the face, the brows and the eyes are the pack's work and the game's skin grain over
+   * them reads as damage, while the chest, the legs and the feet are recoloured per worn item by `gear.ts` and a
+   * texture under that tint takes the tier ladder away -- a man in a linen tunic wearing an iron helmet.
    */
-  keepMaps?: boolean;
+  keepMaps?: boolean | string[];
   /**
    * Keep the file's own normals: no 45-degree re-crease, and the material shades off them rather than flat. Separate
    * from `keepMaps` because the two are independent -- a pack can ship good maps on faceted geometry, or the reverse.
@@ -57,6 +62,10 @@ export interface SlotDef {
 /** The surface class for one of a slot's materials: its own, else the slot's catch-all. */
 const surfaceOf = (def: SlotDef, name: string): SurfaceId | undefined =>
   typeof def.surface === 'string' ? def.surface : def.surface?.[name] ?? def.surface?.['*'];
+
+/** Whether one named material keeps the file's own map, UVs and shading rather than taking the game's. */
+export const keepsMaps = (def: SlotDef, name: string): boolean =>
+  def.keepMaps === true || (Array.isArray(def.keepMaps) && def.keepMaps.includes(name));
 
 const SKIN = 0xb89a7e;
 
@@ -84,6 +93,10 @@ export const SLOTS = {
   player: { file: 'player', height: 2.0, rig: UE_RIG, splitHands: true,
     look: { sat: 0.55, light: 1.9, named: { Skin: SKIN, Armor: 0x6a7684, ArmorLegs: 0x6a7684, Boots: 0x2a2622, Hands: SKIN, Hair: 0x30261e, Eyes: 0x241c16 } },
     surface: { '*': 'plate', Skin: 'skin', Hands: 'skin', Boots: 'hide', Hair: 'fur', Eyes: 'gem' },   // the worn pieces are plate, not world iron
+    // The first asset in the game with maps worth keeping, and only on the parts no worn item recolours: this is a
+    // face, with brows and eyes, where the game's own skin grain over it read as cracked. Chest, legs and feet take
+    // the game's, because gear.ts tints those per worn item and a texture under that tint loses the tier ladder.
+    keepMaps: ['Skin', 'Hands', 'Hair', 'Eyes'], keepNormals: true,
     // Measured off the built file, not guessed (the numbers the knight's entry carried were its own clips'):
     //   moveSpeed  the planted foot sweeps back at 6.5 u/s through Jog_Fwd_Loop at rate 1
     //   jumpSpan   the jump is Jump_Start and Jump_Land laid end to end, 2.58 s: the toe leaves the ground at 0.21
@@ -196,9 +209,9 @@ export function smoothNormals(g: THREE.BufferGeometry) {
 
 const hsl = { h: 0, s: 0, l: 0 };
 function restyle(src: THREE.MeshStandardMaterial, def: SlotDef, soft: boolean): THREE.MeshStandardMaterial {
-  const named = def.look.named?.[src.name];
+  const named = def.look.named?.[src.name], keep = keepsMaps(def, src.name);
   const m = new THREE.MeshStandardMaterial({
-    map: def.keepMaps || named === undefined ? src.map : null, // a hard colour replaces the pack's texture too (the anvil's stock texture is lime green)
+    map: keep || named === undefined ? src.map : null, // a hard colour replaces the pack's texture too (the anvil's stock texture is lime green)
     vertexColors: !def.plain && !!src.vertexColors, roughness: def.roughness ?? 0.85, metalness: def.metal ?? 0.05,
     flatShading: def.keepNormals ? false : !soft, // keeping the file's normals is pointless if the shader then ignores them
   });
@@ -208,7 +221,7 @@ function restyle(src: THREE.MeshStandardMaterial, def: SlotDef, soft: boolean): 
     m.color.setHSL(hsl.h, Math.min(1, hsl.s * def.look.sat), Math.min(0.75, hsl.l * def.look.light), THREE.SRGBColorSpace);
   }
   const cls = surfaceOf(def, src.name);
-  if (cls && !def.keepMaps) dress(m, cls);   // the class's shared detail and normal maps (surface.ts); a pack texture left in place keeps them off
+  if (cls && !keep) dress(m, cls);   // the class's shared detail and normal maps (surface.ts); a pack texture left in place keeps them off
   m.name = src.name;
   return m;
 }
@@ -366,9 +379,11 @@ async function load(id: SlotId): Promise<Prepared> {
   // carries its fit, so it is already in world units; a skinned one is still in its file's space and that space is not
   // the geometry's own (see `bindScale`). Taking the fit alone left every skinned model's texels a hundred times too
   // large, so the grain on a knight, a wolf or a villager was one stretched smear rather than plate, pelt and cloth.
-  if (def.surface && !def.keepMaps) {
-    if (geometry) bakeUV(geometry);
-    else for (const m of meshes) bakeUV(m.geometry, scale * bindScale(m));
+  // A merged static slot has one geometry for all its materials, so there the flag can only be the whole slot's; a
+  // skinned one carries a geometry per material (a glTF primitive each), so a kept material keeps its own UVs.
+  if (def.surface) {
+    if (geometry) { if (def.keepMaps !== true) bakeUV(geometry); }
+    else for (const m of meshes) if (!keepsMaps(def, (m.material as THREE.Material).name)) bakeUV(m.geometry, scale * bindScale(m));
   }
   return { def, geometry, materials, scene: skinned ? root : undefined, clips, fit: { scale, offset } };
 }

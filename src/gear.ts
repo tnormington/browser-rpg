@@ -20,7 +20,7 @@ import { RIG_BONES } from './anim';
 import { Appearance, appearanceOf } from './gear-look';
 import { cappedIntensity } from './glow';
 import { haloMesh } from './halo';
-import { Instance, Prepared, SlotDef, smoothNormals, spawn } from './models';
+import { Instance, keepsMaps, Prepared, SlotDef, smoothNormals, spawn } from './models';
 import { bakeUV, dress } from './surface';
 import type { Motes } from './fx';
 
@@ -288,7 +288,7 @@ export class PlayerGear {
       const isMain = main.includes(mat.name), isTrim = trim.includes(mat.name);
       if (mat.name === 'Brown') { mat.color.setHex(ap.accent!); mat.metalness = 0; mat.roughness = 0.85; continue; } // the grip's leather wrap
       if (!isMain && !isTrim) continue;
-      if (!def.keepMaps) {
+      if (!keepsMaps(def, mat.name)) {
         mat.map = null;
         dress(mat, cls);   // the pack's own texture goes; the class's maps (hung by models.ts) go back on
       }
