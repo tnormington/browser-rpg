@@ -1,6 +1,6 @@
 # Asset credits
 
-Every model in `assets/models/` is by **Quaternius** and released under **CC0 1.0 Universal** (public domain dedication,
+Every model in `assets/models/` is by **Quaternius** (bar the `weapon_*.glb` blades, credited in their own section below) and released under **CC0 1.0 Universal** (public domain dedication,
 https://creativecommons.org/publicdomain/zero/1.0/). Credit is not required; it is given here anyway. Each pack was
 downloaded from its OpenGameArt page, where the licence is listed as CC0, and the pack's own `License.txt` repeats it.
 Only the files actually used are committed; the full downloads are not in the repo.
@@ -21,6 +21,26 @@ Only the files actually used are committed; the full downloads are not in the re
 | destrier.glb | Second mount | Horse (shipped as glTF, unmodified) | Quaternius, via Poly Pizza | https://poly.pizza/m/qvTrSG9pZF | CC0 |
 
 
+## Weapons (`weapon_<item id>.glb`)
+
+One blade model per weapon item (HOM-203), each CC0 (confirmed on the source page's licence field, and in KayKit's `License.txt`). Each
+was imported into Blender 5.2, turned blade-up with the butt at the origin, its materials folded to the four the game restyles
+(`Metal`, `Gold`, `Red`, `Brown`), textures and UVs dropped, and exported as binary glTF. No geometry was edited. The rest of each source pack is not in the repo.
+
+| File in `assets/models/` | Source object | Author / pack | Source URL | Licence |
+|---|---|---|---|---|
+| `weapon_rusty_blade`, `weapon_forged_blade`, `weapon_marrows_edge`, `weapon_crownbreaker`, `weapon_echo_blade_1`, `weapon_echo_blade_7` | `Sword`, `Sword_2`, `Sword_Golden`, `Claymore`, `Sword_Big`, `Dagger_2` | Quaternius, Medieval Weapons Pack | https://opengameart.org/content/lowpoly-medieval-weapons | CC0 |
+| `weapon_copper_sword`, `weapon_adamant_blade`, `weapon_echo_blade_5` | `sword_common`, `sword_uncommon`, `sword_rare` | Kay Lousberg, KayKit Dungeon Pack 1.0 | https://opengameart.org/content/kaykit-dungeon-pack-10 | CC0 |
+| `weapon_bronze_sword` | Gladius | LordNeo | https://opengameart.org/content/gladius | CC0 |
+| `weapon_iron_sword`, `weapon_warden_edge` | `Sword_0.002`, `Sword_0` | zisongbr, LowPoly Sword pack (6 Swords) | https://opengameart.org/content/lowpoly-sword-pack-6-swords | CC0 |
+| `weapon_steel_sword` | Knight's Sword | Teh_Bucket | https://opengameart.org/content/knights-sword | CC0 |
+| `weapon_stormiron_blade` | Blue Katana Sword | PagDev | https://opengameart.org/content/blue-katana-sword | CC0 |
+| `weapon_rotroot_edge` | Serrated Sword | Sykodev | https://opengameart.org/content/serrated-sword | CC0 |
+| `weapon_starmetal_blade` | Long Sword - Knights Trust (one of its two swords) | Quandtum | https://opengameart.org/content/long-sword-%E2%80%93-knights-trust | CC0 |
+| `weapon_echo_blade_2` | firstsword | Scribe | https://opengameart.org/content/sword | CC0 |
+| `weapon_echo_blade_3` | Short Sword | Lucian Pavel | https://opengameart.org/content/short-sword-0 | CC0 |
+| `weapon_echo_blade_4` | Heavy Greatsword | Lucian Pavel | https://opengameart.org/content/heavy-greatsword | CC0 |
+| `weapon_echo_blade_6` | Katana | Colorado Stark | https://opengameart.org/content/katana-2 | CC0 |
 ## Cursors
 
 The mouse cursors in `assets/art/cursors/` are the one piece of `assets/art/` not drawn by the generator: they are
