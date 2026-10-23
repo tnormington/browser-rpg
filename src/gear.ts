@@ -19,7 +19,7 @@ type WornSlot = 'weapon' | 'head' | 'chest' | 'legs' | 'hands' | 'feet' | 'offha
 import { Appearance, appearanceOf } from './gear-look';
 import { cappedIntensity } from './glow';
 import { haloMesh } from './halo';
-import { Instance, Prepared, smoothNormals, spawn } from './models';
+import { Instance, Prepared, SlotDef, smoothNormals, spawn } from './models';
 import { bakeUV, dress } from './surface';
 import type { Motes } from './fx';
 
@@ -240,14 +240,16 @@ export class PlayerGear {
    * grain in every world unit -- which is what the speckle on the old helm was. Cached per source geometry: every
    * instance is the player's and is drawn at the same rig scale.
    */
-  private fitPiece(o: THREE.Object3D) {
+  private fitPiece(def: SlotDef, o: THREE.Object3D) {
     o.traverse(c => {
       const mesh = c as THREE.Mesh;
       if (!mesh.isMesh) return;
       let g = FITTED.get(mesh.geometry);
       if (!g) {
-        const uv = bakeUV(mesh.geometry.clone(), 1 / this.k);   // UVs before the split, as in `forge`
-        FITTED.set(mesh.geometry, g = smoothed(uv.index ? uv.toNonIndexed() : uv));
+        let fit = mesh.geometry.clone();
+        if (!def.keepMaps) fit = bakeUV(fit, 1 / this.k);   // UVs before the split, as in `forge`
+        if (!def.keepNormals) fit = smoothed(fit.index ? fit.toNonIndexed() : fit);
+        FITTED.set(mesh.geometry, g = fit);
       }
       mesh.geometry = g;
     });
@@ -260,15 +262,17 @@ export class PlayerGear {
    * ships these flat-shaded; worn plate is left smooth so the shell reads as a beaten bowl and the hard edges come from
    * the rims and ridges built onto it, which is the same rule `forge()` applies to generated gear.
    */
-  private restyle(mats: THREE.Material[], ap: Appearance, main: string[], trim: string[], cls: 'plate' | 'metal' = 'plate', polish = 1) {
+  private restyle(def: SlotDef, mats: THREE.Material[], ap: Appearance, main: string[], trim: string[], cls: 'plate' | 'metal' = 'plate', polish = 1) {
     const blade = cls === 'metal';
     for (const mat of mats as THREE.MeshStandardMaterial[]) {
       const isMain = main.includes(mat.name), isTrim = trim.includes(mat.name);
       if (mat.name === 'Brown') { mat.color.setHex(ap.accent!); mat.metalness = 0; mat.roughness = 0.85; continue; } // the grip's leather wrap
       if (!isMain && !isTrim) continue;
-      mat.map = null;
-      dress(mat, cls);   // the pack's own texture goes; the class's maps (hung by models.ts) go back on
-      mat.color.setHex(isMain ? ap.tint : ap.trim);
+      if (!def.keepMaps) {
+        mat.map = null;
+        dress(mat, cls);   // the pack's own texture goes; the class's maps (hung by models.ts) go back on
+      }
+      mat.color.setHex(isMain ? ap.tint : ap.trim);   // the tier ladder is a retint of one mesh, so it stays either way
       mat.metalness = isMain ? ap.metal : Math.min(ap.metal, 0.6);
       mat.roughness = Math.max(0.08, (isMain ? ap.rough : Math.min(1, ap.rough + 0.15)) * polish);
       mat.flatShading = false;
@@ -374,7 +378,7 @@ export class PlayerGear {
     blade.root.scale.setScalar(ap.scale / hand.getWorldScale(this.tmp).x);
     blade.root.rotation.z = Math.PI * 0.75; // blade forward and up from the fist
     if (ap.width) blade.root.scale.z *= ap.width; // broad adamant, narrow stormiron
-    this.restyle(blade.materials, ap, ['Metal'], ['Gold', 'Red'], 'metal');
+    this.restyle(sword.def, blade.materials, ap, ['Metal'], ['Gold', 'Red'], 'metal');
     const mats: THREE.Material[] = [...blade.materials];
     if (ap.rung >= 3) {
       // A stone in the pommel of anything above plain steel. The sword slot is fitted to 1.15 units tall with its butt at
@@ -480,10 +484,10 @@ export class PlayerGear {
       this.part(new THREE.BoxGeometry(0.055, 0.1, 0.09), p.get('strap'), w, [0, -0.02, 0.3]); // the brow strap, riveted at the front
     } else {
       const helm = spawn(this.pieces.helmet, true);
-      this.fitPiece(helm.root);
+      this.fitPiece(this.pieces.helmet.def, helm.root);
       helm.root.matrixAutoUpdate = true;
       helm.root.scale.setScalar(HELM_FIT * (ap.rung >= 3 ? 1.04 : 1));
-      this.restyle(helm.materials, ap, ['Grey'], ['DarkGrey']);
+      this.restyle(this.pieces.helmet.def, helm.materials, ap, ['Grey'], ['DarkGrey']);
       p.list.push(...helm.materials);
       g.add(helm.root);
       if (ap.form === 'adamant') {
@@ -555,13 +559,13 @@ export class PlayerGear {
     if (ap.rung <= 1 || !this.pieces.pauldrons) return { group: null, materials: [] };
     const g = new THREE.Group(), w = this.world(), p = this.palette(ap);
     const pads = spawn(this.pieces.pauldrons, true);
-    this.fitPiece(pads.root);
+    this.fitPiece(this.pieces.pauldrons.def, pads.root);
     pads.root.matrixAutoUpdate = true;
     pads.root.scale.setScalar(1 + 0.18 * (ap.rung - 2));
     // The shoulders are the one part of a worn set that is always turned up at the sky, so they are left half as rough as
     // the breast under them: the key light picks them out and the torso stays matte. Plate that is one roughness all over
     // has no shape in a frame lit by a single moon.
-    this.restyle(pads.materials, ap, ['Grey'], [], 'plate', 0.55);
+    this.restyle(this.pieces.pauldrons.def, pads.materials, ap, ['Grey'], [], 'plate', 0.55);
     p.list.push(...pads.materials);
     g.add(pads.root);
     // A gorget at the throat and a baldric across the chest, on every plated rung: the head then sits in a ring of metal

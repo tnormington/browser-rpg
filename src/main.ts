@@ -25,6 +25,7 @@ import { nodeById } from './sim/gathering';
 import { CursorId, cursorFor } from './cursor';
 import { cursorCss, preloadCursorArt } from './art';
 import { Trace } from './trace';
+import { keepFileLook } from './models';
 
 // False in a public build (vite.config.ts), which folds every branch below it away: the deployed game has no
 // QA panel and no __debug handle however the URL is dressed up. A local build keeps them, for the benches.
@@ -37,6 +38,9 @@ const stress = debug ? Math.max(1, Number(params.get('stress')) || 1) : 1;
 applyStress(stress);
 // ?debug=1 only: frame trace (T saves it). Built before the Renderer so its GL link wrapper sees every program. Absent the flag it is null and every call below is a no-op.
 const trace = debug && params.has('debug') ? new Trace() : null;
+// ?keep=player,sword draws those slots with the pack's own textures, UVs and normals instead of the game's, so an
+// authored asset can be seen both ways. Before the Renderer, which is what loads them.
+if (debug && params.has('keep')) keepFileLook(params.get('keep')!.split(','));
 
 const loaded = stress > 1 ? { state: null, status: 'none' as const } : loadGame(); // stress worlds never touch the real save
 const state = loaded.state ?? createState();

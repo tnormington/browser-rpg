@@ -39,6 +39,18 @@ export interface SlotDef {
    * with `*` for the rest. A slot with no entry is drawn in flat colour, as every model was before HOM-117.
    */
   surface?: SurfaceId | Partial<Record<string, SurfaceId>>;
+  /**
+   * Keep the file's own textures and UVs: no `map: null` on a named material, no surface class hung over it, and no
+   * world-planar re-projection. The default is to throw all three away, which is right for the packs shipped so far --
+   * between them they carry two 1x1 placeholder pixels, so there has never been anything to keep -- and wrong the
+   * moment an authored asset arrives with maps worth looking at. `gear.ts` honours it on the worn glb pieces too.
+   */
+  keepMaps?: boolean;
+  /**
+   * Keep the file's own normals: no 45-degree re-crease, and the material shades off them rather than flat. Separate
+   * from `keepMaps` because the two are independent -- a pack can ship good maps on faceted geometry, or the reverse.
+   */
+  keepNormals?: boolean;
 }
 /** The surface class for one of a slot's materials: its own, else the slot's catch-all. */
 const surfaceOf = (def: SlotDef, name: string): SurfaceId | undefined =>
@@ -154,8 +166,9 @@ const hsl = { h: 0, s: 0, l: 0 };
 function restyle(src: THREE.MeshStandardMaterial, def: SlotDef, soft: boolean): THREE.MeshStandardMaterial {
   const named = def.look.named?.[src.name];
   const m = new THREE.MeshStandardMaterial({
-    map: named === undefined ? src.map : null, // a hard colour replaces the pack's texture too (the anvil's stock texture is lime green)
-    vertexColors: !def.plain && !!src.vertexColors, roughness: def.roughness ?? 0.85, metalness: def.metal ?? 0.05, flatShading: !soft,
+    map: def.keepMaps || named === undefined ? src.map : null, // a hard colour replaces the pack's texture too (the anvil's stock texture is lime green)
+    vertexColors: !def.plain && !!src.vertexColors, roughness: def.roughness ?? 0.85, metalness: def.metal ?? 0.05,
+    flatShading: def.keepNormals ? false : !soft, // keeping the file's normals is pointless if the shader then ignores them
   });
   if (named !== undefined) m.color.setHex(named);
   else {
@@ -163,7 +176,7 @@ function restyle(src: THREE.MeshStandardMaterial, def: SlotDef, soft: boolean): 
     m.color.setHSL(hsl.h, Math.min(1, hsl.s * def.look.sat), Math.min(0.75, hsl.l * def.look.light), THREE.SRGBColorSpace);
   }
   const cls = surfaceOf(def, src.name);
-  if (cls) dress(m, cls);   // the class's shared detail and normal maps (surface.ts); a pack texture left in place keeps them off
+  if (cls && !def.keepMaps) dress(m, cls);   // the class's shared detail and normal maps (surface.ts); a pack texture left in place keeps them off
   m.name = src.name;
   return m;
 }
@@ -232,6 +245,18 @@ function splitBones(m: THREE.SkinnedMesh, bones: RegExp, materialName: string, s
 const loader = new GLTFLoader();
 const cache = new Map<SlotId, Promise<Prepared>>();
 
+/**
+ * Dev only (`?keep=player,sword`): turn both keep flags on for the named slots before anything has loaded, so the same
+ * slot can be looked at with the pack's own textures, UVs and normals and with the game's. Which is the whole point of
+ * the flags -- without it, a new asset that renders badly is as likely to be the pipeline as the asset.
+ */
+export function keepFileLook(ids: string[]) {
+  for (const id of ids) {
+    const def = SLOTS[id.trim() as SlotId] as SlotDef | undefined;
+    if (def) { def.keepMaps = true; def.keepNormals = true; }
+  }
+}
+
 /** Parse a slot's file once; the promise is cached so concurrent callers share a single fetch. */
 export function loadSlot(id: SlotId): Promise<Prepared> {
   let p = cache.get(id);
@@ -252,7 +277,7 @@ async function load(id: SlotId): Promise<Prepared> {
   root.traverse(o => { if ((o as THREE.Mesh).isMesh) { meshes.push(o as THREE.Mesh); skinned ||= (o as THREE.SkinnedMesh).isSkinnedMesh; } });
   // before anything splits or merges: the legs share the body's attributes, so the seam only shades smoothly if both
   // sides were normalled while they were still one surface
-  if (skinned) for (const m of meshes) smoothNormals(m.geometry);
+  if (skinned && !def.keepNormals) for (const m of meshes) smoothNormals(m.geometry);
   if (def.splitLegs) for (const m of [...meshes]) {
     if ((m as THREE.SkinnedMesh).isSkinnedMesh && (m.material as THREE.Material).name === 'Armor') {
       const legs = splitBones(m as THREE.SkinnedMesh, LEG_BONE, 'ArmorLegs', 'Legs');
@@ -308,7 +333,7 @@ async function load(id: SlotId): Promise<Prepared> {
   // carries its fit, so it is already in world units; a skinned one is still in its file's space and that space is not
   // the geometry's own (see `bindScale`). Taking the fit alone left every skinned model's texels a hundred times too
   // large, so the grain on a knight, a wolf or a villager was one stretched smear rather than plate, pelt and cloth.
-  if (def.surface) {
+  if (def.surface && !def.keepMaps) {
     if (geometry) bakeUV(geometry);
     else for (const m of meshes) bakeUV(m.geometry, scale * bindScale(m));
   }
